@@ -1,17 +1,21 @@
 services:
   - type: web
-    name: onnesha-arena
+    name: onnesha-exam-platform
     runtime: node
     plan: starter
-    buildCommand: npm install && npm run build
-    startCommand: node .output/server/index.mjs
+    region: singapore
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NITRO_PRESET
+        value: node-server
       - key: DATA_DIR
         value: /var/data
     disk:
       name: onnesha-persistent-data
       mountPath: /var/data
       sizeGB: 2
+
 
