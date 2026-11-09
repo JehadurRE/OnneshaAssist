@@ -48,9 +48,12 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
   });
 
   const maxCount = Math.max(...Object.values(counts), 1);
-  const correctOption = question.options.find((o) => question.correctOptionIds.includes(o.id));
-  const correctCount = correctOption ? counts[correctOption.id] || 0 : 0;
-  const itemDifficultyPValue = totalPlayers > 0 ? ((correctCount / totalPlayers)).toFixed(2) : '1.00';
+  const isWritten = question.type === 'written' || question.type === 'fill_blank';
+  const correctParticipantCount = participants.filter(
+    (p) => p.answers[question.id]?.isCorrect
+  ).length;
+  const itemDifficultyPValue =
+    totalPlayers > 0 ? (correctParticipantCount / totalPlayers).toFixed(2) : '1.00';
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6 animate-in fade-in zoom-in-95">
@@ -85,59 +88,98 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
           {lang === 'bn' ? 'পরীক্ষার্থীদের উত্তর বণ্টন ও সঠিক সমাধান' : 'Response Distribution & Key Rationale'}
         </h3>
 
-        {/* Telemetry Response Bars */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 items-end min-h-[260px] pb-4">
-          {question.options.map((opt, idx) => {
-            const count = counts[opt.id] || 0;
-            const heightPct = Math.max(12, (count / maxCount) * 100);
-            const isCorrect = question.correctOptionIds.includes(opt.id);
-            const style = BAR_STYLES[idx % BAR_STYLES.length];
-
-            return (
-              <div key={opt.id} className="flex flex-col items-center gap-3">
-                {/* Number of votes */}
-                <div className="font-mono text-sm sm:text-base font-black text-foreground tabular-nums">
-                  {count}{' '}
-                  <span className="text-xs font-normal text-muted-foreground">
-                    ({totalPlayers > 0 ? Math.round((count / totalPlayers) * 100) : 0}%)
-                  </span>
-                </div>
-
-                {/* The Bar */}
-                <div className="relative w-full rounded-2xl bg-muted/40 p-1 flex items-end justify-center h-48">
-                  <div
-                    className={`w-full rounded-xl transition-all duration-1000 ease-out flex items-center justify-center ${
-                      style.bar
-                    } ${isCorrect ? 'ring-4 ring-emerald-400 ring-offset-2 ring-offset-background shadow-neon' : 'opacity-70'}`}
-                    style={{ height: `${heightPct}%` }}
-                  >
-                    {isCorrect && (
-                      <Check className="h-6 w-6 text-white stroke-[3] animate-pulse" />
-                    )}
-                  </div>
-                </div>
-
-                {/* Option Badge & Text */}
-                <div className="flex items-center gap-2 text-center">
+        {isWritten ? (
+          <div className="space-y-6 py-4">
+            <div className="rounded-2xl border-2 border-emerald-500/40 bg-emerald-500/10 p-6 text-center space-y-2">
+              <div className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                {lang === 'bn' ? 'গ্রহণযোগ্য সঠিক উত্তরসমূহ' : 'Official Accepted Answer Key'}
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                {(question.acceptedAnswers || []).map((ansText, idx) => (
                   <span
-                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border font-mono text-[11px] font-bold ${
-                      style.badge
-                    }`}
+                    key={idx}
+                    className="rounded-xl border border-emerald-500/40 bg-card px-4 py-2 font-mono text-base sm:text-lg font-black text-emerald-600 dark:text-emerald-400 shadow-sm"
                   >
-                    {lang === 'bn' ? style.bnKey : style.key}
+                    {ansText}
                   </span>
-                  <span
-                    className={`text-xs sm:text-sm font-bold line-clamp-2 ${
-                      isCorrect ? 'text-emerald-600 dark:text-emerald-400 font-extrabold' : 'text-foreground'
-                    }`}
-                  >
-                    {lang === 'bn' ? opt.textBn : opt.textEn}
-                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 max-w-lg mx-auto">
+              <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center">
+                <div className="font-mono text-2xl font-black text-emerald-600 dark:text-emerald-400">
+                  {correctParticipantCount}
+                </div>
+                <div className="text-xs font-bold text-muted-foreground">
+                  {lang === 'bn' ? 'সঠিক লিখিত উত্তর' : 'Correct Responses'}
                 </div>
               </div>
-            );
-          })}
-        </div>
+              <div className="rounded-2xl border border-border bg-muted/40 p-4 text-center">
+                <div className="font-mono text-2xl font-black text-foreground">
+                  {Math.max(0, totalPlayers - correctParticipantCount)}
+                </div>
+                <div className="text-xs font-bold text-muted-foreground">
+                  {lang === 'bn' ? 'ভুল বা অনুত্তরিত' : 'Incorrect / Unanswered'}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* Telemetry Response Bars */
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 items-end min-h-[260px] pb-4">
+            {question.options.map((opt, idx) => {
+              const count = counts[opt.id] || 0;
+              const heightPct = Math.max(12, (count / maxCount) * 100);
+              const isCorrect = question.correctOptionIds.includes(opt.id);
+              const style = BAR_STYLES[idx % BAR_STYLES.length];
+
+              return (
+                <div key={opt.id} className="flex flex-col items-center gap-3">
+                  {/* Number of votes */}
+                  <div className="font-mono text-sm sm:text-base font-black text-foreground tabular-nums">
+                    {count}{' '}
+                    <span className="text-xs font-normal text-muted-foreground">
+                      ({totalPlayers > 0 ? Math.round((count / totalPlayers) * 100) : 0}%)
+                    </span>
+                  </div>
+
+                  {/* The Bar */}
+                  <div className="relative w-full rounded-2xl bg-muted/40 p-1 flex items-end justify-center h-48">
+                    <div
+                      className={`w-full rounded-xl transition-all duration-1000 ease-out flex items-center justify-center ${
+                        style.bar
+                      } ${isCorrect ? 'ring-4 ring-emerald-400 ring-offset-2 ring-offset-background shadow-neon' : 'opacity-70'}`}
+                      style={{ height: `${heightPct}%` }}
+                    >
+                      {isCorrect && (
+                        <Check className="h-6 w-6 text-white stroke-[3] animate-pulse" />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Option Badge & Text */}
+                  <div className="flex items-center gap-2 text-center">
+                    <span
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border font-mono text-[11px] font-bold ${
+                        style.badge
+                      }`}
+                    >
+                      {lang === 'bn' ? style.bnKey : style.key}
+                    </span>
+                    <span
+                      className={`text-xs sm:text-sm font-bold line-clamp-2 ${
+                        isCorrect ? 'text-emerald-600 dark:text-emerald-400 font-extrabold' : 'text-foreground'
+                      }`}
+                    >
+                      {lang === 'bn' ? opt.textBn : opt.textEn}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Pedagogical Explanation Banner */}
         {(question.explanationBn || question.explanationEn) && (

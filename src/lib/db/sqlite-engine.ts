@@ -66,10 +66,30 @@ class SQLiteEngine {
         email TEXT UNIQUE,
         name TEXT,
         role TEXT,
-        institutionName TEXT,
+        institution TEXT,
+        designation TEXT,
         phone TEXT,
         passwordHash TEXT,
-        avatarUrl TEXT,
+        plan TEXT,
+        assignedCourseIdsJson TEXT,
+        status TEXT,
+        createdAt TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS courses (
+        id TEXT PRIMARY KEY,
+        code TEXT,
+        titleEn TEXT,
+        titleBn TEXT,
+        descriptionEn TEXT,
+        descriptionBn TEXT,
+        categoryEn TEXT,
+        categoryBn TEXT,
+        icon TEXT,
+        color TEXT,
+        instructorIdsJson TEXT,
+        instructorNamesJson TEXT,
+        status TEXT,
         createdAt TEXT
       );
 
@@ -85,6 +105,11 @@ class SQLiteEngine {
       CREATE TABLE IF NOT EXISTS quizzes (
         id TEXT PRIMARY KEY,
         slug TEXT UNIQUE,
+        courseId TEXT,
+        courseTitle TEXT,
+        quizNumber INTEGER,
+        instructorId TEXT,
+        instructorName TEXT,
         titleEn TEXT,
         titleBn TEXT,
         descriptionEn TEXT,
@@ -219,6 +244,16 @@ class SQLiteEngine {
       'ALTER TABLE exam_results ADD COLUMN phone TEXT',
       'ALTER TABLE exam_results ADD COLUMN regionId TEXT',
       'ALTER TABLE exam_results ADD COLUMN regionName TEXT',
+      'ALTER TABLE quizzes ADD COLUMN courseId TEXT',
+      'ALTER TABLE quizzes ADD COLUMN courseTitle TEXT',
+      'ALTER TABLE quizzes ADD COLUMN quizNumber INTEGER',
+      'ALTER TABLE quizzes ADD COLUMN instructorId TEXT',
+      'ALTER TABLE quizzes ADD COLUMN instructorName TEXT',
+      'ALTER TABLE users ADD COLUMN institution TEXT',
+      'ALTER TABLE users ADD COLUMN designation TEXT',
+      'ALTER TABLE users ADD COLUMN plan TEXT',
+      'ALTER TABLE users ADD COLUMN assignedCourseIdsJson TEXT',
+      'ALTER TABLE users ADD COLUMN status TEXT',
     ];
     for (const sql of migrations) {
       try {

@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { GameSession } from '@/lib/types';
 import { useLanguage } from '@/lib/i18n';
 import { db } from '@/lib/db';
-import { Bot, LockOpen, MapPin, Play, QrCode, ShieldAlert, Users, Volume2, VolumeX, X } from 'lucide-react';
+import { Bot, LockOpen, MapPin, Maximize2, Play, QrCode, ShieldAlert, ShieldCheck, Users, Volume2, VolumeX, X } from 'lucide-react';
 import { audioEngine } from '@/lib/audio-engine';
 
 interface HostLobbyProps {
@@ -109,6 +109,53 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
                 ))}
               </select>
             </div>
+
+            {/* Anti-Cheat Proctoring Toggle */}
+            {onUpdateSettings && (
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateSettings({
+                    blockCopyPaste: !(session.settings.blockCopyPaste ?? true),
+                    proctorMode: !(session.settings.blockCopyPaste ?? true),
+                  })
+                }
+                className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-bold transition ${
+                  (session.settings.blockCopyPaste ?? true)
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                    : 'border-border bg-background text-muted-foreground hover:bg-accent'
+                }`}
+                title="Detect tab/screen switches, DevTools, and Copy/Paste"
+              >
+                {(session.settings.blockCopyPaste ?? true) ? (
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+                ) : (
+                  <ShieldAlert className="h-3.5 w-3.5 text-muted-foreground" />
+                )}
+                <span>Proctor: {(session.settings.blockCopyPaste ?? true) ? 'ON' : 'OFF'}</span>
+              </button>
+            )}
+
+            {/* Fullscreen Lock Toggle */}
+            {onUpdateSettings && (
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateSettings({
+                    enforceFullscreen: !session.settings.enforceFullscreen,
+                  })
+                }
+                className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-bold transition ${
+                  session.settings.enforceFullscreen
+                    ? 'border-primary/40 bg-primary/10 text-primary'
+                    : 'border-border bg-background text-muted-foreground hover:bg-accent'
+                }`}
+                title="Require examinees to stay in Fullscreen mode during questions"
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+                <span>Screen Lock: {session.settings.enforceFullscreen ? 'ON' : 'OFF'}</span>
+              </button>
+            )}
 
             <button
               type="button"

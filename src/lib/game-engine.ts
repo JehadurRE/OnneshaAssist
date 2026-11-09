@@ -22,7 +22,18 @@ export type GameEvent =
   | { type: 'SESSION_UPDATED'; session: GameSession }
   | { type: 'PLAYER_JOINED'; pin: string; participant: Participant }
   | { type: 'PLAYER_LEFT'; pin: string; participantId: string }
-  | { type: 'ANSWER_SUBMITTED'; pin: string; participantId: string; answer: ParticipantAnswer };
+  | { type: 'ANSWER_SUBMITTED'; pin: string; participantId: string; answer: ParticipantAnswer }
+  | { type: 'OFFLINE_QUEUE_CHANGED'; count: number; isOnline: boolean };
+
+interface QueuedAnswerPayload {
+  pin: string;
+  participantId: string;
+  questionId: string;
+  selectedOptionIds: string[];
+  writtenAnswer?: string;
+  seatToken?: string;
+  clientAnsweredAt: number;
+}
 
 const BOT_NAMES = [
   { name: 'Cadet Tanvir', emoji: '🦅', bg: '#059669' },
@@ -67,14 +78,79 @@ class RealtimeGameEngine {
   private pollingTimer: any = null;
 
   constructor() {
-    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-      this.channel = new BroadcastChannel('onnesha_quiz_sync');
-      this.channel.onmessage = (ev) => {
-        if (ev.data) {
-          this.notifyListeners(ev.data as GameEvent);
-        }
-      };
+    if (typeof window !== 'undefined') {
+      if ('BroadcastChannel' in window) {
+        this.channel = new BroadcastChannel('onnesha_quiz_sync');
+        this.channel.onmessage = (ev) => {
+          if (ev.data) {
+            this.notifyListeners(ev.data as GameEvent);
+          }
+        };
+      }
+      window.addEventListener('online', () => {
+        this.flushOfflineOutbox();
+        this.notifyListeners({
+          type: 'OFFLINE_QUEUE_CHANGED',
+          count: this.getOfflineOutbox().length,
+          isOnline: true,
+        });
+      });
+      window.addEventListener('offline', () => {
+        this.notifyListeners({
+          type: 'OFFLINE_QUEUE_CHANGED',
+          count: this.getOfflineOutbox().length,
+          isOnline: false,
+        });
+      });
     }
+  }
+
+  public getOfflineOutbox(): QueuedAnswerPayload[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = sessionStorage.getItem('onnesha_offline_outbox');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private saveOfflineOutbox(queue: QueuedAnswerPayload[]) {
+    if (typeof window === 'undefined') return;
+    try {
+      sessionStorage.setItem('onnesha_offline_outbox', JSON.stringify(queue));
+      this.notifyListeners({
+        type: 'OFFLINE_QUEUE_CHANGED',
+        count: queue.length,
+        isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
+      });
+    } catch {}
+  }
+
+  private enqueueOfflineAnswer(item: QueuedAnswerPayload) {
+    const queue = this.getOfflineOutbox().filter(
+      (q) => !(q.pin === item.pin && q.participantId === item.participantId && q.questionId === item.questionId)
+    );
+    queue.push(item);
+    this.saveOfflineOutbox(queue);
+  }
+
+  public async flushOfflineOutbox(): Promise<void> {
+    const queue = this.getOfflineOutbox();
+    if (queue.length === 0) return;
+
+    const remaining: QueuedAnswerPayload[] = [];
+    for (const item of queue) {
+      try {
+        const res = await serverSubmitAnswer({ data: item });
+        if (res.success && res.session) {
+          this.cacheSessionLocally(res.session);
+        }
+      } catch {
+        remaining.push(item);
+      }
+    }
+    this.saveOfflineOutbox(remaining);
   }
 
   public subscribe(cb: (event: GameEvent) => void) {
@@ -194,6 +270,9 @@ class RealtimeGameEngine {
 
     this.pollingTimer = setInterval(async () => {
       try {
+        if (this.pollingRole === 'player' && this.getOfflineOutbox().length > 0) {
+          await this.flushOfflineOutbox();
+        }
         const res = await serverGetSession({
           data: {
             pin,
@@ -536,7 +615,7 @@ class RealtimeGameEngine {
       });
   }
 
-  // Submit Answer (Atomic Server Call — never overwrites other participants!)
+  // Submit Answer (Atomic Server Call with Offline Outbox Queue & Auto-Retry!)
   public submitAnswer(
     pin: string,
     participantId: string,
@@ -545,16 +624,24 @@ class RealtimeGameEngine {
     writtenAnswer?: string
   ) {
     const seatToken = this.getStoredSeatToken(pin);
+    const clientAnsweredAt = Date.now();
+    const payload: QueuedAnswerPayload = {
+      pin,
+      participantId,
+      questionId,
+      selectedOptionIds,
+      writtenAnswer,
+      seatToken,
+      clientAnsweredAt,
+    };
+
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      this.enqueueOfflineAnswer(payload);
+      return;
+    }
 
     serverSubmitAnswer({
-      data: {
-        pin,
-        participantId,
-        questionId,
-        selectedOptionIds,
-        writtenAnswer,
-        seatToken,
-      },
+      data: payload,
     })
       .then((res) => {
         if (res.success && res.session) {
@@ -570,14 +657,15 @@ class RealtimeGameEngine {
         }
       })
       .catch((e) => {
-        console.warn('Server answer submit fallback:', e);
+        console.warn('Network drop during answer submit — queued in Offline Outbox for auto-sync:', e);
+        this.enqueueOfflineAnswer(payload);
       });
   }
 
   public reportProctorIncident(
     pin: string,
     participantId: string,
-    type: 'tab_switch' | 'window_blur' | 'fullscreen_exit'
+    type: 'tab_switch' | 'window_blur' | 'fullscreen_exit' | 'copy_attempt' | 'devtools_attempt'
   ) {
     return serverReportProctorIncident({
       data: { pin, participantId, type },

@@ -7,7 +7,6 @@ import { Footer } from "@/components/layout/Footer";
 import onnesha from "@/assets/onnesha.jpg.asset.json";
 import {
   AlertCircle,
-  ArrowRight,
   CheckCircle2,
   GraduationCap,
   KeyRound,
@@ -15,18 +14,16 @@ import {
   Mail,
   Phone,
   Shield,
-  ShieldCheck,
-  Sparkles,
   UserCheck,
 } from "lucide-react";
 
 export const Route = createFileRoute("/auth/login")({
   head: () => ({
     meta: [
-      { title: "Instructor & Candidate Login · Onnesha Arena" },
+      { title: "Super Admin & Instructor Login · Onnesha Arena" },
       {
         name: "description",
-        content: "Sign in to Onnesha Assessment Arena using Email or Bangladeshi Phone OTP.",
+        content: "Sign in to Onnesha Super Admin Console or Instructor Studio.",
       },
     ],
   }),
@@ -56,7 +53,11 @@ function LoginPage() {
     setIsLoading(false);
 
     if (result.success) {
-      navigate({ to: "/dashboard" });
+      if (result.role === "admin") {
+        navigate({ to: "/admin" });
+      } else {
+        navigate({ to: "/dashboard" });
+      }
     } else {
       setErrorMessage(result.error || "Failed to sign in. Please verify your credentials.");
     }
@@ -95,6 +96,12 @@ function LoginPage() {
     }
   };
 
+  const loadAdminCredentials = () => {
+    setEmail("admin@onnesha.app");
+    setPassword("admin123");
+    setErrorMessage(null);
+  };
+
   const loadInstructorCredentials = () => {
     setEmail("instructor@onnesha.app");
     setPassword("instructor123");
@@ -111,10 +118,12 @@ function LoginPage() {
           <div className="text-center">
             <img src={onnesha.url} alt="Onnesha" className="h-11 mx-auto rounded-lg object-contain mb-3" />
             <h1 className="font-display text-2xl font-black text-foreground tracking-tight">
-              {lang === "bn" ? "অন্বেষা অ্যারেনায় প্রবেশ" : "Sign In to Onnesha Arena"}
+              {lang === "bn" ? "অন্বেষা কন্ট্রোল ও স্টুডিও লগইন" : "Sign In to Onnesha Portal"}
             </h1>
             <p className="mt-1 text-xs text-muted-foreground">
-              {lang === "bn" ? "ইন্সট্রাক্টর স্টুডিও ও মেধা তালিকা ম্যানেজমেন্ট" : "Instructor Studio & Assessment Management"}
+              {lang === "bn"
+                ? "সুপার অ্যাডমিন প্যানেল (/admin) এবং ইন্সট্রাক্টর স্টুডিও (/dashboard)"
+                : "Separate portals for Super Admin (/admin) & Course Instructors (/dashboard)"}
             </p>
           </div>
 
@@ -172,7 +181,7 @@ function LoginPage() {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="instructor@onnesha.app"
+                    placeholder="admin@onnesha.app or instructor@onnesha.app"
                     className="w-full rounded-2xl border border-border bg-background pl-10 pr-4 py-2.5 text-xs sm:text-sm font-semibold text-foreground outline-none focus:border-primary"
                   />
                 </div>
@@ -203,8 +212,37 @@ function LoginPage() {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-border/80 bg-muted/20 p-2.5 text-[11px] text-muted-foreground">
-                <span className="font-bold text-foreground">Demo Instructor:</span> <code className="text-primary font-mono font-bold">instructor@onnesha.app</code> / <code className="text-primary font-mono font-bold">instructor123</code>
+              {/* Quick Credentials Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={loadAdminCredentials}
+                  className="text-left rounded-xl border border-amber-500/40 bg-amber-500/10 p-2.5 hover:bg-amber-500/15 transition"
+                >
+                  <div className="flex items-center gap-1.5 text-[11px] font-black text-amber-600 dark:text-amber-400">
+                    <Shield className="h-3.5 w-3.5" />
+                    <span>Super Admin Panel</span>
+                  </div>
+                  <div className="mt-1 font-mono text-[10px] text-foreground font-bold truncate">
+                    admin@onnesha.app
+                  </div>
+                  <div className="font-mono text-[10px] text-muted-foreground">Pass: admin123</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={loadInstructorCredentials}
+                  className="text-left rounded-xl border border-primary/40 bg-primary/10 p-2.5 hover:bg-primary/15 transition"
+                >
+                  <div className="flex items-center gap-1.5 text-[11px] font-black text-primary">
+                    <GraduationCap className="h-3.5 w-3.5" />
+                    <span>Instructor Studio</span>
+                  </div>
+                  <div className="mt-1 font-mono text-[10px] text-foreground font-bold truncate">
+                    instructor@onnesha.app
+                  </div>
+                  <div className="font-mono text-[10px] text-muted-foreground">Pass: instructor123</div>
+                </button>
               </div>
 
               <button
@@ -213,7 +251,7 @@ function LoginPage() {
                 className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3 text-xs font-extrabold text-primary-foreground shadow-glow hover:bg-primary/90 transition"
               >
                 <UserCheck className="h-4 w-4" />
-                <span>{isLoading ? "Verifying..." : "Sign In to Instructor Studio"}</span>
+                <span>{isLoading ? "Verifying..." : "Sign In to Portal"}</span>
               </button>
             </form>
           ) : (
@@ -280,22 +318,11 @@ function LoginPage() {
             </form>
           )}
 
-          {/* Quick Demo Fill Helper */}
-          <div className="mt-4 pt-4 border-t border-border/60 text-center">
-            <button
-              type="button"
-              onClick={loadInstructorCredentials}
-              className="text-[11px] text-muted-foreground hover:text-primary font-semibold transition"
-            >
-              Fill Instructor Test Account (instructor@onnesha.app)
-            </button>
-          </div>
-
           {/* Footer Signup Link */}
           <div className="mt-6 text-center text-xs text-muted-foreground border-t border-border/80 pt-4">
-            Don&apos;t have an instructor account?{" "}
+            Need a new instructor account?{" "}
             <Link to="/auth/signup" className="font-bold text-primary hover:underline">
-              Register Academy Free
+              Register Faculty Account
             </Link>
           </div>
         </div>

@@ -56,10 +56,10 @@ export const CertificateView: React.FC<{ certificate: CertificateData; onPrint?:
             </h3>
             <p className="text-xs text-muted-foreground font-semibold">
               {branding.showPartnerLogo && branding.partnerName
-                ? `${branding.partnerName} · Learning Bangladesh Partnership`
+                ? `${branding.partnerName} · Official Digital Assessment`
                 : lang === 'bn'
-                  ? 'অফিসিয়াল ডিজিটাল অ্যাসেসমেন্ট · লার্নিং বাংলাদেশ পার্টনারশিপ'
-                  : 'Official Digital Assessment · Learning Bangladesh Partnership'}
+                  ? 'অফিসিয়াল ডিজিটাল অ্যাসেসমেন্ট · অন্বেষা এলএমএস'
+                  : 'Official Digital Assessment · Onnesha LMS'}
             </p>
           </div>
           {branding.showPartnerLogo && branding.partnerLogoUrl ? (

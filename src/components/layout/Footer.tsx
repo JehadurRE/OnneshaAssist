@@ -2,7 +2,6 @@ import React from 'react';
 import { Link } from '@tanstack/react-router';
 import { useLanguage } from '@/lib/i18n';
 import { useBranding } from '@/hooks/use-branding';
-import learningBd from '@/assets/learning-bd.png.asset.json';
 import ccai from '@/assets/ccai.png.asset.json';
 import onnesha from '@/assets/onnesha.jpg.asset.json';
 import { ShieldCheck, Code, Sparkles, Smartphone } from 'lucide-react';
@@ -42,8 +41,6 @@ export const Footer: React.FC = () => {
             </div>
             <div className="flex items-center gap-2 pt-2 text-xs text-muted-foreground">
               <span className="font-semibold">{t('knowledge_partner')}:</span>
-              <img src={learningBd.url} alt="Learning Bangladesh" className="h-6 object-contain" />
-              <span>·</span>
               <img src={ccai.url} alt="Cloud Connect AI Limited" className="h-5 object-contain" />
             </div>
           </div>

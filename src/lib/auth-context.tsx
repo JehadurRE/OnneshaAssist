@@ -1,4 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { serverAuthenticateUser, serverAdminMutateStore } from './server-session';
+import { DEFAULT_USERS } from './mock-data';
+import { ManagedUser } from './types';
 
 export type UserRole = 'instructor' | 'candidate' | 'admin';
 
@@ -9,7 +12,9 @@ export interface User {
   role: UserRole;
   avatarUrl?: string;
   institutionName?: string;
+  designation?: string;
   phone?: string;
+  assignedCourseIds?: string[];
   createdAt: string;
 }
 
@@ -21,10 +26,17 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password?: string) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password?: string) => Promise<{ success: boolean; error?: string; role?: UserRole }>;
   requestPhoneOtp: (phone: string) => Promise<{ success: boolean; error?: string }>;
   loginWithPhoneOtp: (phone: string, otp: string) => Promise<{ success: boolean; error?: string }>;
-  signup: (data: { email: string; name: string; password?: string; role: UserRole; institutionName?: string; phone?: string }) => Promise<{ success: boolean; error?: string }>;
+  signup: (data: {
+    email: string;
+    name: string;
+    password?: string;
+    role: UserRole;
+    institutionName?: string;
+    phone?: string;
+  }) => Promise<{ success: boolean; error?: string }>;
   changePassword: (oldPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
   resetPasswordWithEmail: (email: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
@@ -59,29 +71,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [failedAttempts, setFailedAttempts] = useState<number>(0);
   const [lockoutUntil, setLockoutUntil] = useState<number>(0);
 
-  // Initialize DB registry and restore active session if present
   useEffect(() => {
     async function initAuth() {
       try {
         const storedRegistry = localStorage.getItem('onnesha_user_registry');
-        if (!storedRegistry) {
-          // Pre-seed official instructor demo account in registry
-          const defaultHash = await hashPassword('instructor123');
-          const seedAccount: StoredUserAccount = {
-            id: 'usr-default-instructor',
-            email: 'instructor@onnesha.app',
-            name: 'Farhan Chowdhury',
-            role: 'instructor',
-            institutionName: 'Onnesha Assessment Academy',
-            phone: '01711000000',
-            passwordHash: defaultHash,
-            avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-            createdAt: new Date().toISOString(),
-          };
-          localStorage.setItem('onnesha_user_registry', JSON.stringify([seedAccount]));
-        }
+        let list: StoredUserAccount[] = storedRegistry ? JSON.parse(storedRegistry) : [];
 
-        // Restore active user session if exists
+        // Ensure default Admin & Instructor accounts are always seeded locally as well
+        for (const def of DEFAULT_USERS) {
+          if (!list.some((u) => u.email.toLowerCase() === def.email.toLowerCase())) {
+            const hashed = await hashPassword(def.passwordHash || 'instructor123');
+            list.push({
+              id: def.id,
+              email: def.email,
+              name: def.name,
+              role: def.role,
+              institutionName: def.institution,
+              designation: def.designation,
+              phone: def.phone,
+              assignedCourseIds: def.assignedCourseIds,
+              passwordHash: hashed,
+              createdAt: def.createdAt,
+            });
+          }
+        }
+        localStorage.setItem('onnesha_user_registry', JSON.stringify(list));
+
         const activeSession = localStorage.getItem('onnesha_auth_user');
         if (activeSession) {
           setUser(JSON.parse(activeSession));
@@ -113,13 +128,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const login = async (email: string, password = ''): Promise<{ success: boolean; error?: string }> => {
+  const login = async (
+    email: string,
+    password = ''
+  ): Promise<{ success: boolean; error?: string; role?: UserRole }> => {
     if (Date.now() < lockoutUntil) {
       const remainingSec = Math.ceil((lockoutUntil - Date.now()) / 1000);
       return { success: false, error: `Too many failed attempts. Please wait ${remainingSec}s before retrying.` };
     }
 
     const cleanEmail = email.trim().toLowerCase();
+
+    // 1. First attempt Server-Authoritative Authentication (works across all devices!)
+    try {
+      const srv = await serverAuthenticateUser({ data: { email: cleanEmail, password } });
+      if (srv.success && srv.user) {
+        setFailedAttempts(0);
+        const userProfile: User = {
+          id: srv.user.id,
+          email: srv.user.email,
+          name: srv.user.name,
+          role: srv.user.role,
+          institutionName: srv.user.institution,
+          designation: srv.user.designation,
+          phone: srv.user.phone,
+          assignedCourseIds: srv.user.assignedCourseIds,
+          createdAt: srv.user.createdAt,
+        };
+        setUser(userProfile);
+        localStorage.setItem('onnesha_auth_user', JSON.stringify(userProfile));
+        return { success: true, role: userProfile.role };
+      }
+    } catch {
+      // Fallback to local registry if offline
+    }
+
+    // 2. Fallback to Local Registry
     const registry = getRegistry();
     const account = registry.find((u) => u.email.toLowerCase() === cleanEmail);
 
@@ -135,7 +179,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const inputHash = await hashPassword(password);
-    if (account.passwordHash !== inputHash) {
+    if (account.passwordHash !== inputHash && account.passwordHash !== password) {
       const nextFailed = failedAttempts + 1;
       setFailedAttempts(nextFailed);
       if (nextFailed >= 5) {
@@ -146,7 +190,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: 'Incorrect password. Please verify and try again.' };
     }
 
-    // Reset failed counter
     setFailedAttempts(0);
 
     const userProfile: User = {
@@ -155,14 +198,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       name: account.name,
       role: account.role,
       institutionName: account.institutionName,
+      designation: account.designation,
       phone: account.phone,
+      assignedCourseIds: account.assignedCourseIds,
       avatarUrl: account.avatarUrl,
       createdAt: account.createdAt,
     };
 
     setUser(userProfile);
     localStorage.setItem('onnesha_auth_user', JSON.stringify(userProfile));
-    return { success: true };
+    return { success: true, role: userProfile.role };
   };
 
   const requestPhoneOtp = async (phone: string): Promise<{ success: boolean; error?: string }> => {
@@ -171,7 +216,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: 'Please provide a valid 11-digit Bangladeshi mobile number.' };
     }
 
-    // Generate 6-digit OTP and store in sessionStorage with 5-minute expiry
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const payload = {
       phone: cleanPhone,
@@ -179,8 +223,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       expiresAt: Date.now() + 5 * 60 * 1000,
     };
     sessionStorage.setItem(`onnesha_otp_${cleanPhone}`, JSON.stringify(payload));
-
-    console.log(`[SMS OTP GATEWAY] Dispatched OTP for ${cleanPhone}: ${otp}`);
     return { success: true };
   };
 
@@ -203,10 +245,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: 'Invalid verification code. Please check SMS and try again.' };
     }
 
-    // Clear OTP after successful consumption
     sessionStorage.removeItem(`onnesha_otp_${cleanPhone}`);
 
-    // Check if user exists or create candidate profile
     const registry = getRegistry();
     let account = registry.find((u) => u.phone === cleanPhone);
 
@@ -259,19 +299,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const passwordHash = await hashPassword(data.password);
+    const id = `usr-${Date.now()}`;
+    const createdAt = new Date().toISOString();
+
     const newAccount: StoredUserAccount = {
-      id: `usr-${Date.now()}`,
+      id,
       email: cleanEmail,
       name: data.name.trim(),
       role: data.role,
       institutionName: data.institutionName?.trim(),
       phone: data.phone?.replace(/\D/g, ''),
       passwordHash,
-      createdAt: new Date().toISOString(),
+      createdAt,
     };
 
     registry.push(newAccount);
     saveRegistry(registry);
+
+    // Sync to server store as well
+    const managedUser: ManagedUser = {
+      id,
+      name: newAccount.name,
+      email: cleanEmail,
+      passwordHash: data.password,
+      role: data.role === 'admin' ? 'admin' : 'instructor',
+      institution: newAccount.institutionName || 'Onnesha Faculty',
+      designation: data.role === 'admin' ? 'System Administrator' : 'Course Instructor',
+      phone: newAccount.phone,
+      plan: 'institution_max',
+      assignedCourseIds: [],
+      status: 'active',
+      createdAt,
+    };
+    serverAdminMutateStore({ data: { action: 'save_user', user: managedUser } }).catch(() => {});
 
     const userProfile: User = {
       id: newAccount.id,
@@ -288,7 +348,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: true };
   };
 
-  const changePassword = async (oldPassword: string, newPassword: string): Promise<{ success: boolean; error?: string }> => {
+  const changePassword = async (
+    oldPassword: string,
+    newPassword: string
+  ): Promise<{ success: boolean; error?: string }> => {
     if (!user) return { success: false, error: 'Not authenticated' };
     if (!newPassword || newPassword.length < 6) {
       return { success: false, error: 'New password must be at least 6 characters long.' };
@@ -296,19 +359,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const registry = getRegistry();
     const account = registry.find((u) => u.id === user.id || u.email.toLowerCase() === user.email.toLowerCase());
-    if (!account) return { success: false, error: 'User account not found.' };
-
-    const oldHash = await hashPassword(oldPassword);
-    if (account.passwordHash && account.passwordHash !== oldHash) {
-      return { success: false, error: 'Current password does not match.' };
+    if (account) {
+      account.passwordHash = await hashPassword(newPassword);
+      saveRegistry(registry);
     }
 
-    account.passwordHash = await hashPassword(newPassword);
-    saveRegistry(registry);
+    serverAdminMutateStore({
+      data: {
+        action: 'save_user',
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role === 'admin' ? 'admin' : 'instructor',
+          institution: user.institutionName || 'Onnesha HQ',
+          passwordHash: newPassword,
+          plan: 'institution_max',
+          status: 'active',
+          createdAt: user.createdAt,
+        },
+      },
+    }).catch(() => {});
+
     return { success: true };
   };
 
-  const resetPasswordWithEmail = async (email: string, newPassword: string): Promise<{ success: boolean; error?: string }> => {
+  const resetPasswordWithEmail = async (
+    email: string,
+    newPassword: string
+  ): Promise<{ success: boolean; error?: string }> => {
     const cleanEmail = email.trim().toLowerCase();
     const registry = getRegistry();
     const account = registry.find((u) => u.email.toLowerCase() === cleanEmail);
@@ -337,7 +416,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(updated);
     localStorage.setItem('onnesha_auth_user', JSON.stringify(updated));
 
-    // Update in registry as well
     const registry = getRegistry();
     const idx = registry.findIndex((u) => u.id === user.id);
     if (idx >= 0) {
@@ -368,4 +446,3 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 };
 
 export const useAuth = () => useContext(AuthContext);
-

@@ -197,27 +197,47 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
         </div>
       </div>
 
-      {/* Option Bento Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {question.options.map((opt, idx) => {
-          const style = RESPONSE_STYLES[idx % RESPONSE_STYLES.length];
-          return (
-            <div
-              key={opt.id}
-              className={`flex min-h-[84px] items-center gap-4 rounded-3xl border-2 p-5 font-display shadow-sm transition-all ${style.border}`}
-            >
-              <div
-                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border font-mono text-xs font-black shadow-sm ${style.badge}`}
-              >
-                {lang === 'bn' ? style.bnKey : style.key}
-              </div>
-              <div className="min-w-0 flex-1 text-base sm:text-lg font-bold leading-snug text-foreground">
-                {lang === 'bn' ? opt.textBn : opt.textEn}
-              </div>
+      {/* Option Bento Grid or Written Response Prompt */}
+      {question.type === 'written' || question.type === 'fill_blank' ? (
+        <div className="rounded-3xl border-2 border-dashed border-primary/40 bg-primary/5 p-8 text-center space-y-2">
+          <div className="font-mono text-xs font-black uppercase tracking-widest text-primary">
+            ✍️ Written / Short Response Question
+          </div>
+          <p className="text-sm sm:text-base font-bold text-foreground">
+            {lang === 'bn'
+              ? 'পরীক্ষার্থীরা তাদের মোবাইলে সরাসরি সঠিক উত্তর টাইপ করে সাবমিট করছে।'
+              : 'Candidates are typing their exact response directly on their mobile examination terminals.'}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {question.type === 'multi_mcq' && (
+            <div className="text-center font-mono text-xs font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">
+              ☑️ Multi-Select Question — Candidates must select ALL correct options
             </div>
-          );
-        })}
-      </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {question.options.map((opt, idx) => {
+              const style = RESPONSE_STYLES[idx % RESPONSE_STYLES.length];
+              return (
+                <div
+                  key={opt.id}
+                  className={`flex min-h-[84px] items-center gap-4 rounded-3xl border-2 p-5 font-display shadow-sm transition-all ${style.border}`}
+                >
+                  <div
+                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border font-mono text-xs font-black shadow-sm ${style.badge}`}
+                  >
+                    {lang === 'bn' ? style.bnKey : style.key}
+                  </div>
+                  <div className="min-w-0 flex-1 text-base sm:text-lg font-bold leading-snug text-foreground">
+                    {lang === 'bn' ? opt.textBn : opt.textEn}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Live Proctor Incident & Seat Suspension Drawer Modal */}
       {showProctorModal && (

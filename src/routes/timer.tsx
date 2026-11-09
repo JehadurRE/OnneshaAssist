@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import ccai from "@/assets/ccai.png.asset.json";
-import learningBd from "@/assets/learning-bd.png.asset.json";
 import onnesha from "@/assets/onnesha.jpg.asset.json";
 import { useBranding } from "@/hooks/use-branding";
 import { Navbar } from "@/components/layout/Navbar";
@@ -15,7 +14,7 @@ export const Route = createFileRoute("/timer")({
       {
         name: "description",
         content:
-          "Projector-ready examination countdown timer by Onnesha LMS, Learning Bangladesh, and Cloud Connect AI.",
+          "Projector-ready examination countdown timer by Onnesha LMS and Cloud Connect AI.",
       },
     ],
   }),
@@ -115,7 +114,6 @@ function TimerPage() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <img src={learningBd.url} alt="Learning Bangladesh" className="h-6 object-contain" />
               <img src={ccai.url} alt="Cloud Connect AI Limited" className="h-6 object-contain" />
             </div>
           </div>

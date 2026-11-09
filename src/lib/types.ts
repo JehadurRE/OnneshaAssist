@@ -25,6 +25,7 @@ export interface Question {
   type: QuestionType;
   options: QuestionOption[];
   correctOptionIds: string[];
+  acceptedAnswers?: string[]; // for written / fill_blank questions
   explanationEn?: string;
   explanationBn?: string;
   timeLimitSec: number;
@@ -33,6 +34,32 @@ export interface Question {
   imageUrl?: string;
   category?: string;
   difficulty?: 'easy' | 'medium' | 'hard';
+}
+
+export interface Course {
+  id: string;
+  code: string;
+  titleEn: string;
+  titleBn: string;
+  descriptionEn: string;
+  descriptionBn: string;
+  instructorIds: string[];
+  instructorNames: string[];
+  createdAt: string;
+}
+
+export interface ManagedUser {
+  id: string;
+  email: string;
+  name: string;
+  role: 'admin' | 'instructor' | 'candidate';
+  institutionName?: string;
+  designation?: string;
+  phone?: string;
+  passwordHash: string;
+  assignedCourseIds?: string[];
+  status?: 'active' | 'suspended';
+  createdAt: string;
 }
 
 export interface Quiz {
@@ -48,6 +75,11 @@ export interface Quiz {
   color?: string;
   questions: Question[];
   author?: string;
+  courseId?: string;
+  courseTitle?: string;
+  quizNumber?: number; // e.g. Quiz 1, Quiz 2, Quiz 3 under a course
+  instructorId?: string;
+  instructorName?: string;
   isTemplate?: boolean;
   totalTimeSec?: number;
   tags?: string[];
@@ -85,7 +117,7 @@ export interface ParticipantAnswer {
 
 export interface ProctorIncidentRecord {
   id: string;
-  type: 'tab_switch' | 'window_blur' | 'fullscreen_exit';
+  type: 'tab_switch' | 'window_blur' | 'fullscreen_exit' | 'copy_attempt' | 'devtools_attempt';
   timestamp: string;
   candidateId: string;
   candidateName: string;
@@ -130,6 +162,10 @@ export interface GameSettings {
   requireRosterVerification?: boolean;
   allowedRegionId?: string; // 'all' or specific region.id
   allowedRegionName?: string;
+  enforceFullscreen?: boolean;
+  blockCopyPaste?: boolean;
+  proctorMode?: boolean;
+  maxProctorViolations?: number;
 }
 
 export interface GameSession {
@@ -299,6 +335,9 @@ export interface BrandingSettings {
   partnerName: string;
   partnerLogoUrl: string;
   institutionTitle?: string;
+  enforceFullscreenDefault?: boolean;
+  blockCopyPasteDefault?: boolean;
+  maxProctorViolationsDefault?: number;
   updatedAt?: number;
 }
 

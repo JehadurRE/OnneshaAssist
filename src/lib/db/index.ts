@@ -1,14 +1,16 @@
 import {
   BrandingSettings,
   CertificateData,
+  Course,
   ExamResultRecord,
   ExamSessionRecord,
   GameSession,
+  ManagedUser,
   Quiz,
   Region,
   RosterStudent,
 } from '../types';
-import { DEFAULT_REGIONS, READY_MADE_PACKS, SAMPLE_ROSTER } from '../mock-data';
+import { DEFAULT_COURSES, DEFAULT_REGIONS, DEFAULT_USERS, READY_MADE_PACKS, SAMPLE_ROSTER } from '../mock-data';
 import { sqliteEngine } from './sqlite-engine';
 import { serverAdminMutateStore, serverGetBootstrapData } from '../server-session';
 
@@ -107,13 +109,66 @@ class OnneshaDatabase {
         this.setStorage('roster_students', res.roster);
       }
 
+      if (res.courses?.length) {
+        res.courses.forEach((c) => {
+          sqliteEngine.run(
+            'INSERT OR REPLACE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+              c.id,
+              c.code,
+              c.titleEn,
+              c.titleBn,
+              c.descriptionEn,
+              c.descriptionBn,
+              c.categoryEn,
+              c.categoryBn,
+              c.icon || '📚',
+              c.color || 'from-emerald-500/20 to-teal-500/20',
+              JSON.stringify(c.instructorIds || []),
+              JSON.stringify(c.instructorNames || []),
+              c.status || 'active',
+              c.createdAt || new Date().toISOString(),
+            ]
+          );
+        });
+        this.setStorage('courses', res.courses);
+      }
+
+      if (res.users?.length) {
+        res.users.forEach((u) => {
+          sqliteEngine.run(
+            'INSERT OR REPLACE INTO users (id, email, name, role, institution, designation, phone, passwordHash, plan, assignedCourseIdsJson, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+              u.id,
+              u.email,
+              u.name,
+              u.role,
+              u.institution || '',
+              u.designation || '',
+              u.phone || '',
+              u.passwordHash || '',
+              u.plan || 'institution_max',
+              JSON.stringify(u.assignedCourseIds || []),
+              u.status || 'active',
+              u.createdAt || new Date().toISOString(),
+            ]
+          );
+        });
+        this.setStorage('users', res.users);
+      }
+
       if (res.customQuizzes?.length) {
         res.customQuizzes.forEach((quiz) => {
           sqliteEngine.run(
-            'INSERT OR REPLACE INTO quizzes (id, slug, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, questionsJson, isTemplate, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT OR REPLACE INTO quizzes (id, slug, courseId, courseTitle, quizNumber, instructorId, instructorName, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, questionsJson, isTemplate, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [
               quiz.id,
               quiz.slug,
+              quiz.courseId || '',
+              quiz.courseTitle || '',
+              quiz.quizNumber || 1,
+              quiz.instructorId || '',
+              quiz.instructorName || '',
               quiz.titleEn,
               quiz.titleBn,
               quiz.descriptionEn,
@@ -344,6 +399,140 @@ class OnneshaDatabase {
     this.notifyListeners();
   }
 
+  // ---------------- COURSES & MULTI-INSTRUCTOR REPOSITORY ----------------
+  getCourses(): Course[] {
+    const rows = sqliteEngine.query<any>('SELECT * FROM courses ORDER BY createdAt ASC');
+    if (rows.length > 0) {
+      return rows.map((r) => ({
+        id: r.id,
+        code: r.code,
+        titleEn: r.titleEn,
+        titleBn: r.titleBn,
+        descriptionEn: r.descriptionEn,
+        descriptionBn: r.descriptionBn,
+        categoryEn: r.categoryEn,
+        categoryBn: r.categoryBn,
+        icon: r.icon || '📚',
+        color: r.color || 'from-emerald-500/20 to-teal-500/20',
+        instructorIds: r.instructorIdsJson ? JSON.parse(r.instructorIdsJson) : [],
+        instructorNames: r.instructorNamesJson ? JSON.parse(r.instructorNamesJson) : [],
+        status: (r.status as 'active' | 'archived') || 'active',
+        createdAt: r.createdAt,
+      }));
+    }
+    return this.getStorage<Course[]>('courses', DEFAULT_COURSES);
+  }
+
+  saveCourse(course: Course): Course {
+    sqliteEngine.run(
+      'INSERT OR REPLACE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        course.id,
+        course.code,
+        course.titleEn,
+        course.titleBn,
+        course.descriptionEn,
+        course.descriptionBn,
+        course.categoryEn,
+        course.categoryBn,
+        course.icon || '📚',
+        course.color || 'from-emerald-500/20 to-teal-500/20',
+        JSON.stringify(course.instructorIds || []),
+        JSON.stringify(course.instructorNames || []),
+        course.status || 'active',
+        course.createdAt || new Date().toISOString(),
+      ]
+    );
+
+    const courses = this.getStorage<Course[]>('courses', [...DEFAULT_COURSES]);
+    const idx = courses.findIndex((c) => c.id === course.id);
+    if (idx >= 0) courses[idx] = course;
+    else courses.unshift(course);
+    this.setStorage('courses', courses);
+
+    serverAdminMutateStore({ data: { action: 'save_course', course } }).catch((err) =>
+      console.warn('Course server sync notice:', err)
+    );
+    this.notifyListeners();
+    return course;
+  }
+
+  deleteCourse(id: string): void {
+    sqliteEngine.run('DELETE FROM courses WHERE id = ?', [id]);
+    const courses = this.getCourses().filter((c) => c.id !== id);
+    this.setStorage('courses', courses);
+
+    serverAdminMutateStore({ data: { action: 'delete_course', courseId: id } }).catch((err) =>
+      console.warn('Course delete sync notice:', err)
+    );
+    this.notifyListeners();
+  }
+
+  // ---------------- USERS & INSTRUCTORS REPOSITORY ----------------
+  getUsers(): ManagedUser[] {
+    const rows = sqliteEngine.query<any>('SELECT * FROM users ORDER BY createdAt ASC');
+    if (rows.length > 0) {
+      return rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        email: r.email,
+        passwordHash: r.passwordHash || 'instructor123',
+        role: (r.role as 'admin' | 'instructor') || 'instructor',
+        institution: r.institution || 'Onnesha Academic Wing',
+        designation: r.designation || 'Faculty Instructor',
+        phone: r.phone || '',
+        plan: (r.plan as any) || 'institution_max',
+        assignedCourseIds: r.assignedCourseIdsJson ? JSON.parse(r.assignedCourseIdsJson) : [],
+        status: (r.status as 'active' | 'suspended') || 'active',
+        createdAt: r.createdAt || new Date().toISOString(),
+      }));
+    }
+    return this.getStorage<ManagedUser[]>('users', DEFAULT_USERS);
+  }
+
+  saveUser(user: ManagedUser): ManagedUser {
+    sqliteEngine.run(
+      'INSERT OR REPLACE INTO users (id, email, name, role, institution, designation, phone, passwordHash, plan, assignedCourseIdsJson, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        user.id,
+        user.email,
+        user.name,
+        user.role,
+        user.institution || '',
+        user.designation || '',
+        user.phone || '',
+        user.passwordHash || 'instructor123',
+        user.plan || 'institution_max',
+        JSON.stringify(user.assignedCourseIds || []),
+        user.status || 'active',
+        user.createdAt || new Date().toISOString(),
+      ]
+    );
+
+    const users = this.getStorage<ManagedUser[]>('users', [...DEFAULT_USERS]);
+    const idx = users.findIndex((u) => u.id === user.id || u.email.toLowerCase() === user.email.toLowerCase());
+    if (idx >= 0) users[idx] = user;
+    else users.push(user);
+    this.setStorage('users', users);
+
+    serverAdminMutateStore({ data: { action: 'save_user', user } }).catch((err) =>
+      console.warn('User server sync notice:', err)
+    );
+    this.notifyListeners();
+    return user;
+  }
+
+  deleteUser(id: string): void {
+    sqliteEngine.run('DELETE FROM users WHERE id = ?', [id]);
+    const users = this.getUsers().filter((u) => u.id !== id);
+    this.setStorage('users', users);
+
+    serverAdminMutateStore({ data: { action: 'delete_user', userId: id } }).catch((err) =>
+      console.warn('User delete sync notice:', err)
+    );
+    this.notifyListeners();
+  }
+
   // ---------------- QUIZZES REPOSITORY (SQLite + Server) ----------------
   getQuizzes(): Quiz[] {
     const sqliteRows = sqliteEngine.query<any>('SELECT * FROM quizzes ORDER BY createdAt DESC');
@@ -351,6 +540,11 @@ class OnneshaDatabase {
       const customQuizzes: Quiz[] = sqliteRows.map((r) => ({
         id: r.id,
         slug: r.slug,
+        courseId: r.courseId || undefined,
+        courseTitle: r.courseTitle || undefined,
+        quizNumber: r.quizNumber || undefined,
+        instructorId: r.instructorId || undefined,
+        instructorName: r.instructorName || undefined,
         titleEn: r.titleEn,
         titleBn: r.titleBn,
         descriptionEn: r.descriptionEn,
@@ -362,11 +556,13 @@ class OnneshaDatabase {
         isTemplate: !!r.isTemplate,
         createdAt: r.createdAt,
       }));
-      return [...READY_MADE_PACKS, ...customQuizzes];
+      const customIds = new Set(customQuizzes.map((q) => q.id));
+      return [...customQuizzes, ...READY_MADE_PACKS.filter((p) => !customIds.has(p.id))];
     }
 
     const custom = this.getStorage<Quiz[]>('custom_quizzes', []);
-    return [...READY_MADE_PACKS, ...custom];
+    const customIds = new Set(custom.map((q) => q.id));
+    return [...custom, ...READY_MADE_PACKS.filter((p) => !customIds.has(p.id))];
   }
 
   getQuizBySlug(slug: string): Quiz | undefined {
@@ -375,6 +571,11 @@ class OnneshaDatabase {
       return {
         id: row.id,
         slug: row.slug,
+        courseId: row.courseId || undefined,
+        courseTitle: row.courseTitle || undefined,
+        quizNumber: row.quizNumber || undefined,
+        instructorId: row.instructorId || undefined,
+        instructorName: row.instructorName || undefined,
         titleEn: row.titleEn,
         titleBn: row.titleBn,
         descriptionEn: row.descriptionEn,
@@ -392,10 +593,15 @@ class OnneshaDatabase {
 
   saveCustomQuiz(quiz: Quiz): void {
     sqliteEngine.run(
-      'INSERT OR REPLACE INTO quizzes (id, slug, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, questionsJson, isTemplate, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT OR REPLACE INTO quizzes (id, slug, courseId, courseTitle, quizNumber, instructorId, instructorName, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, questionsJson, isTemplate, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         quiz.id,
         quiz.slug,
+        quiz.courseId || '',
+        quiz.courseTitle || '',
+        quiz.quizNumber || 1,
+        quiz.instructorId || '',
+        quiz.instructorName || '',
         quiz.titleEn,
         quiz.titleBn,
         quiz.descriptionEn,
@@ -722,6 +928,9 @@ class OnneshaDatabase {
       partnerName: (branding.partnerName || '').trim(),
       partnerLogoUrl: (branding.partnerLogoUrl || '').trim(),
       institutionTitle: (branding.institutionTitle || 'Onnesha Assessment Arena').trim(),
+      defaultEnforceFullscreen: !!branding.defaultEnforceFullscreen,
+      defaultBlockCopyPaste: branding.defaultBlockCopyPaste ?? true,
+      defaultMaxProctorViolations: branding.defaultMaxProctorViolations || 3,
       updatedAt: Date.now(),
     };
     this.setStorage('branding_settings', updated);
@@ -731,6 +940,40 @@ class OnneshaDatabase {
     this.notifyListeners();
     serverAdminMutateStore({ data: { action: 'update_branding', branding: updated } }).catch(() => {});
     return updated;
+  }
+
+  // ---------------- FULL DATABASE BACKUP & RESTORE ----------------
+  exportFullBackup(): string {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      regions: this.getRegions(),
+      roster: this.getRoster(),
+      courses: this.getCourses(),
+      users: this.getUsers(),
+      customQuizzes: this.getStorage<Quiz[]>('custom_quizzes', []),
+      examSessions: this.getExamSessions(),
+      examResults: this.getAllExamResults(),
+      certificates: this.getCertificates(),
+      branding: this.getBranding(),
+    };
+    return JSON.stringify(payload, null, 2);
+  }
+
+  async importFullBackup(jsonString: string): Promise<boolean> {
+    try {
+      const parsed = JSON.parse(jsonString);
+      await serverAdminMutateStore({
+        data: {
+          action: 'import_store_backup',
+          backup: parsed,
+        },
+      });
+      await this.syncFromServerStore();
+      return true;
+    } catch (err) {
+      console.warn('Failed to import backup:', err);
+      return false;
+    }
   }
 
   // ---------------- TRANSACTIONS ----------------

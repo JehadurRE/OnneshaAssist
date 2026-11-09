@@ -62,6 +62,11 @@ export const PlayerKeypad: React.FC<PlayerKeypadProps> = ({
   const [writtenText, setWrittenText] = useState('');
 
   useEffect(() => {
+    setMultiSelected(selectedOptionIds);
+    setWrittenText('');
+  }, [question.id]);
+
+  useEffect(() => {
     if (hasAnswered) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -165,9 +170,17 @@ export const PlayerKeypad: React.FC<PlayerKeypadProps> = ({
   // Ergonomic 390px-ready Response Grid
   return (
     <div className="w-full max-w-3xl space-y-2.5 sm:space-y-4">
-      <div className="hidden sm:flex items-center justify-between px-2 text-[11px] font-mono text-muted-foreground">
-        <span>⚡ {lang === 'bn' ? 'কিবোর্ড শর্টকাট [1, 2, 3, 4] চাপুন' : 'Press keyboard keys [1, 2, 3, 4]'}</span>
-        <span className="flex items-center gap-1 text-primary">
+      <div className="flex items-center justify-between px-2 text-[11px] font-mono text-muted-foreground">
+        <span>
+          {question.type === 'multi_mcq'
+            ? lang === 'bn'
+              ? '☑️ একাধিক সঠিক উত্তর নির্বাচন করে নিচে সাবমিট চাপুন'
+              : '☑️ MULTI-SELECT: Choose all correct options, then tap Transmit'
+            : lang === 'bn'
+              ? '⚡ সঠিক অপশনে ট্যাপ করুন বা কিবোর্ড [1-4] চাপুন'
+              : '⚡ Tap an option or press keyboard keys [1, 2, 3, 4]'}
+        </span>
+        <span className="hidden sm:flex items-center gap-1 text-primary">
           <ShieldCheck className="h-3.5 w-3.5" />
           <span>Encrypted Seat Lock Active</span>
         </span>

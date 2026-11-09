@@ -295,12 +295,21 @@ export const Navbar: React.FC = () => {
                     </div>
 
                     <Link
+                      to="/admin"
+                      onClick={() => setUserDropdownOpen(false)}
+                      className="mt-1 flex items-center gap-2 rounded-xl p-2.5 text-xs font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 transition"
+                    >
+                      <Shield className="h-3.5 w-3.5" />
+                      <span>Super Admin Panel (/admin)</span>
+                    </Link>
+
+                    <Link
                       to="/dashboard"
                       onClick={() => setUserDropdownOpen(false)}
-                      className="mt-1 flex items-center gap-2 rounded-xl p-2.5 text-xs font-bold text-foreground hover:bg-accent transition"
+                      className="flex items-center gap-2 rounded-xl p-2.5 text-xs font-bold text-foreground hover:bg-accent transition"
                     >
                       <LayoutDashboard className="h-3.5 w-3.5 text-primary" />
-                      <span>{t('dashboard')}</span>
+                      <span>Instructor Studio (/dashboard)</span>
                     </Link>
 
                     <button
@@ -320,6 +329,14 @@ export const Navbar: React.FC = () => {
               </div>
             ) : (
               <div className="flex items-center gap-2">
+                <Link
+                  to="/admin"
+                  className="hidden md:inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition"
+                >
+                  <Shield className="h-3.5 w-3.5" />
+                  <span>{lang === 'bn' ? 'অ্যাডমিন' : 'Admin'}</span>
+                </Link>
+
                 <Link
                   to="/auth/login"
                   className="hidden sm:inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-border bg-card px-3.5 py-2 text-xs font-bold text-foreground hover:bg-accent transition"

@@ -20,12 +20,15 @@ import {
   Flame,
   Lock,
   MapPin,
+  Maximize2,
   Play,
   RotateCcw,
   ShieldAlert,
   ShieldCheck,
   Trophy,
   Users,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 
 interface PlaySearch {
@@ -59,15 +62,32 @@ function PlayPage() {
   const [showCertificate, setShowCertificate] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Proctor Anti-Cheat State
+  // Proctor Anti-Cheat & Offline Resilience State
   const [incidents, setIncidents] = useState<ProctorIncident[]>([]);
   const [latestWarning, setLatestWarning] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [isOnline, setIsOnline] = useState<boolean>(
+    typeof navigator !== "undefined" ? navigator.onLine : true
+  );
+  const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
 
   const isExamSuspended = !!participant?.isSuspended;
+  const maxViolations = session?.settings?.maxProctorViolations || 3;
+  const currentViolations = participant?.proctorFlags ?? incidents.length;
 
-  // Sync game session state from delta polling
+  // Sync game session state & offline outbox from delta polling
   useEffect(() => {
+    setOfflineQueueCount(gameEngine.getOfflineOutbox().length);
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
     const unsubscribe = gameEngine.subscribe((event) => {
+      if (event.type === "OFFLINE_QUEUE_CHANGED") {
+        setOfflineQueueCount(event.count);
+        setIsOnline(event.isOnline);
+      }
       if (session && event.type === "SESSION_UPDATED" && event.session.pin === session.pin) {
         setSession({ ...event.session });
         if (participant) {
@@ -79,7 +99,11 @@ function PlayPage() {
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      unsubscribe();
+    };
   }, [session, participant]);
 
   // Load session if PIN in URL search
@@ -92,36 +116,61 @@ function PlayPage() {
   // Proctoring Engine Lifecycle — transmits incidents directly to Server & Host Projector
   useEffect(() => {
     if (participant && session && session.phase === "question" && !participant.isSuspended) {
-      proctorEngine.start(participant.id, participant.nickname, (incident) => {
-        setIncidents((prev) => [...prev, incident]);
-        gameEngine
-          .reportProctorIncident(session.pin, participant.id, incident.type)
-          .then((res) => {
-            if (res?.success) {
-              setParticipant((curr) =>
-                curr
-                  ? {
-                      ...curr,
-                      proctorFlags: res.proctorFlags,
-                      isSuspended: res.isSuspended,
-                    }
-                  : curr
-              );
-            }
-          })
-          .catch(() => {});
+      setIsFullscreen(proctorEngine.isInFullscreen());
+      proctorEngine.start(
+        participant.id,
+        participant.nickname,
+        (incident) => {
+          setIncidents((prev) => [...prev, incident]);
+          gameEngine
+            .reportProctorIncident(session.pin, participant.id, incident.type)
+            .then((res) => {
+              if (res?.success) {
+                setParticipant((curr) =>
+                  curr
+                    ? {
+                        ...curr,
+                        proctorFlags: res.proctorFlags,
+                        isSuspended: res.isSuspended,
+                      }
+                    : curr
+                );
+              }
+            })
+            .catch(() => {});
 
-        setLatestWarning(
-          `⚠️ Proctor Alert: Tab switch / window blur recorded and sent to Invigilator`
-        );
-        setTimeout(() => setLatestWarning(null), 4000);
-      });
+          const reasonLabel =
+            incident.type === "copy_attempt"
+              ? "Copy/Paste or Screenshot blocked"
+              : incident.type === "devtools_attempt"
+                ? "Inspector / DevTools blocked"
+                : incident.type === "fullscreen_exit"
+                  ? "Fullscreen lock exited"
+                  : "Tab switch / screen switch detected";
+
+          setLatestWarning(
+            `⚠️ Proctor Strike Logged: ${reasonLabel} — Reported to Invigilator`
+          );
+          setTimeout(() => setLatestWarning(null), 4000);
+        },
+        {
+          enforceFullscreen: !!session.settings.enforceFullscreen,
+          blockCopyPaste: session.settings.blockCopyPaste ?? true,
+          onFullscreenChange: (full) => setIsFullscreen(full),
+        }
+      );
     } else {
       proctorEngine.stop();
     }
 
     return () => proctorEngine.stop();
-  }, [participant?.id, participant?.isSuspended, session?.phase]);
+  }, [
+    participant?.id,
+    participant?.isSuspended,
+    session?.phase,
+    session?.settings?.enforceFullscreen,
+    session?.settings?.blockCopyPaste,
+  ]);
 
   // Timer countdown per question synchronized to server questionEndTime
   useEffect(() => {
@@ -263,6 +312,20 @@ function PlayPage() {
     <div className="min-h-screen bg-background text-foreground bg-grid flex flex-col transition-colors">
       <Navbar />
 
+      {/* Offline / Network Drop Resilience Banner */}
+      {(!isOnline || offlineQueueCount > 0) && (
+        <div className="bg-amber-500/15 border-b border-amber-500/40 px-4 py-2 text-center text-xs font-bold text-amber-600 dark:text-amber-300 flex items-center justify-center gap-2">
+          <WifiOff className="h-3.5 w-3.5 shrink-0 animate-pulse" />
+          <span>
+            {!isOnline
+              ? lang === "bn"
+                ? `ইন্টারনেট সংযোগ বিচ্ছিন্ন! আপনার উত্তর ফোনে টাইমস্ট্যাম্পসহ সংরক্ষিত হচ্ছে (${offlineQueueCount}টি কিউতে) — নেটওয়ার্ক ফিরলেই স্বয়ংক্রিয়ভাবে সার্ভারে যুক্ত হবে।`
+                : `Mobile Network Offline — Your answers are timestamped & queued locally (${offlineQueueCount} pending) and will auto-sync immediately upon reconnection.`
+              : `Syncing ${offlineQueueCount} queued answer(s) to examination server...`}
+          </span>
+        </div>
+      )}
+
       {/* Real-time Anti-Cheat Security Notification */}
       {latestWarning && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-2xl border-2 border-amber-500 bg-amber-500 text-black px-4 py-2 text-xs font-black shadow-2xl">
@@ -270,6 +333,35 @@ function PlayPage() {
           <span>{latestWarning}</span>
         </div>
       )}
+
+      {/* Fullscreen Exam Lock Shield Modal (when enforceFullscreen is enabled on session) */}
+      {session &&
+        participant &&
+        session.phase === "question" &&
+        !isExamSuspended &&
+        session.settings.enforceFullscreen &&
+        !isFullscreen && (
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in">
+            <div className="max-w-md w-full rounded-3xl border-2 border-primary bg-card p-6 sm:p-8 text-center space-y-4 shadow-2xl">
+              <Maximize2 className="h-12 w-12 text-primary mx-auto" />
+              <h2 className="font-display text-xl font-bold text-foreground">
+                {lang === "bn" ? "ফুলস্ক্রিন পরীক্ষা লক সক্রিয়" : "Fullscreen Exam Lock Required"}
+              </h2>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                {lang === "bn"
+                  ? "এই পরীক্ষায় স্ক্রিন পরিবর্তন রোধে ফুলস্ক্রিন মোড বাধ্যতামূলক। প্রশ্নের উত্তর দিতে নিচের বাটনে ট্যাপ করে ফুলস্ক্রিনে ফিরুন।"
+                  : "The Examination Controller requires Fullscreen Lock for this assessment to prevent screen-switching. Tap below to resume your question."}
+              </p>
+              <button
+                type="button"
+                onClick={() => proctorEngine.requestExamFullscreen()}
+                className="w-full rounded-2xl bg-primary py-3.5 text-sm font-extrabold text-primary-foreground shadow-glow hover:bg-primary/90 transition"
+              >
+                {lang === "bn" ? "ফুলস্ক্রিন মোডে প্রবেশ করুন" : "Enter Fullscreen Exam Mode"}
+              </button>
+            </div>
+          </div>
+        )}
 
       {/* Suspended Exam Modal — Only Host Invigilator can pardon/unsuspend */}
       {isExamSuspended && (
@@ -447,7 +539,19 @@ function PlayPage() {
                 </span>
               </div>
 
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-2">
+                {session.settings.isFormalAssessment && (
+                  <span
+                    className={`rounded-full px-2 py-0.5 font-mono text-[10px] font-bold border ${
+                      currentViolations > 0
+                        ? "border-amber-500/50 bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                        : "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                    }`}
+                    title="Anti-Cheat Screen Lock Monitor"
+                  >
+                    🛡️ {currentViolations}/{maxViolations}
+                  </span>
+                )}
                 {participant.streak >= 2 && (
                   <span className="inline-flex items-center gap-0.5 font-mono text-xs font-bold text-amber-500">
                     <Flame className="h-3.5 w-3.5 fill-amber-500" />
@@ -457,6 +561,18 @@ function PlayPage() {
                 <span className="font-mono text-xs font-bold text-foreground">
                   {participant.score} {t("pts")}
                 </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    isFullscreen
+                      ? proctorEngine.exitExamFullscreen()
+                      : proctorEngine.requestExamFullscreen()
+                  }
+                  className="rounded-lg border border-border bg-muted/50 p-1 text-muted-foreground hover:text-foreground"
+                  title="Toggle Fullscreen Lock"
+                >
+                  <Maximize2 className="h-3.5 w-3.5" />
+                </button>
               </div>
             </div>
 

@@ -2,10 +2,12 @@ import { createServerFn } from '@tanstack/react-start';
 import {
   BrandingSettings,
   CertificateData,
+  Course,
   ExamResultRecord,
   ExamSessionRecord,
   GameSession,
   GameSettings,
+  ManagedUser,
   Participant,
   ParticipantAnswer,
   ProctorIncidentRecord,
@@ -14,7 +16,7 @@ import {
   Region,
   RosterStudent,
 } from './types';
-import { DEFAULT_REGIONS, READY_MADE_PACKS, SAMPLE_ROSTER } from './mock-data';
+import { DEFAULT_COURSES, DEFAULT_REGIONS, DEFAULT_USERS, READY_MADE_PACKS, SAMPLE_ROSTER } from './mock-data';
 
 // ============================================================================
 // SERVER-AUTHORITATIVE PERSISTENT STORE (Render Persistent Disk / Node FS)
@@ -25,11 +27,16 @@ const DEFAULT_BRANDING: BrandingSettings = {
   partnerName: '',
   partnerLogoUrl: '',
   institutionTitle: 'Onnesha Assessment Arena',
+  defaultEnforceFullscreen: false,
+  defaultBlockCopyPaste: true,
+  defaultMaxProctorViolations: 3,
 };
 
 interface PersistentStoreData {
   regions: Region[];
   roster: RosterStudent[];
+  courses: Course[];
+  users: ManagedUser[];
   customQuizzes: Quiz[];
   examSessions: ExamSessionRecord[];
   examResults: ExamResultRecord[];
@@ -73,6 +80,16 @@ const globalStore = globalThis as unknown as {
   __onneshaSaveTimer?: ReturnType<typeof setTimeout> | null;
 };
 
+function ensureDefaultUsers(existing?: ManagedUser[]): ManagedUser[] {
+  const list = existing?.length ? [...existing] : [];
+  for (const def of DEFAULT_USERS) {
+    if (!list.some((u) => u.email.toLowerCase() === def.email.toLowerCase())) {
+      list.push({ ...def });
+    }
+  }
+  return list;
+}
+
 function loadInitialStore(): PersistentStoreData {
   try {
     const fs = getNodeFs();
@@ -87,6 +104,8 @@ function loadInitialStore(): PersistentStoreData {
         return {
           regions: parsed.regions?.length ? parsed.regions : [...DEFAULT_REGIONS],
           roster: parsed.roster?.length ? parsed.roster : [...SAMPLE_ROSTER],
+          courses: parsed.courses?.length ? parsed.courses : [...DEFAULT_COURSES],
+          users: ensureDefaultUsers(parsed.users),
           customQuizzes: parsed.customQuizzes || [],
           examSessions: parsed.examSessions || [],
           examResults: parsed.examResults || [],
@@ -105,6 +124,8 @@ function loadInitialStore(): PersistentStoreData {
   return {
     regions: [...DEFAULT_REGIONS],
     roster: [...SAMPLE_ROSTER],
+    courses: [...DEFAULT_COURSES],
+    users: ensureDefaultUsers([]),
     customQuizzes: [],
     examSessions: [],
     examResults: [],
@@ -195,6 +216,7 @@ function sanitizeQuestionForPlayer(q?: Question, phase?: GameSession['phase']): 
   return {
     ...q,
     correctOptionIds: [],
+    acceptedAnswers: [],
     options: q.options.map((o) => ({
       id: o.id,
       textEn: o.textEn,
@@ -355,6 +377,8 @@ export const serverGetBootstrapData = createServerFn({ method: 'GET' }).handler(
     success: true,
     regions: store.regions,
     roster: store.roster,
+    courses: store.courses,
+    users: store.users,
     customQuizzes: store.customQuizzes,
     examSessions: store.examSessions,
     examResults: store.examResults,
@@ -362,6 +386,27 @@ export const serverGetBootstrapData = createServerFn({ method: 'GET' }).handler(
     branding: store.branding,
   };
 });
+
+export const serverAuthenticateUser = createServerFn({ method: 'POST' })
+  .validator((data: { email: string; password: string }) => data)
+  .handler(async ({ data }) => {
+    const store = getStore();
+    const cleanEmail = (data.email || '').trim().toLowerCase();
+    const found = store.users.find((u) => u.email.toLowerCase() === cleanEmail);
+    if (!found) {
+      return { success: false, error: 'Account not found. Check your email or use one of the demo credentials.' };
+    }
+    if (found.status === 'suspended') {
+      return { success: false, error: 'This account has been suspended by the Super Admin.' };
+    }
+    if (found.passwordHash !== data.password) {
+      return { success: false, error: 'Incorrect password.' };
+    }
+    return {
+      success: true,
+      user: found,
+    };
+  });
 
 export const serverVerifyCertificate = createServerFn({ method: 'GET' })
   .validator((data: { certId: string }) => data)
@@ -384,19 +429,29 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
         | 'add_student'
         | 'bulk_add_students'
         | 'delete_student'
+        | 'save_course'
+        | 'delete_course'
+        | 'save_user'
+        | 'delete_user'
         | 'save_quiz'
         | 'delete_quiz'
         | 'issue_certificate'
-        | 'update_branding';
+        | 'update_branding'
+        | 'import_store_backup';
       region?: Region;
       regionId?: string;
       student?: RosterStudent;
       students?: RosterStudent[];
       studentId?: string;
+      course?: Course;
+      courseId?: string;
+      user?: ManagedUser;
+      userId?: string;
       quiz?: Quiz;
       quizId?: string;
       certificate?: CertificateData;
       branding?: BrandingSettings;
+      backup?: Partial<PersistentStoreData>;
     }) => data
   )
   .handler(async ({ data }) => {
@@ -463,6 +518,62 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
         }
         break;
       }
+      case 'save_course': {
+        if (data.course) {
+          const idx = store.courses.findIndex(
+            (c) => c.id === data.course!.id || c.code.toLowerCase() === data.course!.code.toLowerCase()
+          );
+          if (idx >= 0) {
+            store.courses[idx] = data.course;
+          } else {
+            store.courses.unshift(data.course);
+          }
+          // Sync assignedCourseIds on users
+          if (data.course.instructorIds) {
+            store.users = store.users.map((u) => {
+              const curr = new Set(u.assignedCourseIds || []);
+              if (data.course!.instructorIds.includes(u.id)) {
+                curr.add(data.course!.id);
+              }
+              return { ...u, assignedCourseIds: Array.from(curr) };
+            });
+          }
+          scheduleDiskPersist();
+        }
+        break;
+      }
+      case 'delete_course': {
+        if (data.courseId) {
+          store.courses = store.courses.filter((c) => c.id !== data.courseId);
+          scheduleDiskPersist();
+        }
+        break;
+      }
+      case 'save_user': {
+        if (data.user) {
+          const idx = store.users.findIndex(
+            (u) => u.id === data.user!.id || u.email.toLowerCase() === data.user!.email.toLowerCase()
+          );
+          if (idx >= 0) {
+            store.users[idx] = {
+              ...store.users[idx],
+              ...data.user,
+              passwordHash: data.user.passwordHash || store.users[idx].passwordHash,
+            };
+          } else {
+            store.users.push(data.user);
+          }
+          scheduleDiskPersist();
+        }
+        break;
+      }
+      case 'delete_user': {
+        if (data.userId) {
+          store.users = store.users.filter((u) => u.id !== data.userId);
+          scheduleDiskPersist();
+        }
+        break;
+      }
       case 'save_quiz': {
         if (data.quiz) {
           const idx = store.customQuizzes.findIndex(
@@ -509,12 +620,29 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
         }
         break;
       }
+      case 'import_store_backup': {
+        if (data.backup) {
+          if (data.backup.regions?.length) store.regions = data.backup.regions;
+          if (data.backup.roster?.length) store.roster = data.backup.roster;
+          if (data.backup.courses?.length) store.courses = data.backup.courses;
+          if (data.backup.users?.length) store.users = ensureDefaultUsers(data.backup.users);
+          if (data.backup.customQuizzes) store.customQuizzes = data.backup.customQuizzes;
+          if (data.backup.examSessions) store.examSessions = data.backup.examSessions;
+          if (data.backup.examResults) store.examResults = data.backup.examResults;
+          if (data.backup.certificates) store.certificates = data.backup.certificates;
+          if (data.backup.branding) store.branding = { ...DEFAULT_BRANDING, ...data.backup.branding };
+          scheduleDiskPersist();
+        }
+        break;
+      }
     }
 
     return {
       success: true,
       regions: store.regions,
       roster: store.roster,
+      courses: store.courses,
+      users: store.users,
       customQuizzes: store.customQuizzes,
       branding: store.branding,
     };
@@ -651,6 +779,9 @@ export const serverCreateSession = createServerFn({ method: 'POST' })
       allowedRegionId?: string;
       allowedRegionName?: string;
       negativeMarking?: number;
+      enforceFullscreen?: boolean;
+      blockCopyPaste?: boolean;
+      maxProctorViolations?: number;
     }) => data
   )
   .handler(async ({ data }) => {
@@ -702,6 +833,9 @@ export const serverCreateSession = createServerFn({ method: 'POST' })
         requireRosterVerification: true,
         allowedRegionId: data.allowedRegionId || 'all',
         allowedRegionName: data.allowedRegionName || 'All Regions (National)',
+        enforceFullscreen: data.enforceFullscreen ?? store.branding.defaultEnforceFullscreen ?? false,
+        blockCopyPaste: data.blockCopyPaste ?? store.branding.defaultBlockCopyPaste ?? true,
+        maxProctorViolations: data.maxProctorViolations ?? store.branding.defaultMaxProctorViolations ?? 3,
       },
       participants: {},
       totalQuestions: data.quiz.questions.length,
@@ -952,6 +1086,7 @@ export const serverSubmitAnswer = createServerFn({ method: 'POST' })
       selectedOptionIds?: string[];
       writtenAnswer?: string;
       seatToken?: string;
+      clientAnsweredAt?: number;
       // Legacy fallback fields
       answer?: ParticipantAnswer;
       scoreDelta?: number;
@@ -991,16 +1126,36 @@ export const serverSubmitAnswer = createServerFn({ method: 'POST' })
       session.currentQuestion;
 
     const selectedIds = data.selectedOptionIds || data.answer?.selectedOptionIds || [];
-    const written = data.writtenAnswer ?? data.answer?.writtenAnswer;
+    const written = (data.writtenAnswer ?? data.answer?.writtenAnswer ?? '').trim();
 
     let answerRecord: ParticipantAnswer;
 
-    if (fullQuestion && fullQuestion.correctOptionIds && fullQuestion.correctOptionIds.length > 0) {
-      const isCorrect =
-        fullQuestion.correctOptionIds.length === selectedIds.length &&
-        fullQuestion.correctOptionIds.every((id) => selectedIds.includes(id));
+    if (fullQuestion) {
+      let isCorrect = false;
+      const isWrittenStyle = fullQuestion.type === 'written' || fullQuestion.type === 'fill_blank';
 
-      const elapsedSec = (Date.now() - (session.questionStartTime || Date.now())) / 1000;
+      if (isWrittenStyle) {
+        const acceptedPool = [
+          ...(fullQuestion.acceptedAnswers || []),
+          ...(fullQuestion.correctOptionIds || []),
+          ...fullQuestion.options.filter((o) => o.isCorrect).flatMap((o) => [o.textEn, o.textBn]),
+        ]
+          .map((s) => (s || '').trim().toLowerCase())
+          .filter(Boolean);
+
+        const cleanWritten = written.toLowerCase();
+        isCorrect = cleanWritten.length > 0 && acceptedPool.includes(cleanWritten);
+      } else if (fullQuestion.correctOptionIds && fullQuestion.correctOptionIds.length > 0) {
+        isCorrect =
+          fullQuestion.correctOptionIds.length === selectedIds.length &&
+          fullQuestion.correctOptionIds.every((id) => selectedIds.includes(id));
+      }
+
+      // Support offline-queued answers with fair timestamp clamping
+      const effectiveTimestamp = data.clientAnsweredAt
+        ? Math.max(session.questionStartTime || Date.now(), Math.min(Date.now(), data.clientAnsweredAt))
+        : Date.now();
+      const elapsedSec = (effectiveTimestamp - (session.questionStartTime || effectiveTimestamp)) / 1000;
       const timeTakenSec = Math.max(1, Math.min(fullQuestion.timeLimitSec || 20, elapsedSec));
 
       let pointsAwarded = 0;
@@ -1023,12 +1178,12 @@ export const serverSubmitAnswer = createServerFn({ method: 'POST' })
       answerRecord = {
         questionId: data.questionId,
         selectedOptionIds: selectedIds,
-        writtenAnswer: written,
+        writtenAnswer: written || undefined,
         isCorrect,
         timeTakenSec,
         pointsAwarded,
         streakCount: newStreak,
-        answeredAt: Date.now(),
+        answeredAt: effectiveTimestamp,
       };
 
       p.answers[data.questionId] = answerRecord;
@@ -1060,7 +1215,7 @@ export const serverReportProctorIncident = createServerFn({ method: 'POST' })
     (data: {
       pin: string;
       participantId: string;
-      type: 'tab_switch' | 'window_blur' | 'fullscreen_exit';
+      type: 'tab_switch' | 'window_blur' | 'fullscreen_exit' | 'copy_attempt' | 'devtools_attempt';
     }) => data
   )
   .handler(async ({ data }) => {
@@ -1071,8 +1226,9 @@ export const serverReportProctorIncident = createServerFn({ method: 'POST' })
     const p = session.participants[data.participantId];
     if (!p) return { success: false };
 
+    const maxViolations = session.settings.maxProctorViolations || 3;
     p.proctorFlags = (p.proctorFlags || 0) + 1;
-    if (p.proctorFlags >= 3 && session.settings.isFormalAssessment) {
+    if (p.proctorFlags >= maxViolations && session.settings.isFormalAssessment) {
       p.isSuspended = true;
     }
 

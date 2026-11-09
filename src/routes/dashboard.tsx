@@ -9,8 +9,10 @@ import { AiQuizModal } from "@/components/dashboard/AiQuizModal";
 import { OmrSheetView } from "@/components/common/OmrSheetView";
 import { MeritGazetteView } from "@/components/common/MeritGazetteView";
 import {
+  Course,
   Quiz,
   Question,
+  QuestionType,
   RosterStudent,
   CertificateData,
   ExamSessionRecord,
@@ -44,6 +46,7 @@ import {
   Sparkles,
   Trash2,
   Trophy,
+  Upload,
   UserPlus,
   Users,
   Wand2,
@@ -82,7 +85,9 @@ function DashboardPage() {
 
   const [activeTab, setActiveTab] = useState<TabType>("overview");
   const [regions, setRegions] = useState<Region[]>(DEFAULT_REGIONS);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+  const [selectedCourseFilter, setSelectedCourseFilter] = useState<string>("all");
   const [roster, setRoster] = useState<RosterStudent[]>([]);
   const [smsLogs, setSmsLogs] = useState<DbSmsLog[]>([]);
   const [certificates, setCertificates] = useState<CertificateData[]>([]);
@@ -141,6 +146,7 @@ function DashboardPage() {
 
   const refreshDbState = () => {
     setRegions(db.getRegions());
+    setCourses(db.getCourses());
     setQuizzes(db.getQuizzes());
     setRoster(db.getRoster());
     setSmsLogs(db.getSmsLogs());
@@ -225,6 +231,8 @@ function DashboardPage() {
   // New Quiz Builder State
   const [newQuizTitle, setNewQuizTitle] = useState("");
   const [newQuizCategory, setNewQuizCategory] = useState("General Knowledge");
+  const [newQuizCourseId, setNewQuizCourseId] = useState<string>("course-bcs-46");
+  const [newQuizNumber, setNewQuizNumber] = useState<number>(5);
   const [newQuestions, setNewQuestions] = useState<Question[]>([
     {
       id: "nq-1",
@@ -241,6 +249,7 @@ function DashboardPage() {
         { id: "o4", textEn: "Rajshahi", textBn: "রাজশাহী" },
       ],
       correctOptionIds: ["o1"],
+      acceptedAnswers: [],
       explanationBn: "ঢাকা বাংলাদেশের রাজধানী এবং প্রধান প্রশাসনিক কেন্দ্র।",
     },
   ]);
@@ -249,26 +258,36 @@ function DashboardPage() {
     e.preventDefault();
     if (!newQuizTitle) return;
 
+    const selectedCourse = courses.find((c) => c.id === newQuizCourseId);
     const quizId = `custom-quiz-${Date.now()}`;
     const newQuiz: Quiz = {
       id: quizId,
       slug: `custom-${Date.now().toString(36)}`,
+      courseId: selectedCourse?.id,
+      courseTitle: selectedCourse?.titleEn,
+      quizNumber: newQuizNumber || 1,
+      instructorId: user?.id || "usr-inst-1",
+      instructorName: user?.name || "Instructor",
       titleEn: newQuizTitle,
       titleBn: newQuizTitle,
-      descriptionEn: `Custom assessment module created by ${user?.name || "Instructor"}.`,
-      descriptionBn: `ইন্সট্রাক্টর ${user?.name || "শিক্ষক"} কর্তৃক তৈরি কাস্টম মডেল টেস্ট।`,
+      descriptionEn: `${selectedCourse ? `${selectedCourse.titleEn} · Quiz #${newQuizNumber || 1} · ` : ""}Created by ${user?.name || "Instructor"}.`,
+      descriptionBn: `${selectedCourse ? `${selectedCourse.titleBn} · কুইজ #${newQuizNumber || 1} · ` : ""}ইন্সট্রাক্টর ${user?.name || "শিক্ষক"} কর্তৃক তৈরি মডেল টেস্ট।`,
       icon: "🎯",
-      categoryEn: newQuizCategory,
-      categoryBn: newQuizCategory,
+      categoryEn: selectedCourse?.category || newQuizCategory,
+      categoryBn: selectedCourse?.category || newQuizCategory,
       questions: newQuestions,
       isTemplate: false,
-      tags: ["Custom", "Model Test", "Negative Marking"],
+      tags: ["Custom", `Quiz ${newQuizNumber || 1}`, "Multi-Format"],
     };
 
     db.saveCustomQuiz(newQuiz);
     setQuizzes(db.getQuizzes());
     setNewQuizTitle("");
     setActiveTab("quizzes");
+    setSmsSuccessMsg(
+      `✓ Saved "${newQuiz.titleEn}" (${selectedCourse ? `${selectedCourse.code} · Quiz #${newQuiz.quizNumber}` : "Custom Module"}) to server database.`
+    );
+    setTimeout(() => setSmsSuccessMsg(null), 4000);
   };
 
   const handleAddRegion = (e: React.FormEvent) => {
@@ -578,6 +597,16 @@ function DashboardPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            {user?.role === "admin" && (
+              <Link
+                to="/admin"
+                className="inline-flex items-center gap-1.5 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-2.5 text-xs font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                <span>Super Admin Panel</span>
+              </Link>
+            )}
+
             <button
               onClick={() => {
                 setActiveTab("roster");
@@ -1191,65 +1220,142 @@ function DashboardPage() {
         {/* TAB 3: MODEL TESTS & REPOSITORIES */}
         {activeTab === "quizzes" && (
           <div className="space-y-6 animate-in fade-in">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <h2 className="font-display text-xl font-bold text-foreground">
-                  Model Test Repositories &amp; Question Banks
+                  Course Modules, Sequential Quizzes &amp; Question Banks
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  Ready-made curriculum packs and custom instructor tests.
+                  Organized by Course with sequential progression (Quiz 1 → Quiz 2 → Quiz 3...) and multi-instructor assignments.
                 </p>
               </div>
 
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => {
+                    if (selectedCourseFilter !== "all") {
+                      setNewQuizCourseId(selectedCourseFilter);
+                      const courseQuizzes = quizzes.filter((q) => q.courseId === selectedCourseFilter);
+                      setNewQuizNumber(courseQuizzes.length + 1);
+                    }
+                    setActiveTab("ai_creator");
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-2xl border border-primary/40 bg-primary/10 px-4 py-2 text-xs font-bold text-primary hover:bg-primary/20 transition"
+                >
+                  <PenTool className="h-3.5 w-3.5" />
+                  <span>+ Build Next Quiz</span>
+                </button>
+
+                <button
+                  onClick={() => setShowAiModal(true)}
+                  className="inline-flex items-center gap-1.5 rounded-2xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Create with AI</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Course Filter Strip */}
+            <div className="flex flex-wrap items-center gap-2">
               <button
-                onClick={() => setShowAiModal(true)}
-                className="inline-flex items-center gap-1.5 rounded-2xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90"
+                type="button"
+                onClick={() => setSelectedCourseFilter("all")}
+                className={`rounded-2xl border px-3.5 py-2 text-xs font-bold transition ${
+                  selectedCourseFilter === "all"
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                    : "border-border bg-card text-muted-foreground hover:text-foreground"
+                }`}
               >
-                <Plus className="h-4 w-4" />
-                <span>Create with AI</span>
+                All Courses ({quizzes.length} Quizzes)
               </button>
+              {courses.map((c) => {
+                const count = quizzes.filter((q) => q.courseId === c.id).length;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setSelectedCourseFilter(c.id)}
+                    className={`rounded-2xl border px-3.5 py-2 text-xs font-bold transition ${
+                      selectedCourseFilter === c.id
+                        ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                        : "border-border bg-card text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <span className="font-mono mr-1.5 opacity-80">{c.code}</span>
+                    <span>{lang === "bn" ? c.titleBn : c.titleEn}</span>
+                    <span className="ml-1.5 rounded-full bg-background/20 px-1.5 py-0.5 font-mono text-[10px]">
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {quizzes.map((quiz) => (
-                <div
-                  key={quiz.id}
-                  className="bento-card p-5 shadow-sm space-y-3 flex flex-col justify-between"
-                >
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-2xl">{quiz.icon}</span>
-                      <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold text-primary">
-                        {quiz.questions.length} Items
-                      </span>
+              {quizzes
+                .filter(
+                  (q) => selectedCourseFilter === "all" || q.courseId === selectedCourseFilter
+                )
+                .sort((a, b) => (a.quizNumber || 99) - (b.quizNumber || 99))
+                .map((quiz) => (
+                  <div
+                    key={quiz.id}
+                    className="bento-card p-5 shadow-sm space-y-3 flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-2xl">{quiz.icon}</span>
+                          {quiz.quizNumber && (
+                            <span className="rounded-lg border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-black uppercase text-primary">
+                              Quiz #{quiz.quizNumber}
+                            </span>
+                          )}
+                        </div>
+                        <span className="rounded-full bg-muted px-2.5 py-0.5 font-mono text-[10px] font-bold text-foreground">
+                          {quiz.questions.length} Items
+                        </span>
+                      </div>
+
+                      {quiz.courseTitle && (
+                        <div className="mt-2 text-[11px] font-bold text-primary truncate">
+                          {quiz.courseTitle}
+                        </div>
+                      )}
+
+                      <h3 className="mt-1 font-display text-base font-bold text-foreground leading-snug">
+                        {lang === "bn" ? quiz.titleBn : quiz.titleEn}
+                      </h3>
+                      <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                        {lang === "bn" ? quiz.descriptionBn : quiz.descriptionEn}
+                      </p>
+
+                      {quiz.instructorName && (
+                        <div className="mt-2 text-[11px] text-muted-foreground">
+                          Faculty: <strong className="text-foreground">{quiz.instructorName}</strong>
+                        </div>
+                      )}
                     </div>
 
-                    <h3 className="mt-3 font-display text-base font-bold text-foreground leading-snug">
-                      {lang === "bn" ? quiz.titleBn : quiz.titleEn}
-                    </h3>
-                    <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
-                      {lang === "bn" ? quiz.descriptionBn : quiz.descriptionEn}
-                    </p>
-                  </div>
+                    <div className="pt-3 border-t border-border/80 flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => setSelectedQuizForOmr(quiz)}
+                        className="rounded-xl border border-border px-3 py-1.5 text-xs font-bold text-foreground hover:bg-accent"
+                      >
+                        OMR Sheet
+                      </button>
 
-                  <div className="pt-3 border-t border-border/80 flex items-center justify-between gap-2">
-                    <button
-                      onClick={() => setSelectedQuizForOmr(quiz)}
-                      className="rounded-xl border border-border px-3 py-1.5 text-xs font-bold text-foreground hover:bg-accent"
-                    >
-                      OMR Sheet
-                    </button>
-
-                    <Link
-                      to="/host/$quizId"
-                      params={{ quizId: quiz.slug || quiz.id }}
-                      className="rounded-xl bg-primary px-4 py-1.5 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90"
-                    >
-                      Host Arena
-                    </Link>
+                      <Link
+                        to="/host/$quizId"
+                        params={{ quizId: quiz.slug || quiz.id }}
+                        className="rounded-xl bg-primary px-4 py-1.5 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90"
+                      >
+                        Host Arena
+                      </Link>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
             </div>
           </div>
         )}
@@ -1258,26 +1364,56 @@ function DashboardPage() {
         {activeTab === "ai_creator" && (
           <div className="space-y-6 animate-in fade-in">
             <h2 className="font-display text-xl font-bold text-foreground">
-              Manual Question Studio &amp; Paper Builder
+              Manual Question Studio &amp; Multi-Style Paper Builder
             </h2>
             <p className="text-xs text-muted-foreground">
-              Compose custom examination questions with bilingual text, time limits, and negative marking penalty.
+              Assign quizzes to a Course in sequential order (Quiz 1, Quiz 2...) and mix Single MCQ, True/False, Multiple Select, and Written Short Answer questions.
             </p>
 
             <form onSubmit={handleSaveQuiz} className="bento-card p-6 shadow-sm space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-muted-foreground mb-1">
+                    Assign to Course *
+                  </label>
+                  <select
+                    value={newQuizCourseId}
+                    onChange={(e) => {
+                      const cid = e.target.value;
+                      setNewQuizCourseId(cid);
+                      const count = quizzes.filter((q) => q.courseId === cid).length;
+                      setNewQuizNumber(count + 1);
+                      const matched = courses.find((c) => c.id === cid);
+                      if (matched) setNewQuizCategory(matched.category);
+                    }}
+                    className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs sm:text-sm font-bold text-foreground outline-none focus:border-primary"
+                  >
+                    {courses.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        [{c.code}] {c.titleEn} ({c.instructorNames.join(", ")})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div>
                   <label className="block text-xs font-bold text-muted-foreground mb-1">
-                    Test Title (English / Bengali) *
+                    Sequential Quiz Number *
                   </label>
-                  <input
-                    type="text"
-                    required
-                    value={newQuizTitle}
-                    onChange={(e) => setNewQuizTitle(e.target.value)}
-                    placeholder="e.g. 46th BCS Bangladesh Affairs Model Test 01"
-                    className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs sm:text-sm font-semibold text-foreground outline-none focus:border-primary"
-                  />
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-xl bg-primary/10 px-3 py-2.5 font-mono text-xs font-black text-primary">
+                      Quiz #
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={99}
+                      required
+                      value={newQuizNumber}
+                      onChange={(e) => setNewQuizNumber(Number(e.target.value) || 1)}
+                      className="w-full rounded-2xl border border-border bg-background px-3.5 py-2.5 font-mono text-xs sm:text-sm font-bold text-foreground outline-none focus:border-primary"
+                    />
+                  </div>
                 </div>
 
                 <div>
@@ -1294,8 +1430,22 @@ function DashboardPage() {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-muted-foreground mb-1">
+                  Quiz / Assessment Title (English or Bengali) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newQuizTitle}
+                  onChange={(e) => setNewQuizTitle(e.target.value)}
+                  placeholder={`e.g. Quiz ${newQuizNumber}: Bangladesh Affairs & Constitutional Law`}
+                  className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs sm:text-sm font-semibold text-foreground outline-none focus:border-primary"
+                />
+              </div>
+
               <div className="space-y-4 pt-2">
-                <div className="flex items-center justify-between border-b border-border/80 pb-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/80 pb-2">
                   <h4 className="font-display text-sm font-bold text-foreground">
                     Questions ({newQuestions.length})
                   </h4>
@@ -1306,7 +1456,7 @@ function DashboardPage() {
                       setNewQuestions([
                         ...newQuestions,
                         {
-                          id: `nq-${nextNum}`,
+                          id: `nq-${Date.now()}-${nextNum}`,
                           textEn: `Question #${nextNum}`,
                           textBn: `প্রশ্ন #${nextNum}`,
                           type: "single_mcq",
@@ -1320,13 +1470,14 @@ function DashboardPage() {
                             { id: `o-${nextNum}-4`, textEn: "Option D", textBn: "অপশন ঘ" },
                           ],
                           correctOptionIds: [`o-${nextNum}-1`],
+                          acceptedAnswers: [],
                         },
                       ]);
                     }}
-                    className="inline-flex items-center gap-1 rounded-xl bg-primary/10 px-3 py-1 text-xs font-bold text-primary hover:bg-primary/20"
+                    className="inline-flex items-center gap-1 rounded-xl bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/20"
                   >
                     <Plus className="h-3.5 w-3.5" />
-                    <span>Add Item</span>
+                    <span>Add Question Item</span>
                   </button>
                 </div>
 
@@ -1335,17 +1486,76 @@ function DashboardPage() {
                     key={q.id}
                     className="rounded-2xl border border-border/80 bg-background/80 p-4 space-y-3"
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs font-bold text-primary">
-                        Item #{qIdx + 1}
-                      </span>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-xs font-bold text-primary">
+                          Item #{qIdx + 1}
+                        </span>
+
+                        {/* Question Style Selector */}
+                        <select
+                          value={q.type}
+                          onChange={(e) => {
+                            const nextType = e.target.value as QuestionType;
+                            const updated = [...newQuestions];
+                            updated[qIdx].type = nextType;
+                            if (nextType === "true_false") {
+                              updated[qIdx].options = [
+                                { id: `${q.id}-tf-1`, textEn: "True", textBn: "সত্য (True)", isCorrect: true },
+                                { id: `${q.id}-tf-2`, textEn: "False", textBn: "মিথ্যা (False)" },
+                              ];
+                              updated[qIdx].correctOptionIds = [`${q.id}-tf-1`];
+                            } else if (nextType === "written" || nextType === "fill_blank") {
+                              updated[qIdx].options = [];
+                              updated[qIdx].correctOptionIds = [];
+                              if (!updated[qIdx].acceptedAnswers?.length) {
+                                updated[qIdx].acceptedAnswers = ["1971", "১৯৭১"];
+                              }
+                            } else if (updated[qIdx].options.length < 4) {
+                              updated[qIdx].options = [
+                                { id: `${q.id}-1`, textEn: "Option A", textBn: "অপশন ক", isCorrect: true },
+                                { id: `${q.id}-2`, textEn: "Option B", textBn: "অপশন খ" },
+                                { id: `${q.id}-3`, textEn: "Option C", textBn: "অপশন গ" },
+                                { id: `${q.id}-4`, textEn: "Option D", textBn: "অপশন ঘ" },
+                              ];
+                              updated[qIdx].correctOptionIds = [`${q.id}-1`];
+                            }
+                            setNewQuestions(updated);
+                          }}
+                          className="rounded-xl border border-border bg-card px-2.5 py-1 text-xs font-bold text-foreground outline-none focus:border-primary"
+                        >
+                          <option value="single_mcq">Single Best MCQ (4 Options)</option>
+                          <option value="true_false">True / False (সত্য / মিথ্যা)</option>
+                          <option value="multi_mcq">Multiple Correct MCQ (Checkboxes)</option>
+                          <option value="written">Written / Short Answer (Auto-Graded)</option>
+                        </select>
+
+                        {/* Time Limit */}
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <span>Time:</span>
+                          <input
+                            type="number"
+                            min={5}
+                            max={180}
+                            value={q.timeLimitSec}
+                            onChange={(e) => {
+                              const updated = [...newQuestions];
+                              updated[qIdx].timeLimitSec = Number(e.target.value) || 20;
+                              setNewQuestions(updated);
+                            }}
+                            className="w-14 rounded-lg border border-border bg-card px-2 py-0.5 font-mono text-xs font-bold text-foreground"
+                          />
+                          <span>s</span>
+                        </div>
+                      </div>
+
                       {newQuestions.length > 1 && (
                         <button
                           type="button"
                           onClick={() =>
                             setNewQuestions(newQuestions.filter((_, i) => i !== qIdx))
                           }
-                          className="text-xs text-destructive hover:underline"
+                          className="text-xs font-bold text-destructive hover:underline"
                         >
                           Remove
                         </button>
@@ -1365,34 +1575,67 @@ function DashboardPage() {
                       className="w-full rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
                     />
 
-                    <div className="grid grid-cols-2 gap-2">
-                      {q.options.map((opt, optIdx) => (
-                        <div key={opt.id} className="flex items-center gap-2">
-                          <input
-                            type="radio"
-                            name={`correct-${q.id}`}
-                            checked={q.correctOptionIds.includes(opt.id)}
-                            onChange={() => {
-                              const updated = [...newQuestions];
-                              updated[qIdx].correctOptionIds = [opt.id];
-                              setNewQuestions(updated);
-                            }}
-                            className="accent-primary"
-                          />
-                          <input
-                            type="text"
-                            value={opt.textBn}
-                            onChange={(e) => {
-                              const updated = [...newQuestions];
-                              updated[qIdx].options[optIdx].textBn = e.target.value;
-                              updated[qIdx].options[optIdx].textEn = e.target.value;
-                              setNewQuestions(updated);
-                            }}
-                            className="flex-1 rounded-xl border border-border bg-card px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
-                          />
-                        </div>
-                      ))}
-                    </div>
+                    {q.type === "written" || q.type === "fill_blank" ? (
+                      <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 space-y-1.5">
+                        <label className="block text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+                          Accepted Correct Written Answers (comma-separated, case-insensitive) *
+                        </label>
+                        <input
+                          type="text"
+                          value={(q.acceptedAnswers || []).join(", ")}
+                          onChange={(e) => {
+                            const updated = [...newQuestions];
+                            updated[qIdx].acceptedAnswers = e.target.value
+                              .split(",")
+                              .map((s) => s.trim())
+                              .filter(Boolean);
+                            setNewQuestions(updated);
+                          }}
+                          placeholder="e.g. 1971, ১৯৭১, 26 March"
+                          className="w-full rounded-xl border border-border bg-card px-3 py-2 font-mono text-xs font-bold text-foreground outline-none focus:border-primary"
+                        />
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {q.options.map((opt, optIdx) => {
+                          const isChecked = q.correctOptionIds.includes(opt.id);
+                          const isMulti = q.type === "multi_mcq";
+                          return (
+                            <div key={opt.id} className="flex items-center gap-2">
+                              <input
+                                type={isMulti ? "checkbox" : "radio"}
+                                name={`correct-${q.id}`}
+                                checked={isChecked}
+                                onChange={() => {
+                                  const updated = [...newQuestions];
+                                  if (isMulti) {
+                                    const prev = updated[qIdx].correctOptionIds;
+                                    updated[qIdx].correctOptionIds = prev.includes(opt.id)
+                                      ? prev.filter((id) => id !== opt.id)
+                                      : [...prev, opt.id];
+                                  } else {
+                                    updated[qIdx].correctOptionIds = [opt.id];
+                                  }
+                                  setNewQuestions(updated);
+                                }}
+                                className="accent-primary h-4 w-4"
+                              />
+                              <input
+                                type="text"
+                                value={opt.textBn}
+                                onChange={(e) => {
+                                  const updated = [...newQuestions];
+                                  updated[qIdx].options[optIdx].textBn = e.target.value;
+                                  updated[qIdx].options[optIdx].textEn = e.target.value;
+                                  setNewQuestions(updated);
+                                }}
+                                className="flex-1 rounded-xl border border-border bg-card px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1401,7 +1644,7 @@ function DashboardPage() {
                 type="submit"
                 className="w-full rounded-2xl bg-primary py-3.5 text-xs sm:text-sm font-extrabold text-primary-foreground shadow-md hover:bg-primary/90 transition"
               >
-                Save Examination Module &amp; Sync to Server
+                Save Sequential Quiz &amp; Sync to Server Database
               </button>
             </form>
           </div>
