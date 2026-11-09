@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 60" fill="none">
+  <defs>
+    <linearGradient id="lbdRed" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#EF4444"/>
+      <stop offset="100%" stop-color="#DC2626"/>
+    </linearGradient>
+    <linearGradient id="lbdGreen" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10B981"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Learning BD Book/Flame Emblem -->
+  <rect x="8" y="8" width="44" height="44" rx="12" fill="url(#lbdGreen)"/>
+  <circle cx="30" cy="30" r="14" fill="url(#lbdRed)"/>
+  
+  <!-- Open Book Page in White -->
+  <path d="M22 34 C26 31 30 32 30 32 C30 32 34 31 38 34 V24 C34 22 30 23 30 23 C30 23 26 22 22 24 Z" fill="#FFFFFF"/>
+
+  <!-- Typography -->
+  <text x="60" y="32" font-family="'Space Grotesk', system-ui, sans-serif" font-size="18" font-weight="900" fill="#064E3B" letter-spacing="-0.5">LEARNING</text>
+  <text x="60" y="47" font-family="'Space Grotesk', system-ui, sans-serif" font-size="13" font-weight="800" fill="#DC2626" letter-spacing="1">BANGLADESH</text>
+</svg>

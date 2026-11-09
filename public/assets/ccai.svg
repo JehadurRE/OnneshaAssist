@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 60" fill="none">
+  <defs>
+    <linearGradient id="ccaiBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284C7"/>
+      <stop offset="100%" stop-color="#0369A1"/>
+    </linearGradient>
+    <linearGradient id="aiCyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#0891B2"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Cloud Neural Nodes Icon -->
+  <rect x="8" y="8" width="44" height="44" rx="12" fill="url(#ccaiBlue)"/>
+  
+  <!-- Connected Nodes -->
+  <circle cx="20" cy="30" r="4" fill="#FFFFFF"/>
+  <circle cx="32" cy="20" r="4.5" fill="#38BDF8"/>
+  <circle cx="40" cy="34" r="4" fill="#FFFFFF"/>
+  <circle cx="28" cy="40" r="3.5" fill="#38BDF8"/>
+  
+  <line x1="20" y1="30" x2="32" y2="20" stroke="#FFFFFF" stroke-width="1.8" opacity="0.8"/>
+  <line x1="32" y1="20" x2="40" y2="34" stroke="#FFFFFF" stroke-width="1.8" opacity="0.8"/>
+  <line x1="20" y1="30" x2="28" y2="40" stroke="#FFFFFF" stroke-width="1.8" opacity="0.8"/>
+  <line x1="28" y1="40" x2="40" y2="34" stroke="#FFFFFF" stroke-width="1.8" opacity="0.8"/>
+
+  <!-- Text CCAI -->
+  <text x="60" y="33" font-family="'Space Grotesk', system-ui, sans-serif" font-size="21" font-weight="900" fill="#0C4A6E" letter-spacing="-0.5">CCAI</text>
+  <text x="60" y="47" font-family="'DM Sans', system-ui, sans-serif" font-size="8.5" font-weight="700" fill="#0284C7" letter-spacing="0.8">CLOUD CONNECT AI</text>
+</svg>
