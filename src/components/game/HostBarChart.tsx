@@ -147,9 +147,8 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
                   {/* The Bar */}
                   <div className="relative w-full rounded-2xl bg-muted/40 p-1 flex items-end justify-center h-48">
                     <div
-                      className={`w-full rounded-xl transition-all duration-1000 ease-out flex items-center justify-center ${
-                        style.bar
-                      } ${isCorrect ? 'ring-4 ring-emerald-400 ring-offset-2 ring-offset-background shadow-neon' : 'opacity-70'}`}
+                      className={`w-full rounded-xl transition-all duration-1000 ease-out flex items-center justify-center ${style.bar
+                        } ${isCorrect ? 'ring-4 ring-emerald-400 ring-offset-2 ring-offset-background shadow-neon' : 'opacity-70'}`}
                       style={{ height: `${heightPct}%` }}
                     >
                       {isCorrect && (
@@ -161,16 +160,14 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
                   {/* Option Badge & Text */}
                   <div className="flex items-center gap-2 text-center">
                     <span
-                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border font-mono text-[11px] font-bold ${
-                        style.badge
-                      }`}
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border font-mono text-[11px] font-bold ${style.badge
+                        }`}
                     >
                       {lang === 'bn' ? style.bnKey : style.key}
                     </span>
                     <span
-                      className={`text-xs sm:text-sm font-bold line-clamp-2 ${
-                        isCorrect ? 'text-emerald-600 dark:text-emerald-400 font-extrabold' : 'text-foreground'
-                      }`}
+                      className={`text-xs sm:text-sm font-bold line-clamp-2 ${isCorrect ? 'text-emerald-600 dark:text-emerald-400 font-extrabold' : 'text-foreground'
+                        }`}
                     >
                       {lang === 'bn' ? opt.textBn : opt.textEn}
                     </span>
