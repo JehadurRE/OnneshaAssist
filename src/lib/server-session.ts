@@ -41,6 +41,8 @@ interface PersistentStoreData {
 type ServerLiveSession = GameSession & {
   updatedAt: number;
   fullQuiz?: Quiz;
+  cachedTop5?: Participant[];
+  cachedSanitizedQuestion?: Question;
 };
 
 function getNodeFs(): typeof import('node:fs') | null {
@@ -175,6 +177,12 @@ function recalculateSessionMetrics(session: ServerLiveSession) {
   session.participantCount = list.length;
   const currentQId = session.currentQuestion?.id;
   session.answeredCount = currentQId ? list.filter((p) => !!p.answers[currentQId]).length : 0;
+  session.cachedTop5 = list.slice(0, 5).map((p) => ({
+    ...p,
+    seatToken: undefined,
+    answers: {},
+  }));
+  session.cachedSanitizedQuestion = sanitizeQuestionForPlayer(session.currentQuestion, session.phase);
   session.updatedAt = Date.now();
 }
 
@@ -196,11 +204,7 @@ function sanitizeQuestionForPlayer(q?: Question, phase?: GameSession['phase']): 
 }
 
 function buildPlayerSessionProjection(session: ServerLiveSession, participantId?: string): GameSession {
-  const allParticipants = Object.values(session.participants);
-  const currentQId = session.currentQuestion?.id;
-  const answeredCount = currentQId ? allParticipants.filter((p) => !!p.answers[currentQId]).length : 0;
-
-  // Include only the requesting participant + top 5 leaderboard to keep payload <1.5KB for 500+ users
+  // O(1) constant-time projection for 500+ concurrent examinees
   const compactParticipants: Record<string, Participant> = {};
   if (participantId && session.participants[participantId]) {
     const me = session.participants[participantId];
@@ -210,14 +214,10 @@ function buildPlayerSessionProjection(session: ServerLiveSession, participantId?
     };
   }
 
-  const top5 = [...allParticipants].sort((a, b) => b.score - a.score).slice(0, 5);
+  const top5 = session.cachedTop5 || [];
   for (const p of top5) {
     if (!compactParticipants[p.id]) {
-      compactParticipants[p.id] = {
-        ...p,
-        seatToken: undefined,
-        answers: {}, // strip other players' detailed answers map
-      };
+      compactParticipants[p.id] = p;
     }
   }
 
@@ -229,7 +229,9 @@ function buildPlayerSessionProjection(session: ServerLiveSession, participantId?
     hostId: session.hostId,
     phase: session.phase,
     currentQuestionIndex: session.currentQuestionIndex,
-    currentQuestion: sanitizeQuestionForPlayer(session.currentQuestion, session.phase),
+    currentQuestion:
+      session.cachedSanitizedQuestion ??
+      sanitizeQuestionForPlayer(session.currentQuestion, session.phase),
     questionStartTime: session.questionStartTime,
     questionEndTime: session.questionEndTime,
     settings: session.settings,
@@ -237,8 +239,8 @@ function buildPlayerSessionProjection(session: ServerLiveSession, participantId?
     totalQuestions: session.totalQuestions,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
-    participantCount: allParticipants.length,
-    answeredCount,
+    participantCount: session.participantCount ?? Object.keys(session.participants).length,
+    answeredCount: session.answeredCount ?? 0,
   };
 }
 
