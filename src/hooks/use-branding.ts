@@ -37,3 +37,4 @@ export function useBranding(): BrandingSettings {
 
   return branding;
 }
+

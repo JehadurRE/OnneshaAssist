@@ -4,6 +4,7 @@ services:
     runtime: node
     plan: starter
     region: singapore
+    numInstances: 1
     buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     envVars:
@@ -11,11 +12,6 @@ services:
         value: production
       - key: NITRO_PRESET
         value: node-server
-      - key: DATA_DIR
-        value: /var/data
-    disk:
-      name: onnesha-persistent-data
-      mountPath: /var/data
-      sizeGB: 2
+
 
 

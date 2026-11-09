@@ -1,26 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 70" fill="none">
   <defs>
     <linearGradient id="onneshaGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#6366F1"/>
-      <stop offset="50%" stop-color="#4F46E5"/>
-      <stop offset="100%" stop-color="#3730A3"/>
+      <stop offset="0%" stop-color="#059669"/>
+      <stop offset="50%" stop-color="#047857"/>
+      <stop offset="100%" stop-color="#064E3B"/>
     </linearGradient>
     <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#10B981"/>
-      <stop offset="100%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#0D9488"/>
     </linearGradient>
   </defs>
 
-  <!-- Helix / Cube Icon Emblem -->
+  <!-- Sovereign Emerald Emblem -->
   <rect x="10" y="10" width="50" height="50" rx="14" fill="url(#onneshaGrad)"/>
-  <circle cx="35" cy="35" r="14" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-dasharray="60 20"/>
-  <circle cx="35" cy="35" r="5" fill="url(#glowGrad)"/>
-  <path d="M25 22 L45 22 L45 28 L25 28 Z" fill="#FFFFFF" opacity="0.9"/>
-  <path d="M45 25 L49 32 L41 32 Z" fill="#FDE68A"/>
+  <circle cx="35" cy="35" r="14" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="60 20"/>
+  <circle cx="35" cy="35" r="5.5" fill="#A7F3D0"/>
+  <path d="M25 22 L45 22 L45 27 L25 27 Z" fill="#FFFFFF" opacity="0.95"/>
+  <path d="M45 24.5 L49 31 L41 31 Z" fill="#FDE68A"/>
 
-  <!-- Typography: Onnesha LMS -->
-  <text x="72" y="38" font-family="'Space Grotesk', system-ui, sans-serif" font-size="24" font-weight="900" fill="#1E1B4B" letter-spacing="-0.5">ONNESHA</text>
-  <rect x="72" y="44" width="34" height="15" rx="4" fill="url(#glowGrad)"/>
-  <text x="89" y="55" font-family="'Space Grotesk', system-ui, sans-serif" font-size="9" font-weight="900" fill="#FFFFFF" text-anchor="middle" letter-spacing="1">LMS</text>
-  <text x="114" y="55" font-family="'DM Sans', system-ui, sans-serif" font-size="9.5" font-weight="700" fill="#6B7280" letter-spacing="0.5">LEARNING SUITE</text>
+  <!-- Typography: Onnesha Arena -->
+  <text x="72" y="38" font-family="'Space Grotesk', system-ui, sans-serif" font-size="24" font-weight="900" fill="#0F172A" letter-spacing="-0.5">ONNESHA</text>
+  <rect x="72" y="44" width="46" height="15" rx="4" fill="url(#glowGrad)"/>
+  <text x="95" y="55" font-family="'Space Grotesk', system-ui, sans-serif" font-size="8.5" font-weight="900" fill="#FFFFFF" text-anchor="middle" letter-spacing="1">ARENA</text>
+  <text x="125" y="55" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-size="9.5" font-weight="700" fill="#64748B" letter-spacing="0.5">EXAM SYSTEM</text>
 </svg>
