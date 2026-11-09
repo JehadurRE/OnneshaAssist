@@ -4,7 +4,7 @@ import { useAuth, UserRole } from "@/lib/auth-context";
 import { useLanguage } from "@/lib/i18n";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
-import ansar from "@/assets/ansar.svg.asset.json";
+import onnesha from "@/assets/onnesha.jpg.asset.json";
 import {
   AlertCircle,
   Building2,
@@ -73,7 +73,7 @@ function SignupPage() {
         <div className="w-full max-w-lg bento-card p-6 sm:p-10 shadow-glow">
           {/* Brand Header */}
           <div className="text-center">
-            <img src={ansar.url} alt="Emblem" className="h-12 w-12 mx-auto object-contain mb-3" />
+            <img src={onnesha.url} alt="Onnesha" className="h-11 mx-auto rounded-lg object-contain mb-3" />
             <h1 className="font-display text-2xl sm:text-3xl font-black text-foreground tracking-tight">
               {lang === "bn" ? "নতুন একাডেমি রেজিস্টার করুন" : "Register Onnesha Studio"}
             </h1>

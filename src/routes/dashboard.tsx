@@ -109,15 +109,18 @@ function DashboardPage() {
   const [passwordStatusMsg, setPasswordStatusMsg] = useState<string | null>(null);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
-  // Settings Credentials State
+  // Settings Credentials & Co-Branding State
   const [geminiApiKey, setGeminiApiKey] = useState("");
   const [smsToken, setSmsToken] = useState("");
   const [institutionNameInput, setInstitutionNameInput] = useState(
-    user?.institutionName || "Bangladesh Ansar & VDP Training Academy"
+    user?.institutionName || "Onnesha Assessment Arena"
   );
   const [instructorNameInput, setInstructorNameInput] = useState(
-    user?.name || "Maj. (Retd.) Farhan Chowdhury"
+    user?.name || "Chief Assessment Officer"
   );
+  const [showPartnerLogo, setShowPartnerLogo] = useState<boolean>(false);
+  const [partnerName, setPartnerName] = useState<string>("");
+  const [partnerLogoUrl, setPartnerLogoUrl] = useState<string>("");
   const [settingsSavedMsg, setSettingsSavedMsg] = useState<string | null>(null);
 
   // Add Region Modal State
@@ -145,6 +148,13 @@ function DashboardPage() {
     setExamSessions(db.getExamSessions());
     setExamResults(db.getAllExamResults());
     setAiCredits(getAiCredits());
+    const currentBranding = db.getBranding();
+    setShowPartnerLogo(currentBranding.showPartnerLogo);
+    setPartnerName(currentBranding.partnerName);
+    setPartnerLogoUrl(currentBranding.partnerLogoUrl);
+    if (currentBranding.institutionTitle) {
+      setInstitutionNameInput(currentBranding.institutionTitle);
+    }
   };
 
   useEffect(() => {
@@ -476,6 +486,20 @@ function DashboardPage() {
     }
   };
 
+  const handlePartnerLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (dataUrl) {
+        setPartnerLogoUrl(dataUrl);
+        setShowPartnerLogo(true);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
     if (typeof window !== "undefined") {
@@ -485,8 +509,14 @@ function DashboardPage() {
         name: instructorNameInput,
         institutionName: institutionNameInput,
       });
-      setSettingsSavedMsg("✓ Studio credentials and institutional profile saved successfully.");
-      setTimeout(() => setSettingsSavedMsg(null), 3000);
+      db.saveBranding({
+        showPartnerLogo,
+        partnerName: partnerName.trim(),
+        partnerLogoUrl: partnerLogoUrl.trim(),
+        institutionTitle: institutionNameInput.trim() || "Onnesha Assessment Arena",
+      });
+      setSettingsSavedMsg("✓ Studio settings, Joint Partner Logo, and institutional profile saved to server.");
+      setTimeout(() => setSettingsSavedMsg(null), 3500);
     }
   };
 
@@ -531,7 +561,11 @@ function DashboardPage() {
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3.5 py-1 text-xs font-bold text-primary mb-2">
               <ShieldCheck className="h-3.5 w-3.5" />
-              <span>{user?.institutionName || "Bangladesh Ansar & VDP / Onnesha Arena"}</span>
+              <span>
+                {showPartnerLogo && partnerName
+                  ? `Onnesha × ${partnerName}`
+                  : institutionNameInput || "Onnesha Assessment Arena"}
+              </span>
             </div>
             <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-foreground">
               Instructor Studio &amp; Regional Command Center
@@ -1758,6 +1792,109 @@ function DashboardPage() {
               </div>
 
               <div className="space-y-4 pt-4 border-t border-border/80">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="font-display text-base font-bold text-foreground flex items-center gap-2">
+                      <Award className="h-4 w-4 text-primary" />
+                      <span>Joint Partner Logo (Optional Co-Branding)</span>
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      When enabled, your Joint Partner logo appears alongside Onnesha in the Top Header, Landing Page, Certificates, and Merit Gazette.
+                    </p>
+                  </div>
+
+                  <label className="inline-flex items-center gap-2.5 cursor-pointer rounded-xl border border-border bg-background px-3.5 py-2 text-xs font-bold text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={showPartnerLogo}
+                      onChange={(e) => setShowPartnerLogo(e.target.checked)}
+                      className="h-4 w-4 accent-emerald-600 rounded"
+                    />
+                    <span>Show Joint Partner Logo</span>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-muted-foreground mb-1">
+                      Joint Partner / Co-Sponsor Organization Name
+                    </label>
+                    <input
+                      type="text"
+                      value={partnerName}
+                      onChange={(e) => setPartnerName(e.target.value)}
+                      placeholder="e.g. Dhaka University / Partner Academy"
+                      className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-muted-foreground mb-1">
+                      Partner Logo Image URL (or Upload File Below)
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={partnerLogoUrl}
+                        onChange={(e) => {
+                          setPartnerLogoUrl(e.target.value);
+                          if (e.target.value.trim()) setShowPartnerLogo(true);
+                        }}
+                        placeholder="https://example.org/logo.png or upload image"
+                        className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 font-mono text-xs font-semibold text-foreground outline-none focus:border-primary"
+                      />
+                      <label className="shrink-0 cursor-pointer inline-flex items-center gap-1.5 rounded-2xl border border-primary/40 bg-primary/10 px-3.5 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition">
+                        <Upload className="h-3.5 w-3.5" />
+                        <span>Upload</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handlePartnerLogoUpload}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {partnerLogoUrl && (
+                  <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-background/70 p-3.5">
+                    <div className="flex items-center gap-3">
+                      <span className="text-[11px] font-mono font-bold uppercase text-muted-foreground">
+                        Live Co-Brand Preview:
+                      </span>
+                      <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-1.5">
+                        <span className="font-display text-xs font-black text-foreground">Onnesha</span>
+                        <span className="text-muted-foreground font-mono text-xs">×</span>
+                        <img
+                          src={partnerLogoUrl}
+                          alt={partnerName || "Partner Logo"}
+                          className="h-7 max-w-[110px] object-contain"
+                        />
+                        {partnerName && (
+                          <span className="text-xs font-semibold text-muted-foreground">
+                            {partnerName}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPartnerLogoUrl("");
+                        setPartnerName("");
+                        setShowPartnerLogo(false);
+                      }}
+                      className="text-xs font-bold text-destructive hover:underline"
+                    >
+                      Remove Partner Logo
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-4 pt-4 border-t border-border/80">
                 <h3 className="font-display text-base font-bold text-foreground flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-primary" />
                   <span>Institutional Authority &amp; Certificate Seals</span>
@@ -1766,13 +1903,13 @@ function DashboardPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-muted-foreground mb-1">
-                      Institution / Academy Name
+                      Institution / Academy Title
                     </label>
                     <input
                       type="text"
                       value={institutionNameInput}
                       onChange={(e) => setInstitutionNameInput(e.target.value)}
-                      placeholder="Bangladesh Ansar & VDP Training Academy"
+                      placeholder="Onnesha Assessment Arena"
                       className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs font-semibold text-foreground outline-none focus:border-primary"
                     />
                   </div>
@@ -1785,7 +1922,7 @@ function DashboardPage() {
                       type="text"
                       value={instructorNameInput}
                       onChange={(e) => setInstructorNameInput(e.target.value)}
-                      placeholder="Major (Retd.) Farhan Chowdhury"
+                      placeholder="Chief Assessment Officer"
                       className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs font-semibold text-foreground outline-none focus:border-primary"
                     />
                   </div>

@@ -293,3 +293,12 @@ export interface ExamResultRecord {
   answersJson?: string;
   createdAt: string;
 }
+
+export interface BrandingSettings {
+  showPartnerLogo: boolean;
+  partnerName: string;
+  partnerLogoUrl: string;
+  institutionTitle?: string;
+  updatedAt?: number;
+}
+

@@ -27,20 +27,20 @@ export const translations: I18nDictionary = {
   for_education_desc: { en: 'BCS, varsity model exams, negative marking & merit notices', bn: 'বিসিএস, ভর্তি পরীক্ষা, নেগেটিভ মার্কিং ও মেধা তালিকা' },
   for_corporate: { en: 'Enterprise & Compliance', bn: 'এন্টারপ্রাইজ ও কমপ্লায়েন্স' },
   for_corporate_desc: { en: 'Workplace safety, fire drills & verifiable employee certification', bn: 'অগ্নি-নিরাপত্তা, ট্রেনিং ও ভেরিফায়েবল কর্মী সার্টিফিকেশন' },
-  for_training: { en: 'Defense & Cadre Training', bn: 'প্রতিরক্ষা ও ক্যাডার প্রশিক্ষণ' },
-  for_training_desc: { en: 'Ansar & VDP specialized modules, diagnostic benchmarking', bn: 'আনসার ও ভিডিপি বিশেষায়িত মডিউল ও স্কিল বেঞ্চমার্ক' },
+  for_training: { en: 'National & Cadre Training', bn: 'জাতীয় ও ক্যাডার প্রশিক্ষণ' },
+  for_training_desc: { en: 'Regional batch assessments, skill benchmarking & compliance modules', bn: 'অঞ্চলভিত্তিক ব্যাচ মূল্যায়ন ও স্কিল বেঞ্চমার্কিং' },
   for_events: { en: 'Audience Evaluation & Seminars', bn: 'সেমিনার ও লাইভ মূল্যায়ন' },
   for_events_desc: { en: 'Large auditorium polling, keynote feedback & live leaderboards', bn: 'অডিটোরিয়াম লাইভ পোলিং ও ইন্টারঅ্যাক্টিভ স্পিড ট্র্যাকার' },
 
   // Hero Section
-  hero_badge: { en: 'AI Evaluation · Model Tests · Defense & Academics', bn: 'AI মূল্যায়ন · মডেল টেস্ট · জাতীয় কারিকুলাম ও একাডেমি' },
-  hero_title_prefix: { en: 'Institutional AI Examination &', bn: 'প্রাতিষ্ঠানিক AI মূল্যায়ন ও' },
-  hero_title_highlight: { en: 'Live Assessment Arena', bn: 'লাইভ এক্সাম অ্যারেনা' },
+  hero_badge: { en: 'Regional Examination Engine · 500+ Concurrent Seats', bn: 'অঞ্চলভিত্তিক পরীক্ষা ইঞ্জিন · ৫০০+ পরীক্ষার্থী' },
+  hero_title_prefix: { en: 'Run regional model exams with', bn: 'অঞ্চলভিত্তিক লাইভ পরীক্ষা ও' },
+  hero_title_highlight: { en: 'verified seat locks.', bn: 'যাচাইকৃত মেধা মূল্যায়ন।' },
   hero_subtitle: {
-    en: 'Empowering Bangladesh Ansar & VDP, universities, and coaching academies with high-security live model tests, exact negative marking, item discrimination telemetry, and verifiable digital credentials.',
-    bn: 'বাংলাদেশ আনসার ও ভিডিপি, বিশ্ববিদ্যালয় ও শীর্ষ কোচিং সেন্টারের জন্য লাইভ মডেল টেস্ট, নেগেটিভ মার্কিং, সাইকোমেট্রিক অ্যানালিটিক্স এবং যাচাইযোগ্য ডিজিটাল সনদ ব্যবস্থা।'
+    en: 'Conduct live 500-seat examinations across divisional ranges with mobile-number candidate lookup, single-device seat locks, exact -0.25 negative marking, and printable merit gazettes.',
+    bn: 'মোবাইল ও রোল নম্বর অটো-ফিল, সিঙ্গেল-ডিভাইস সিট লক, নির্ভুল -০.২৫ নেগেটিভ মার্কিং এবং প্রিন্টযোগ্য মেধা তালিকাসহ ৫০০+ আসনের লাইভ পরীক্ষা পরিচালনা করুন।'
   },
-  start_free: { en: 'Launch Exam Studio Free', bn: 'ফ্রি স্টুডিও শুরু করুন' },
+  start_free: { en: 'Launch Instructor Studio', bn: 'ইন্সট্রাক্টর স্টুডিও চালু করুন' },
   see_plans: { en: 'Institutional Plans & ROI', bn: 'প্ল্যান ও সাশ্রয় ক্যালকুলেটর' },
   enter_pin_prompt: { en: 'Candidate Access · Enter 6-Digit Arena Pass', bn: 'পরীক্ষার্থী প্রবেশ · ৬ ডিজিটের অ্যারেনা পাস লিখুন' },
   play_button: { en: 'Enter Exam Arena', bn: 'অ্যারেনায় প্রবেশ করুন' },
@@ -112,8 +112,8 @@ export const translations: I18nDictionary = {
   faq_heading: { en: 'Institutional Assessment FAQ', bn: 'প্রাতিষ্ঠানিক পরীক্ষা সম্পর্কিত প্রশ্নোত্তর' },
   faq_1_q: { en: 'How does Onnesha Arena differ from casual quiz apps?', bn: 'অন্বেষা অ্যারেনা সাধারণ কুইজ অ্যাপ থেকে কীভাবে আলাদা?' },
   faq_1_a: {
-    en: 'Onnesha Arena is an institutional-grade evaluation engine designed for BCS candidates, defense academies, and coaching centres. It features formal OMR-style negative marking, student roll/cadet ID tracking, psychometric item difficulty indexing ($p$-values), anti-cheat focus tracking, and verifiable digital certificates with QR validation.',
-    bn: 'অন্বেষা অ্যারেনা কোনো সাধারণ গেম নয় — এটি বিসিএস, প্রতিরক্ষা একাডেমি ও কোচিং সেন্টারের জন্য তৈরি হাই-সিকিউরিটি এক্সাম প্ল্যাটফর্ম। এতে নেগেটিভ মার্কিং, রোল নম্বর ট্র্যাকিং, সাইকোমেট্রিক অ্যানালিটিক্স, অ্যান্টি-চিট ফোকাস ডিটেকশন এবং ভেরিফায়েবল সনদ ব্যবস্থা রয়েছে।'
+    en: 'Onnesha Arena is built for high-stakes regional model exams, universities, and coaching academies. It combines mobile/roll roster auto-fill, single-seat anti-impersonation locks, OMR-style negative marking, psychometric item facility analysis, and QR-verifiable merit certificates.',
+    bn: 'অন্বেষা অ্যারেনা কোনো সাধারণ গেম নয় — এটি বিসিএস, বিশ্ববিদ্যালয় ও কোচিং একাডেমির জন্য তৈরি হাই-সিকিউরিটি এক্সাম প্ল্যাটফর্ম। এতে রোল/মোবাইল ভেরিফিকেশন, সিঙ্গেল-সিট লক, নেগেটিভ মার্কিং, সাইকোমেট্রিক অ্যানালিটিক্স এবং ভেরিফায়েবল সনদ ব্যবস্থা রয়েছে।'
   },
   faq_2_q: { en: 'Can we conduct negative marking model tests?', bn: 'নেগেটিভ মার্কিং সহ বিসিএস বা মেডিকেল মডেল টেস্ট নেওয়া যাবে?' },
   faq_2_a: {

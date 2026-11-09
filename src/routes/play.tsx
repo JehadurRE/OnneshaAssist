@@ -242,9 +242,9 @@ function PlayPage() {
             Math.round((participant.score / Math.max(1, session.totalQuestions * 1000)) * 100)
           ),
           issueDate: new Date().toISOString().slice(0, 10),
-          organizationName: "Bangladesh Ansar & VDP / Onnesha Assessment",
-          institutionName: "Bangladesh Ansar & VDP Academy",
-          instructorName: "Major (Retd.) Farhan Chowdhury",
+          organizationName: "Onnesha Assessment & Examination Arena",
+          institutionName: db.getBranding().institutionTitle || "Onnesha Assessment Arena",
+          instructorName: "Chief Assessment Officer",
           verificationUrl:
             typeof window !== "undefined"
               ? `${window.location.origin}/verify/${certNumber}`

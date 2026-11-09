@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Quiz } from '@/lib/types';
 import { db } from '@/lib/db';
+import { useBranding } from '@/hooks/use-branding';
 import { Camera, Check, CheckCircle2, Download, FileImage, Play, Printer, RotateCcw, Shield, Sparkles, Upload, X } from 'lucide-react';
-import ansar from '@/assets/ansar.svg.asset.json';
+import onnesha from '@/assets/onnesha.jpg.asset.json';
 
 interface OmrSheetViewProps {
   quiz: Quiz;
@@ -11,6 +12,7 @@ interface OmrSheetViewProps {
 
 export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => {
   const roster = db.getRoster();
+  const branding = useBranding();
   const [selectedStudentId, setSelectedStudentId] = useState<string>(roster[0]?.id || '');
   const [candidateName, setCandidateName] = useState<string>(roster[0]?.name || 'Cadet Tanvir Hossain');
   const [candidateRoll, setCandidateRoll] = useState<string>(roster[0]?.rollNumber || '2026-104');
@@ -258,10 +260,21 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
         <div className="space-y-6">
           {/* Header Banner */}
           <div className="flex items-center justify-between border-b-2 border-black pb-4">
-            <img src={ansar.url} alt="Emblem" className="h-16 w-16 object-contain" />
+            <div className="flex items-center gap-2">
+              <img src={onnesha.url} alt="Onnesha" className="h-12 object-contain" />
+              {branding.showPartnerLogo && branding.partnerLogoUrl && (
+                <img
+                  src={branding.partnerLogoUrl}
+                  alt={branding.partnerName || 'Partner'}
+                  className="h-12 max-w-[120px] object-contain"
+                />
+              )}
+            </div>
             <div className="text-center flex-1 px-4">
               <div className="text-xs font-bold uppercase tracking-widest text-gray-600">
-                BANGLADESH ANSAR &amp; VDP ACADEMY / ONNESHA ASSESSMENT
+                {branding.showPartnerLogo && branding.partnerName
+                  ? `${branding.partnerName.toUpperCase()} / ONNESHA ASSESSMENT`
+                  : (branding.institutionTitle || 'ONNESHA ASSESSMENT ARENA').toUpperCase()}
               </div>
               <h1 className="text-xl font-black uppercase text-black tracking-tight mt-0.5">
                 OFFICIAL OMR EVALUATION SHEET

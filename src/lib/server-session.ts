@@ -1,5 +1,6 @@
 import { createServerFn } from '@tanstack/react-start';
 import {
+  BrandingSettings,
   CertificateData,
   ExamResultRecord,
   ExamSessionRecord,
@@ -19,6 +20,13 @@ import { DEFAULT_REGIONS, READY_MADE_PACKS, SAMPLE_ROSTER } from './mock-data';
 // SERVER-AUTHORITATIVE PERSISTENT STORE (Render Persistent Disk / Node FS)
 // ============================================================================
 
+const DEFAULT_BRANDING: BrandingSettings = {
+  showPartnerLogo: false,
+  partnerName: '',
+  partnerLogoUrl: '',
+  institutionTitle: 'Onnesha Assessment Arena',
+};
+
 interface PersistentStoreData {
   regions: Region[];
   roster: RosterStudent[];
@@ -26,6 +34,7 @@ interface PersistentStoreData {
   examSessions: ExamSessionRecord[];
   examResults: ExamResultRecord[];
   certificates: CertificateData[];
+  branding: BrandingSettings;
   updatedAt: number;
 }
 
@@ -80,6 +89,9 @@ function loadInitialStore(): PersistentStoreData {
           examSessions: parsed.examSessions || [],
           examResults: parsed.examResults || [],
           certificates: parsed.certificates || [],
+          branding: parsed.branding
+            ? { ...DEFAULT_BRANDING, ...parsed.branding }
+            : { ...DEFAULT_BRANDING },
           updatedAt: parsed.updatedAt || Date.now(),
         };
       }
@@ -95,6 +107,7 @@ function loadInitialStore(): PersistentStoreData {
     examSessions: [],
     examResults: [],
     certificates: [],
+    branding: { ...DEFAULT_BRANDING },
     updatedAt: Date.now(),
   };
 }
@@ -312,9 +325,11 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
       accuracyPercent: accuracy,
       scorePct: accuracy,
       issueDate: createdAt.slice(0, 10),
-      organizationName: 'Bangladesh Ansar & VDP / Onnesha Assessment',
-      institutionName: 'Bangladesh Ansar & VDP Academy',
-      instructorName: 'Major (Retd.) Farhan Chowdhury',
+      organizationName: store.branding?.partnerName
+        ? `Onnesha × ${store.branding.partnerName}`
+        : 'Onnesha Assessment & Examination Arena',
+      institutionName: store.branding?.institutionTitle || 'Onnesha Assessment Arena',
+      instructorName: 'Chief Assessment Officer',
       verificationUrl: `/verify/${certNo}`,
       verified: true,
     };
@@ -342,6 +357,7 @@ export const serverGetBootstrapData = createServerFn({ method: 'GET' }).handler(
     examSessions: store.examSessions,
     examResults: store.examResults,
     certificates: store.certificates,
+    branding: store.branding,
   };
 });
 
@@ -368,7 +384,8 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
         | 'delete_student'
         | 'save_quiz'
         | 'delete_quiz'
-        | 'issue_certificate';
+        | 'issue_certificate'
+        | 'update_branding';
       region?: Region;
       regionId?: string;
       student?: RosterStudent;
@@ -377,6 +394,7 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
       quiz?: Quiz;
       quizId?: string;
       certificate?: CertificateData;
+      branding?: BrandingSettings;
     }) => data
   )
   .handler(async ({ data }) => {
@@ -478,6 +496,17 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
         }
         break;
       }
+      case 'update_branding': {
+        if (data.branding) {
+          store.branding = {
+            ...DEFAULT_BRANDING,
+            ...data.branding,
+            updatedAt: Date.now(),
+          };
+          scheduleDiskPersist();
+        }
+        break;
+      }
     }
 
     return {
@@ -485,6 +514,7 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
       regions: store.regions,
       roster: store.roster,
       customQuizzes: store.customQuizzes,
+      branding: store.branding,
     };
   });
 

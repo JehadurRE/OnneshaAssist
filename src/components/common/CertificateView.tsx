@@ -1,10 +1,8 @@
 import React, { useRef } from 'react';
 import { CertificateData } from '@/lib/types';
 import { useLanguage } from '@/lib/i18n';
-import ansar from '@/assets/ansar.svg.asset.json';
+import { useBranding } from '@/hooks/use-branding';
 import onnesha from '@/assets/onnesha.jpg.asset.json';
-import learningBd from '@/assets/learning-bd.png.asset.json';
-import ccai from '@/assets/ccai.png.asset.json';
 import { Award, CheckCircle2, Download, ExternalLink, Printer, QrCode, ShieldCheck, Sparkles } from 'lucide-react';
 
 export const CertificateView: React.FC<{ certificate: CertificateData; onPrint?: () => void }> = ({
@@ -12,6 +10,7 @@ export const CertificateView: React.FC<{ certificate: CertificateData; onPrint?:
   onPrint,
 }) => {
   const { lang } = useLanguage();
+  const branding = useBranding();
   const certRef = useRef<HTMLDivElement>(null);
 
   const handlePrint = () => {
@@ -50,16 +49,30 @@ export const CertificateView: React.FC<{ certificate: CertificateData; onPrint?:
 
         {/* Top Header Logos */}
         <div className="flex items-center justify-between gap-4 border-b border-border/80 pb-6 print:border-black">
-          <img src={ansar.url} alt="Bangladesh Ansar & VDP" className="h-16 w-16 object-contain" />
+          <img src={onnesha.url} alt="Onnesha LMS" className="h-14 rounded-xl object-contain shadow-sm" />
           <div className="flex flex-col items-center">
             <h3 className="font-display text-base sm:text-lg font-black tracking-wider text-foreground uppercase">
-              {lang === 'bn' ? 'অন্বেষা লার্নিং অ্যান্ড অ্যাসেসমেন্ট' : 'Onnesha Assessment & Examination Arena'}
+              {branding.institutionTitle || (lang === 'bn' ? 'অন্বেষা লার্নিং অ্যান্ড অ্যাসেসমেন্ট' : 'Onnesha Assessment & Examination Arena')}
             </h3>
             <p className="text-xs text-muted-foreground font-semibold">
-              {lang === 'bn' ? 'বাংলাদেশ আনসার ও ভিডিপি · লার্নিং বাংলাদেশ পার্টনারশিপ' : 'Bangladesh Ansar & VDP · Learning Bangladesh Partnership'}
+              {branding.showPartnerLogo && branding.partnerName
+                ? `${branding.partnerName} · Learning Bangladesh Partnership`
+                : lang === 'bn'
+                  ? 'অফিসিয়াল ডিজিটাল অ্যাসেসমেন্ট · লার্নিং বাংলাদেশ পার্টনারশিপ'
+                  : 'Official Digital Assessment · Learning Bangladesh Partnership'}
             </p>
           </div>
-          <img src={onnesha.url} alt="Onnesha LMS" className="h-14 rounded-xl object-contain shadow-sm" />
+          {branding.showPartnerLogo && branding.partnerLogoUrl ? (
+            <img
+              src={branding.partnerLogoUrl}
+              alt={branding.partnerName || 'Joint Partner'}
+              className="h-14 max-w-[140px] object-contain"
+            />
+          ) : (
+            <div className="h-14 w-14 flex items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-600">
+              <Award className="h-7 w-7" />
+            </div>
+          )}
         </div>
 
         {/* Main Certificate Title */}
@@ -153,7 +166,11 @@ export const CertificateView: React.FC<{ certificate: CertificateData; onPrint?:
           <div className="text-center sm:text-right space-y-1">
             <div className="w-36 border-b border-foreground/60 mx-auto sm:ml-auto mb-1"></div>
             <div className="font-bold text-foreground">Controller of Examinations</div>
-            <div className="text-[11px] text-muted-foreground">{certificate.institutionName || 'Bangladesh Ansar & VDP Academy'}</div>
+            <div className="text-[11px] text-muted-foreground">
+              {branding.showPartnerLogo && branding.partnerName
+                ? `${branding.partnerName} · Onnesha`
+                : certificate.institutionName || branding.institutionTitle || 'Onnesha Assessment Arena'}
+            </div>
           </div>
         </div>
       </div>

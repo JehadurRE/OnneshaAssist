@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { MeritParticipant } from '@/lib/types';
 import { db } from '@/lib/db';
+import { useBranding } from '@/hooks/use-branding';
 import { MapPin, Printer, Shield, X } from 'lucide-react';
-import ansar from '@/assets/ansar.svg.asset.json';
+import onnesha from '@/assets/onnesha.jpg.asset.json';
 
 interface MeritGazetteViewProps {
   quizTitle: string;
@@ -16,6 +17,7 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
   onClose,
 }) => {
   const regions = db.getRegions();
+  const branding = useBranding();
   const [selectedRegionId, setSelectedRegionId] = useState<string>('all');
 
   const filtered = useMemo(() => {
@@ -82,10 +84,21 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
         <div className="space-y-6">
           {/* Header Banner */}
           <div className="flex items-center justify-between border-b-2 border-black pb-4">
-            <img src={ansar.url} alt="Emblem" className="h-16 w-16 object-contain" />
+            <div className="flex items-center gap-2">
+              <img src={onnesha.url} alt="Onnesha" className="h-12 object-contain" />
+              {branding.showPartnerLogo && branding.partnerLogoUrl && (
+                <img
+                  src={branding.partnerLogoUrl}
+                  alt={branding.partnerName || 'Partner'}
+                  className="h-12 max-w-[120px] object-contain"
+                />
+              )}
+            </div>
             <div className="text-center flex-1 px-4">
               <div className="text-xs font-bold uppercase tracking-widest text-gray-600">
-                GOVERNMENT OF THE PEOPLE&apos;S REPUBLIC OF BANGLADESH / ANSAR &amp; VDP
+                {branding.showPartnerLogo && branding.partnerName
+                  ? `${branding.partnerName.toUpperCase()} · ONNESHA ASSESSMENT`
+                  : (branding.institutionTitle || 'ONNESHA ASSESSMENT ARENA').toUpperCase()}
               </div>
               <h1 className="text-xl font-black uppercase text-black tracking-tight mt-0.5">
                 EXAMINATION EVALUATION GAZETTE
@@ -178,7 +191,9 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
               <div className="w-48 border-b border-black mb-1"></div>
               <span className="font-bold">Controller of Examinations</span>
               <div className="text-[10px] text-gray-600">
-                Bangladesh Ansar &amp; VDP / Onnesha
+                {branding.showPartnerLogo && branding.partnerName
+                  ? `${branding.partnerName} / Onnesha`
+                  : branding.institutionTitle || 'Onnesha Assessment Arena'}
               </div>
             </div>
           </div>

@@ -1,4 +1,5 @@
 import {
+  BrandingSettings,
   CertificateData,
   ExamResultRecord,
   ExamSessionRecord,
@@ -199,8 +200,8 @@ class OnneshaDatabase {
               cert.accuracyPercent || cert.scorePct || 0,
               cert.issueDate,
               cert.organizationName || 'Onnesha Assessment',
-              cert.institutionName || 'Bangladesh Ansar & VDP Academy',
-              cert.instructorName || 'Major (Retd.) Farhan Chowdhury',
+              cert.institutionName || 'Onnesha Assessment Arena',
+              cert.instructorName || 'Chief Assessment Officer',
               cert.verificationUrl || '',
               cert.signatureUrl || '',
               cert.verified ? 1 : 0,
@@ -208,6 +209,13 @@ class OnneshaDatabase {
           );
         });
         this.setStorage('certificates', res.certificates);
+      }
+
+      if (res.branding) {
+        this.setStorage('branding_settings', res.branding);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('onnesha-branding-updated', { detail: res.branding }));
+        }
       }
 
       this.notifyListeners();
@@ -577,6 +585,7 @@ class OnneshaDatabase {
         ]
       );
 
+      const branding = this.getBranding();
       const certNo = formatDeterministicCertNumber(session.pin, roll, idx + 1);
       this.issueCertificate({
         certificateNumber: certNo,
@@ -590,9 +599,12 @@ class OnneshaDatabase {
         totalParticipants: count,
         accuracyPercent: accuracy,
         issueDate: createdAt.slice(0, 10),
-        organizationName: 'Bangladesh Ansar & VDP / Onnesha Assessment',
-        institutionName: 'Bangladesh Ansar & VDP Academy',
-        instructorName: 'Major (Retd.) Farhan Chowdhury',
+        organizationName:
+          branding.showPartnerLogo && branding.partnerName
+            ? `Onnesha × ${branding.partnerName}`
+            : 'Onnesha Assessment & Examination Arena',
+        institutionName: branding.institutionTitle || 'Onnesha Assessment Arena',
+        instructorName: 'Chief Assessment Officer',
         verificationUrl:
           typeof window !== 'undefined'
             ? `${window.location.origin}/verify/${certNo}`
@@ -679,8 +691,8 @@ class OnneshaDatabase {
         cert.accuracyPercent || cert.scorePct || 0,
         cert.issueDate,
         cert.organizationName || 'Onnesha Assessment',
-        cert.institutionName || 'Bangladesh Ansar & VDP Academy',
-        cert.instructorName || 'Major (Retd.) Farhan Chowdhury',
+        cert.institutionName || 'Onnesha Assessment Arena',
+        cert.instructorName || 'Chief Assessment Officer',
         cert.verificationUrl || '',
         cert.signatureUrl || '',
         cert.verified ? 1 : 0,
@@ -692,6 +704,33 @@ class OnneshaDatabase {
 
     serverAdminMutateStore({ data: { action: 'issue_certificate', certificate: newCert } }).catch(() => {});
     return newCert;
+  }
+
+  // ---------------- BRANDING & JOINT PARTNER LOGO ----------------
+  getBranding(): BrandingSettings {
+    return this.getStorage<BrandingSettings>('branding_settings', {
+      showPartnerLogo: false,
+      partnerName: '',
+      partnerLogoUrl: '',
+      institutionTitle: 'Onnesha Assessment Arena',
+    });
+  }
+
+  saveBranding(branding: BrandingSettings): BrandingSettings {
+    const updated: BrandingSettings = {
+      showPartnerLogo: !!branding.showPartnerLogo,
+      partnerName: (branding.partnerName || '').trim(),
+      partnerLogoUrl: (branding.partnerLogoUrl || '').trim(),
+      institutionTitle: (branding.institutionTitle || 'Onnesha Assessment Arena').trim(),
+      updatedAt: Date.now(),
+    };
+    this.setStorage('branding_settings', updated);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('onnesha-branding-updated', { detail: updated }));
+    }
+    this.notifyListeners();
+    serverAdminMutateStore({ data: { action: 'update_branding', branding: updated } }).catch(() => {});
+    return updated;
   }
 
   // ---------------- TRANSACTIONS ----------------

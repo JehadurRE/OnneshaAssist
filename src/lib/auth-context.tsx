@@ -70,9 +70,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const seedAccount: StoredUserAccount = {
             id: 'usr-default-instructor',
             email: 'instructor@onnesha.app',
-            name: 'Maj. (Retd.) Farhan Chowdhury',
+            name: 'Farhan Chowdhury',
             role: 'instructor',
-            institutionName: 'Bangladesh Ansar & VDP Training Academy',
+            institutionName: 'Onnesha Assessment Academy',
             phone: '01711000000',
             passwordHash: defaultHash,
             avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',

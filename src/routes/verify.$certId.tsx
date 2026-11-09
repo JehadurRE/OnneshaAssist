@@ -82,7 +82,7 @@ function VerifyCertificatePage() {
               <p className="mt-1 font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-300">
                 Official Credential No: <strong className="text-foreground">{foundCert.certificateNumber}</strong>
                 {foundCert.regionName ? ` · Region: ${foundCert.regionName}` : ""} · Issuer:{" "}
-                {foundCert.institutionName || "Bangladesh Ansar & VDP Training Academy"}
+                {foundCert.institutionName || "Onnesha Assessment Arena"}
               </p>
             </div>
 

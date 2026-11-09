@@ -36,7 +36,7 @@ function KnowledgeVaultCatalogPage() {
     { id: "all", nameEn: "All Repositories", nameBn: "সকল ভল্ট" },
     { id: "General Knowledge", nameEn: "BCS & Civil Service", nameBn: "বিসিএস ও ক্যাডার একাডেমি" },
     { id: "Physics", nameEn: "Varsity & Medical Entrance", nameBn: "মেডিকেল ও বিশ্ববিদ্যালয় ভর্তি" },
-    { id: "Safety & Compliance", nameEn: "Defense & Tactical (Ansar/VDP)", nameBn: "প্রতিরক্ষা ও টেকটিক্যাল ট্রেনিং" },
+    { id: "Safety & Compliance", nameEn: "Public Service & Compliance", nameBn: "পাবলিক সার্ভিস ও কমপ্লায়েন্স" },
     { id: "Mathematics", nameEn: "Mathematics & Analytical", nameBn: "উচ্চতর গণিত ও অ্যানালিটিক্স" },
     { id: "English Language", nameEn: "English & Linguistics", nameBn: "ইংরেজি ও লিঙ্গুইস্টিকস" },
     { id: "Science", nameEn: "General Science & ICT", nameBn: "সাধারণ বিজ্ঞান ও আইসিটি" },

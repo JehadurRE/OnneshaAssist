@@ -3,7 +3,8 @@ import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { useLanguage } from '@/lib/i18n';
 import { useAuth } from '@/lib/auth-context';
 import { LanguageToggle } from '@/components/common/LanguageToggle';
-import ansar from '@/assets/ansar.svg.asset.json';
+import { useBranding } from '@/hooks/use-branding';
+import onnesha from '@/assets/onnesha.jpg.asset.json';
 import {
   Activity,
   ArrowRight,
@@ -36,6 +37,7 @@ import {
 export const Navbar: React.FC = () => {
   const { lang, t } = useLanguage();
   const { user, isAuthenticated, logout } = useAuth();
+  const branding = useBranding();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -58,18 +60,31 @@ export const Navbar: React.FC = () => {
       {/* ============================================================ */}
       <header className="sticky top-0 z-40 w-full border-b border-border/80 bg-background/85 backdrop-blur-xl transition-all shadow-xs">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-3 sm:px-6 py-3">
-          {/* Brand Logo & Institutional Emblem */}
+          {/* Brand Logo & Optional Joint Partner Emblem */}
           <Link to="/" className="flex items-center gap-2.5 sm:gap-3 group">
-            <div className="relative">
-              <img
-                src={ansar.url}
-                alt="Bangladesh Ansar & VDP"
-                className="h-8 w-8 sm:h-9 sm:w-9 object-contain transition-transform group-hover:scale-105"
-              />
-              <span className="absolute -bottom-0.5 -right-0.5 flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-              </span>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <img
+                  src={onnesha.url}
+                  alt="Onnesha Arena"
+                  className="h-8 sm:h-9 w-auto rounded-lg object-contain transition-transform group-hover:scale-105"
+                />
+                <span className="absolute -bottom-0.5 -right-0.5 flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                </span>
+              </div>
+
+              {branding.showPartnerLogo && branding.partnerLogoUrl && (
+                <>
+                  <span className="text-muted-foreground/60 font-mono text-xs font-bold">×</span>
+                  <img
+                    src={branding.partnerLogoUrl}
+                    alt={branding.partnerName || 'Joint Partner'}
+                    className="h-8 sm:h-9 max-w-[110px] object-contain rounded-md"
+                  />
+                </>
+              )}
             </div>
             <div className="flex flex-col">
               <span className="font-display text-base sm:text-lg font-black tracking-tight text-foreground flex items-center gap-1.5">
@@ -79,7 +94,9 @@ export const Navbar: React.FC = () => {
                 </span>
               </span>
               <span className="text-[9px] sm:text-[10px] text-muted-foreground hidden sm:inline leading-none font-medium">
-                Institutional AI Examination Engine
+                {branding.showPartnerLogo && branding.partnerName
+                  ? `In partnership with ${branding.partnerName}`
+                  : 'Live Examination & Assessment System'}
               </span>
             </div>
           </Link>

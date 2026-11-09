@@ -1,14 +1,15 @@
 import React from 'react';
 import { Link } from '@tanstack/react-router';
 import { useLanguage } from '@/lib/i18n';
+import { useBranding } from '@/hooks/use-branding';
 import learningBd from '@/assets/learning-bd.png.asset.json';
 import ccai from '@/assets/ccai.png.asset.json';
-import ansar from '@/assets/ansar.svg.asset.json';
 import onnesha from '@/assets/onnesha.jpg.asset.json';
 import { ShieldCheck, Code, Sparkles, Smartphone } from 'lucide-react';
 
 export const Footer: React.FC = () => {
   const { lang, t } = useLanguage();
+  const branding = useBranding();
 
   return (
     <footer className="border-t border-border/80 bg-card/60 transition-colors">
@@ -17,8 +18,17 @@ export const Footer: React.FC = () => {
           {/* Brand Col */}
           <div className="lg:col-span-2 space-y-4">
             <div className="flex items-center gap-3">
-              <img src={ansar.url} alt="Bangladesh Ansar & VDP" className="h-10 w-10 object-contain" />
               <img src={onnesha.url} alt="Onnesha LMS" className="h-9 rounded-md object-contain" />
+              {branding.showPartnerLogo && branding.partnerLogoUrl && (
+                <>
+                  <span className="text-muted-foreground font-mono text-xs font-bold">×</span>
+                  <img
+                    src={branding.partnerLogoUrl}
+                    alt={branding.partnerName || 'Joint Partner'}
+                    className="h-9 max-w-[120px] rounded-md object-contain"
+                  />
+                </>
+              )}
             </div>
             <div>
               <h3 className="font-display text-base font-bold text-foreground">
@@ -81,7 +91,7 @@ export const Footer: React.FC = () => {
               </li>
               <li>
                 <Link to="/timer" className="hover:text-primary transition-colors">
-                  {t('exam_timer')} (Ansar &amp; VDP)
+                  {t('exam_timer')}
                 </Link>
               </li>
               <li>

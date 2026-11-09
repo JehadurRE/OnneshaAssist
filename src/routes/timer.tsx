@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ccai from "@/assets/ccai.png.asset.json";
 import learningBd from "@/assets/learning-bd.png.asset.json";
 import onnesha from "@/assets/onnesha.jpg.asset.json";
-import ansar from "@/assets/ansar.svg.asset.json";
+import { useBranding } from "@/hooks/use-branding";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { useLanguage } from "@/lib/i18n";
@@ -11,11 +11,11 @@ import { useLanguage } from "@/lib/i18n";
 export const Route = createFileRoute("/timer")({
   head: () => ({
     meta: [
-      { title: "Exam Countdown Timer — Ansar & VDP AI Training" },
+      { title: "Exam Countdown Timer — Onnesha Assessment Arena" },
       {
         name: "description",
         content:
-          "Custom countdown exam timer for the Ansar & VDP AI training programme by Cloud Connect AI, Onnesha LMS and Learning Bangladesh.",
+          "Projector-ready examination countdown timer by Onnesha LMS, Learning Bangladesh, and Cloud Connect AI.",
       },
     ],
   }),
@@ -30,6 +30,7 @@ function pad(n: number) {
 
 function TimerPage() {
   const { lang } = useLanguage();
+  const branding = useBranding();
   const [total, setTotal] = useState(30 * 60);
   const [left, setLeft] = useState(30 * 60);
   const [running, setRunning] = useState(false);
@@ -93,16 +94,28 @@ function TimerPage() {
         {!isFullscreen && (
           <div className="w-full flex flex-wrap items-center justify-between gap-4 border-b border-border/80 pb-4">
             <div className="flex items-center gap-3">
-              <img src={ansar.url} alt="Bangladesh Ansar & VDP emblem" className="h-10 w-10 object-contain" />
+              <img src={onnesha.url} alt="Onnesha LMS" className="h-9 rounded-md object-contain" />
+              {branding.showPartnerLogo && branding.partnerLogoUrl && (
+                <>
+                  <span className="text-muted-foreground font-mono text-xs font-bold">×</span>
+                  <img
+                    src={branding.partnerLogoUrl}
+                    alt={branding.partnerName || "Joint Partner"}
+                    className="h-9 max-w-[120px] rounded-md object-contain"
+                  />
+                </>
+              )}
               <div>
                 <h1 className="font-display text-lg font-bold text-foreground">
-                  Ansar &amp; VDP — AI Training
+                  {branding.showPartnerLogo && branding.partnerName
+                    ? `${branding.partnerName} · Exam Hall Timer`
+                    : branding.institutionTitle || "Onnesha Assessment — Exam Hall Timer"}
                 </h1>
-                <p className="text-xs text-muted-foreground">Examination Timer · Onnesha LMS &amp; CCAI</p>
+                <p className="text-xs text-muted-foreground">Official Examination Clock · Onnesha LMS &amp; CCAI</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <img src={onnesha.url} alt="Onnesha LMS" className="h-9 rounded-md object-contain" />
+              <img src={learningBd.url} alt="Learning Bangladesh" className="h-6 object-contain" />
               <img src={ccai.url} alt="Cloud Connect AI Limited" className="h-6 object-contain" />
             </div>
           </div>

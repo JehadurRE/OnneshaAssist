@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useLanguage } from "@/lib/i18n";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
-import ansar from "@/assets/ansar.svg.asset.json";
+import onnesha from "@/assets/onnesha.jpg.asset.json";
 import {
   AlertCircle,
   ArrowRight,
@@ -109,7 +109,7 @@ function LoginPage() {
         <div className="w-full max-w-md bento-card p-6 sm:p-8 shadow-glow">
           {/* Brand Emblem & Header */}
           <div className="text-center">
-            <img src={ansar.url} alt="Emblem" className="h-12 w-12 mx-auto object-contain mb-3" />
+            <img src={onnesha.url} alt="Onnesha" className="h-11 mx-auto rounded-lg object-contain mb-3" />
             <h1 className="font-display text-2xl font-black text-foreground tracking-tight">
               {lang === "bn" ? "অন্বেষা অ্যারেনায় প্রবেশ" : "Sign In to Onnesha Arena"}
             </h1>
