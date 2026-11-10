@@ -294,22 +294,35 @@ export const Navbar: React.FC = () => {
                       <div className="text-[10px] text-muted-foreground truncate">{user.email}</div>
                     </div>
 
-                    <Link
-                      to="/admin"
-                      onClick={() => setUserDropdownOpen(false)}
-                      className="mt-1 flex items-center gap-2 rounded-xl p-2.5 text-xs font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 transition"
-                    >
-                      <Shield className="h-3.5 w-3.5" />
-                      <span>Super Admin Panel (/admin)</span>
-                    </Link>
+                    {user?.role === 'admin' && (
+                      <Link
+                        to="/admin"
+                        onClick={() => setUserDropdownOpen(false)}
+                        className="mt-1 flex items-center gap-2 rounded-xl p-2.5 text-xs font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 transition"
+                      >
+                        <Shield className="h-3.5 w-3.5" />
+                        <span>Super Admin Panel (/admin)</span>
+                      </Link>
+                    )}
+
+                    {user?.role !== 'candidate' && (
+                      <Link
+                        to="/dashboard"
+                        onClick={() => setUserDropdownOpen(false)}
+                        className="flex items-center gap-2 rounded-xl p-2.5 text-xs font-bold text-foreground hover:bg-accent transition"
+                      >
+                        <LayoutDashboard className="h-3.5 w-3.5 text-primary" />
+                        <span>Instructor Studio (/dashboard)</span>
+                      </Link>
+                    )}
 
                     <Link
-                      to="/dashboard"
+                      to="/play"
                       onClick={() => setUserDropdownOpen(false)}
                       className="flex items-center gap-2 rounded-xl p-2.5 text-xs font-bold text-foreground hover:bg-accent transition"
                     >
-                      <LayoutDashboard className="h-3.5 w-3.5 text-primary" />
-                      <span>Instructor Studio (/dashboard)</span>
+                      <BookOpen className="h-3.5 w-3.5 text-emerald-500" />
+                      <span>Student Exam Hub (/play)</span>
                     </Link>
 
                     <button

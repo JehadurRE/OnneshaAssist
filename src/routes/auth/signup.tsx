@@ -59,7 +59,11 @@ function SignupPage() {
     setIsLoading(false);
 
     if (result.success) {
-      navigate({ to: "/dashboard" });
+      if (role === "candidate") {
+        navigate({ to: "/play" });
+      } else {
+        navigate({ to: "/dashboard" });
+      }
     } else {
       setErrorMessage(result.error || "Failed to create account. Please verify input data.");
     }

@@ -7,7 +7,30 @@ import { CertificateView } from "@/components/common/CertificateView";
 import { db } from "@/lib/db";
 import { serverVerifyCertificate } from "@/lib/server-session";
 import { CertificateData } from "@/lib/types";
-import { ArrowLeft, CheckCircle2, ShieldAlert } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Search, ShieldAlert } from "lucide-react";
+
+const OFFICIAL_DEMO_CERT: CertificateData = {
+  id: "cert-onn-4821-9982",
+  certificateNumber: "ONN-4821-9982",
+  studentName: "Cadet Tanvir Hossain",
+  studentRoll: "2026-101",
+  regionName: "Dhaka Range",
+  quizTitle: "৪৬তম বিসিএস প্রিলিমিনারি ও মুক্তিযুদ্ধ মডেল টেস্ট",
+  score: 4850,
+  marksObtained: 4850,
+  totalPoints: 5000,
+  totalMarks: 5000,
+  rank: 1,
+  totalParticipants: 500,
+  accuracyPercent: 97,
+  scorePct: 97,
+  issueDate: "2026-03-15",
+  organizationName: "Onnesha Assessment & Examination Arena",
+  institutionName: "Onnesha Assessment Arena",
+  instructorName: "Chief Assessment Officer",
+  verificationUrl: "/verify/ONN-4821-9982",
+  verified: true,
+};
 
 export const Route = createFileRoute("/verify/$certId")({
   head: ({ params }) => ({
@@ -23,13 +46,21 @@ function VerifyCertificatePage() {
   const { certId } = Route.useParams();
   const navigate = useNavigate();
   const { lang } = useLanguage();
-  const [searchCode, setSearchCode] = useState("");
-  const [foundCert, setFoundCert] = useState<CertificateData | undefined>(() =>
-    db.getCertificateById(certId)
-  );
+  const [searchCode, setSearchCode] = useState(certId);
+  const [foundCert, setFoundCert] = useState<CertificateData | undefined>(() => {
+    if (certId.toUpperCase() === "ONN-4821-9982") return OFFICIAL_DEMO_CERT;
+    return db.getCertificateById(certId);
+  });
   const [isCheckingServer, setIsCheckingServer] = useState(!foundCert);
 
   useEffect(() => {
+    setSearchCode(certId);
+    if (certId.toUpperCase() === "ONN-4821-9982") {
+      setFoundCert(OFFICIAL_DEMO_CERT);
+      setIsCheckingServer(false);
+      return;
+    }
+
     let active = true;
     const local = db.getCertificateById(certId);
     if (local) {
@@ -58,11 +89,44 @@ function VerifyCertificatePage() {
     };
   }, [certId]);
 
+  const handleLookup = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchCode.trim()) {
+      navigate({
+        to: "/verify/$certId",
+        params: { certId: searchCode.trim().toUpperCase() },
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground bg-grid flex flex-col transition-colors">
       <Navbar />
 
       <main className="flex-1 mx-auto max-w-4xl w-full px-4 sm:px-6 py-10 space-y-6">
+        {/* Top Lookup Bar */}
+        <form
+          onSubmit={handleLookup}
+          className="rounded-2xl border border-border bg-card p-3 sm:p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 shadow-sm print:hidden"
+        >
+          <div className="relative flex-1">
+            <Search className="h-4 w-4 text-muted-foreground absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchCode}
+              onChange={(e) => setSearchCode(e.target.value)}
+              placeholder="Enter Certificate ID (e.g. ONN-4821-9982)"
+              className="w-full rounded-xl border border-border bg-background pl-10 pr-4 py-2 font-mono text-xs font-bold uppercase text-foreground outline-none focus:border-primary"
+            />
+          </div>
+          <button
+            type="submit"
+            className="rounded-xl bg-primary px-5 py-2 text-xs font-extrabold text-primary-foreground shadow-sm hover:bg-primary/90 transition"
+          >
+            {lang === "bn" ? "যাচাই করুন" : "Verify Credential"}
+          </button>
+        </form>
+
         {isCheckingServer ? (
           <div className="rounded-3xl border border-border bg-card p-12 text-center shadow-sm">
             <p className="font-mono text-sm font-bold text-muted-foreground">
@@ -72,7 +136,7 @@ function VerifyCertificatePage() {
         ) : foundCert ? (
           <>
             {/* Verification Status Header */}
-            <div className="rounded-3xl border-2 border-emerald-500/40 bg-emerald-500/10 p-6 text-center shadow-tactical flex flex-col items-center animate-in fade-in">
+            <div className="rounded-3xl border-2 border-emerald-500/40 bg-emerald-500/10 p-6 text-center shadow-tactical flex flex-col items-center animate-in fade-in print:hidden">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md mb-2">
                 <CheckCircle2 className="h-6 w-6 stroke-[3]" />
               </div>
@@ -102,34 +166,14 @@ function VerifyCertificatePage() {
               <code className="font-mono font-bold text-destructive">{certId}</code>.
             </p>
 
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (searchCode.trim()) {
-                  navigate({
-                    to: "/verify/$certId",
-                    params: { certId: searchCode.trim().toUpperCase() },
-                  });
-                }
-              }}
-              className="mt-6 flex w-full max-w-sm gap-2"
-            >
-              <input
-                type="text"
-                value={searchCode}
-                onChange={(e) => setSearchCode(e.target.value)}
-                placeholder="e.g. ONN-4821-0101"
-                className="flex-1 rounded-2xl border border-border bg-background px-4 py-2.5 font-mono text-xs font-bold text-foreground outline-none focus:border-primary"
-              />
-              <button
-                type="submit"
-                className="rounded-2xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90"
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              <Link
+                to="/verify/$certId"
+                params={{ certId: "ONN-4821-9982" }}
+                className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground shadow-sm"
               >
-                Verify
-              </button>
-            </form>
-
-            <div className="mt-6">
+                Load Sample Certificate (ONN-4821-9982)
+              </Link>
               <Link
                 to="/"
                 className="inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline"

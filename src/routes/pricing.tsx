@@ -110,7 +110,7 @@ const INSTITUTIONAL_PLANS: InstitutionalPlan[] = [
       "Roll number / Student ID authentication tracking",
       "Printable official merit gazette notice boards",
       "Guardian SMS result dispatch integration",
-      "Psychometric item difficulty ($P$-value) indexing",
+      "Psychometric item difficulty (P-value) indexing",
       "50 AI generation credits per month",
       "Custom examination countdown timer presets",
     ],
@@ -120,7 +120,7 @@ const INSTITUTIONAL_PLANS: InstitutionalPlan[] = [
       "রোল নম্বর ও ক্যাডেট আইডি যাচাইকরণ",
       "নোটিশ বোর্ডের জন্য প্রিন্টযোগ্য অফিসিয়াল মেধা গেজেট",
       "অভিভাবকের ফোনে স্বয়ংক্রিয় SMS রেজাল্ট ডিসপ্যাচ",
-      "সাইকোমেট্রিক প্রশ্নের কাঠিন্য ($P$-Value) সূচক",
+      "সাইকোমেট্রিক প্রশ্নের কাঠিন্য (P-Value) সূচক",
       "প্রতি মাসে ৫০টি AI প্রশ্ন জেনারেশন ক্রেডিট",
       "কাস্টম এক্সাম টাইমার ও ফুলস্ক্রিন প্রেজেন্টেশন",
     ],
@@ -208,7 +208,7 @@ function PricingPage() {
 
           <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
             {lang === 'bn'
-              ? 'ব্যক্তিগত শিক্ষক থেকে শুরু করে বাংলাদেশ আনসার ও ভিডিপি এবং শীর্ষ কোচিং সেন্টারের জন্য তৈরি ডিজিটাল মূল্যায়ন ব্যবস্থা।'
+              ? 'ব্যক্তিগত শিক্ষক থেকে শুরু করে বিশ্ববিদ্যালয়, প্রশিক্ষণ একাডেমি এবং শীর্ষ কোচিং সেন্টারের জন্য তৈরি ডিজিটাল মূল্যায়ন ব্যবস্থা।'
               : 'From classroom pop-quizzes to high-stakes defense academy model exams with negative marking, proctor telemetry, and instant gazette notices.'}
           </p>
 

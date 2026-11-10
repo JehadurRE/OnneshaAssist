@@ -228,10 +228,12 @@ function DashboardPage() {
       .filter((r) => r.count > 0);
   }, [examResults, selectedSessionId, regions]);
 
-  // New Quiz Builder State
+  // New / Edit Quiz Builder State
+  const [editingQuizId, setEditingQuizId] = useState<string | null>(null);
+  const [editingQuizSlug, setEditingQuizSlug] = useState<string | null>(null);
   const [newQuizTitle, setNewQuizTitle] = useState("");
   const [newQuizCategory, setNewQuizCategory] = useState("General Knowledge");
-  const [newQuizCourseId, setNewQuizCourseId] = useState<string>("course-bcs-46");
+  const [newQuizCourseId, setNewQuizCourseId] = useState<string>("course-bcs-foundation");
   const [newQuizNumber, setNewQuizNumber] = useState<number>(5);
   const [newQuestions, setNewQuestions] = useState<Question[]>([
     {
@@ -254,27 +256,83 @@ function DashboardPage() {
     },
   ]);
 
+  const handleLoadQuizIntoEditor = (quiz: Quiz) => {
+    setEditingQuizId(quiz.id);
+    setEditingQuizSlug(quiz.slug || quiz.id);
+    setNewQuizTitle(quiz.titleEn || quiz.titleBn);
+    setNewQuizCourseId(quiz.courseId || courses[0]?.id || "course-bcs-foundation");
+    setNewQuizNumber(quiz.quizNumber || 1);
+    setNewQuizCategory(quiz.categoryEn || "General Knowledge");
+    setNewQuestions(
+      quiz.questions.length > 0
+        ? JSON.parse(JSON.stringify(quiz.questions))
+        : [
+            {
+              id: "nq-1",
+              textEn: "Sample Question #1",
+              textBn: "নমুনা প্রশ্ন #১",
+              type: "single_mcq",
+              timeLimitSec: 20,
+              points: 1000,
+              negativeMarks: 0.25,
+              options: [
+                { id: "o1", textEn: "Option A", textBn: "অপশন ক", isCorrect: true },
+                { id: "o2", textEn: "Option B", textBn: "অপশন খ" },
+                { id: "o3", textEn: "Option C", textBn: "অপশন গ" },
+                { id: "o4", textEn: "Option D", textBn: "অপশন ঘ" },
+              ],
+              correctOptionIds: ["o1"],
+            },
+          ]
+    );
+    setActiveTab("ai_creator");
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get("tab") as TabType | null;
+    const editQuizIdParam = params.get("editQuizId");
+    const courseIdParam = params.get("courseId");
+
+    if (tabParam) {
+      setActiveTab(tabParam);
+    }
+    if (courseIdParam) {
+      setNewQuizCourseId(courseIdParam);
+      const count = db.getQuizzes().filter((q) => q.courseId === courseIdParam).length;
+      setNewQuizNumber(count + 1);
+    }
+    if (editQuizIdParam) {
+      const target = db.getQuizBySlug(editQuizIdParam);
+      if (target) {
+        handleLoadQuizIntoEditor(target);
+      }
+    }
+  }, []);
+
   const handleSaveQuiz = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newQuizTitle) return;
 
     const selectedCourse = courses.find((c) => c.id === newQuizCourseId);
-    const quizId = `custom-quiz-${Date.now()}`;
+    const quizId = editingQuizId || `custom-quiz-${Date.now()}`;
+    const quizSlug = editingQuizSlug || `custom-${Date.now().toString(36)}`;
     const newQuiz: Quiz = {
       id: quizId,
-      slug: `custom-${Date.now().toString(36)}`,
+      slug: quizSlug,
       courseId: selectedCourse?.id,
       courseTitle: selectedCourse?.titleEn,
       quizNumber: newQuizNumber || 1,
-      instructorId: user?.id || "usr-inst-1",
+      instructorId: user?.id || "usr-instructor-1",
       instructorName: user?.name || "Instructor",
       titleEn: newQuizTitle,
       titleBn: newQuizTitle,
       descriptionEn: `${selectedCourse ? `${selectedCourse.titleEn} · Quiz #${newQuizNumber || 1} · ` : ""}Created by ${user?.name || "Instructor"}.`,
       descriptionBn: `${selectedCourse ? `${selectedCourse.titleBn} · কুইজ #${newQuizNumber || 1} · ` : ""}ইন্সট্রাক্টর ${user?.name || "শিক্ষক"} কর্তৃক তৈরি মডেল টেস্ট।`,
-      icon: "🎯",
-      categoryEn: selectedCourse?.category || newQuizCategory,
-      categoryBn: selectedCourse?.category || newQuizCategory,
+      icon: selectedCourse?.icon || "🎯",
+      categoryEn: selectedCourse?.categoryEn || newQuizCategory,
+      categoryBn: selectedCourse?.categoryBn || newQuizCategory,
       questions: newQuestions,
       isTemplate: false,
       tags: ["Custom", `Quiz ${newQuizNumber || 1}`, "Multi-Format"],
@@ -282,6 +340,8 @@ function DashboardPage() {
 
     db.saveCustomQuiz(newQuiz);
     setQuizzes(db.getQuizzes());
+    setEditingQuizId(null);
+    setEditingQuizSlug(null);
     setNewQuizTitle("");
     setActiveTab("quizzes");
     setSmsSuccessMsg(
@@ -1313,9 +1373,26 @@ function DashboardPage() {
                             </span>
                           )}
                         </div>
-                        <span className="rounded-full bg-muted px-2.5 py-0.5 font-mono text-[10px] font-bold text-foreground">
-                          {quiz.questions.length} Items
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="rounded-full bg-muted px-2.5 py-0.5 font-mono text-[10px] font-bold text-foreground">
+                            {quiz.questions.length} Items
+                          </span>
+                          {!quiz.isTemplate && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                db.deleteCustomQuiz(quiz.id);
+                                setQuizzes(db.getQuizzes());
+                                setSmsSuccessMsg(`✓ Deleted "${quiz.titleEn}" from server database.`);
+                                setTimeout(() => setSmsSuccessMsg(null), 3500);
+                              }}
+                              className="rounded-lg p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
+                              title="Delete custom quiz"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       {quiz.courseTitle && (
@@ -1338,18 +1415,36 @@ function DashboardPage() {
                       )}
                     </div>
 
-                    <div className="pt-3 border-t border-border/80 flex items-center justify-between gap-2">
-                      <button
-                        onClick={() => setSelectedQuizForOmr(quiz)}
-                        className="rounded-xl border border-border px-3 py-1.5 text-xs font-bold text-foreground hover:bg-accent"
-                      >
-                        OMR Sheet
-                      </button>
+                    <div className="pt-3 border-t border-border/80 flex flex-wrap items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleLoadQuizIntoEditor(quiz)}
+                          className="rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-bold text-foreground hover:bg-accent transition"
+                          title="Edit Questions"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedQuizForOmr(quiz)}
+                          className="rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-bold text-foreground hover:bg-accent transition"
+                        >
+                          OMR
+                        </button>
+                        <Link
+                          to="/play"
+                          search={{ practice: quiz.slug || quiz.id } as any}
+                          className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 transition"
+                        >
+                          Practice
+                        </Link>
+                      </div>
 
                       <Link
                         to="/host/$quizId"
                         params={{ quizId: quiz.slug || quiz.id }}
-                        className="rounded-xl bg-primary px-4 py-1.5 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90"
+                        className="rounded-xl bg-primary px-3.5 py-1.5 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90 transition"
                       >
                         Host Arena
                       </Link>
@@ -1363,12 +1458,31 @@ function DashboardPage() {
         {/* TAB 4: MANUAL QUESTION STUDIO */}
         {activeTab === "ai_creator" && (
           <div className="space-y-6 animate-in fade-in">
-            <h2 className="font-display text-xl font-bold text-foreground">
-              Manual Question Studio &amp; Multi-Style Paper Builder
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              Assign quizzes to a Course in sequential order (Quiz 1, Quiz 2...) and mix Single MCQ, True/False, Multiple Select, and Written Short Answer questions.
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-display text-xl font-bold text-foreground">
+                  {editingQuizId
+                    ? `Editing Quiz: ${newQuizTitle}`
+                    : "Manual Question Studio & Multi-Style Paper Builder"}
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Assign quizzes to a Course in sequential order (Quiz 1, Quiz 2...) and mix Single MCQ, True/False, Multiple Select, and Written Short Answer questions.
+                </p>
+              </div>
+              {editingQuizId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingQuizId(null);
+                    setEditingQuizSlug(null);
+                    setNewQuizTitle("");
+                  }}
+                  className="rounded-xl border border-border bg-card px-3.5 py-2 text-xs font-bold text-muted-foreground hover:text-foreground"
+                >
+                  Cancel Edit (Create New)
+                </button>
+              )}
+            </div>
 
             <form onSubmit={handleSaveQuiz} className="bento-card p-6 shadow-sm space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1384,7 +1498,7 @@ function DashboardPage() {
                       const count = quizzes.filter((q) => q.courseId === cid).length;
                       setNewQuizNumber(count + 1);
                       const matched = courses.find((c) => c.id === cid);
-                      if (matched) setNewQuizCategory(matched.category);
+                      if (matched) setNewQuizCategory(matched.categoryEn);
                     }}
                     className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs sm:text-sm font-bold text-foreground outline-none focus:border-primary"
                   >
@@ -2263,6 +2377,7 @@ function DashboardPage() {
       {showAiModal && (
         <AiQuizModal
           isOpen={showAiModal}
+          defaultCourseId={selectedCourseFilter}
           onClose={() => setShowAiModal(false)}
           onQuizGenerated={(quiz) => {
             db.saveCustomQuiz(quiz);
@@ -2270,6 +2385,10 @@ function DashboardPage() {
             setAiCredits(getAiCredits());
             setShowAiModal(false);
             setActiveTab("quizzes");
+            setSmsSuccessMsg(
+              `✓ Generated "${quiz.titleEn}" (${quiz.courseTitle ? `${quiz.courseTitle} · Quiz #${quiz.quizNumber}` : "AI Module"}) and saved to server database.`
+            );
+            setTimeout(() => setSmsSuccessMsg(null), 4000);
           }}
         />
       )}

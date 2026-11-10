@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useLanguage } from "@/lib/i18n";
+import { db } from "@/lib/db";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import onnesha from "@/assets/onnesha.jpg.asset.json";
@@ -37,10 +38,12 @@ function ForgotPasswordPage() {
     e.preventDefault();
     setErrorMessage(null);
 
+    const targetEmail = email.trim().toLowerCase();
     const registry = JSON.parse(localStorage.getItem("onnesha_user_registry") || "[]");
-    const account = registry.find((u: any) => u.email?.toLowerCase() === email.trim().toLowerCase());
+    const localAccount = registry.find((u: any) => u.email?.toLowerCase() === targetEmail);
+    const dbAccount = db.getUsers().find((u) => u.email?.toLowerCase() === targetEmail);
 
-    if (!account) {
+    if (!localAccount && !dbAccount) {
       setErrorMessage("No account registered with this email address.");
       return;
     }

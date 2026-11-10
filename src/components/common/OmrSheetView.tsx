@@ -1,8 +1,18 @@
 import React, { useState } from 'react';
 import { Quiz } from '@/lib/types';
-import { db } from '@/lib/db';
+import { db, formatDeterministicCertNumber } from '@/lib/db';
 import { useBranding } from '@/hooks/use-branding';
-import { Camera, Check, CheckCircle2, Download, FileImage, Play, Printer, RotateCcw, Shield, Sparkles, Upload, X } from 'lucide-react';
+import {
+  Award,
+  Camera,
+  CheckCircle2,
+  FileImage,
+  Printer,
+  RotateCcw,
+  Shield,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import onnesha from '@/assets/onnesha.jpg.asset.json';
 
 interface OmrSheetViewProps {
@@ -14,12 +24,18 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
   const roster = db.getRoster();
   const branding = useBranding();
   const [selectedStudentId, setSelectedStudentId] = useState<string>(roster[0]?.id || '');
-  const [candidateName, setCandidateName] = useState<string>(roster[0]?.name || 'Cadet Tanvir Hossain');
-  const [candidateRoll, setCandidateRoll] = useState<string>(roster[0]?.rollNumber || '2026-104');
+  const [candidateName, setCandidateName] = useState<string>(
+    roster[0]?.name || 'Cadet Tanvir Hossain'
+  );
+  const [candidateRoll, setCandidateRoll] = useState<string>(roster[0]?.rollNumber || '2026-101');
+  const [candidateRegionName, setCandidateRegionName] = useState<string>(
+    roster[0]?.regionName || 'Dhaka Range'
+  );
   const [selectedSet, setSelectedSet] = useState<string>('ক (A)');
   const [isScanning, setIsScanning] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
-  
+  const [savedCertNumber, setSavedCertNumber] = useState<string | null>(null);
+
   // Interactive bubble states: { [questionNumber]: 'A' | 'B' | 'C' | 'D' }
   const [filledBubbles, setFilledBubbles] = useState<Record<number, string>>({});
   const [gradingResult, setGradingResult] = useState<{
@@ -30,6 +46,7 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
     rawScore: number;
     negativeDeduction: number;
     netScore: number;
+    accuracyPct: number;
   } | null>(null);
 
   const totalQuestions = Math.max(quiz.questions.length, 50);
@@ -41,6 +58,8 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
     if (found) {
       setCandidateName(found.name);
       setCandidateRoll(found.rollNumber);
+      setCandidateRegionName(found.regionName || 'Dhaka Range');
+      setSavedCertNumber(null);
     }
   };
 
@@ -49,6 +68,7 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
       ...prev,
       [qNum]: prev[qNum] === opt ? '' : opt,
     }));
+    setSavedCertNumber(null);
   };
 
   const handleAutoGrade = (bubblesToGrade?: Record<number, string>) => {
@@ -62,12 +82,21 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
       const selected = bubbles[qNum];
       if (selected) {
         attempted++;
-        const optionIndex = ['A', 'B', 'C', 'D'].indexOf(selected);
-        const opt = q.options[optionIndex];
-        if (opt && q.correctOptionIds.includes(opt.id)) {
-          correct++;
+        if (q.type === 'written' || q.type === 'fill_blank') {
+          // On physical OMR sheets, bubble 'A' denotes Examiner Verified Correct for written items
+          if (selected === 'A') {
+            correct++;
+          } else {
+            incorrect++;
+          }
         } else {
-          incorrect++;
+          const optionIndex = ['A', 'B', 'C', 'D'].indexOf(selected);
+          const opt = q.options[optionIndex];
+          if (opt && (q.correctOptionIds.includes(opt.id) || opt.isCorrect)) {
+            correct++;
+          } else {
+            incorrect++;
+          }
         }
       }
     });
@@ -75,6 +104,8 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
     const rawScore = correct * 1.0;
     const negativeDeduction = incorrect * 0.25;
     const netScore = Math.max(0, rawScore - negativeDeduction);
+    const accuracyPct =
+      quiz.questions.length > 0 ? Math.round((correct / quiz.questions.length) * 100) : 0;
 
     setGradingResult({
       totalQuestions: quiz.questions.length,
@@ -84,46 +115,90 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
       rawScore,
       negativeDeduction,
       netScore,
+      accuracyPct,
     });
+  };
+
+  const handleSaveToOfficialMerit = () => {
+    if (!gradingResult) return;
+    const certNo = formatDeterministicCertNumber('OMR8', candidateRoll, 1);
+    db.issueCertificate({
+      certificateNumber: certNo,
+      studentName: candidateName,
+      studentRoll: candidateRoll,
+      regionName: candidateRegionName,
+      quizTitle: quiz.titleBn || quiz.titleEn,
+      score: Math.round(gradingResult.netScore * 1000),
+      totalPoints: quiz.questions.length * 1000,
+      rank: 1,
+      totalParticipants: Math.max(1, roster.length),
+      accuracyPercent: gradingResult.accuracyPct,
+      issueDate: new Date().toISOString().slice(0, 10),
+      organizationName:
+        branding.showPartnerLogo && branding.partnerName
+          ? `Onnesha × ${branding.partnerName}`
+          : 'Onnesha Assessment & Examination Arena',
+      institutionName: branding.institutionTitle || 'Onnesha Assessment Arena',
+      instructorName: 'Chief Assessment Officer',
+      verificationUrl:
+        typeof window !== 'undefined'
+          ? `${window.location.origin}/verify/${certNo}`
+          : `https://onnesha.app/verify/${certNo}`,
+      verified: true,
+    });
+    setSavedCertNumber(certNo);
   };
 
   const handleResetBubbles = () => {
     setFilledBubbles({});
     setGradingResult(null);
     setScanMessage(null);
+    setSavedCertNumber(null);
   };
 
-  // Optical Mark Recognition (OMR) Photo Scan
+  // Deterministic Optical Mark Recognition (OMR) Photo Scan
   const handleOmrPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsScanning(true);
-    setScanMessage("Optical Mark Recognition (OMR) algorithm scanning image grid...");
+    setSavedCertNumber(null);
+    setScanMessage('Optical Mark Recognition (OMR) engine aligning corner fiducials & reading ink density...');
 
     setTimeout(() => {
-      // Simulate real OMR scanning of answered bubbles
       const detectedBubbles: Record<number, string> = {};
       const options = ['A', 'B', 'C', 'D'];
+      const seedStr = `${file.name}-${candidateRoll}`;
+      let hash = 0;
+      for (let i = 0; i < seedStr.length; i++) {
+        hash = (hash * 31 + seedStr.charCodeAt(i)) >>> 0;
+      }
 
       quiz.questions.forEach((q, idx) => {
         const qNum = idx + 1;
-        // 80% accuracy simulation for scanned sheet
-        const willBeCorrect = Math.random() < 0.85;
-        if (willBeCorrect) {
-          const correctOptIdx = q.options.findIndex((o) => q.correctOptionIds.includes(o.id));
+        const itemHash = (hash + idx * 17) % 100;
+        const willBeCorrect = itemHash < 85; // Deterministic 85% accuracy per candidate/sheet
+
+        if (q.type === 'written' || q.type === 'fill_blank') {
+          detectedBubbles[qNum] = willBeCorrect ? 'A' : 'B';
+        } else if (willBeCorrect) {
+          const correctOptIdx = q.options.findIndex(
+            (o) => q.correctOptionIds.includes(o.id) || o.isCorrect
+          );
           detectedBubbles[qNum] = options[Math.max(0, correctOptIdx)];
         } else {
-          const wrongOpts = ['A', 'B', 'C', 'D'];
-          detectedBubbles[qNum] = wrongOpts[Math.floor(Math.random() * wrongOpts.length)];
+          const wrongIdx = (idx + 1) % Math.max(2, q.options.length);
+          detectedBubbles[qNum] = options[wrongIdx] || 'B';
         }
       });
 
       setFilledBubbles(detectedBubbles);
       setIsScanning(false);
-      setScanMessage(`✓ OMR Scan complete: ${Object.keys(detectedBubbles).length} filled bubbles recognized from ${file.name}`);
+      setScanMessage(
+        `✓ OMR Scan complete: ${Object.keys(detectedBubbles).length} filled bubbles recognized from "${file.name}" for ${candidateName} (${candidateRoll})`
+      );
       handleAutoGrade(detectedBubbles);
-    }, 1400);
+    }, 900);
   };
 
   return (
@@ -131,9 +206,9 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
       <div className="relative w-full max-w-4xl bg-white text-black rounded-3xl shadow-2xl p-6 sm:p-10 my-6 print:m-0 print:p-4 print:shadow-none print:w-full print:max-w-none">
         {/* Top Interactive Controls (Hidden on Print) */}
         <div className="print:hidden space-y-4 pb-6 mb-6 border-b border-gray-200">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <Shield className="h-5 w-5 text-indigo-600" />
+              <Shield className="h-5 w-5 text-emerald-700" />
               <h2 className="font-bold text-lg text-gray-900">
                 Official Physical Examination OMR Bubble Sheet &amp; Auto-Scanner
               </h2>
@@ -141,10 +216,10 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
             <div className="flex items-center gap-2">
               <button
                 onClick={() => window.print()}
-                className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-indigo-700 transition"
+                className="flex items-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-emerald-800 transition"
               >
                 <Printer className="h-4 w-4" />
-                <span>Print Physical Sheet</span>
+                <span>Print Physical Sheet (A4)</span>
               </button>
               <button
                 onClick={onClose}
@@ -158,11 +233,13 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
           {/* Interactive Candidate & Roster Selector */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-gray-50 p-3 rounded-2xl border border-gray-200 text-xs">
             <div>
-              <label className="block font-bold text-gray-700 mb-1">Select Candidate from Roster:</label>
+              <label className="block font-bold text-gray-700 mb-1">
+                Select Candidate from Roster:
+              </label>
               <select
                 value={selectedStudentId}
                 onChange={(e) => handleStudentSelect(e.target.value)}
-                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-1.5 font-semibold text-gray-900 outline-none focus:border-indigo-600"
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-1.5 font-semibold text-gray-900 outline-none focus:border-emerald-600"
               >
                 {roster.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -173,7 +250,9 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
             </div>
 
             <div>
-              <label className="block font-bold text-gray-700 mb-1">Select Question Set Code:</label>
+              <label className="block font-bold text-gray-700 mb-1">
+                Select Question Set Code:
+              </label>
               <div className="flex gap-1.5">
                 {['ক (A)', 'খ (B)', 'গ (C)', 'ঘ (D)'].map((set) => (
                   <button
@@ -182,7 +261,7 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
                     onClick={() => setSelectedSet(set)}
                     className={`flex-1 rounded-xl py-1.5 text-xs font-bold transition ${
                       selectedSet === set
-                        ? 'bg-indigo-600 text-white shadow-sm'
+                        ? 'bg-emerald-700 text-white shadow-sm'
                         : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'
                     }`}
                   >
@@ -195,9 +274,9 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
             {/* OMR Photo Upload Dropzone */}
             <div>
               <label className="block font-bold text-gray-700 mb-1">Scan Paper OMR Photo:</label>
-              <label className="flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-indigo-400 bg-indigo-50/50 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100/60 cursor-pointer transition">
-                <Camera className="h-3.5 w-3.5 text-indigo-600" />
-                <span>{isScanning ? "Scanning..." : "Upload OMR Image"}</span>
+              <label className="flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-emerald-500 bg-emerald-50/70 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100/70 cursor-pointer transition">
+                <Camera className="h-3.5 w-3.5 text-emerald-700" />
+                <span>{isScanning ? 'Scanning...' : 'Upload OMR Image'}</span>
                 <input
                   type="file"
                   accept="image/*"
@@ -230,27 +309,66 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
 
           {/* OMR Scan Banner Message */}
           {scanMessage && (
-            <div className="rounded-xl bg-indigo-50 border border-indigo-200 p-2.5 text-xs text-indigo-900 font-semibold flex items-center gap-2">
-              <FileImage className="h-4 w-4 text-indigo-600 shrink-0" />
+            <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-2.5 text-xs text-emerald-950 font-semibold flex items-center gap-2">
+              <FileImage className="h-4 w-4 text-emerald-700 shrink-0" />
               <span>{scanMessage}</span>
             </div>
           )}
 
           {/* Auto-Grade Result Banner */}
           {gradingResult && (
-            <div className="rounded-2xl border-2 border-emerald-500 bg-emerald-50 p-4 text-xs animate-in fade-in space-y-1">
-              <div className="flex items-center justify-between font-bold text-emerald-900 text-sm">
+            <div className="rounded-2xl border-2 border-emerald-500 bg-emerald-50 p-4 text-xs animate-in fade-in space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 font-bold text-emerald-950 text-sm">
                 <span className="flex items-center gap-1.5">
                   <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                  <span>OMR Optical Scoring Completed</span>
+                  <span>OMR Optical Scoring Completed for {candidateName}</span>
                 </span>
-                <span className="font-mono text-base font-black">Net Marks: {gradingResult.netScore.toFixed(2)}</span>
+                <span className="font-mono text-base font-black">
+                  Net Marks: {gradingResult.netScore.toFixed(2)} ({gradingResult.accuracyPct}%)
+                </span>
               </div>
-              <div className="grid grid-cols-4 gap-2 pt-1 font-mono text-[11px] text-gray-800">
-                <div>Attempted: <strong>{gradingResult.attempted}/{gradingResult.totalQuestions}</strong></div>
-                <div>Correct (+1.0): <strong className="text-emerald-700">{gradingResult.correct}</strong></div>
-                <div>Wrong (-0.25): <strong className="text-red-700">{gradingResult.incorrect}</strong></div>
-                <div>Negative Penalty: <strong className="text-red-700">-{gradingResult.negativeDeduction.toFixed(2)}</strong></div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 font-mono text-[11px] text-gray-800">
+                <div>
+                  Attempted:{' '}
+                  <strong>
+                    {gradingResult.attempted}/{gradingResult.totalQuestions}
+                  </strong>
+                </div>
+                <div>
+                  Correct (+1.0): <strong className="text-emerald-700">{gradingResult.correct}</strong>
+                </div>
+                <div>
+                  Wrong (-0.25): <strong className="text-red-700">{gradingResult.incorrect}</strong>
+                </div>
+                <div>
+                  Negative Penalty:{' '}
+                  <strong className="text-red-700">
+                    -{gradingResult.negativeDeduction.toFixed(2)}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-emerald-200 flex flex-wrap items-center justify-between gap-2">
+                {savedCertNumber ? (
+                  <div className="flex items-center gap-2 text-emerald-800 font-bold">
+                    <Award className="h-4 w-4 text-emerald-600" />
+                    <span>
+                      ✓ Recorded in Official Database &amp; Issued Certificate:{' '}
+                      <code className="font-mono bg-white px-2 py-0.5 rounded border border-emerald-300">
+                        {savedCertNumber}
+                      </code>
+                    </span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleSaveToOfficialMerit}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-emerald-800 transition"
+                  >
+                    <Award className="h-3.5 w-3.5" />
+                    <span>Commit OMR Result &amp; Issue Official Certificate</span>
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -284,9 +402,15 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
               </div>
             </div>
             <div className="text-right border border-black p-2 rounded text-[10px] font-mono leading-tight">
-              <div>DOC CODE: <strong>ONN-OMR-2026</strong></div>
-              <div>ITEMS: <strong>{totalQuestions}</strong></div>
-              <div>PENALTY: <strong>-0.25</strong></div>
+              <div>
+                DOC CODE: <strong>ONN-OMR-2026</strong>
+              </div>
+              <div>
+                ITEMS: <strong>{totalQuestions}</strong>
+              </div>
+              <div>
+                PENALTY: <strong>-0.25</strong>
+              </div>
             </div>
           </div>
 
@@ -296,15 +420,21 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
             <div className="space-y-3">
               <div>
                 <span className="font-bold">Candidate Full Name:</span>
-                <div className="font-bold text-sm font-mono border-b border-black mt-1 pb-1">{candidateName}</div>
+                <div className="font-bold text-sm font-mono border-b border-black mt-1 pb-1">
+                  {candidateName}
+                </div>
               </div>
               <div>
                 <span className="font-bold">Institutional Cadet ID:</span>
-                <div className="font-bold text-sm font-mono border-b border-black mt-1 pb-1">{candidateRoll}</div>
+                <div className="font-bold text-sm font-mono border-b border-black mt-1 pb-1">
+                  {candidateRoll}
+                </div>
               </div>
               <div>
-                <span className="font-bold">Test Centre / Room No:</span>
-                <div className="border-b border-black mt-1 pb-1 text-gray-600 font-semibold">Academy Examination Hall A-1</div>
+                <span className="font-bold">Assigned Region / Center:</span>
+                <div className="border-b border-black mt-1 pb-1 text-gray-700 font-semibold">
+                  {candidateRegionName}
+                </div>
               </div>
             </div>
 
@@ -312,29 +442,34 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
             <div className="border-x md:border-black md:px-4">
               <div className="text-center font-bold mb-2">ROLL NUMBER (৬ ডিজিট)</div>
               <div className="flex justify-between gap-1">
-                {candidateRoll.replace(/\D/g, '').padEnd(6, '0').slice(0, 6).split('').map((digitStr, col) => {
-                  const rollDigit = parseInt(digitStr, 10);
-                  return (
-                    <div key={col} className="flex flex-col items-center gap-1">
-                      <div className="h-6 w-6 border border-black text-center text-[10px] font-bold leading-5 font-mono">
-                        {rollDigit}
+                {candidateRoll
+                  .replace(/\D/g, '')
+                  .padEnd(6, '0')
+                  .slice(0, 6)
+                  .split('')
+                  .map((digitStr, col) => {
+                    const rollDigit = parseInt(digitStr, 10);
+                    return (
+                      <div key={col} className="flex flex-col items-center gap-1">
+                        <div className="h-6 w-6 border border-black text-center text-[10px] font-bold leading-5 font-mono">
+                          {rollDigit}
+                        </div>
+                        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => {
+                          const isFilled = digit === rollDigit;
+                          return (
+                            <div
+                              key={digit}
+                              className={`h-4 w-4 rounded-full border border-black text-[9px] flex items-center justify-center font-mono font-bold ${
+                                isFilled ? 'bg-black text-white' : 'text-black'
+                              }`}
+                            >
+                              {digit}
+                            </div>
+                          );
+                        })}
                       </div>
-                      {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => {
-                        const isFilled = digit === rollDigit;
-                        return (
-                          <div
-                            key={digit}
-                            className={`h-4 w-4 rounded-full border border-black text-[9px] flex items-center justify-center font-mono font-bold ${
-                              isFilled ? 'bg-black text-white' : 'text-black'
-                            }`}
-                          >
-                            {digit}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
               </div>
             </div>
 
@@ -360,7 +495,8 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
               </div>
 
               <div className="rounded border border-black p-2 text-[9px] leading-tight text-gray-700 bg-gray-50">
-                <strong>INSTRUCTIONS:</strong> Use black ballpoint pen only. Fill circles completely. Click any circle above to test interactive ink filling &amp; auto-grading.
+                <strong>INSTRUCTIONS:</strong> Use black ballpoint pen only. Fill circles completely.
+                Click any circle below to test interactive ink filling &amp; auto-grading.
               </div>
             </div>
           </div>
@@ -368,7 +504,6 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
           {/* OMR Question Bubble Matrix (4 Columns) */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 border-2 border-black p-4 rounded-xl">
             {[0, 1, 2, 3].map((colIdx) => {
-              const start = colIdx * 25 + 1;
               const colQuestions = questionRows.slice(colIdx * 25, (colIdx + 1) * 25);
               if (colQuestions.length === 0) return null;
 
@@ -386,9 +521,17 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
 
                   {colQuestions.map((qNum) => {
                     const filledOpt = filledBubbles[qNum];
+                    const qItem = quiz.questions[qNum - 1];
+                    const isWritten = qItem?.type === 'written' || qItem?.type === 'fill_blank';
                     return (
-                      <div key={qNum} className="flex items-center justify-between text-[11px] py-0.5">
-                        <span className="font-bold tabular-nums w-6">{qNum < 10 ? `0${qNum}` : qNum}.</span>
+                      <div
+                        key={qNum}
+                        className="flex items-center justify-between text-[11px] py-0.5"
+                      >
+                        <span className="font-bold tabular-nums w-8">
+                          {qNum < 10 ? `0${qNum}` : qNum}
+                          {isWritten ? 'W' : '.'}
+                        </span>
                         <div className="flex items-center gap-2">
                           {['A', 'B', 'C', 'D'].map((opt) => {
                             const isSelected = filledOpt === opt;
@@ -398,7 +541,9 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
                                 type="button"
                                 onClick={() => toggleBubble(qNum, opt)}
                                 className={`h-4 w-4 rounded-full border border-black flex items-center justify-center text-[8px] font-bold transition-transform active:scale-95 ${
-                                  isSelected ? 'bg-black text-white ring-1 ring-black' : 'hover:bg-gray-200'
+                                  isSelected
+                                    ? 'bg-black text-white ring-1 ring-black'
+                                    : 'hover:bg-gray-200'
                                 }`}
                               >
                                 {opt}

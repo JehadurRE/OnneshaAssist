@@ -402,14 +402,11 @@ function SuperAdminPage() {
     reader.readAsText(file);
   };
 
-  const handleHostQuizNow = async (quiz: Quiz) => {
-    const session = await gameEngine.createSessionAsync(
-      quiz,
-      true,
-      "all",
-      "All Regions (National)"
-    );
-    navigate({ to: "/dashboard", search: { pin: session.pin } as any });
+  const handleHostQuizNow = (quiz: Quiz) => {
+    navigate({
+      to: "/host/$quizId",
+      params: { quizId: quiz.slug || quiz.id },
+    });
   };
 
   // If user is not logged in as Super Admin, show the Dedicated Super Admin Security Gate
@@ -866,7 +863,7 @@ function SuperAdminPage() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
                           onClick={() => openAddSequentialQuiz(course)}
@@ -884,6 +881,23 @@ function SuperAdminPage() {
                         >
                           Edit Course
                         </button>
+                        {!course.id.startsWith("course-bcs-") &&
+                          !course.id.startsWith("course-bank-") &&
+                          !course.id.startsWith("course-varsity-") &&
+                          !course.id.startsWith("course-cyber-") && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                db.deleteCourse(course.id);
+                                refreshAll();
+                                showNotice(`Deleted course "${course.titleEn}".`);
+                              }}
+                              className="rounded-xl border border-destructive/30 bg-destructive/10 p-2 text-destructive hover:bg-destructive/20"
+                              title="Delete custom course"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                       </div>
                     </div>
 
@@ -893,6 +907,7 @@ function SuperAdminPage() {
                         <span>Sequential Quizzes under {course.code} ({courseQuizzes.length})</span>
                         <Link
                           to="/dashboard"
+                          search={{ tab: "ai_creator", courseId: course.id } as any}
                           className="text-[11px] text-primary hover:underline font-bold"
                         >
                           Open Question Builder in Studio →
@@ -914,11 +929,27 @@ function SuperAdminPage() {
                               <div>
                                 <div className="flex items-center justify-between gap-2">
                                   <span className="rounded-md bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 font-mono text-[10px] font-black text-amber-600 dark:text-amber-400">
-                                    QUIZ {q.quizNumber || idx + 1}
+                                    QUIZ #{q.quizNumber || idx + 1}
                                   </span>
-                                  <span className="font-mono text-[11px] text-muted-foreground">
-                                    {q.questions.length} Questions
-                                  </span>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-mono text-[11px] text-muted-foreground">
+                                      {q.questions.length} Questions
+                                    </span>
+                                    {!q.isTemplate && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          db.deleteCustomQuiz(q.id);
+                                          refreshAll();
+                                          showNotice(`Deleted quiz "${q.titleEn}".`);
+                                        }}
+                                        className="rounded p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
+                                        title="Delete Quiz"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                                 <h4 className="mt-2 font-display text-sm font-bold text-foreground">
                                   {q.titleEn}
@@ -939,7 +970,8 @@ function SuperAdminPage() {
                                 </button>
                                 <Link
                                   to="/dashboard"
-                                  className="text-[11px] font-bold text-muted-foreground hover:text-foreground"
+                                  search={{ tab: "ai_creator", editQuizId: q.id } as any}
+                                  className="text-[11px] font-bold text-primary hover:underline"
                                 >
                                   Edit Questions →
                                 </Link>
