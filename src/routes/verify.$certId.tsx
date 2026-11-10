@@ -1,185 +1,173 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { useLanguage } from "@/lib/i18n";
-import { Navbar } from "@/components/layout/Navbar";
-import { Footer } from "@/components/layout/Footer";
-import { CertificateView } from "@/components/common/CertificateView";
-import { db } from "@/lib/db";
-import { serverVerifyCertificate } from "@/lib/server-session";
-import { CertificateData } from "@/lib/types";
-import { ArrowLeft, CheckCircle2, Search, ShieldAlert } from "lucide-react";
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
+import React, { useEffect, useState } from 'react';
+import { Navbar } from '@/components/layout/Navbar';
+import { Footer } from '@/components/layout/Footer';
+import { CertificateView } from '@/components/common/CertificateView';
+import { db } from '@/lib/db';
+import { serverAdminMutateStore, serverVerifyCertificate } from '@/lib/server-session';
+import { CertificateData } from '@/lib/types';
+import { AlertCircle, ArrowLeft, CheckCircle2, Loader2, Search, ShieldCheck } from 'lucide-react';
 
-const OFFICIAL_DEMO_CERT: CertificateData = {
-  id: "cert-onn-4821-9982",
-  certificateNumber: "ONN-4821-9982",
-  studentName: "Cadet Tanvir Hossain",
-  studentRoll: "2026-101",
-  regionName: "Dhaka Range",
-  quizTitle: "৪৬তম বিসিএস প্রিলিমিনারি ও মুক্তিযুদ্ধ মডেল টেস্ট",
-  score: 4850,
-  marksObtained: 4850,
-  totalPoints: 5000,
-  totalMarks: 5000,
-  rank: 1,
-  totalParticipants: 500,
-  accuracyPercent: 97,
-  scorePct: 97,
-  issueDate: "2026-03-15",
-  organizationName: "Onnesha Assessment & Examination Arena",
-  institutionName: "Onnesha Assessment Arena",
-  instructorName: "Chief Assessment Officer",
-  verificationUrl: "/verify/ONN-4821-9982",
-  verified: true,
-};
-
-export const Route = createFileRoute("/verify/$certId")({
-  head: ({ params }) => ({
-    meta: [
-      { title: `Verify Certificate #${params.certId} · Onnesha Arena` },
-      { name: "description", content: "Official public cryptographic certificate verification portal." },
-    ],
-  }),
-  component: VerifyCertificatePage,
+export const Route = createFileRoute('/verify/$certId')({
+  component: VerifyCertPage,
 });
 
-function VerifyCertificatePage() {
+function VerifyCertPage() {
   const { certId } = Route.useParams();
   const navigate = useNavigate();
-  const { lang } = useLanguage();
-  const [searchCode, setSearchCode] = useState(certId);
-  const [foundCert, setFoundCert] = useState<CertificateData | undefined>(() => {
-    if (certId.toUpperCase() === "ONN-4821-9982") return OFFICIAL_DEMO_CERT;
-    return db.getCertificateById(certId);
-  });
-  const [isCheckingServer, setIsCheckingServer] = useState(!foundCert);
+  const [searchId, setSearchId] = useState(certId);
+  const [cert, setCert] = useState<CertificateData | undefined>(() => db.getCertificateById(certId));
+  const [isLoadingServer, setIsLoadingServer] = useState(!db.getCertificateById(certId));
 
   useEffect(() => {
-    setSearchCode(certId);
-    if (certId.toUpperCase() === "ONN-4821-9982") {
-      setFoundCert(OFFICIAL_DEMO_CERT);
-      setIsCheckingServer(false);
+    setSearchId(certId);
+    const localCert = db.getCertificateById(certId);
+    if (localCert) {
+      setCert(localCert);
+      setIsLoadingServer(false);
+      // Ensure server store also has this certificate for cross-device QR scans
+      serverAdminMutateStore({
+        data: { action: 'issue_certificate', certificate: localCert },
+      }).catch(() => {});
       return;
     }
 
-    let active = true;
-    const local = db.getCertificateById(certId);
-    if (local) {
-      setFoundCert(local);
-      setIsCheckingServer(false);
-      return;
-    }
-
-    setIsCheckingServer(true);
-    serverVerifyCertificate({ data: { certId } })
+    let cancelled = false;
+    setIsLoadingServer(true);
+    serverVerifyCertificate({ data: { certNo: certId } })
       .then((res) => {
-        if (!active) return;
+        if (cancelled) return;
         if (res.success && res.certificate) {
-          setFoundCert(res.certificate);
+          setCert(res.certificate);
         } else {
-          setFoundCert(undefined);
+          setCert(undefined);
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!cancelled) setCert(undefined);
+      })
       .finally(() => {
-        if (active) setIsCheckingServer(false);
+        if (!cancelled) setIsLoadingServer(false);
       });
 
     return () => {
-      active = false;
+      cancelled = true;
     };
   }, [certId]);
 
   const handleLookup = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchCode.trim()) {
-      navigate({
-        to: "/verify/$certId",
-        params: { certId: searchCode.trim().toUpperCase() },
-      });
-    }
+    const cleaned = searchId.trim().toUpperCase();
+    if (!cleaned) return;
+    navigate({ to: '/verify/$certId', params: { certId: cleaned } });
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground bg-grid flex flex-col transition-colors">
+    <div className="min-h-screen flex flex-col bg-background text-foreground">
       <Navbar />
 
-      <main className="flex-1 mx-auto max-w-4xl w-full px-4 sm:px-6 py-10 space-y-6">
-        {/* Top Lookup Bar */}
-        <form
-          onSubmit={handleLookup}
-          className="rounded-2xl border border-border bg-card p-3 sm:p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 shadow-sm print:hidden"
-        >
-          <div className="relative flex-1">
-            <Search className="h-4 w-4 text-muted-foreground absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchCode}
-              onChange={(e) => setSearchCode(e.target.value)}
-              placeholder="Enter Certificate ID (e.g. ONN-4821-9982)"
-              className="w-full rounded-xl border border-border bg-background pl-10 pr-4 py-2 font-mono text-xs font-bold uppercase text-foreground outline-none focus:border-primary"
-            />
-          </div>
-          <button
-            type="submit"
-            className="rounded-xl bg-primary px-5 py-2 text-xs font-extrabold text-primary-foreground shadow-sm hover:bg-primary/90 transition"
+      <main className="mx-auto flex-1 w-full max-w-5xl px-3 sm:px-6 py-6 sm:py-10 pb-28 md:pb-14">
+        {/* Top Bar & Lookup Form */}
+        <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 print:hidden">
+          <Link
+            to="/play"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition self-start"
           >
-            {lang === "bn" ? "যাচাই করুন" : "Verify Credential"}
-          </button>
-        </form>
+            <ArrowLeft className="h-4 w-4 shrink-0" />
+            <span>Back to Exam Center</span>
+          </Link>
 
-        {isCheckingServer ? (
-          <div className="rounded-3xl border border-border bg-card p-12 text-center shadow-sm">
-            <p className="font-mono text-sm font-bold text-muted-foreground">
-              Verifying credential #{certId} against central registry...
-            </p>
+          <form onSubmit={handleLookup} className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="relative flex-1 sm:w-64">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                value={searchId}
+                onChange={(e) => setSearchId(e.target.value)}
+                placeholder="Enter ID (e.g. ONN-4634-026104)"
+                className="w-full rounded-xl border border-border bg-card py-2.5 sm:py-2 pl-9 pr-3 text-xs font-mono uppercase text-foreground focus:border-emerald-500 focus:outline-none"
+              />
+            </div>
+            <button
+              type="submit"
+              className="rounded-xl bg-emerald-500 px-4 py-2.5 sm:py-2 text-xs font-bold text-slate-950 hover:bg-emerald-400 transition shrink-0 cursor-pointer"
+            >
+              Verify
+            </button>
+          </form>
+        </div>
+
+        {/* Verification Status Banner */}
+        {isLoadingServer ? (
+          <div className="rounded-2xl border border-border bg-card p-8 sm:p-12 text-center">
+            <Loader2 className="mx-auto h-9 w-9 sm:h-10 sm:w-10 animate-spin text-emerald-400 mb-3" />
+            <h2 className="text-base sm:text-lg font-bold text-foreground">
+              সনদপত্র যাচাই করা হচ্ছে (Verifying Official Ledger)...
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground font-mono break-all">{certId}</p>
           </div>
-        ) : foundCert ? (
-          <>
-            {/* Verification Status Header */}
-            <div className="rounded-3xl border-2 border-emerald-500/40 bg-emerald-500/10 p-6 text-center shadow-tactical flex flex-col items-center animate-in fade-in print:hidden">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md mb-2">
-                <CheckCircle2 className="h-6 w-6 stroke-[3]" />
+        ) : cert ? (
+          <div className="space-y-5 sm:space-y-8">
+            <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 print:hidden">
+              <div className="flex items-start sm:items-center gap-3">
+                <div className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20">
+                  <ShieldCheck className="h-5 w-5 sm:h-6 sm:w-6" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                    <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-emerald-400">
+                      Authentic &amp; Verified Credential
+                    </span>
+                    <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                      ACTIVE
+                    </span>
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                    This certificate is cryptographically logged in the Onnesha Assessment Registry
+                    for{' '}
+                    <strong className="text-foreground">{cert.studentName}</strong> (Roll:{' '}
+                    <span className="font-mono text-foreground">{cert.studentRoll || 'N/A'}</span>).
+                  </p>
+                </div>
               </div>
-              <h1 className="font-display text-xl sm:text-2xl font-bold text-foreground">
-                {lang === "bn" ? "সনদটি সফলভাবে যাচাইকৃত ও সত্য" : "Authentic Certificate Verified"}
-              </h1>
-              <p className="mt-1 font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-                Official Credential No: <strong className="text-foreground">{foundCert.certificateNumber}</strong>
-                {foundCert.regionName ? ` · Region: ${foundCert.regionName}` : ""} · Issuer:{" "}
-                {foundCert.institutionName || "Onnesha Assessment Arena"}
-              </p>
+
+              <div className="text-left sm:text-right font-mono text-xs border-t sm:border-t-0 border-emerald-500/20 pt-2.5 sm:pt-0">
+                <div className="text-[10px] text-muted-foreground uppercase">Registry Serial</div>
+                <div className="font-bold text-emerald-400 break-all">{cert.certificateNumber}</div>
+              </div>
             </div>
 
-            {/* Render Certificate View */}
-            <CertificateView certificate={foundCert} />
-          </>
+            <CertificateView certificate={cert} />
+          </div>
         ) : (
-          <div className="rounded-3xl border-2 border-destructive/40 bg-destructive/10 p-8 sm:p-12 text-center shadow-tactical flex flex-col items-center max-w-xl mx-auto animate-in zoom-in-95">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/20 text-destructive mb-4">
-              <ShieldAlert className="h-8 w-8" />
+          <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-6 sm:p-10 text-center max-w-xl mx-auto my-6 sm:my-8">
+            <div className="mx-auto mb-4 flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-2xl bg-red-500/15 text-red-400">
+              <AlertCircle className="h-6 w-6 sm:h-7 sm:w-7" />
             </div>
-            <h1 className="font-display text-2xl font-bold text-foreground">
-              Certificate Not Found
+            <h1 className="text-lg sm:text-xl font-black text-foreground">
+              Certificate Record Not Found
             </h1>
             <p className="mt-2 text-xs sm:text-sm text-muted-foreground leading-relaxed">
-              No verified certificate was found in the Onnesha repository for credential identifier:{" "}
-              <code className="font-mono font-bold text-destructive">{certId}</code>.
+              No verified credential matching serial{' '}
+              <span className="font-mono font-bold text-red-400 break-all">{certId}</span> was found
+              in the registry. Please check the serial number or try our sample verified credential:
             </p>
-
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <div className="mt-6 flex flex-wrap justify-center gap-2.5">
               <Link
                 to="/verify/$certId"
-                params={{ certId: "ONN-4821-9982" }}
-                className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground shadow-sm"
+                params={{ certId: 'ONN-4634-026104' }}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 px-4 py-2.5 text-xs font-bold text-emerald-400 hover:bg-emerald-500/25 transition"
               >
-                Load Sample Certificate (ONN-4821-9982)
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                <span>View ONN-4634-026104</span>
               </Link>
               <Link
-                to="/"
-                className="inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline"
+                to="/verify/$certId"
+                params={{ certId: 'ONN-4821-9982' }}
+                className="inline-flex items-center gap-2 rounded-xl bg-secondary border border-border px-4 py-2.5 text-xs font-bold text-foreground hover:border-emerald-500/30 transition"
               >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                <span>Return to Home Arena</span>
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+                <span>View ONN-4821-9982</span>
               </Link>
             </div>
           </div>

@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { Quiz } from '@/lib/types';
 import { db, formatDeterministicCertNumber } from '@/lib/db';
 import { useBranding } from '@/hooks/use-branding';
+import { downloadOmrSheetPdf } from '@/lib/pdf-generator';
 import {
   Award,
   Camera,
   CheckCircle2,
+  Download,
   FileImage,
-  Printer,
+  Loader2,
   RotateCcw,
   Shield,
   Sparkles,
@@ -33,6 +35,7 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
   );
   const [selectedSet, setSelectedSet] = useState<string>('ক (A)');
   const [isScanning, setIsScanning] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
   const [savedCertNumber, setSavedCertNumber] = useState<string | null>(null);
 
@@ -201,29 +204,53 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
     }, 900);
   };
 
+  const handleDownloadPdf = async () => {
+    if (isDownloadingPdf) return;
+    setIsDownloadingPdf(true);
+    try {
+      await downloadOmrSheetPdf({
+        quiz,
+        candidateName,
+        candidateRoll,
+        candidateRegionName,
+        selectedSet,
+        filledBubbles,
+        gradingResult,
+        branding,
+      });
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-4 sm:p-6 flex justify-center items-start">
-      <div className="relative w-full max-w-4xl bg-white text-black rounded-3xl shadow-2xl p-6 sm:p-10 my-6 print:m-0 print:p-4 print:shadow-none print:w-full print:max-w-none">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-3 sm:p-6 pb-24 flex justify-center items-start">
+      <div className="relative w-full max-w-4xl bg-white text-black rounded-3xl shadow-2xl p-4 sm:p-10 my-4 sm:my-6 print:m-0 print:p-4 print:shadow-none print:w-full print:max-w-none">
         {/* Top Interactive Controls (Hidden on Print) */}
         <div className="print:hidden space-y-4 pb-6 mb-6 border-b border-gray-200">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Shield className="h-5 w-5 text-emerald-700" />
-              <h2 className="font-bold text-lg text-gray-900">
+              <h2 className="font-bold text-base sm:text-lg text-gray-900">
                 Official Physical Examination OMR Bubble Sheet &amp; Auto-Scanner
               </h2>
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => window.print()}
-                className="flex items-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-emerald-800 transition"
+                onClick={handleDownloadPdf}
+                disabled={isDownloadingPdf}
+                className="flex items-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-emerald-800 transition disabled:opacity-60 cursor-pointer"
               >
-                <Printer className="h-4 w-4" />
-                <span>Print Physical Sheet (A4)</span>
+                {isDownloadingPdf ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                <span>Download OMR Sheet (PDF)</span>
               </button>
               <button
                 onClick={onClose}
-                className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>

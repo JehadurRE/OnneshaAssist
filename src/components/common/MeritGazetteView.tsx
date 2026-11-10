@@ -2,7 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { MeritParticipant } from '@/lib/types';
 import { db } from '@/lib/db';
 import { useBranding } from '@/hooks/use-branding';
-import { MapPin, Printer, Shield, X } from 'lucide-react';
+import { downloadMeritGazettePdf } from '@/lib/pdf-generator';
+import { Download, Loader2, MapPin, Shield, X } from 'lucide-react';
 import onnesha from '@/assets/onnesha.jpg.asset.json';
 
 interface MeritGazetteViewProps {
@@ -19,6 +20,7 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
   const regions = db.getRegions();
   const branding = useBranding();
   const [selectedRegionId, setSelectedRegionId] = useState<string>('all');
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
   const filtered = useMemo(() => {
     const base =
@@ -35,14 +37,29 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
       ? 'All Regions (National Merit List)'
       : regions.find((r) => r.id === selectedRegionId)?.nameEn || selectedRegionId;
 
+  const handleDownloadPdf = async () => {
+    if (isDownloadingPdf) return;
+    setIsDownloadingPdf(true);
+    try {
+      await downloadMeritGazettePdf({
+        quizTitle,
+        regionLabel: activeRegionLabel,
+        participants: filtered,
+        branding,
+      });
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm p-4 sm:p-6 flex justify-center items-start">
-      <div className="relative w-full max-w-4xl bg-white text-black rounded-2xl shadow-2xl p-6 sm:p-10 my-6 print:m-0 print:p-4 print:shadow-none print:w-full print:max-w-none">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm p-3 sm:p-6 pb-24 flex justify-center items-start">
+      <div className="relative w-full max-w-4xl bg-white text-black rounded-2xl shadow-2xl p-4 sm:p-10 my-4 sm:my-6 print:m-0 print:p-4 print:shadow-none print:w-full print:max-w-none">
         {/* Floating Action Controls (Hidden on Print) */}
         <div className="print:hidden flex flex-wrap items-center justify-between gap-3 pb-6 mb-6 border-b border-gray-200">
           <div className="flex items-center gap-2">
             <Shield className="h-5 w-5 text-emerald-700" />
-            <h2 className="font-bold text-lg text-gray-900">
+            <h2 className="font-bold text-base sm:text-lg text-gray-900">
               Official Merit Gazette &amp; Regional Notice Board Report
             </h2>
           </div>
@@ -65,15 +82,20 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
             </div>
 
             <button
-              onClick={() => window.print()}
-              className="flex items-center gap-1.5 rounded-xl bg-emerald-700 px-5 py-2 text-xs font-bold text-white shadow-md hover:bg-emerald-800 transition"
+              onClick={handleDownloadPdf}
+              disabled={isDownloadingPdf}
+              className="flex items-center gap-1.5 rounded-xl bg-emerald-700 px-5 py-2 text-xs font-bold text-white shadow-md hover:bg-emerald-800 transition disabled:opacity-60 cursor-pointer"
             >
-              <Printer className="h-4 w-4" />
-              <span>Print Official Gazette</span>
+              {isDownloadingPdf ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              <span>Download Gazette PDF</span>
             </button>
             <button
               onClick={onClose}
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
+              className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition cursor-pointer"
             >
               <X className="h-5 w-5" />
             </button>

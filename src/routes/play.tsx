@@ -1284,16 +1284,21 @@ function PlayPage() {
           </div>
         )}
 
-        {/* Certificate Modal */}
+        {/* Certificate Modal — Mobile-Responsive Scrollable Overlay */}
         {showCertificate && certificateData && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 overflow-y-auto animate-in fade-in">
-            <div className="relative my-8 w-full max-w-3xl">
-              <button
-                onClick={() => setShowCertificate(false)}
-                className="absolute -top-12 right-0 rounded-full bg-white/20 px-4 py-1.5 text-xs font-bold text-white hover:bg-white/30"
-              >
-                ✕ Close
-              </button>
+          <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/80 backdrop-blur-md p-3 sm:p-6 pt-4 pb-24 overflow-y-auto animate-in fade-in">
+            <div className="relative my-2 sm:my-6 w-full max-w-4xl">
+              <div className="mb-3 flex items-center justify-between rounded-2xl border border-white/15 bg-slate-900/90 px-4 py-2.5 backdrop-blur">
+                <span className="text-xs font-bold text-emerald-400 font-mono truncate">
+                  ID: {certificateData.certificateNumber}
+                </span>
+                <button
+                  onClick={() => setShowCertificate(false)}
+                  className="rounded-xl bg-white/15 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-white/25 transition shrink-0 cursor-pointer"
+                >
+                  ✕ Close
+                </button>
+              </div>
               <CertificateView certificate={certificateData} />
             </div>
           </div>
