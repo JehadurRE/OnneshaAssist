@@ -67,9 +67,11 @@ export const PlayerKeypad: React.FC<PlayerKeypadProps> = ({
   }, [question.id]);
 
   useEffect(() => {
-    if (hasAnswered) return;
+    if (hasAnswered || question.type === 'written' || question.type === 'fill_blank') return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
       if (['1', '2', '3', '4'].includes(e.key)) {
         const index = parseInt(e.key, 10) - 1;
         if (question.options[index]) {
@@ -111,26 +113,40 @@ export const PlayerKeypad: React.FC<PlayerKeypadProps> = ({
   if (question.type === 'written' || question.type === 'fill_blank') {
     return (
       <div className="w-full max-w-lg space-y-4">
-        <form onSubmit={handleWrittenSubmit} className="rounded-3xl border-2 border-border bg-card p-6 shadow-tactical">
+        <form onSubmit={handleWrittenSubmit} className="rounded-3xl border-2 border-border bg-card p-5 sm:p-6 shadow-tactical">
           <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
-            {lang === 'bn' ? 'লিখিত উত্তর টাইপ করুন:' : 'Type Verified Response:'}
+            {lang === 'bn'
+              ? '✍️ সংক্ষিপ্ত বা সংখ্যাবাচক উত্তর টাইপ করুন:'
+              : '✍️ Type Your Short or Numeric Answer:'}
           </label>
           <input
             type="text"
+            autoFocus
             disabled={hasAnswered}
             value={writtenText}
             onChange={(e) => setWrittenText(e.target.value)}
-            placeholder={lang === 'bn' ? 'সঠিক উত্তরটি লিখুন...' : 'Enter response...'}
-            className="w-full rounded-2xl border-2 border-border bg-background px-4 py-3.5 font-mono text-base font-semibold text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            placeholder={lang === 'bn' ? 'এখানে উত্তর লিখুন (যেমন: ১৯৭১ বা 1971)...' : 'Type your exact answer here...'}
+            className="w-full rounded-2xl border-2 border-border bg-background px-4 py-3.5 font-mono text-base font-bold text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-70"
           />
-          <button
-            type="submit"
-            disabled={!writtenText.trim() || hasAnswered}
-            className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 text-sm font-bold text-primary-foreground shadow-md transition hover:bg-primary/90 disabled:opacity-40"
-          >
-            <Send className="h-4 w-4" />
-            <span>{t('join_button')}</span>
-          </button>
+          {!hasAnswered ? (
+            <button
+              type="submit"
+              disabled={!writtenText.trim() || hasAnswered}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 text-sm font-extrabold text-primary-foreground shadow-md transition hover:bg-primary/90 disabled:opacity-40"
+            >
+              <Send className="h-4 w-4" />
+              <span>{lang === 'bn' ? 'উত্তর সাবমিট করুন' : 'Submit Written Answer'}</span>
+            </button>
+          ) : (
+            <div className="mt-4 flex items-center justify-center gap-2 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 py-3 px-4 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              <span>
+                {lang === 'bn'
+                  ? `আপনার লিখিত উত্তর ("${writtenText}") সংরক্ষিত হয়েছে`
+                  : `Your written response ("${writtenText}") has been locked`}
+              </span>
+            </div>
+          )}
         </form>
       </div>
     );

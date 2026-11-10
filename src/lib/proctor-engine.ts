@@ -85,6 +85,14 @@ class ProctorEngine {
     this.releaseWakeLock();
   }
 
+  public isFullscreenSupported(): boolean {
+    if (typeof document === 'undefined') return false;
+    return !!(
+      document.fullscreenEnabled &&
+      typeof document.documentElement?.requestFullscreen === 'function'
+    );
+  }
+
   public isInFullscreen(): boolean {
     if (typeof document === 'undefined') return false;
     return !!document.fullscreenElement;

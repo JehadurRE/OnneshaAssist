@@ -87,12 +87,22 @@ function SingleCurriculumDetailPage() {
             {/* Action Buttons */}
             <div className="flex flex-wrap sm:flex-col gap-2.5 shrink-0">
               <Link
-                to="/host/$quizId"
-                params={{ quizId: pack.slug }}
+                to="/play"
+                search={{ practice: pack.slug || pack.id }}
                 className="flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 text-xs sm:text-sm font-extrabold text-primary-foreground shadow-glow hover:bg-primary/90 transition"
               >
                 <Play className="h-4 w-4 fill-current" />
-                <span>{lang === "bn" ? "লাইভ অ্যারেনায় শুরু করুন" : "Launch Live Arena"}</span>
+                <span>
+                  {lang === "bn" ? "নিজে পরীক্ষা দিন (Practice)" : "Practice Exam Now"}
+                </span>
+              </Link>
+
+              <Link
+                to="/host/$quizId"
+                params={{ quizId: pack.slug }}
+                className="flex items-center justify-center gap-2 rounded-2xl border border-primary/40 bg-primary/10 px-5 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition"
+              >
+                <span>{lang === "bn" ? "লাইভ রুম হোস্ট করুন" : "Host Live Room"}</span>
               </Link>
 
               <button
@@ -182,36 +192,49 @@ function SingleCurriculumDetailPage() {
                     </button>
                   </div>
 
-                  {/* Options */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                    {q.options.map((opt, optIdx) => {
-                      const isCorrect = q.correctOptionIds.includes(opt.id);
-                      return (
-                        <div
-                          key={opt.id}
-                          className={`flex items-center gap-3 rounded-2xl border p-3 text-xs font-semibold transition-colors ${
-                            isRevealed && isCorrect
-                              ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-900 dark:text-emerald-200 font-bold"
-                              : "border-border/80 bg-background/80 text-foreground"
-                          }`}
-                        >
-                          <span
-                            className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${
+                  {/* Options or Written Answer Key */}
+                  {q.type === "written" || q.type === "fill_blank" ? (
+                    <div className="rounded-2xl border border-dashed border-primary/40 bg-background/80 p-3.5 text-xs">
+                      <span className="font-mono font-bold text-primary">
+                        {lang === "bn" ? "✍️ সংক্ষিপ্ত লিখিত উত্তর প্রশ্ন" : "✍️ Short Written Response Item"}
+                      </span>
+                      {isRevealed && (
+                        <div className="mt-2 font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                          ✓ Accepted Key: {(q.acceptedAnswers || []).join(" / ")}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                      {q.options.map((opt, optIdx) => {
+                        const isCorrect = q.correctOptionIds.includes(opt.id);
+                        return (
+                          <div
+                            key={opt.id}
+                            className={`flex items-center gap-3 rounded-2xl border p-3 text-xs font-semibold transition-colors ${
                               isRevealed && isCorrect
-                                ? "bg-emerald-500 text-white"
-                                : "bg-muted text-muted-foreground"
+                                ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-900 dark:text-emerald-200 font-bold"
+                                : "border-border/80 bg-background/80 text-foreground"
                             }`}
                           >
-                            {lang === "bn" ? optionLetters[optIdx] : optionLettersEn[optIdx]}
-                          </span>
-                          <span className="flex-1">{lang === "bn" ? opt.textBn : opt.textEn}</span>
-                          {isRevealed && isCorrect && (
-                            <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                            <span
+                              className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${
+                                isRevealed && isCorrect
+                                  ? "bg-emerald-500 text-white"
+                                  : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              {lang === "bn" ? optionLetters[optIdx] : optionLettersEn[optIdx]}
+                            </span>
+                            <span className="flex-1">{lang === "bn" ? opt.textBn : opt.textEn}</span>
+                            {isRevealed && isCorrect && (
+                              <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   {/* Rationale Explanation Drawer */}
                   {isRevealed && (

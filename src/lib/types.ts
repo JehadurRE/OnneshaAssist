@@ -187,6 +187,8 @@ export interface GameSession {
   answeredCount?: number;
   participantCount?: number;
   proctorIncidents?: ProctorIncidentRecord[];
+  completedQuestions?: Question[];
+  isSelfPractice?: boolean;
 }
 
 export interface RosterStudent {

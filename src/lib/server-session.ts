@@ -263,6 +263,7 @@ function buildPlayerSessionProjection(session: ServerLiveSession, participantId?
     updatedAt: session.updatedAt,
     participantCount: session.participantCount ?? Object.keys(session.participants).length,
     answeredCount: session.answeredCount ?? 0,
+    completedQuestions: session.phase === 'podium' ? session.fullQuiz?.questions : undefined,
   };
 }
 
@@ -770,6 +771,30 @@ export const serverLookupCandidateByNumber = createServerFn({ method: 'GET' })
 // ============================================================================
 // 3. LIVE SESSION LIFECYCLE & 500+ CONCURRENCY DELTA ENGINE
 // ============================================================================
+
+export const serverGetActiveRooms = createServerFn({ method: 'GET' }).handler(async () => {
+  const sessions = getLiveSessions();
+  const cutoff = Date.now() - 4 * 3600 * 1000;
+  const activeRooms = Object.values(sessions)
+    .filter((s) => s.updatedAt >= cutoff && s.phase !== 'podium')
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, 6)
+    .map((s) => ({
+      pin: s.pin,
+      quizId: s.quizId,
+      quizTitleEn: s.quizTitleEn,
+      quizTitleBn: s.quizTitleBn,
+      phase: s.phase,
+      participantCount: s.participantCount ?? Object.keys(s.participants).length,
+      totalQuestions: s.totalQuestions,
+      allowedRegionName: s.settings.allowedRegionName || 'All Regions',
+    }));
+
+  return {
+    success: true,
+    rooms: activeRooms,
+  };
+});
 
 export const serverCreateSession = createServerFn({ method: 'POST' })
   .validator(
@@ -1320,29 +1345,40 @@ export const serverHostControl = createServerFn({ method: 'POST' })
           Object.values(session.participants).forEach((p) => {
             if (!p.isBot) return;
             const isBotCorrect = Math.random() > 0.3;
-            const chosen = isBotCorrect
-              ? [...question.correctOptionIds]
-              : [
-                  question.options.find((o) => !question.correctOptionIds.includes(o.id))?.id ||
-                    question.options[0].id,
-                ];
-            const timeTakenSec = Math.round(2 + Math.random() * Math.max(3, question.timeLimitSec * 0.6));
+            const isWrittenStyle = question.type === 'written' || question.type === 'fill_blank';
+            const chosen = isWrittenStyle
+              ? []
+              : isBotCorrect
+                ? [...question.correctOptionIds]
+                : [
+                    question.options.find((o) => !question.correctOptionIds.includes(o.id))?.id ||
+                      question.options[0]?.id ||
+                      'opt-none',
+                  ].filter(Boolean);
+            const botWritten = isWrittenStyle
+              ? isBotCorrect
+                ? question.acceptedAnswers?.[0] || '1971'
+                : '0000'
+              : undefined;
+            const timeLimit = question.timeLimitSec || 20;
+            const timeTakenSec = Math.round(2 + Math.random() * Math.max(3, timeLimit * 0.6));
             let pointsAwarded = 0;
             let newStreak = p.streak;
             if (isBotCorrect) {
               newStreak += 1;
               const mult = newStreak >= 3 ? 1.5 : newStreak >= 2 ? 1.2 : 1.0;
-              const speed = Math.max(0.5, 1 - (timeTakenSec / question.timeLimitSec) * 0.5);
-              pointsAwarded = Math.round(question.points * speed * mult);
+              const speed = Math.max(0.5, 1 - (timeTakenSec / timeLimit) * 0.5);
+              pointsAwarded = Math.round((question.points || 1000) * speed * mult);
             } else {
               newStreak = 0;
               if (session.settings.negativeMarking > 0) {
-                pointsAwarded = -Math.round(question.points * session.settings.negativeMarking);
+                pointsAwarded = -Math.round((question.points || 1000) * session.settings.negativeMarking);
               }
             }
             p.answers[question.id] = {
               questionId: question.id,
               selectedOptionIds: chosen,
+              writtenAnswer: botWritten,
               isCorrect: isBotCorrect,
               timeTakenSec,
               pointsAwarded,

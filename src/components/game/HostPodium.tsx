@@ -3,6 +3,7 @@ import { GameSession, CertificateData } from '@/lib/types';
 import { useLanguage } from '@/lib/i18n';
 import { Confetti } from '@/components/common/Confetti';
 import { CertificateView } from '@/components/common/CertificateView';
+import { db, formatDeterministicCertNumber } from '@/lib/db';
 import { Award, FileSpreadsheet, Printer, RotateCcw, ShieldCheck, Trophy, Users } from 'lucide-react';
 import { audioEngine } from '@/lib/audio-engine';
 
@@ -26,23 +27,39 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
 
   const handleGenerateCertificate = (player: typeof p1, rank: number) => {
     if (!player) return;
+    const certNo = formatDeterministicCertNumber(session.pin, player.rollNumber, rank);
+    const ansList = Object.values(player.answers || {});
+    const correctCount = ansList.filter((a) => a.isCorrect).length;
+    const accuracyPct =
+      session.totalQuestions > 0
+        ? Math.round((correctCount / session.totalQuestions) * 100)
+        : 100;
+    const branding = db.getBranding();
     const cert: CertificateData = {
-      id: `cert-${session.pin}-${player.id}`,
-      certificateNumber: `ONN-${session.pin.slice(0, 4)}-${Math.floor(1000 + Math.random() * 9000)}`,
+      id: `cert-${certNo.toLowerCase()}`,
+      certificateNumber: certNo,
       studentName: player.nickname,
-      studentRoll: player.rollNumber,
+      studentRoll: player.rollNumber || `2026-${100 + rank}`,
+      regionName: player.regionName || 'Dhaka Range',
       quizTitle: session.quizTitleBn || session.quizTitleEn,
-      scorePct: Math.min(100, Math.round((player.score / Math.max(1, session.totalQuestions * 1000)) * 100)),
+      scorePct: accuracyPct,
+      accuracyPercent: accuracyPct,
       marksObtained: player.score,
+      score: player.score,
       totalMarks: session.totalQuestions * 1000,
+      totalPoints: session.totalQuestions * 1000,
       rank,
       totalParticipants: sorted.length,
-      issueDate: new Date().toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      }),
-      organizationName: 'Onnesha LMS & AI Assessment Board',
+      issueDate: new Date().toISOString().slice(0, 10),
+      organizationName: branding.partnerName
+        ? `Onnesha × ${branding.partnerName}`
+        : 'Onnesha Assessment & Examination Arena',
+      institutionName: branding.institutionTitle || 'Onnesha Assessment Arena',
+      instructorName: 'Chief Assessment Officer',
+      verificationUrl:
+        typeof window !== 'undefined'
+          ? `${window.location.origin}/verify/${certNo}`
+          : `/verify/${certNo}`,
       verified: true,
     };
     setSelectedCert(cert);

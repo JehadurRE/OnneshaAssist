@@ -285,6 +285,23 @@ function HomePage() {
                     <span>{t("play_button")}</span>
                   </button>
                 </form>
+
+                <div className="mt-3 pt-3 border-t border-border/60 flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">
+                    {lang === "bn" ? "লাইভ পিন নেই?" : "No live room PIN?"}
+                  </span>
+                  <Link
+                    to="/play"
+                    search={{ practice: "bcs-gk" }}
+                    className="font-bold text-primary hover:underline flex items-center gap-1"
+                  >
+                    <span>
+                      {lang === "bn"
+                        ? "সেলফ-প্র্যাকটিস মক টেস্ট শুরু করুন →"
+                        : "Start Self-Practice Mock Exam →"}
+                    </span>
+                  </Link>
+                </div>
               </div>
 
               {/* Secondary Action Links */}

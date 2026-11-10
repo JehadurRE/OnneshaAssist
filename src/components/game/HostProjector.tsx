@@ -46,6 +46,17 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
     setTimeLeft(question.timeLimitSec);
   }, [question.id]);
 
+  // Auto-advance to response chart 1.2s after 100% of connected examinees have submitted their answers
+  useEffect(() => {
+    if (isPaused || totalPlayers === 0) return;
+    if (answeredCount >= totalPlayers) {
+      const autoTimer = setTimeout(() => {
+        onSkipTimer();
+      }, 1200);
+      return () => clearTimeout(autoTimer);
+    }
+  }, [answeredCount, totalPlayers, isPaused, onSkipTimer]);
+
   useEffect(() => {
     if (isPaused) return;
 

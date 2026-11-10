@@ -113,7 +113,14 @@ function KnowledgeVaultCatalogPage() {
             >
               <div>
                 <div className="flex items-center justify-between">
-                  <span className="text-3xl">{pack.icon}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-3xl">{pack.icon}</span>
+                    {pack.quizNumber && (
+                      <span className="rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-0.5 font-mono text-[10px] font-black uppercase text-primary">
+                        Quiz #{pack.quizNumber}
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-1.5">
                     <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-mono font-bold text-primary">
                       {pack.questions.length} Items
@@ -124,7 +131,13 @@ function KnowledgeVaultCatalogPage() {
                   </div>
                 </div>
 
-                <h3 className="mt-4 font-display text-lg font-bold text-foreground leading-snug">
+                {pack.courseTitle && (
+                  <div className="mt-3 text-[11px] font-bold text-primary truncate">
+                    {pack.courseTitle}
+                  </div>
+                )}
+
+                <h3 className="mt-1 font-display text-lg font-bold text-foreground leading-snug">
                   {lang === "bn" ? pack.titleBn : pack.titleEn}
                 </h3>
                 <p className="mt-1.5 text-xs text-muted-foreground line-clamp-2 leading-relaxed">
@@ -145,23 +158,33 @@ function KnowledgeVaultCatalogPage() {
                 )}
               </div>
 
-              <div className="mt-6 pt-4 border-t border-border/80 flex items-center justify-between">
+              <div className="mt-6 pt-4 border-t border-border/80 flex flex-wrap items-center justify-between gap-2">
                 <Link
                   to="/vault/$slug"
                   params={{ slug: pack.slug }}
                   className="inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline"
                 >
-                  <span>{lang === "bn" ? "প্রশ্ন ও ব্যাখ্যা দেখুন" : "Explore Bank"}</span>
+                  <span>{lang === "bn" ? "প্রশ্ন ও ব্যাখ্যা" : "Review Bank"}</span>
                   <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
 
-                <Link
-                  to="/host/$quizId"
-                  params={{ quizId: pack.slug || pack.id }}
-                  className="rounded-xl bg-primary px-3.5 py-1.5 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90 transition"
-                >
-                  {lang === "bn" ? "হোস্ট করুন" : "Host Room"}
-                </Link>
+                <div className="flex items-center gap-2">
+                  <Link
+                    to="/play"
+                    search={{ practice: pack.slug || pack.id }}
+                    className="rounded-xl bg-primary px-3.5 py-1.5 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90 transition"
+                  >
+                    {lang === "bn" ? "পরীক্ষা দিন" : "Practice Now"}
+                  </Link>
+
+                  <Link
+                    to="/host/$quizId"
+                    params={{ quizId: pack.slug || pack.id }}
+                    className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-bold text-foreground hover:bg-accent transition"
+                  >
+                    {lang === "bn" ? "হোস্ট" : "Host"}
+                  </Link>
+                </div>
               </div>
             </div>
           ))}
