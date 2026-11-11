@@ -37,13 +37,6 @@ function buildPdfFromCanvases(
     return bytes;
   };
 
-  // Object numbering:
-  // 1: Catalog
-  // 2: Pages
-  // For each page i (0..N-1):
-  //   pageObjId = 3 + i * 3
-  //   imgObjId  = 4 + i * 3
-  //   cntObjId  = 5 + i * 3
   const numPages = canvases.length;
   const totalObjects = 2 + numPages * 3;
   const offsets: number[] = new Array(totalObjects + 1).fill(0);
@@ -167,8 +160,28 @@ function drawRoundedRect(
   ctx.closePath();
 }
 
+function fillTextAutoFit(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  initialSize: number,
+  minSize: number,
+  weight: string,
+  family: string
+) {
+  let size = initialSize;
+  while (size > minSize) {
+    ctx.font = `${weight} ${size}px ${family}`;
+    if (ctx.measureText(text).width <= maxWidth) break;
+    size -= 2;
+  }
+  ctx.fillText(text, x, y, maxWidth);
+}
+
 /**
- * Draws a deterministic QR-like verification matrix if external QR image cannot be loaded due to offline/CORS
+ * Draws a deterministic QR-like verification matrix if external QR image is still loading or offline
  */
 function drawFallbackQrMatrix(
   ctx: CanvasRenderingContext2D,
@@ -219,18 +232,20 @@ function drawFallbackQrMatrix(
   }
 }
 
-/**
- * Generates and downloads an official A4 Landscape Certificate PDF directly to the user's device.
- */
-export async function downloadCertificatePdf(
+export function drawCertificateOnCanvas(
+  canvas: HTMLCanvasElement,
   certificate: CertificateData,
-  branding?: BrandingSettings
-): Promise<void> {
+  branding?: BrandingSettings,
+  assets?: {
+    onneshaImg?: HTMLImageElement | null;
+    partnerImg?: HTMLImageElement | null;
+    qrImg?: HTMLImageElement | null;
+  }
+): void {
   const W = 2400;
   const H = 1700;
-  const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = H;
+  if (canvas.width !== W) canvas.width = W;
+  if (canvas.height !== H) canvas.height = H;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
@@ -238,17 +253,10 @@ export async function downloadCertificatePdf(
     typeof window !== 'undefined'
       ? `${window.location.origin}/verify/${certificate.certificateNumber}`
       : certificate.verificationUrl || `https://onnesha.app/verify/${certificate.certificateNumber}`;
-  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
-    verifyUrl
-  )}`;
 
-  const [onneshaImg, partnerImg, qrImg] = await Promise.all([
-    loadImageSafe(onnesha.url),
-    branding?.showPartnerLogo && branding?.partnerLogoUrl
-      ? loadImageSafe(branding.partnerLogoUrl)
-      : Promise.resolve(null),
-    loadImageSafe(qrImageUrl),
-  ]);
+  const onneshaImg = assets?.onneshaImg ?? null;
+  const partnerImg = assets?.partnerImg ?? null;
+  const qrImg = assets?.qrImg ?? null;
 
   // 1. Parchment / Ivory Background
   const bgGrad = ctx.createLinearGradient(0, 0, W, H);
@@ -258,9 +266,9 @@ export async function downloadCertificatePdf(
   ctx.fillStyle = bgGrad;
   ctx.fillRect(0, 0, W, H);
 
-  // Subtle decorative corner glow
+  // Subtle decorative center glow
   const radial = ctx.createRadialGradient(W / 2, H / 2, 100, W / 2, H / 2, 1100);
-  radial.addColorStop(0, 'rgba(16, 185, 129, 0.04)');
+  radial.addColorStop(0, 'rgba(16, 185, 129, 0.045)');
   radial.addColorStop(1, 'rgba(217, 119, 6, 0.02)');
   ctx.fillStyle = radial;
   ctx.fillRect(0, 0, W, H);
@@ -297,6 +305,15 @@ export async function downloadCertificatePdf(
     const ratio = onneshaImg.width / Math.max(1, onneshaImg.height);
     const targetW = Math.min(260, targetH * ratio);
     ctx.drawImage(onneshaImg, 150, 130, targetW, targetH);
+  } else {
+    // Immediate placeholder crest before logo image finishes loading
+    drawRoundedRect(ctx, 150, 135, 220, 100, 18);
+    ctx.fillStyle = '#065f46';
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.font = '900 28px sans-serif';
+    ctx.fillText('ONNESHA', 260, 195);
   }
 
   if (partnerImg) {
@@ -327,19 +344,23 @@ export async function downloadCertificatePdf(
   // Center Institution Header
   ctx.textAlign = 'center';
   ctx.fillStyle = '#047857';
-  ctx.font = 'bold 24px sans-serif';
   const instHeader =
     branding?.showPartnerLogo && branding?.partnerName
       ? `ONNESHA × ${branding.partnerName.toUpperCase()}`
       : (branding?.institutionTitle || 'ONNESHA ASSESSMENT & EXAMINATION ARENA').toUpperCase();
-  ctx.fillText(instHeader, W / 2, 165);
+  fillTextAutoFit(ctx, instHeader, W / 2, 165, 1350, 24, 16, 'bold', 'sans-serif');
 
   ctx.fillStyle = '#0f172a';
-  ctx.font = '900 44px serif';
-  ctx.fillText(
+  fillTextAutoFit(
+    ctx,
     certificate.organizationName || 'Onnesha Assessment & Examination Arena',
     W / 2,
-    220
+    220,
+    1350,
+    44,
+    26,
+    '900',
+    'Georgia, serif'
   );
 
   ctx.fillStyle = '#64748b';
@@ -354,7 +375,7 @@ export async function downloadCertificatePdf(
   ctx.beginPath();
   ctx.moveTo(150, 295);
   ctx.lineTo(W - 150, 295);
-  ctx.strokeStyle = '#e2e8f0';
+  ctx.strokeStyle = '#cbd5e1';
   ctx.lineWidth = 3;
   ctx.stroke();
 
@@ -362,7 +383,7 @@ export async function downloadCertificatePdf(
   drawRoundedRect(ctx, W / 2 - 330, 330, 660, 64, 32);
   ctx.fillStyle = '#fef3c7';
   ctx.fill();
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2.5;
   ctx.strokeStyle = '#f59e0b';
   ctx.stroke();
 
@@ -371,7 +392,7 @@ export async function downloadCertificatePdf(
   ctx.fillText('★  CERTIFICATE OF MERIT & EXCELLENCE  ★', W / 2, 371);
 
   ctx.fillStyle = '#475569';
-  ctx.font = 'italic 28px serif';
+  ctx.font = 'italic 28px Georgia, serif';
   ctx.fillText(
     'This official credential is proudly presented to / এই মর্মে প্রত্যয়ন করা যাচ্ছে যে',
     W / 2,
@@ -380,10 +401,17 @@ export async function downloadCertificatePdf(
 
   // 5. Candidate Name
   ctx.fillStyle = '#0f172a';
-  const nameLen = (certificate.studentName || '').length;
-  const nameFontSize = nameLen > 28 ? 58 : nameLen > 20 ? 68 : 78;
-  ctx.font = `900 ${nameFontSize}px Georgia, serif`;
-  ctx.fillText(certificate.studentName || 'Verified Candidate', W / 2, 555);
+  fillTextAutoFit(
+    ctx,
+    certificate.studentName || 'Verified Candidate',
+    W / 2,
+    555,
+    1850,
+    78,
+    42,
+    '900',
+    'Georgia, serif'
+  );
 
   // Golden underline beneath name
   ctx.beginPath();
@@ -416,10 +444,9 @@ export async function downloadCertificatePdf(
     700
   );
 
-  ctx.fillStyle = '#065f46';
-  ctx.font = 'bold 42px sans-serif';
+  ctx.fillStyle = '#047857';
   const quizTitle = certificate.quizTitle || 'Institutional Merit Assessment';
-  ctx.fillText(quizTitle.length > 65 ? quizTitle.slice(0, 62) + '...' : quizTitle, W / 2, 765);
+  fillTextAutoFit(ctx, quizTitle, W / 2, 765, 1950, 42, 26, 'bold', 'sans-serif');
 
   // 7. Three Official Metric Cards
   const cardW = 540;
@@ -428,9 +455,15 @@ export async function downloadCertificatePdf(
   const startX = (W - (cardW * 3 + gap * 2)) / 2;
   const cardY = 825;
 
-  const rawMarks = certificate.marksObtained ?? certificate.score ?? 0;
   const totalMarks = certificate.totalMarks ?? certificate.totalPoints ?? 100;
   const accuracy = certificate.accuracyPercent ?? certificate.scorePct ?? 100;
+  const rawScoreVal = certificate.marksObtained ?? certificate.score ?? 0;
+  const rawMarks =
+    rawScoreVal > 0
+      ? rawScoreVal
+      : accuracy > 0
+      ? Math.round((accuracy / 100) * totalMarks)
+      : 0;
 
   const cards = [
     {
@@ -468,7 +501,7 @@ export async function downloadCertificatePdf(
     ctx.strokeStyle = c.border;
     ctx.stroke();
 
-    ctx.fillStyle = '#64748b';
+    ctx.fillStyle = '#475569';
     ctx.font = 'bold 20px sans-serif';
     ctx.fillText(c.label, x + cardW / 2, cardY + 52);
 
@@ -536,7 +569,11 @@ export async function downloadCertificatePdf(
   ctx.textAlign = 'center';
   ctx.fillStyle = '#0f172a';
   ctx.font = 'bold 34px monospace';
-  ctx.fillText(certificate.issueDate || new Date().toISOString().slice(0, 10), W - 470, footerY + 115);
+  ctx.fillText(
+    certificate.issueDate || new Date().toISOString().slice(0, 10),
+    W - 470,
+    footerY + 115
+  );
 
   ctx.fillStyle = '#047857';
   ctx.font = 'bold 28px monospace';
@@ -554,10 +591,65 @@ export async function downloadCertificatePdf(
   ctx.fillText('Date of Issue & Serial ID', W - 470, footerY + 210);
 
   ctx.fillStyle = '#64748b';
-  ctx.font = '600 18px monospace';
-  ctx.fillText(verifyUrl.replace(/^https?:\/\//, ''), W - 470, footerY + 245);
+  fillTextAutoFit(
+    ctx,
+    verifyUrl.replace(/^https?:\/\//, ''),
+    W - 470,
+    footerY + 245,
+    480,
+    18,
+    13,
+    '600',
+    'monospace'
+  );
+}
 
-  // Pack Canvas into PDF 1.4 and trigger download
+/**
+ * Renders the certificate onto an HTMLCanvasElement (with immediate fallback paint + async image paint).
+ */
+export async function populateCertificateCanvas(
+  canvas: HTMLCanvasElement,
+  certificate: CertificateData,
+  branding?: BrandingSettings
+): Promise<void> {
+  // 1. Immediate synchronous draw so mobile & desktop screens show the full landscape certificate at 0ms
+  drawCertificateOnCanvas(canvas, certificate, branding);
+
+  // 2. Load logos and QR code in parallel and redraw seamlessly
+  const verifyUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/verify/${certificate.certificateNumber}`
+      : certificate.verificationUrl || `https://onnesha.app/verify/${certificate.certificateNumber}`;
+  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
+    verifyUrl
+  )}`;
+
+  const [onneshaImg, partnerImg, qrImg] = await Promise.all([
+    loadImageSafe(onnesha.url),
+    branding?.showPartnerLogo && branding?.partnerLogoUrl
+      ? loadImageSafe(branding.partnerLogoUrl)
+      : Promise.resolve(null),
+    loadImageSafe(qrImageUrl),
+  ]);
+
+  drawCertificateOnCanvas(canvas, certificate, branding, {
+    onneshaImg,
+    partnerImg,
+    qrImg,
+  });
+}
+
+/**
+ * Generates and downloads an official A4 Landscape Certificate PDF directly to the user's device.
+ */
+export async function downloadCertificatePdf(
+  certificate: CertificateData,
+  branding?: BrandingSettings
+): Promise<void> {
+  const canvas = document.createElement('canvas');
+  canvas.width = 2400;
+  canvas.height = 1700;
+  await populateCertificateCanvas(canvas, certificate, branding);
   const pdfBytes = buildPdfFromCanvases([canvas], 'landscape');
   triggerBlobDownload(pdfBytes, `Onnesha-Certificate-${certificate.certificateNumber}.pdf`);
 }

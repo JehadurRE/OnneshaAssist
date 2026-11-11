@@ -107,18 +107,18 @@ function VerifyCertPage() {
             <p className="mt-1 text-xs text-muted-foreground font-mono break-all">{certId}</p>
           </div>
         ) : cert ? (
-          <div className="space-y-5 sm:space-y-8">
+          <div className="space-y-4 sm:space-y-6">
             <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 print:hidden">
               <div className="flex items-start sm:items-center gap-3">
-                <div className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20">
+                <div className="flex h-10 w-10 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-lg shadow-emerald-600/20">
                   <ShieldCheck className="h-5 w-5 sm:h-6 sm:w-6" />
                 </div>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                    <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-emerald-400">
+                    <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
                       Authentic &amp; Verified Credential
                     </span>
-                    <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                    <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:text-emerald-300">
                       ACTIVE
                     </span>
                   </div>
@@ -133,7 +133,9 @@ function VerifyCertPage() {
 
               <div className="text-left sm:text-right font-mono text-xs border-t sm:border-t-0 border-emerald-500/20 pt-2.5 sm:pt-0">
                 <div className="text-[10px] text-muted-foreground uppercase">Registry Serial</div>
-                <div className="font-bold text-emerald-400 break-all">{cert.certificateNumber}</div>
+                <div className="font-bold text-emerald-700 dark:text-emerald-400 break-all">
+                  {cert.certificateNumber}
+                </div>
               </div>
             </div>
 
