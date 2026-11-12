@@ -9,6 +9,8 @@ interface HostProjectorProps {
   question: Question;
   onSkipTimer: () => void;
   onPardonPlayer?: (participantId: string) => void;
+  onKickPlayer?: (participantId: string) => void;
+  onEndExam?: () => void;
 }
 
 const RESPONSE_STYLES = [
@@ -23,6 +25,8 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
   question,
   onSkipTimer,
   onPardonPlayer,
+  onKickPlayer,
+  onEndExam,
 }) => {
   const { lang, t } = useLanguage();
   const [timeLeft, setTimeLeft] = useState(question.timeLimitSec);
@@ -145,6 +149,17 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
             <FastForward className="h-3.5 w-3.5" />
             <span>{t('skip_timer')}</span>
           </button>
+
+          {onEndExam && (
+            <button
+              type="button"
+              onClick={onEndExam}
+              className="flex items-center gap-1.5 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs font-bold text-destructive hover:bg-destructive/20"
+              title="Finish exam immediately and publish final Merit Podium"
+            >
+              <span>End Exam</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -290,19 +305,31 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
                           {fp.regionName || 'Dhaka Range'} · {fp.proctorFlags || 0} tab switches
                         </div>
                       </div>
-                      {fp.isSuspended ? (
-                        <button
-                          type="button"
-                          onClick={() => onPardonPlayer && onPardonPlayer(fp.id)}
-                          className="rounded-xl bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-700"
-                        >
-                          Pardon &amp; Resume
-                        </button>
-                      ) : (
-                        <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-bold text-amber-600">
-                          WARNED
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {fp.isSuspended ? (
+                          <button
+                            type="button"
+                            onClick={() => onPardonPlayer && onPardonPlayer(fp.id)}
+                            className="rounded-xl bg-emerald-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-700"
+                          >
+                            Pardon
+                          </button>
+                        ) : (
+                          <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-bold text-amber-600">
+                            WARNED
+                          </span>
+                        )}
+                        {onKickPlayer && (
+                          <button
+                            type="button"
+                            onClick={() => onKickPlayer(fp.id)}
+                            className="rounded-xl border border-destructive/40 bg-destructive/10 px-2.5 py-1.5 text-[11px] font-bold text-destructive hover:bg-destructive/20"
+                            title="Remove candidate from live session"
+                          >
+                            Kick
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

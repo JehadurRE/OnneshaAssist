@@ -32,7 +32,10 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password?: string) => Promise<{ success: boolean; error?: string; role?: UserRole }>;
   requestPhoneOtp: (phone: string) => Promise<{ success: boolean; error?: string; devOtp?: string }>;
-  loginWithPhoneOtp: (phone: string, otp: string) => Promise<{ success: boolean; error?: string }>;
+  loginWithPhoneOtp: (
+    phone: string,
+    otp: string
+  ) => Promise<{ success: boolean; error?: string; role?: UserRole }>;
   signup: (data: {
     email: string;
     name: string;
@@ -136,6 +139,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const profile = toUserProfile(res.user);
         setUser(profile);
         localStorage.setItem('onnesha_auth_user', JSON.stringify(profile));
+        import('./db').then(({ db }) => db.syncFromServerStore().catch(() => {}));
         return { success: true, role: profile.role };
       }
 
@@ -170,14 +174,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loginWithPhoneOtp = async (
     phone: string,
     otp: string
-  ): Promise<{ success: boolean; error?: string }> => {
+  ): Promise<{ success: boolean; error?: string; role?: UserRole }> => {
     try {
       const res = await serverVerifyPhoneOtp({ data: { phone, otp } });
       if (res.success && res.user) {
         const profile = toUserProfile(res.user);
         setUser(profile);
         localStorage.setItem('onnesha_auth_user', JSON.stringify(profile));
-        return { success: true };
+        import('./db').then(({ db }) => db.syncFromServerStore().catch(() => {}));
+        return { success: true, role: profile.role };
       }
       return { success: false, error: res.error || 'OTP verification failed.' };
     } catch {

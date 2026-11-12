@@ -20,6 +20,8 @@ import {
   Region,
 } from "@/lib/types";
 import { db, DbSmsLog, formatDeterministicCertNumber } from "@/lib/db";
+import { gameEngine } from "@/lib/game-engine";
+import { serverGetActiveRooms } from "@/lib/server-session";
 import { SmsGateway } from "@/lib/sms-gateway";
 import { getAiCredits } from "@/lib/ai-generator";
 import {
@@ -38,7 +40,9 @@ import {
   Play,
   Plus,
   Printer,
+  Radio,
   Receipt,
+  RefreshCw,
   Save,
   Search,
   Settings,
@@ -93,6 +97,21 @@ function DashboardPage() {
   const [certificates, setCertificates] = useState<CertificateData[]>([]);
   const [examSessions, setExamSessions] = useState<ExamSessionRecord[]>([]);
   const [examResults, setExamResults] = useState<ExamResultRecord[]>([]);
+  const [showAllModelPacks, setShowAllModelPacks] = useState(false);
+  const [activeRooms, setActiveRooms] = useState<
+    {
+      pin: string;
+      quizId: string;
+      quizTitleEn: string;
+      quizTitleBn: string;
+      hostId?: string;
+      phase: string;
+      participantCount: number;
+      totalQuestions: number;
+      allowedRegionName: string;
+    }[]
+  >([]);
+  const [loadingRooms, setLoadingRooms] = useState(false);
 
   // Filters for Roster & Results
   const [selectedRosterRegionId, setSelectedRosterRegionId] = useState<string>("all");
@@ -163,8 +182,24 @@ function DashboardPage() {
     }
   };
 
+  const refreshActiveRooms = async () => {
+    setLoadingRooms(true);
+    try {
+      const res = await serverGetActiveRooms();
+      if (res.success && Array.isArray(res.rooms)) {
+        setActiveRooms(res.rooms);
+      }
+    } catch {
+      // ignore transient network error
+    } finally {
+      setLoadingRooms(false);
+    }
+  };
+
   useEffect(() => {
     refreshDbState();
+    refreshActiveRooms();
+    db.syncFromServerStore().then(refreshDbState);
     const unsub = db.subscribe(() => {
       refreshDbState();
     });
@@ -175,6 +210,31 @@ function DashboardPage() {
     }
     return () => unsub();
   }, []);
+
+  const isSuperAdmin = user?.role === "admin";
+  const assignedCourses = useMemo(() => {
+    if (isSuperAdmin) return courses;
+    const assignedIds = new Set(user?.assignedCourseIds || []);
+    const matched = courses.filter(
+      (c) => assignedIds.has(c.id) || (c.instructorIds || []).includes(user?.id || "")
+    );
+    return matched.length > 0 ? matched : courses;
+  }, [courses, isSuperAdmin, user?.assignedCourseIds, user?.id]);
+
+  const scopedQuizzes = useMemo(() => {
+    if (isSuperAdmin || showAllModelPacks) return quizzes;
+    const myCourseIds = new Set(assignedCourses.map((c) => c.id));
+    const filtered = quizzes.filter(
+      (q) =>
+        q.instructorId === user?.id ||
+        (q.courseId && myCourseIds.has(q.courseId)) ||
+        !q.isTemplate
+    );
+    return filtered.length > 0 ? filtered : quizzes;
+  }, [quizzes, isSuperAdmin, showAllModelPacks, assignedCourses, user?.id]);
+
+  const primaryHostQuizSlug =
+    scopedQuizzes[0]?.slug || scopedQuizzes[0]?.id || quizzes[0]?.slug || "bcs-gk";
 
   // Filtered Roster by Region & Search Query
   const filteredRoster = useMemo(() => {
@@ -594,18 +654,26 @@ function DashboardPage() {
         name: instructorNameInput,
         institutionName: institutionNameInput,
       });
-      db.saveBranding({
-        showPartnerLogo,
-        partnerName: partnerName.trim(),
-        partnerLogoUrl: partnerLogoUrl.trim(),
-        institutionTitle: institutionNameInput.trim() || "Onnesha Assessment Arena",
-      });
-      setSettingsSavedMsg("✓ Studio settings, Joint Partner Logo, and institutional profile saved to server.");
+      if (isSuperAdmin) {
+        db.saveBranding({
+          showPartnerLogo,
+          partnerName: partnerName.trim(),
+          partnerLogoUrl: partnerLogoUrl.trim(),
+          institutionTitle: institutionNameInput.trim() || "Onnesha Assessment Arena",
+        });
+        setSettingsSavedMsg(
+          "✓ Studio credentials, Joint Partner Logo, and institutional branding saved to server."
+        );
+      } else {
+        setSettingsSavedMsg(
+          "✓ Instructor profile and API preferences saved cleanly. Global Co-Branding is managed by Super Admin."
+        );
+      }
       setTimeout(() => setSettingsSavedMsg(null), 3500);
     }
   };
 
-  if (!authLoading && !isAuthenticated) {
+  if (!authLoading && (!isAuthenticated || (user?.role !== "admin" && user?.role !== "instructor"))) {
     return (
       <div className="min-h-screen bg-background text-foreground bg-grid flex flex-col transition-colors">
         <Navbar />
@@ -615,19 +683,31 @@ function DashboardPage() {
               <Lock className="h-8 w-8" />
             </div>
             <h1 className="font-display text-2xl font-black text-foreground">
-              Instructor Studio Authentication Required
+              {isAuthenticated ? "Instructor Access Required" : "Instructor Studio Authentication Required"}
             </h1>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Please sign in with your verified instructor credentials to manage Regions, Candidate Rosters, and Live Assessments.
+              {isAuthenticated
+                ? "This console is reserved for Faculty Instructors and Super Admins. Candidates should use the Student Exam Hub."
+                : "Please sign in with your verified instructor credentials to manage Candidate Rosters, Course Quizzes, and Live Assessments."}
             </p>
-            <div className="pt-2">
-              <Link
-                to="/auth/login"
-                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 text-xs font-bold text-primary-foreground shadow-md hover:bg-primary/90 transition"
-              >
-                <span>Proceed to Instructor Login</span>
-                <ChevronRight className="h-4 w-4" />
-              </Link>
+            <div className="pt-2 flex flex-col sm:flex-row gap-2">
+              {isAuthenticated ? (
+                <Link
+                  to="/play"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 text-xs font-bold text-primary-foreground shadow-md hover:bg-primary/90 transition"
+                >
+                  <span>Go to Student Exam Hub (/play)</span>
+                  <ChevronRight className="h-4 w-4" />
+                </Link>
+              ) : (
+                <Link
+                  to="/auth/login"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 text-xs font-bold text-primary-foreground shadow-md hover:bg-primary/90 transition"
+                >
+                  <span>Proceed to Instructor Login</span>
+                  <ChevronRight className="h-4 w-4" />
+                </Link>
+              )}
             </div>
           </div>
         </main>
@@ -657,13 +737,15 @@ function DashboardPage() {
             </h1>
             <p className="text-xs text-muted-foreground mt-0.5">
               Welcome back, <strong className="text-foreground">{user?.name || "Instructor"}</strong> ·{" "}
-              <span className="font-mono text-primary font-bold">{regions.length} Regions</span> ·{" "}
-              <span className="font-mono text-foreground font-bold">{roster.length} Candidates</span>
+              <span className="font-mono text-primary font-bold">
+                {isSuperAdmin ? "Super Admin" : `${assignedCourses.length} Assigned Course(s)`}
+              </span>{" "}
+              · <span className="font-mono text-foreground font-bold">{roster.length} Candidates</span>
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            {user?.role === "admin" && (
+            {isSuperAdmin && (
               <Link
                 to="/admin"
                 className="inline-flex items-center gap-1.5 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-2.5 text-xs font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition"
@@ -673,16 +755,18 @@ function DashboardPage() {
               </Link>
             )}
 
-            <button
-              onClick={() => {
-                setActiveTab("roster");
-                setShowAddRegion(true);
-              }}
-              className="inline-flex items-center gap-1.5 rounded-2xl border border-border bg-card px-3.5 py-2.5 text-xs font-bold text-foreground hover:bg-accent transition"
-            >
-              <MapPin className="h-4 w-4 text-primary" />
-              <span>+ Add Region</span>
-            </button>
+            {isSuperAdmin && (
+              <button
+                onClick={() => {
+                  setActiveTab("roster");
+                  setShowAddRegion(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-2xl border border-border bg-card px-3.5 py-2.5 text-xs font-bold text-foreground hover:bg-accent transition"
+              >
+                <MapPin className="h-4 w-4 text-primary" />
+                <span>+ Add Region</span>
+              </button>
+            )}
 
             <button
               onClick={() => setShowAiModal(true)}
@@ -694,7 +778,7 @@ function DashboardPage() {
 
             <Link
               to="/host/$quizId"
-              params={{ quizId: "bcs-gk" }}
+              params={{ quizId: primaryHostQuizSlug }}
               className="inline-flex items-center gap-1.5 rounded-2xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-emerald-700 transition"
             >
               <Play className="h-3.5 w-3.5 fill-current" />
@@ -807,6 +891,87 @@ function DashboardPage() {
               </div>
             </div>
 
+            {/* Active Live Exam Rooms Strip */}
+            <div className="rounded-3xl border border-border bg-card p-5 shadow-sm space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Radio
+                    className={`h-4 w-4 ${
+                      activeRooms.length > 0 ? "text-emerald-500 animate-pulse" : "text-muted-foreground"
+                    }`}
+                  />
+                  <h2 className="font-display text-sm font-black text-foreground">
+                    Live Examination Rooms ({activeRooms.length} Active)
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={refreshActiveRooms}
+                  disabled={loadingRooms}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-1.5 text-[11px] font-bold text-foreground hover:bg-accent transition"
+                >
+                  <RefreshCw className={`h-3 w-3 ${loadingRooms ? "animate-spin" : ""}`} />
+                  <span>Refresh</span>
+                </button>
+              </div>
+              {activeRooms.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No live examination rooms are running right now. Launch a quiz from{" "}
+                  <strong>Model Tests &amp; Packs</strong> or click <strong>Launch Live Arena</strong> above.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {activeRooms.map((room) => (
+                    <div
+                      key={room.pin}
+                      className="flex flex-col justify-between gap-2.5 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-3.5"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-xs font-black text-emerald-600 dark:text-emerald-400">
+                            PIN {room.pin}
+                          </span>
+                          <span className="rounded-full bg-background px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-foreground border border-border">
+                            {room.phase} · {room.participantCount} joined
+                          </span>
+                        </div>
+                        <div className="mt-1 font-display text-xs font-bold text-foreground truncate">
+                          {room.quizTitleEn || room.quizTitleBn}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Link
+                          to="/host/$quizId"
+                          params={{ quizId: room.quizId }}
+                          search={{ pin: room.pin }}
+                          className="flex-1 inline-flex items-center justify-center gap-1 rounded-xl bg-primary px-3 py-1.5 text-[11px] font-bold text-primary-foreground hover:bg-primary/90 transition"
+                        >
+                          <Play className="h-3 w-3 fill-current" />
+                          <span>Resume Host</span>
+                        </Link>
+                        {(isSuperAdmin || room.hostId === user?.id) && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const ok = await gameEngine.closeRoomAsync(room.pin);
+                              if (ok) {
+                                setSmsSuccessMsg(`✓ Closed live room PIN ${room.pin}.`);
+                                setTimeout(() => setSmsSuccessMsg(null), 3000);
+                                refreshActiveRooms();
+                              }
+                            }}
+                            className="rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-[11px] font-bold text-destructive hover:bg-destructive/20"
+                          >
+                            Close
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Quick Actions Matrix */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bento-card p-6 shadow-sm space-y-3">
@@ -839,7 +1004,7 @@ function DashboardPage() {
                 </p>
                 <Link
                   to="/host/$quizId"
-                  params={{ quizId: quizzes[0]?.slug || "bcs-gk" }}
+                  params={{ quizId: primaryHostQuizSlug }}
                   className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 hover:underline"
                 >
                   <span>Open Host Controller →</span>
@@ -883,14 +1048,20 @@ function DashboardPage() {
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setShowAddRegion(true)}
-                  className="inline-flex items-center gap-1.5 rounded-2xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90 shrink-0"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span>Add New Region</span>
-                </button>
+                {isSuperAdmin ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddRegion(true)}
+                    className="inline-flex items-center gap-1.5 rounded-2xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90 shrink-0"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Add New Region</span>
+                  </button>
+                ) : (
+                  <span className="rounded-xl border border-border bg-background px-3 py-1.5 text-[11px] font-semibold text-muted-foreground">
+                    Regions managed by Super Admin
+                  </span>
+                )}
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -941,7 +1112,7 @@ function DashboardPage() {
                           <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[11px] font-bold text-foreground">
                             {count}
                           </span>
-                          {!isDefault && (
+                          {isSuperAdmin && !isDefault && (
                             <button
                               type="button"
                               onClick={(ev) => {
@@ -1323,48 +1494,64 @@ function DashboardPage() {
             </div>
 
             {/* Course Filter Strip */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setSelectedCourseFilter("all")}
-                className={`rounded-2xl border px-3.5 py-2 text-xs font-bold transition ${
-                  selectedCourseFilter === "all"
-                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                    : "border-border bg-card text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                All Courses ({quizzes.length} Quizzes)
-              </button>
-              {courses.map((c) => {
-                const count = quizzes.filter((q) => q.courseId === c.id).length;
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setSelectedCourseFilter(c.id)}
-                    className={`rounded-2xl border px-3.5 py-2 text-xs font-bold transition ${
-                      selectedCourseFilter === c.id
-                        ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                        : "border-border bg-card text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <span className="font-mono mr-1.5 opacity-80">{c.code}</span>
-                    <span>{lang === "bn" ? c.titleBn : c.titleEn}</span>
-                    <span className="ml-1.5 rounded-full bg-background/20 px-1.5 py-0.5 font-mono text-[10px]">
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedCourseFilter("all")}
+                  className={`rounded-2xl border px-3.5 py-2 text-xs font-bold transition ${
+                    selectedCourseFilter === "all"
+                      ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                      : "border-border bg-card text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {isSuperAdmin ? "All Courses" : "My Courses & Quizzes"} ({scopedQuizzes.length})
+                </button>
+                {assignedCourses.map((c) => {
+                  const count = scopedQuizzes.filter((q) => q.courseId === c.id).length;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setSelectedCourseFilter(c.id)}
+                      className={`rounded-2xl border px-3.5 py-2 text-xs font-bold transition ${
+                        selectedCourseFilter === c.id
+                          ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                          : "border-border bg-card text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <span className="font-mono mr-1.5 opacity-80">{c.code}</span>
+                      <span>{lang === "bn" ? c.titleBn : c.titleEn}</span>
+                      <span className="ml-1.5 rounded-full bg-background/20 px-1.5 py-0.5 font-mono text-[10px]">
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {!isSuperAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllModelPacks((v) => !v)}
+                  className="rounded-xl border border-border bg-card px-3 py-1.5 text-[11px] font-bold text-muted-foreground hover:text-foreground transition"
+                >
+                  {showAllModelPacks ? "Show Assigned Only" : `Include All Model Packs (${quizzes.length})`}
+                </button>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {quizzes
+              {scopedQuizzes
                 .filter(
                   (q) => selectedCourseFilter === "all" || q.courseId === selectedCourseFilter
                 )
                 .sort((a, b) => (a.quizNumber || 99) - (b.quizNumber || 99))
-                .map((quiz) => (
+                .map((quiz) => {
+                  const canDeleteQuiz =
+                    !quiz.isTemplate &&
+                    (isSuperAdmin || !quiz.instructorId || quiz.instructorId === user?.id);
+                  return (
                   <div
                     key={quiz.id}
                     className="bento-card p-5 shadow-sm space-y-3 flex flex-col justify-between"
@@ -1383,7 +1570,7 @@ function DashboardPage() {
                           <span className="rounded-full bg-muted px-2.5 py-0.5 font-mono text-[10px] font-bold text-foreground">
                             {quiz.questions.length} Items
                           </span>
-                          {!quiz.isTemplate && (
+                          {canDeleteQuiz && (
                             <button
                               type="button"
                               onClick={() => {
@@ -1456,7 +1643,8 @@ function DashboardPage() {
                       </Link>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
             </div>
           </div>
         )}
@@ -1508,7 +1696,7 @@ function DashboardPage() {
                     }}
                     className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs sm:text-sm font-bold text-foreground outline-none focus:border-primary"
                   >
-                    {courses.map((c) => (
+                    {assignedCourses.map((c) => (
                       <option key={c.id} value={c.id}>
                         [{c.code}] {c.titleEn} ({c.instructorNames.join(", ")})
                       </option>
@@ -2167,17 +2355,18 @@ function DashboardPage() {
                 </div>
               </div>
 
-              <div className="space-y-4 pt-4 border-t border-border/80">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h3 className="font-display text-base font-bold text-foreground flex items-center gap-2">
-                      <Award className="h-4 w-4 text-primary" />
-                      <span>Joint Partner Logo (Optional Co-Branding)</span>
-                    </h3>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      When enabled, your Joint Partner logo appears alongside Onnesha in the Top Header, Landing Page, Certificates, and Merit Gazette.
-                    </p>
-                  </div>
+              {isSuperAdmin && (
+                <div className="space-y-4 pt-4 border-t border-border/80">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="font-display text-base font-bold text-foreground flex items-center gap-2">
+                        <Award className="h-4 w-4 text-primary" />
+                        <span>Joint Partner Logo (Optional Co-Branding)</span>
+                      </h3>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        When enabled, your Joint Partner logo appears alongside Onnesha in the Top Header, Landing Page, Certificates, and Merit Gazette.
+                      </p>
+                    </div>
 
                   <label className="inline-flex items-center gap-2.5 cursor-pointer rounded-xl border border-border bg-background px-3.5 py-2 text-xs font-bold text-foreground">
                     <input
@@ -2268,7 +2457,8 @@ function DashboardPage() {
                     </button>
                   </div>
                 )}
-              </div>
+                </div>
+              )}
 
               <div className="space-y-4 pt-4 border-t border-border/80">
                 <h3 className="font-display text-base font-bold text-foreground flex items-center gap-2">

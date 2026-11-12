@@ -110,6 +110,47 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
               </select>
             </div>
 
+            {/* Negative Marking Selector */}
+            {onUpdateSettings && (
+              <div className="flex items-center gap-1.5 rounded-xl border border-border bg-background px-2.5 py-1 text-xs">
+                <span className="font-bold text-muted-foreground hidden sm:inline">Neg:</span>
+                <select
+                  value={String(session.settings.negativeMarking ?? 0.25)}
+                  onChange={(e) =>
+                    onUpdateSettings({ negativeMarking: Number(e.target.value) || 0 })
+                  }
+                  className="bg-transparent font-mono font-bold text-foreground outline-none cursor-pointer"
+                  title="Negative marking deduction factor for wrong answers"
+                >
+                  <option value="0">0 (None)</option>
+                  <option value="0.25">-0.25</option>
+                  <option value="0.5">-0.50</option>
+                </select>
+              </div>
+            )}
+
+            {/* Anti-Impersonation Roster Verification Toggle */}
+            {onUpdateSettings && (
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateSettings({
+                    requireRosterVerification: !(session.settings.requireRosterVerification ?? true),
+                  })
+                }
+                className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-bold transition ${
+                  (session.settings.requireRosterVerification ?? true)
+                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                    : 'border-border bg-background text-muted-foreground hover:bg-accent'
+                }`}
+                title="Require candidates to verify against enrolled roster or allow open join"
+              >
+                <span>
+                  Roster: {(session.settings.requireRosterVerification ?? true) ? 'Verified' : 'Open'}
+                </span>
+              </button>
+            )}
+
             {/* Anti-Cheat Proctoring Toggle */}
             {onUpdateSettings && (
               <button
@@ -213,10 +254,11 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
 
           <button
             onClick={onAddBots}
-            className="flex items-center gap-2 rounded-2xl border border-border bg-background px-5 py-4 text-sm font-bold text-foreground shadow-sm hover:bg-accent transition-all"
+            title="Add 8 simulated demo candidates strictly for dry-run testing"
+            className="flex items-center gap-2 rounded-2xl border border-dashed border-border bg-background px-4 py-4 text-xs font-bold text-muted-foreground shadow-sm hover:text-foreground hover:bg-accent transition-all"
           >
             <Bot className="h-4 w-4 text-primary" />
-            <span>{t('add_bot_players')}</span>
+            <span>Demo Preview Bots</span>
           </button>
         </div>
       </div>

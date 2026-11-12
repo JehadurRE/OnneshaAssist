@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useLanguage } from "@/lib/i18n";
 import { db } from "@/lib/db";
 import { gameEngine } from "@/lib/game-engine";
+import { serverGetActiveRooms } from "@/lib/server-session";
 import {
   BrandingSettings,
   Course,
@@ -31,6 +32,7 @@ import {
   MapPin,
   Play,
   Plus,
+  Radio,
   RefreshCw,
   Search,
   Settings,
@@ -40,9 +42,23 @@ import {
   Trash2,
   Upload,
   UserCheck,
+  UserCog,
   UserPlus,
   Users,
+  X,
 } from "lucide-react";
+
+interface ActiveRoomRow {
+  pin: string;
+  quizId: string;
+  quizTitleEn: string;
+  quizTitleBn: string;
+  hostId?: string;
+  phase: string;
+  participantCount: number;
+  totalQuestions: number;
+  allowedRegionName: string;
+}
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -66,10 +82,14 @@ function SuperAdminPage() {
   const navigate = useNavigate();
 
   // Admin Gate Login State
-  const [loginEmail, setLoginEmail] = useState("admin@onnesha.app");
-  const [loginPassword, setLoginPassword] = useState("admin123");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // Active Live Rooms Monitor
+  const [activeRooms, setActiveRooms] = useState<ActiveRoomRow[]>([]);
+  const [loadingRooms, setLoadingRooms] = useState(false);
 
   // Core Database State
   const [activeTab, setActiveTab] = useState<AdminTab>("courses");
@@ -111,6 +131,16 @@ function SuperAdminPage() {
   const [newUserPhone, setNewUserPhone] = useState("");
   const [newUserCourses, setNewUserCourses] = useState<string[]>(["course-bcs-foundation"]);
 
+  // Edit Existing Instructor / Reset Password Modal State
+  const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
+  const [editUserName, setEditUserName] = useState("");
+  const [editUserDesignation, setEditUserDesignation] = useState("");
+  const [editUserInstitution, setEditUserInstitution] = useState("");
+  const [editUserPhone, setEditUserPhone] = useState("");
+  const [editUserRole, setEditUserRole] = useState<"instructor" | "admin">("instructor");
+  const [editUserPassword, setEditUserPassword] = useState("");
+  const [editUserCourses, setEditUserCourses] = useState<string[]>([]);
+
   // Region & Candidate Form State
   const [newRegCode, setNewRegCode] = useState("");
   const [newRegNameEn, setNewRegNameEn] = useState("");
@@ -140,8 +170,23 @@ function SuperAdminPage() {
     setBranding(db.getBranding());
   };
 
+  const refreshActiveRooms = async () => {
+    setLoadingRooms(true);
+    try {
+      const res = await serverGetActiveRooms();
+      if (res.success && Array.isArray(res.rooms)) {
+        setActiveRooms(res.rooms);
+      }
+    } catch {
+      // ignore transient network errors
+    } finally {
+      setLoadingRooms(false);
+    }
+  };
+
   useEffect(() => {
     refreshAll();
+    refreshActiveRooms();
     db.syncFromServerStore().then(refreshAll);
     const unsub = db.subscribe(refreshAll);
     return () => unsub();
@@ -329,6 +374,76 @@ function SuperAdminPage() {
     showNotice(`Updated ${u.name} status to ${nextStatus.toUpperCase()}.`);
   };
 
+  const openEditUser = (u: ManagedUser) => {
+    setEditingUser(u);
+    setEditUserName(u.name);
+    setEditUserDesignation(u.designation || "Course Instructor");
+    setEditUserInstitution(u.institution || u.institutionName || "Onnesha Academic Wing");
+    setEditUserPhone(u.phone || "");
+    setEditUserRole(u.role === "admin" ? "admin" : "instructor");
+    setEditUserPassword("");
+    const currentCourseIds = new Set<string>(u.assignedCourseIds || []);
+    courses.forEach((c) => {
+      if ((c.instructorIds || []).includes(u.id)) currentCourseIds.add(c.id);
+    });
+    setEditUserCourses(Array.from(currentCourseIds));
+  };
+
+  const handleSaveEditedUser = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser || !editUserName.trim()) return;
+
+    const updatedUser: ManagedUser = {
+      ...editingUser,
+      name: editUserName.trim(),
+      designation: editUserDesignation.trim() || "Course Instructor",
+      institution: editUserInstitution.trim() || "Onnesha Academic Wing",
+      institutionName: editUserInstitution.trim() || "Onnesha Academic Wing",
+      phone: editUserPhone.trim(),
+      role: editingUser.email === "admin@onnesha.app" ? "admin" : editUserRole,
+      assignedCourseIds: editUserCourses,
+      ...(editUserPassword.trim() ? { passwordHash: editUserPassword.trim() } : {}),
+    };
+
+    db.saveUser(updatedUser);
+
+    courses.forEach((c) => {
+      const shouldHave = editUserCourses.includes(c.id);
+      const hasNow = (c.instructorIds || []).includes(updatedUser.id);
+      if (shouldHave && !hasNow) {
+        db.saveCourse({
+          ...c,
+          instructorIds: [...(c.instructorIds || []), updatedUser.id],
+          instructorNames: [...(c.instructorNames || []), updatedUser.name],
+        });
+      } else if (!shouldHave && hasNow) {
+        const nextIds = (c.instructorIds || []).filter((id) => id !== updatedUser.id);
+        const nextNames = nextIds
+          .map((id) => (id === updatedUser.id ? updatedUser.name : users.find((x) => x.id === id)?.name || ""))
+          .filter(Boolean);
+        db.saveCourse({
+          ...c,
+          instructorIds: nextIds,
+          instructorNames: nextNames,
+        });
+      } else if (shouldHave && hasNow && updatedUser.name !== editingUser.name) {
+        const nextNames = (c.instructorIds || [])
+          .map((id) => (id === updatedUser.id ? updatedUser.name : users.find((x) => x.id === id)?.name || ""))
+          .filter(Boolean);
+        db.saveCourse({ ...c, instructorNames: nextNames });
+      }
+    });
+
+    setEditingUser(null);
+    setEditUserPassword("");
+    refreshAll();
+    showNotice(
+      `Updated "${updatedUser.name}" (${editUserCourses.length} course(s)${
+        editUserPassword.trim() ? ", password reset" : ""
+      }).`
+    );
+  };
+
   const handleAddRegion = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRegCode.trim() || !newRegNameEn.trim()) return;
@@ -468,13 +583,25 @@ function SuperAdminPage() {
                 />
               </div>
 
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-[11px] font-mono">
-                <div className="font-bold text-amber-600 dark:text-amber-400">
-                  Default Super Admin Credentials:
+              <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-[11px] font-mono">
+                <div>
+                  <div className="font-bold text-amber-600 dark:text-amber-400">
+                    Demo Admin Access:
+                  </div>
+                  <div className="text-foreground">
+                    admin@onnesha.app · admin123
+                  </div>
                 </div>
-                <div className="text-foreground">
-                  Email: <strong>admin@onnesha.app</strong> · Pass: <strong>admin123</strong>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginEmail("admin@onnesha.app");
+                    setLoginPassword("admin123");
+                  }}
+                  className="shrink-0 rounded-lg border border-amber-500/40 bg-background px-2.5 py-1 text-[10px] font-bold text-amber-600 dark:text-amber-300 hover:bg-amber-500/20"
+                >
+                  Auto-Fill
+                </button>
               </div>
 
               <button
@@ -622,6 +749,83 @@ function SuperAdminPage() {
               Across {regions.length} Regional Ranges
             </div>
           </div>
+        </div>
+
+        {/* Live Examination Rooms Monitor */}
+        <div className="rounded-3xl border border-border bg-card p-4 sm:p-5 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Radio className={`h-4 w-4 ${activeRooms.length > 0 ? "text-emerald-500 animate-pulse" : "text-muted-foreground"}`} />
+              <h2 className="font-display text-sm font-black text-foreground">
+                Live Examination Rooms Oversight ({activeRooms.length} Active)
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={refreshActiveRooms}
+              disabled={loadingRooms}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-1.5 text-[11px] font-bold text-foreground hover:bg-accent transition"
+            >
+              <RefreshCw className={`h-3 w-3 ${loadingRooms ? "animate-spin" : ""}`} />
+              <span>Refresh Rooms</span>
+            </button>
+          </div>
+
+          {activeRooms.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No live examination rooms are currently open. Launch any quiz below or monitor instructor sessions here.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {activeRooms.map((room) => (
+                <div
+                  key={room.pin}
+                  className="flex flex-col justify-between gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-3.5"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-sm font-black tracking-wider text-emerald-600 dark:text-emerald-400">
+                        PIN {room.pin}
+                      </span>
+                      <span className="rounded-full bg-background px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-foreground border border-border">
+                        {room.phase} · {room.participantCount} joined
+                      </span>
+                    </div>
+                    <div className="mt-1 font-display text-xs font-bold text-foreground truncate">
+                      {room.quizTitleEn || room.quizTitleBn}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground truncate">
+                      Scope: {room.allowedRegionName}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Link
+                      to="/host/$quizId"
+                      params={{ quizId: room.quizId }}
+                      search={{ pin: room.pin }}
+                      className="flex-1 inline-flex items-center justify-center gap-1 rounded-xl bg-primary px-3 py-1.5 text-[11px] font-bold text-primary-foreground hover:bg-primary/90 transition"
+                    >
+                      <Play className="h-3 w-3 fill-current" />
+                      <span>Open Controller</span>
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const ok = await gameEngine.closeRoomAsync(room.pin);
+                        if (ok) {
+                          showNotice(`Closed live room PIN ${room.pin}.`);
+                          refreshActiveRooms();
+                        }
+                      }}
+                      className="rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-[11px] font-bold text-destructive hover:bg-destructive/20 transition"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Navigation Tabs */}
@@ -1292,28 +1496,39 @@ function SuperAdminPage() {
                         </div>
                       </div>
 
-                      {u.email !== "admin@onnesha.app" && (
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleUserStatus(u)}
-                            className="rounded-xl border border-border px-3 py-1.5 text-xs font-bold text-foreground hover:bg-accent"
-                          >
-                            {u.status === "active" ? "Suspend" : "Activate"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              db.deleteUser(u.id);
-                              refreshAll();
-                            }}
-                            className="rounded-xl border border-destructive/30 bg-destructive/10 p-2 text-destructive hover:bg-destructive/20"
-                            title="Delete User"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      )}
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => openEditUser(u)}
+                          className="inline-flex items-center gap-1 rounded-xl border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/20"
+                          title="Edit instructor details, courses, or reset password"
+                        >
+                          <UserCog className="h-3.5 w-3.5" />
+                          <span>Edit / Reset Pass</span>
+                        </button>
+                        {u.email !== "admin@onnesha.app" && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleUserStatus(u)}
+                              className="rounded-xl border border-border px-3 py-1.5 text-xs font-bold text-foreground hover:bg-accent"
+                            >
+                              {u.status === "active" ? "Suspend" : "Activate"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                db.deleteUser(u.id);
+                                refreshAll();
+                              }}
+                              className="rounded-xl border border-destructive/30 bg-destructive/10 p-2 text-destructive hover:bg-destructive/20"
+                              title="Delete User"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -1717,6 +1932,159 @@ function SuperAdminPage() {
                   <span>Purge Residual Dummy / Test Seed Data</span>
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+        {/* Edit Instructor / Reset Password Modal */}
+        {editingUser && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in">
+            <div className="w-full max-w-lg rounded-3xl border border-border bg-card p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-border pb-3">
+                <div>
+                  <span className="font-mono text-[10px] font-bold uppercase text-primary">
+                    {editingUser.email}
+                  </span>
+                  <h3 className="font-display text-lg font-black text-foreground">
+                    Edit Account &amp; Course Assignments
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingUser(null)}
+                  className="rounded-xl p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveEditedUser} className="space-y-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                      Full Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editUserName}
+                      onChange={(e) => setEditUserName(e.target.value)}
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                      Role
+                    </label>
+                    <select
+                      value={editUserRole}
+                      disabled={editingUser.email === "admin@onnesha.app"}
+                      onChange={(e) => setEditUserRole(e.target.value as "instructor" | "admin")}
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold text-foreground disabled:opacity-60"
+                    >
+                      <option value="instructor">Faculty Instructor</option>
+                      <option value="admin">Super Admin</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                      Designation
+                    </label>
+                    <input
+                      type="text"
+                      value={editUserDesignation}
+                      onChange={(e) => setEditUserDesignation(e.target.value)}
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                      Phone Number
+                    </label>
+                    <input
+                      type="tel"
+                      value={editUserPhone}
+                      onChange={(e) => setEditUserPhone(e.target.value)}
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs font-semibold text-foreground"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                    Institution / Wing
+                  </label>
+                  <input
+                    type="text"
+                    value={editUserInstitution}
+                    onChange={(e) => setEditUserInstitution(e.target.value)}
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                    Reset Password (Optional — leave blank to keep current)
+                  </label>
+                  <input
+                    type="password"
+                    minLength={6}
+                    value={editUserPassword}
+                    onChange={(e) => setEditUserPassword(e.target.value)}
+                    placeholder="Enter new password (min 6 chars)"
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                    Assigned Courses ({editUserCourses.length})
+                  </label>
+                  <div className="max-h-36 overflow-y-auto rounded-2xl border border-border bg-background p-2 space-y-1">
+                    {courses.map((c) => {
+                      const checked = editUserCourses.includes(c.id);
+                      return (
+                        <label
+                          key={c.id}
+                          className="flex items-center gap-2 rounded-lg p-1.5 text-xs cursor-pointer hover:bg-muted/50"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              setEditUserCourses((prev) =>
+                                prev.includes(c.id)
+                                  ? prev.filter((id) => id !== c.id)
+                                  : [...prev, c.id]
+                              )
+                            }
+                          />
+                          <span className="font-mono font-bold text-primary">{c.code}</span>
+                          <span className="truncate text-foreground">{c.titleEn}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingUser(null)}
+                    className="rounded-xl border border-border px-4 py-2 text-xs font-bold text-muted-foreground hover:text-foreground"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="rounded-xl bg-primary px-5 py-2 text-xs font-extrabold text-primary-foreground hover:bg-primary/90"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

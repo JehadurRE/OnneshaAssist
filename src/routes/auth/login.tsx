@@ -55,6 +55,8 @@ function LoginPage() {
     if (result.success) {
       if (result.role === "admin") {
         navigate({ to: "/admin" });
+      } else if (result.role === "candidate") {
+        navigate({ to: "/play" });
       } else {
         navigate({ to: "/dashboard" });
       }
@@ -90,7 +92,13 @@ function LoginPage() {
     setIsLoading(false);
 
     if (result.success) {
-      navigate({ to: "/dashboard" });
+      if (result.role === "admin") {
+        navigate({ to: "/admin" });
+      } else if (result.role === "candidate") {
+        navigate({ to: "/play" });
+      } else {
+        navigate({ to: "/dashboard" });
+      }
     } else {
       setErrorMessage(result.error || "Invalid OTP code.");
     }

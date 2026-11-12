@@ -1704,16 +1704,18 @@ export const serverGetActiveRooms = createServerFn({ method: 'GET' }).handler(as
   const activeRooms = Object.values(sessions)
     .filter((s) => s.updatedAt >= cutoff && s.phase !== 'podium')
     .sort((a, b) => b.updatedAt - a.updatedAt)
-    .slice(0, 6)
+    .slice(0, 12)
     .map((s) => ({
       pin: s.pin,
       quizId: s.quizId,
       quizTitleEn: s.quizTitleEn,
       quizTitleBn: s.quizTitleBn,
+      hostId: s.hostId,
       phase: s.phase,
       participantCount: s.participantCount ?? Object.keys(s.participants).length,
       totalQuestions: s.totalQuestions,
       allowedRegionName: s.settings.allowedRegionName || 'All Regions',
+      createdAt: s.createdAt,
     }));
 
   return {
@@ -2227,6 +2229,7 @@ export const serverHostControl = createServerFn({ method: 'POST' })
         | 'show_chart'
         | 'show_leaderboard'
         | 'end_game'
+        | 'close_room'
         | 'kick_player'
         | 'pardon_player'
         | 'add_bots'
@@ -2415,6 +2418,15 @@ export const serverHostControl = createServerFn({ method: 'POST' })
         });
         recalculateSessionMetrics(session);
         break;
+      }
+      case 'close_room': {
+        delete sessions[data.pin];
+        scheduleLiveSessionsPersist();
+        return {
+          success: true,
+          closed: true,
+          session: null,
+        };
       }
     }
 

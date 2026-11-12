@@ -398,6 +398,48 @@ class RealtimeGameEngine {
     return this.createSession(quiz, isFormal, allowedRegionId, allowedRegionName);
   }
 
+  public async resumeHostSessionAsync(pin: string): Promise<GameSession | null> {
+    try {
+      const res = await serverGetSession({
+        data: { pin: pin.trim(), role: 'host' },
+      });
+      if (res.success && res.session) {
+        this.cacheSessionLocally(res.session);
+        this.startPolling(res.session.pin, 'host');
+        return res.session;
+      }
+    } catch (err) {
+      console.warn('Host session resume error:', err);
+    }
+    const local = this.getSession(pin.trim());
+    if (local) {
+      this.startPolling(local.pin, 'host');
+      return local;
+    }
+    return null;
+  }
+
+  public async closeRoomAsync(pin: string): Promise<boolean> {
+    try {
+      const res = await serverHostControl({
+        data: {
+          pin,
+          hostToken: this.getStoredHostToken(pin),
+          action: 'close_room',
+        },
+      });
+      if (this.activePollingPin === pin) {
+        this.stopPolling();
+      }
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(`onnesha_game_${pin}`);
+      }
+      return !!res.success;
+    } catch {
+      return false;
+    }
+  }
+
   public updateSessionSettings(pin: string, settings: Partial<GameSettings>) {
     const session = this.getSession(pin);
     if (session) {
