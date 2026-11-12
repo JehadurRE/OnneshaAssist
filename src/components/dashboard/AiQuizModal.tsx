@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { useLanguage } from '@/lib/i18n';
-import { generateQuizWithAi, getAiCredits } from '@/lib/ai-generator';
-import { Course, Quiz } from '@/lib/types';
-import { db } from '@/lib/db';
-import { useAuth } from '@/lib/auth-context';
-import { Layers, Loader2, Sparkles, Wand2, X, Zap } from 'lucide-react';
+import React, { useEffect, useState } from "react";
+import { useLanguage } from "@/lib/i18n";
+import { generateQuizWithAi, getAiCredits } from "@/lib/ai-generator";
+import { Course, Quiz } from "@/lib/types";
+import { db } from "@/lib/db";
+import { useAuth } from "@/lib/auth-context";
+import { Layers, Loader2, Sparkles, Wand2, X, Zap } from "lucide-react";
 
 interface AiQuizModalProps {
   isOpen: boolean;
@@ -22,42 +22,53 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
   const { lang } = useLanguage();
   const { user } = useAuth();
   const [courses, setCourses] = useState<Course[]>([]);
-  const [selectedCourseId, setSelectedCourseId] = useState<string>('');
+  const [selectedCourseId, setSelectedCourseId] = useState<string>("");
   const [quizNumber, setQuizNumber] = useState<number>(1);
-  const [topic, setTopic] = useState('');
-  const [sourceText, setSourceText] = useState('');
+  const [topic, setTopic] = useState("");
+  const [sourceText, setSourceText] = useState("");
   const [questionCount, setQuestionCount] = useState(5);
-  const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
-  const [questionStyleMode, setQuestionStyleMode] = useState<'mixed_all_4' | 'single_mcq'>('mixed_all_4');
+  const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
+  const [questionStyleMode, setQuestionStyleMode] = useState<"mixed_all_4" | "single_mcq">(
+    "mixed_all_4",
+  );
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generationStep, setGenerationStep] = useState<string>('');
+  const [generationStep, setGenerationStep] = useState<string>("");
+  const [genError, setGenError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
-    const loadedCourses = db.getCourses();
+    setGenError(null);
+    const allCourses = db.getCourses();
+    const isAdmin = user?.role === "admin";
+    const assignedSet = new Set(user?.assignedCourseIds || []);
+    const scopedCourses = isAdmin
+      ? allCourses
+      : allCourses.filter(
+          (c) => assignedSet.has(c.id) || (c.instructorIds || []).includes(user?.id || ""),
+        );
+    const loadedCourses = scopedCourses.length > 0 ? scopedCourses : allCourses;
     const allQuizzes = db.getQuizzes();
     setCourses(loadedCourses);
 
-    const initialCourseId =
-      defaultCourseId && defaultCourseId !== 'all'
-        ? defaultCourseId
-        : loadedCourses[0]?.id || '';
+    const hasDefaultInScope =
+      defaultCourseId &&
+      defaultCourseId !== "all" &&
+      loadedCourses.some((c) => c.id === defaultCourseId);
+    const initialCourseId = hasDefaultInScope ? defaultCourseId! : loadedCourses[0]?.id || "";
     setSelectedCourseId(initialCourseId);
 
     if (initialCourseId) {
       const courseQuizzes = allQuizzes.filter((q) => q.courseId === initialCourseId);
-      const nextNum =
-        courseQuizzes.reduce((max, q) => Math.max(max, q.quizNumber || 0), 0) + 1;
+      const nextNum = courseQuizzes.reduce((max, q) => Math.max(max, q.quizNumber || 0), 0) + 1;
       setQuizNumber(nextNum);
     }
-  }, [isOpen, defaultCourseId]);
+  }, [isOpen, defaultCourseId, user?.role, user?.id, user?.assignedCourseIds]);
 
   const handleCourseChange = (cid: string) => {
     setSelectedCourseId(cid);
     const allQuizzes = db.getQuizzes();
     const courseQuizzes = allQuizzes.filter((q) => q.courseId === cid);
-    const nextNum =
-      courseQuizzes.reduce((max, q) => Math.max(max, q.quizNumber || 0), 0) + 1;
+    const nextNum = courseQuizzes.reduce((max, q) => Math.max(max, q.quizNumber || 0), 0) + 1;
     setQuizNumber(nextNum);
   };
 
@@ -70,11 +81,12 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
     e.preventDefault();
     if (!topic.trim() || isGenerating) return;
 
+    setGenError(null);
     setIsGenerating(true);
     setGenerationStep(
-      lang === 'bn'
-        ? 'মডেল পেপার, ৪ ধরনের প্রশ্ন ও ব্যাখ্যা তৈরি করা হচ্ছে...'
-        : 'Synthesizing bilingual questions, options, and answer keys...'
+      lang === "bn"
+        ? "মডেল পেপার, ৪ ধরনের প্রশ্ন ও ব্যাখ্যা তৈরি করা হচ্ছে..."
+        : "Synthesizing bilingual questions, options, and answer keys...",
     );
 
     try {
@@ -83,20 +95,25 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
         sourceText: sourceText.trim() || undefined,
         questionCount,
         difficulty,
-        category: activeCourse?.categoryEn || 'BCS & Government Jobs',
-        language: 'both',
+        category: activeCourse?.categoryEn || "BCS & Government Jobs",
+        language: "both",
         courseId: activeCourse?.id,
         courseTitle: activeCourse?.titleEn,
         quizNumber,
-        instructorId: user?.id || 'usr-instructor-1',
-        instructorName: user?.name || 'Course Instructor',
+        instructorId: user?.id || "usr-instructor-1",
+        instructorName: user?.name || "Course Instructor",
         questionStyleMode,
       });
       setIsGenerating(false);
       onQuizGenerated(generated);
       onClose();
     } catch (err) {
-      console.error('Quiz generation error:', err);
+      console.error("Quiz generation error:", err);
+      setGenError(
+        err instanceof Error
+          ? err.message
+          : "Failed to generate exam paper. Check API settings or try again.",
+      );
       setIsGenerating(false);
     }
   };
@@ -121,12 +138,12 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
             </div>
             <div>
               <h3 className="font-display text-lg font-bold text-foreground">
-                {lang === 'bn' ? 'AI কুইজ ও প্রশ্নপত্র জেনারেটর' : 'AI Assessment Studio'}
+                {lang === "bn" ? "AI কুইজ ও প্রশ্নপত্র জেনারেটর" : "AI Assessment Studio"}
               </h3>
               <p className="text-xs text-muted-foreground">
-                {lang === 'bn'
-                  ? 'কোর্স ও ধারাবাহিক কুইজ নম্বর অনুযায়ী স্বয়ংক্রিয় প্রশ্নপত্র তৈরি'
-                  : 'Generate course-aligned sequential quizzes in seconds'}
+                {lang === "bn"
+                  ? "কোর্স ও ধারাবাহিক কুইজ নম্বর অনুযায়ী স্বয়ংক্রিয় প্রশ্নপত্র তৈরি"
+                  : "Generate course-aligned sequential quizzes in seconds"}
               </p>
             </div>
           </div>
@@ -144,7 +161,7 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
             <div className="sm:col-span-2">
               <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1">
                 <Layers className="h-3 w-3 text-primary" />
-                <span>{lang === 'bn' ? 'কোর্স নির্বাচন করুন' : 'Assign to Course'}</span>
+                <span>{lang === "bn" ? "কোর্স নির্বাচন করুন" : "Assign to Course"}</span>
               </label>
               <select
                 disabled={isGenerating}
@@ -154,7 +171,7 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
               >
                 {courses.map((c) => (
                   <option key={c.id} value={c.id}>
-                    [{c.code}] {lang === 'bn' ? c.titleBn : c.titleEn}
+                    [{c.code}] {lang === "bn" ? c.titleBn : c.titleEn}
                   </option>
                 ))}
               </select>
@@ -162,7 +179,7 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
 
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                {lang === 'bn' ? 'কুইজ ক্রম (Quiz #)' : 'Quiz Number'}
+                {lang === "bn" ? "কুইজ ক্রম (Quiz #)" : "Quiz Number"}
               </label>
               <div className="flex items-center gap-1.5">
                 <span className="rounded-xl bg-primary/10 px-2.5 py-2 font-mono text-xs font-black text-primary">
@@ -183,7 +200,9 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
 
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
-              {lang === 'bn' ? 'বিষয় বা সিলেবাস টপিক (Topic / Prompt) *' : 'Quiz Topic / Subject Prompt *'}
+              {lang === "bn"
+                ? "বিষয় বা সিলেবাস টপিক (Topic / Prompt) *"
+                : "Quiz Topic / Subject Prompt *"}
             </label>
             <input
               type="text"
@@ -192,9 +211,9 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
               placeholder={
-                lang === 'bn'
-                  ? 'যেমন: ৪৬তম বিসিএস মুক্তিযুদ্ধ ও সংবিধান, সাইবার নিরাপত্তা...'
-                  : 'e.g. Bangladesh Liberation War & Constitution, Cyber Security...'
+                lang === "bn"
+                  ? "যেমন: ৪৬তম বিসিএস মুক্তিযুদ্ধ ও সংবিধান, সাইবার নিরাপত্তা..."
+                  : "e.g. Bangladesh Liberation War & Constitution, Cyber Security..."
               }
               className="w-full rounded-2xl border-2 border-border bg-background px-4 py-3 text-sm font-semibold text-foreground outline-none focus:border-primary disabled:opacity-50"
             />
@@ -202,9 +221,9 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
 
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
-              {lang === 'bn'
-                ? 'ঐচ্ছিক: লেকচার নোট বা অনুচ্ছেদ পেস্ট করুন'
-                : 'Optional: Paste lecture notes or syllabus excerpt'}
+              {lang === "bn"
+                ? "ঐচ্ছিক: লেকচার নোট বা অনুচ্ছেদ পেস্ট করুন"
+                : "Optional: Paste lecture notes or syllabus excerpt"}
             </label>
             <textarea
               rows={2}
@@ -212,9 +231,9 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
               value={sourceText}
               onChange={(e) => setSourceText(e.target.value)}
               placeholder={
-                lang === 'bn'
-                  ? 'এখানে অনুচ্ছেদ বা কারিকুলাম পেস্ট করুন...'
-                  : 'Paste text snippet or syllabus excerpts...'
+                lang === "bn"
+                  ? "এখানে অনুচ্ছেদ বা কারিকুলাম পেস্ট করুন..."
+                  : "Paste text snippet or syllabus excerpts..."
               }
               className="w-full rounded-2xl border-2 border-border bg-background p-3 text-xs text-foreground outline-none focus:border-primary disabled:opacity-50"
             />
@@ -223,7 +242,7 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                {lang === 'bn' ? 'প্রশ্ন সংখ্যা' : 'Question Count'}
+                {lang === "bn" ? "প্রশ্ন সংখ্যা" : "Question Count"}
               </label>
               <select
                 disabled={isGenerating}
@@ -240,12 +259,14 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
 
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                {lang === 'bn' ? 'প্রশ্নের ধরন (Style)' : 'Question Styles'}
+                {lang === "bn" ? "প্রশ্নের ধরন (Style)" : "Question Styles"}
               </label>
               <select
                 disabled={isGenerating}
                 value={questionStyleMode}
-                onChange={(e) => setQuestionStyleMode(e.target.value as 'mixed_all_4' | 'single_mcq')}
+                onChange={(e) =>
+                  setQuestionStyleMode(e.target.value as "mixed_all_4" | "single_mcq")
+                }
                 className="w-full rounded-xl border border-border bg-background p-2.5 text-xs font-bold text-foreground outline-none focus:border-primary"
               >
                 <option value="mixed_all_4">All 4 Styles (MCQ, T/F, Multi, Written)</option>
@@ -255,12 +276,12 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
 
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                {lang === 'bn' ? 'কঠিনতার মাত্রা' : 'Difficulty Level'}
+                {lang === "bn" ? "কঠিনতার মাত্রা" : "Difficulty Level"}
               </label>
               <select
                 disabled={isGenerating}
                 value={difficulty}
-                onChange={(e) => setDifficulty(e.target.value as 'easy' | 'medium' | 'hard')}
+                onChange={(e) => setDifficulty(e.target.value as "easy" | "medium" | "hard")}
                 className="w-full rounded-xl border border-border bg-background p-2.5 text-xs font-bold text-foreground outline-none focus:border-primary"
               >
                 <option value="easy">Easy (প্রিলিমিনারি)</option>
@@ -269,6 +290,12 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
               </select>
             </div>
           </div>
+
+          {genError && (
+            <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-3 text-xs font-semibold text-destructive">
+              {genError}
+            </div>
+          )}
 
           {isGenerating && (
             <div className="rounded-2xl border border-primary/30 bg-primary/10 p-3.5 flex items-center gap-3 animate-in fade-in">
@@ -290,9 +317,7 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
             ) : (
               <>
                 <Wand2 className="h-4 w-4" />
-                <span>
-                  Generate Quiz #{quizNumber} with AI (1 Credit)
-                </span>
+                <span>Generate Quiz #{quizNumber} with AI (1 Credit)</span>
               </>
             )}
           </button>

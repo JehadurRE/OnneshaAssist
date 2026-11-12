@@ -19,7 +19,8 @@ import {
   ExamResultRecord,
   Region,
 } from "@/lib/types";
-import { db, DbSmsLog, formatDeterministicCertNumber } from "@/lib/db";
+import { db, DbSmsLog, DbTransaction, formatDeterministicCertNumber } from "@/lib/db";
+import { computeTotalQuizMarks } from "@/lib/scoring";
 import { gameEngine } from "@/lib/game-engine";
 import { serverGetActiveRooms } from "@/lib/server-session";
 import { SmsGateway } from "@/lib/sms-gateway";
@@ -84,7 +85,13 @@ type TabType =
 
 function DashboardPage() {
   const { lang } = useLanguage();
-  const { user, isAuthenticated, isLoading: authLoading, updateProfile, changePassword } = useAuth();
+  const {
+    user,
+    isAuthenticated,
+    isLoading: authLoading,
+    updateProfile,
+    changePassword,
+  } = useAuth();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<TabType>("overview");
@@ -94,6 +101,7 @@ function DashboardPage() {
   const [selectedCourseFilter, setSelectedCourseFilter] = useState<string>("all");
   const [roster, setRoster] = useState<RosterStudent[]>([]);
   const [smsLogs, setSmsLogs] = useState<DbSmsLog[]>([]);
+  const [transactions, setTransactions] = useState<DbTransaction[]>([]);
   const [certificates, setCertificates] = useState<CertificateData[]>([]);
   const [examSessions, setExamSessions] = useState<ExamSessionRecord[]>([]);
   const [examResults, setExamResults] = useState<ExamResultRecord[]>([]);
@@ -137,10 +145,10 @@ function DashboardPage() {
   const [geminiApiKey, setGeminiApiKey] = useState("");
   const [smsToken, setSmsToken] = useState("");
   const [institutionNameInput, setInstitutionNameInput] = useState(
-    user?.institutionName || "Onnesha Assessment Arena"
+    user?.institutionName || "Onnesha Assessment Arena",
   );
   const [instructorNameInput, setInstructorNameInput] = useState(
-    user?.name || "Chief Assessment Officer"
+    user?.name || "Chief Assessment Officer",
   );
   const [showPartnerLogo, setShowPartnerLogo] = useState<boolean>(false);
   const [partnerName, setPartnerName] = useState<string>("");
@@ -169,6 +177,7 @@ function DashboardPage() {
     setQuizzes(db.getQuizzes());
     setRoster(db.getRoster());
     setSmsLogs(db.getSmsLogs());
+    setTransactions(db.getTransactions());
     setCertificates(db.getCertificates());
     setExamSessions(db.getExamSessions());
     setExamResults(db.getAllExamResults());
@@ -216,7 +225,7 @@ function DashboardPage() {
     if (isSuperAdmin) return courses;
     const assignedIds = new Set(user?.assignedCourseIds || []);
     const matched = courses.filter(
-      (c) => assignedIds.has(c.id) || (c.instructorIds || []).includes(user?.id || "")
+      (c) => assignedIds.has(c.id) || (c.instructorIds || []).includes(user?.id || ""),
     );
     return matched.length > 0 ? matched : courses;
   }, [courses, isSuperAdmin, user?.assignedCourseIds, user?.id]);
@@ -226,9 +235,7 @@ function DashboardPage() {
     const myCourseIds = new Set(assignedCourses.map((c) => c.id));
     const filtered = quizzes.filter(
       (q) =>
-        q.instructorId === user?.id ||
-        (q.courseId && myCourseIds.has(q.courseId)) ||
-        !q.isTemplate
+        q.instructorId === user?.id || (q.courseId && myCourseIds.has(q.courseId)) || !q.isTemplate,
     );
     return filtered.length > 0 ? filtered : quizzes;
   }, [quizzes, isSuperAdmin, showAllModelPacks, assignedCourses, user?.id]);
@@ -259,7 +266,7 @@ function DashboardPage() {
         (r) =>
           selectedSessionId === "all" ||
           r.sessionId === selectedSessionId ||
-          r.pin === selectedSessionId
+          r.pin === selectedSessionId,
       )
       .filter((r) => selectedResultsRegionId === "all" || r.regionId === selectedResultsRegionId);
   }, [examResults, selectedSessionId, selectedResultsRegionId]);
@@ -269,7 +276,9 @@ function DashboardPage() {
     const sessionFiltered =
       selectedSessionId === "all"
         ? examResults
-        : examResults.filter((r) => r.sessionId === selectedSessionId || r.pin === selectedSessionId);
+        : examResults.filter(
+            (r) => r.sessionId === selectedSessionId || r.pin === selectedSessionId,
+          );
 
     return regions
       .map((reg) => {
@@ -316,12 +325,24 @@ function DashboardPage() {
     },
   ]);
 
-  const handleLoadQuizIntoEditor = (quiz: Quiz) => {
-    setEditingQuizId(quiz.id);
-    setEditingQuizSlug(quiz.slug || quiz.id);
-    setNewQuizTitle(quiz.titleEn || quiz.titleBn);
-    setNewQuizCourseId(quiz.courseId || courses[0]?.id || "course-bcs-foundation");
-    setNewQuizNumber(quiz.quizNumber || 1);
+  const handleLoadQuizIntoEditor = (quiz: Quiz, forceClone = false) => {
+    const isForeignOrTemplate =
+      !!quiz.isTemplate ||
+      (user?.role !== "admin" && !!quiz.instructorId && quiz.instructorId !== user?.id);
+    const cloneMode = forceClone || isForeignOrTemplate;
+    const cid = quiz.courseId || courses[0]?.id || "course-bcs-foundation";
+    const nextCourseQuizNum =
+      quizzes
+        .filter((q) => q.courseId === cid)
+        .reduce((m, q) => Math.max(m, q.quizNumber || 0), 0) + 1;
+
+    setEditingQuizId(cloneMode ? null : quiz.id);
+    setEditingQuizSlug(cloneMode ? null : quiz.slug || quiz.id);
+    setNewQuizTitle(
+      cloneMode ? `${quiz.titleEn || quiz.titleBn} (Custom Copy)` : quiz.titleEn || quiz.titleBn,
+    );
+    setNewQuizCourseId(cid);
+    setNewQuizNumber(cloneMode ? nextCourseQuizNum : quiz.quizNumber || 1);
     setNewQuizCategory(quiz.categoryEn || "General Knowledge");
     setNewQuestions(
       quiz.questions.length > 0
@@ -343,7 +364,7 @@ function DashboardPage() {
               ],
               correctOptionIds: ["o1"],
             },
-          ]
+          ],
     );
     setActiveTab("ai_creator");
   };
@@ -405,7 +426,7 @@ function DashboardPage() {
     setNewQuizTitle("");
     setActiveTab("quizzes");
     setSmsSuccessMsg(
-      `✓ Saved "${newQuiz.titleEn}" (${selectedCourse ? `${selectedCourse.code} · Quiz #${newQuiz.quizNumber}` : "Custom Module"}) to server database.`
+      `✓ Saved "${newQuiz.titleEn}" (${selectedCourse ? `${selectedCourse.code} · Quiz #${newQuiz.quizNumber}` : "Custom Module"}) to server database.`,
     );
     setTimeout(() => setSmsSuccessMsg(null), 4000);
   };
@@ -440,7 +461,8 @@ function DashboardPage() {
     e.preventDefault();
     if (!newStudentName || !newStudentRoll) return;
 
-    const reg = regions.find((r) => r.id === newStudentRegionId) || regions[0] || DEFAULT_REGIONS[0];
+    const reg =
+      regions.find((r) => r.id === newStudentRegionId) || regions[0] || DEFAULT_REGIONS[0];
     if (!reg) return;
 
     db.addStudentToRoster({
@@ -461,7 +483,7 @@ function DashboardPage() {
     setNewGuardianPhone("");
     setShowAddStudent(false);
     setSmsSuccessMsg(
-      `✓ Enrolled ${newStudentName} under ${reg.nameEn} and synced to central server.`
+      `✓ Enrolled ${newStudentName} under ${reg.nameEn} and synced to central server.`,
     );
     setTimeout(() => setSmsSuccessMsg(null), 4000);
   };
@@ -477,14 +499,17 @@ function DashboardPage() {
     const rows = currentRoster
       .map(
         (s) =>
-          `"${s.rollNumber}","${s.name}","${s.regionName || "Dhaka Range"}","${s.phone || ""}","${s.guardianPhone || ""}","${s.batch || "46th BCS"}","${s.email || ""}"`
+          `"${s.rollNumber}","${s.name}","${s.regionName || "Dhaka Range"}","${s.phone || ""}","${s.guardianPhone || ""}","${s.batch || "46th BCS"}","${s.email || ""}"`,
       )
       .join("\n");
     const blob = new Blob(["\uFEFF" + headers + rows], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `onnesha_regional_roster_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute(
+      "download",
+      `onnesha_regional_roster_${new Date().toISOString().slice(0, 10)}.csv`,
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -517,7 +542,7 @@ function DashboardPage() {
               (r) =>
                 r.nameEn.toLowerCase().includes(regionText.toLowerCase()) ||
                 r.code.toLowerCase() === regionText.toLowerCase() ||
-                r.nameBn.includes(regionText)
+                r.nameBn.includes(regionText),
             ) ||
             currentRegions.find((r) => r.id === selectedRosterRegionId) ||
             currentRegions[0] ||
@@ -544,7 +569,7 @@ function DashboardPage() {
         db.bulkAddStudentsToRoster(toImport);
         setRoster(db.getRoster());
         setSmsSuccessMsg(
-          `✓ Bulk imported ${toImport.length} candidates across Regions and synced to live server.`
+          `✓ Bulk imported ${toImport.length} candidates across Regions and synced to live server.`,
         );
         setTimeout(() => setSmsSuccessMsg(null), 4000);
       }
@@ -558,28 +583,50 @@ function DashboardPage() {
 
     const currentRoster = db.getRoster();
     const studentsWithPhone = currentRoster.filter(
-      (s) => (s.guardianPhone && s.guardianPhone.length >= 11) || (s.phone && s.phone.length >= 11)
+      (s) => (s.guardianPhone && s.guardianPhone.length >= 11) || (s.phone && s.phone.length >= 11),
     );
 
     if (studentsWithPhone.length === 0) {
       setIsSendingSms(false);
       setSmsSuccessMsg(
-        "Notice: No registered candidates with valid 11-digit mobile numbers in roster."
+        "Notice: No registered candidates with valid 11-digit mobile numbers in roster.",
       );
       setTimeout(() => setSmsSuccessMsg(null), 4000);
       return;
     }
 
+    const sortedResults = [...activeResults].sort((a, b) =>
+      (b.createdAt || "").localeCompare(a.createdAt || ""),
+    );
+    const defaultSelectedSession = examSessions.find((es) => es.id === selectedSessionId);
+
     const payloads = studentsWithPhone.map((s, idx) => {
-      const matchingResult = activeResults.find(
-        (r) => r.rollNumber === s.rollNumber || r.name.toLowerCase() === s.name.toLowerCase()
+      const matchingResult = sortedResults.find(
+        (r) =>
+          r.rollNumber.toLowerCase() === s.rollNumber.toLowerCase() ||
+          r.name.toLowerCase() === s.name.toLowerCase(),
       );
+      const matchedSession = matchingResult
+        ? examSessions.find(
+            (es) => es.id === matchingResult.sessionId || es.pin === matchingResult.pin,
+          ) || defaultSelectedSession
+        : defaultSelectedSession;
+      const matchedQuiz = matchedSession
+        ? quizzes.find((q) => q.id === matchedSession.quizId || q.slug === matchedSession.quizId)
+        : undefined;
+
       const score = matchingResult ? matchingResult.score : 0;
       const rank = matchingResult ? matchingResult.rank : idx + 1;
-      const totalPoints = 2000;
+      const totalPoints = computeTotalQuizMarks(
+        matchedQuiz?.questions,
+        matchedSession?.totalQuestions || 5,
+      );
       const currentSessionTitle =
-        examSessions.find((es) => es.id === selectedSessionId)?.quizTitleBn ||
-        "বিসিএস প্রিলিমিনারি ও মডেল টেস্ট";
+        matchedSession?.quizTitleBn ||
+        matchedSession?.quizTitleEn ||
+        matchedQuiz?.titleBn ||
+        matchedQuiz?.titleEn ||
+        "Assessment Evaluation";
 
       return {
         studentName: s.name,
@@ -589,16 +636,18 @@ function DashboardPage() {
         score,
         totalPoints,
         rank,
-        totalParticipants: Math.max(studentsWithPhone.length, activeResults.length),
+        totalParticipants: Math.max(
+          matchedSession?.participantCount || 0,
+          studentsWithPhone.length,
+          activeResults.length,
+        ),
       };
     });
 
     const result = await SmsGateway.sendBulkGuardianScorecards(payloads);
     setIsSendingSms(false);
     setSmsLogs(db.getSmsLogs());
-    setSmsSuccessMsg(
-      `✓ Dispatched ${result.totalSent} scorecard SMS alerts via SMS Gateway.`
-    );
+    setSmsSuccessMsg(`✓ Dispatched ${result.totalSent} scorecard SMS alerts via SMS Gateway.`);
     setTimeout(() => setSmsSuccessMsg(null), 5000);
   };
 
@@ -655,25 +704,30 @@ function DashboardPage() {
         institutionName: institutionNameInput,
       });
       if (isSuperAdmin) {
+        const currentBranding = db.getBranding();
         db.saveBranding({
+          ...currentBranding,
           showPartnerLogo,
           partnerName: partnerName.trim(),
           partnerLogoUrl: partnerLogoUrl.trim(),
           institutionTitle: institutionNameInput.trim() || "Onnesha Assessment Arena",
         });
         setSettingsSavedMsg(
-          "✓ Studio credentials, Joint Partner Logo, and institutional branding saved to server."
+          "✓ Studio credentials, Joint Partner Logo, and institutional branding saved to server.",
         );
       } else {
         setSettingsSavedMsg(
-          "✓ Instructor profile and API preferences saved cleanly. Global Co-Branding is managed by Super Admin."
+          "✓ Instructor profile and API preferences saved cleanly. Global Co-Branding is managed by Super Admin.",
         );
       }
       setTimeout(() => setSettingsSavedMsg(null), 3500);
     }
   };
 
-  if (!authLoading && (!isAuthenticated || (user?.role !== "admin" && user?.role !== "instructor"))) {
+  if (
+    !authLoading &&
+    (!isAuthenticated || (user?.role !== "admin" && user?.role !== "instructor"))
+  ) {
     return (
       <div className="min-h-screen bg-background text-foreground bg-grid flex flex-col transition-colors">
         <Navbar />
@@ -683,7 +737,9 @@ function DashboardPage() {
               <Lock className="h-8 w-8" />
             </div>
             <h1 className="font-display text-2xl font-black text-foreground">
-              {isAuthenticated ? "Instructor Access Required" : "Instructor Studio Authentication Required"}
+              {isAuthenticated
+                ? "Instructor Access Required"
+                : "Instructor Studio Authentication Required"}
             </h1>
             <p className="text-xs text-muted-foreground leading-relaxed">
               {isAuthenticated
@@ -736,11 +792,15 @@ function DashboardPage() {
               Instructor Studio &amp; Regional Command Center
             </h1>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Welcome back, <strong className="text-foreground">{user?.name || "Instructor"}</strong> ·{" "}
+              Welcome back,{" "}
+              <strong className="text-foreground">{user?.name || "Instructor"}</strong> ·{" "}
               <span className="font-mono text-primary font-bold">
                 {isSuperAdmin ? "Super Admin" : `${assignedCourses.length} Assigned Course(s)`}
               </span>{" "}
-              · <span className="font-mono text-foreground font-bold">{roster.length} Candidates</span>
+              ·{" "}
+              <span className="font-mono text-foreground font-bold">
+                {roster.length} Candidates
+              </span>
             </p>
           </div>
 
@@ -897,7 +957,9 @@ function DashboardPage() {
                 <div className="flex items-center gap-2">
                   <Radio
                     className={`h-4 w-4 ${
-                      activeRooms.length > 0 ? "text-emerald-500 animate-pulse" : "text-muted-foreground"
+                      activeRooms.length > 0
+                        ? "text-emerald-500 animate-pulse"
+                        : "text-muted-foreground"
                     }`}
                   />
                   <h2 className="font-display text-sm font-black text-foreground">
@@ -917,7 +979,8 @@ function DashboardPage() {
               {activeRooms.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
                   No live examination rooms are running right now. Launch a quiz from{" "}
-                  <strong>Model Tests &amp; Packs</strong> or click <strong>Launch Live Arena</strong> above.
+                  <strong>Model Tests &amp; Packs</strong> or click{" "}
+                  <strong>Launch Live Arena</strong> above.
                 </p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -982,7 +1045,8 @@ function DashboardPage() {
                   Manage Regions &amp; Candidate Roster
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Add regional ranges, enroll candidates with mobile numbers, and bulk import 500+ students via CSV.
+                  Add regional ranges, enroll candidates with mobile numbers, and bulk import 500+
+                  students via CSV.
                 </p>
                 <button
                   onClick={() => setActiveTab("roster")}
@@ -1000,7 +1064,8 @@ function DashboardPage() {
                   Launch 500+ Seat Live Assessment
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Host a national or region-locked exam with anti-impersonation seat locks and live proctor alerts.
+                  Host a national or region-locked exam with anti-impersonation seat locks and live
+                  proctor alerts.
                 </p>
                 <Link
                   to="/host/$quizId"
@@ -1019,7 +1084,8 @@ function DashboardPage() {
                   Physical OMR &amp; Merit Gazette
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Print standardized A4 OMR bubble sheets and region-wise official Merit Gazette notice boards.
+                  Print standardized A4 OMR bubble sheets and region-wise official Merit Gazette
+                  notice boards.
                 </p>
                 <button
                   onClick={() => setSelectedQuizForOmr(quizzes[0] || READY_MADE_PACKS[0] || null)}
@@ -1044,7 +1110,8 @@ function DashboardPage() {
                     <span>Administrative Regions &amp; Examination Ranges ({regions.length})</span>
                   </h2>
                   <p className="text-xs text-muted-foreground">
-                    Click any Region below to filter candidates, or add a new Region for your examination centers.
+                    Click any Region below to filter candidates, or add a new Region for your
+                    examination centers.
                   </p>
                 </div>
 
@@ -1085,9 +1152,7 @@ function DashboardPage() {
                   <div className="mt-2 font-display text-sm font-bold text-foreground">
                     All Regions (National)
                   </div>
-                  <div className="text-[11px] text-muted-foreground">
-                    Complete Candidate Roster
-                  </div>
+                  <div className="text-[11px] text-muted-foreground">Complete Candidate Roster</div>
                 </button>
 
                 {regions.map((reg) => {
@@ -1130,9 +1195,7 @@ function DashboardPage() {
                       <div className="mt-2 font-display text-sm font-bold text-foreground truncate">
                         {reg.nameEn}
                       </div>
-                      <div className="text-[11px] text-muted-foreground truncate">
-                        {reg.nameBn}
-                      </div>
+                      <div className="text-[11px] text-muted-foreground truncate">{reg.nameBn}</div>
                     </div>
                   );
                 })}
@@ -1165,12 +1228,7 @@ function DashboardPage() {
                 <label className="inline-flex items-center gap-1.5 rounded-2xl border border-border bg-card px-3.5 py-2 text-xs font-bold text-foreground hover:bg-accent transition cursor-pointer">
                   <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
                   <span>Bulk Import CSV (500+)</span>
-                  <input
-                    type="file"
-                    accept=".csv"
-                    onChange={handleImportCsv}
-                    className="hidden"
-                  />
+                  <input type="file" accept=".csv" onChange={handleImportCsv} className="hidden" />
                 </label>
 
                 <button
@@ -1206,7 +1264,8 @@ function DashboardPage() {
                   {filteredRoster.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="p-8 text-center text-muted-foreground">
-                        No candidates match this Region / search filter. Click &quot;Enroll Candidate&quot; or &quot;Bulk Import CSV&quot; to add students.
+                        No candidates match this Region / search filter. Click &quot;Enroll
+                        Candidate&quot; or &quot;Bulk Import CSV&quot; to add students.
                       </td>
                     </tr>
                   ) : (
@@ -1438,7 +1497,10 @@ function DashboardPage() {
                     </div>
 
                     <p className="text-[11px] text-muted-foreground">
-                      When joining an exam, this candidate can either type their Mobile/Roll Number to auto-fill their name and region, or select <strong>{regions.find((r) => r.id === newStudentRegionId)?.nameEn}</strong> and verify with their number.
+                      When joining an exam, this candidate can either type their Mobile/Roll Number
+                      to auto-fill their name and region, or select{" "}
+                      <strong>{regions.find((r) => r.id === newStudentRegionId)?.nameEn}</strong>{" "}
+                      and verify with their number.
                     </p>
 
                     <button
@@ -1463,7 +1525,8 @@ function DashboardPage() {
                   Course Modules, Sequential Quizzes &amp; Question Banks
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  Organized by Course with sequential progression (Quiz 1 → Quiz 2 → Quiz 3...) and multi-instructor assignments.
+                  Organized by Course with sequential progression (Quiz 1 → Quiz 2 → Quiz 3...) and
+                  multi-instructor assignments.
                 </p>
               </div>
 
@@ -1472,7 +1535,9 @@ function DashboardPage() {
                   onClick={() => {
                     if (selectedCourseFilter !== "all") {
                       setNewQuizCourseId(selectedCourseFilter);
-                      const courseQuizzes = quizzes.filter((q) => q.courseId === selectedCourseFilter);
+                      const courseQuizzes = quizzes.filter(
+                        (q) => q.courseId === selectedCourseFilter,
+                      );
                       setNewQuizNumber(courseQuizzes.length + 1);
                     }
                     setActiveTab("ai_creator");
@@ -1536,7 +1601,9 @@ function DashboardPage() {
                   onClick={() => setShowAllModelPacks((v) => !v)}
                   className="rounded-xl border border-border bg-card px-3 py-1.5 text-[11px] font-bold text-muted-foreground hover:text-foreground transition"
                 >
-                  {showAllModelPacks ? "Show Assigned Only" : `Include All Model Packs (${quizzes.length})`}
+                  {showAllModelPacks
+                    ? "Show Assigned Only"
+                    : `Include All Model Packs (${quizzes.length})`}
                 </button>
               )}
             </div>
@@ -1544,7 +1611,7 @@ function DashboardPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {scopedQuizzes
                 .filter(
-                  (q) => selectedCourseFilter === "all" || q.courseId === selectedCourseFilter
+                  (q) => selectedCourseFilter === "all" || q.courseId === selectedCourseFilter,
                 )
                 .sort((a, b) => (a.quizNumber || 99) - (b.quizNumber || 99))
                 .map((quiz) => {
@@ -1552,97 +1619,104 @@ function DashboardPage() {
                     !quiz.isTemplate &&
                     (isSuperAdmin || !quiz.instructorId || quiz.instructorId === user?.id);
                   return (
-                  <div
-                    key={quiz.id}
-                    className="bento-card p-5 shadow-sm space-y-3 flex flex-col justify-between"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-2xl">{quiz.icon}</span>
-                          {quiz.quizNumber && (
-                            <span className="rounded-lg border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-black uppercase text-primary">
-                              Quiz #{quiz.quizNumber}
+                    <div
+                      key={quiz.id}
+                      className="bento-card p-5 shadow-sm space-y-3 flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl">{quiz.icon}</span>
+                            {quiz.quizNumber && (
+                              <span className="rounded-lg border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-black uppercase text-primary">
+                                Quiz #{quiz.quizNumber}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="rounded-full bg-muted px-2.5 py-0.5 font-mono text-[10px] font-bold text-foreground">
+                              {quiz.questions.length} Items
                             </span>
-                          )}
+                            {canDeleteQuiz && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  db.deleteCustomQuiz(quiz.id);
+                                  setQuizzes(db.getQuizzes());
+                                  setSmsSuccessMsg(
+                                    `✓ Deleted "${quiz.titleEn}" from server database.`,
+                                  );
+                                  setTimeout(() => setSmsSuccessMsg(null), 3500);
+                                }}
+                                className="rounded-lg p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
+                                title="Delete custom quiz"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="rounded-full bg-muted px-2.5 py-0.5 font-mono text-[10px] font-bold text-foreground">
-                            {quiz.questions.length} Items
-                          </span>
-                          {canDeleteQuiz && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                db.deleteCustomQuiz(quiz.id);
-                                setQuizzes(db.getQuizzes());
-                                setSmsSuccessMsg(`✓ Deleted "${quiz.titleEn}" from server database.`);
-                                setTimeout(() => setSmsSuccessMsg(null), 3500);
-                              }}
-                              className="rounded-lg p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
-                              title="Delete custom quiz"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
+
+                        {quiz.courseTitle && (
+                          <div className="mt-2 text-[11px] font-bold text-primary truncate">
+                            {quiz.courseTitle}
+                          </div>
+                        )}
+
+                        <h3 className="mt-1 font-display text-base font-bold text-foreground leading-snug">
+                          {lang === "bn" ? quiz.titleBn : quiz.titleEn}
+                        </h3>
+                        <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                          {lang === "bn" ? quiz.descriptionBn : quiz.descriptionEn}
+                        </p>
+
+                        {quiz.instructorName && (
+                          <div className="mt-2 text-[11px] text-muted-foreground">
+                            Faculty:{" "}
+                            <strong className="text-foreground">{quiz.instructorName}</strong>
+                          </div>
+                        )}
                       </div>
 
-                      {quiz.courseTitle && (
-                        <div className="mt-2 text-[11px] font-bold text-primary truncate">
-                          {quiz.courseTitle}
+                      <div className="pt-3 border-t border-border/80 flex flex-wrap items-center justify-between gap-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleLoadQuizIntoEditor(quiz, !canDeleteQuiz)}
+                            className="rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-bold text-foreground hover:bg-accent transition"
+                            title={
+                              canDeleteQuiz
+                                ? "Edit Questions"
+                                : "Clone into Instructor Studio to customize"
+                            }
+                          >
+                            {canDeleteQuiz ? "Edit" : "Clone & Edit"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedQuizForOmr(quiz)}
+                            className="rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-bold text-foreground hover:bg-accent transition"
+                          >
+                            OMR
+                          </button>
+                          <Link
+                            to="/play"
+                            search={{ practice: quiz.slug || quiz.id } as any}
+                            className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 transition"
+                          >
+                            Practice
+                          </Link>
                         </div>
-                      )}
 
-                      <h3 className="mt-1 font-display text-base font-bold text-foreground leading-snug">
-                        {lang === "bn" ? quiz.titleBn : quiz.titleEn}
-                      </h3>
-                      <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
-                        {lang === "bn" ? quiz.descriptionBn : quiz.descriptionEn}
-                      </p>
-
-                      {quiz.instructorName && (
-                        <div className="mt-2 text-[11px] text-muted-foreground">
-                          Faculty: <strong className="text-foreground">{quiz.instructorName}</strong>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="pt-3 border-t border-border/80 flex flex-wrap items-center justify-between gap-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleLoadQuizIntoEditor(quiz)}
-                          className="rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-bold text-foreground hover:bg-accent transition"
-                          title="Edit Questions"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedQuizForOmr(quiz)}
-                          className="rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-bold text-foreground hover:bg-accent transition"
-                        >
-                          OMR
-                        </button>
                         <Link
-                          to="/play"
-                          search={{ practice: quiz.slug || quiz.id } as any}
-                          className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 transition"
+                          to="/host/$quizId"
+                          params={{ quizId: quiz.slug || quiz.id }}
+                          className="rounded-xl bg-primary px-3.5 py-1.5 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90 transition"
                         >
-                          Practice
+                          Host Arena
                         </Link>
                       </div>
-
-                      <Link
-                        to="/host/$quizId"
-                        params={{ quizId: quiz.slug || quiz.id }}
-                        className="rounded-xl bg-primary px-3.5 py-1.5 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90 transition"
-                      >
-                        Host Arena
-                      </Link>
                     </div>
-                  </div>
                   );
                 })}
             </div>
@@ -1660,7 +1734,8 @@ function DashboardPage() {
                     : "Manual Question Studio & Multi-Style Paper Builder"}
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  Assign quizzes to a Course in sequential order (Quiz 1, Quiz 2...) and mix Single MCQ, True/False, Multiple Select, and Written Short Answer questions.
+                  Assign quizzes to a Course in sequential order (Quiz 1, Quiz 2...) and mix Single
+                  MCQ, True/False, Multiple Select, and Written Short Answer questions.
                 </p>
               </div>
               {editingQuizId && (
@@ -1772,7 +1847,12 @@ function DashboardPage() {
                           points: 1000,
                           negativeMarks: 0.25,
                           options: [
-                            { id: `o-${nextNum}-1`, textEn: "Option A", textBn: "অপশন ক", isCorrect: true },
+                            {
+                              id: `o-${nextNum}-1`,
+                              textEn: "Option A",
+                              textBn: "অপশন ক",
+                              isCorrect: true,
+                            },
                             { id: `o-${nextNum}-2`, textEn: "Option B", textBn: "অপশন খ" },
                             { id: `o-${nextNum}-3`, textEn: "Option C", textBn: "অপশন গ" },
                             { id: `o-${nextNum}-4`, textEn: "Option D", textBn: "অপশন ঘ" },
@@ -1811,7 +1891,12 @@ function DashboardPage() {
                             target.type = nextType;
                             if (nextType === "true_false") {
                               target.options = [
-                                { id: `${q.id}-tf-1`, textEn: "True", textBn: "সত্য (True)", isCorrect: true },
+                                {
+                                  id: `${q.id}-tf-1`,
+                                  textEn: "True",
+                                  textBn: "সত্য (True)",
+                                  isCorrect: true,
+                                },
                                 { id: `${q.id}-tf-2`, textEn: "False", textBn: "মিথ্যা (False)" },
                               ];
                               target.correctOptionIds = [`${q.id}-tf-1`];
@@ -1823,7 +1908,12 @@ function DashboardPage() {
                               }
                             } else if (target.options.length < 4) {
                               target.options = [
-                                { id: `${q.id}-1`, textEn: "Option A", textBn: "অপশন ক", isCorrect: true },
+                                {
+                                  id: `${q.id}-1`,
+                                  textEn: "Option A",
+                                  textBn: "অপশন ক",
+                                  isCorrect: true,
+                                },
                                 { id: `${q.id}-2`, textEn: "Option B", textBn: "অপশন খ" },
                                 { id: `${q.id}-3`, textEn: "Option C", textBn: "অপশন গ" },
                                 { id: `${q.id}-4`, textEn: "Option D", textBn: "অপশন ঘ" },
@@ -1859,14 +1949,53 @@ function DashboardPage() {
                           />
                           <span>s</span>
                         </div>
+
+                        {/* Question Points Weight */}
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <span>Pts:</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={5000}
+                            step={100}
+                            value={q.points || 1000}
+                            onChange={(e) => {
+                              const updated = [...newQuestions];
+                              const target = updated[qIdx];
+                              if (!target) return;
+                              target.points = Math.max(1, Number(e.target.value) || 1000);
+                              setNewQuestions(updated);
+                            }}
+                            className="w-16 rounded-lg border border-border bg-card px-2 py-0.5 font-mono text-xs font-bold text-foreground"
+                          />
+                        </div>
+
+                        {/* Question Negative Marks Ratio */}
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <span>Neg:</span>
+                          <select
+                            value={q.negativeMarks ?? 0.25}
+                            onChange={(e) => {
+                              const updated = [...newQuestions];
+                              const target = updated[qIdx];
+                              if (!target) return;
+                              target.negativeMarks = Number(e.target.value);
+                              setNewQuestions(updated);
+                            }}
+                            className="rounded-lg border border-border bg-card px-1.5 py-0.5 font-mono text-xs font-bold text-foreground"
+                          >
+                            <option value={0}>0</option>
+                            <option value={0.25}>-0.25</option>
+                            <option value={0.5}>-0.50</option>
+                            <option value={1}>-1.00</option>
+                          </select>
+                        </div>
                       </div>
 
                       {newQuestions.length > 1 && (
                         <button
                           type="button"
-                          onClick={() =>
-                            setNewQuestions(newQuestions.filter((_, i) => i !== qIdx))
-                          }
+                          onClick={() => setNewQuestions(newQuestions.filter((_, i) => i !== qIdx))}
                           className="text-xs font-bold text-destructive hover:underline"
                         >
                           Remove
@@ -1957,6 +2086,24 @@ function DashboardPage() {
                         })}
                       </div>
                     )}
+
+                    {/* Answer Rationale / Explanation */}
+                    <div>
+                      <input
+                        type="text"
+                        value={q.explanationBn || ""}
+                        onChange={(e) => {
+                          const updated = [...newQuestions];
+                          const target = updated[qIdx];
+                          if (!target) return;
+                          target.explanationBn = e.target.value;
+                          target.explanationEn = e.target.value;
+                          setNewQuestions(updated);
+                        }}
+                        placeholder="ঐচ্ছিক: সঠিক উত্তরের ব্যাখ্যা / Rationale (সমাধান শীটে প্রদর্শিত হবে)..."
+                        className="w-full rounded-xl border border-border/70 bg-background px-3 py-1.5 text-[11px] text-muted-foreground outline-none focus:border-primary focus:text-foreground"
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1980,7 +2127,8 @@ function DashboardPage() {
                   Regional Examination Merit Gazette &amp; Telemetry
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  Filter candidate scores by Exam Session and Region, print official notice boards, or dispatch Guardian SMS.
+                  Filter candidate scores by Exam Session and Region, print official notice boards,
+                  or dispatch Guardian SMS.
                 </p>
               </div>
 
@@ -1996,7 +2144,8 @@ function DashboardPage() {
                   </option>
                   {examSessions.map((s) => (
                     <option key={s.id} value={s.id}>
-                      PIN {s.pin} — {s.quizTitleBn || s.quizTitleEn} ({s.participantCount} examinees)
+                      PIN {s.pin} — {s.quizTitleBn || s.quizTitleEn} ({s.participantCount}{" "}
+                      examinees)
                     </option>
                   ))}
                 </select>
@@ -2041,9 +2190,7 @@ function DashboardPage() {
                   <div
                     key={rs.id}
                     onClick={() =>
-                      setSelectedResultsRegionId(
-                        selectedResultsRegionId === rs.id ? "all" : rs.id
-                      )
+                      setSelectedResultsRegionId(selectedResultsRegionId === rs.id ? "all" : rs.id)
                     }
                     className={`rounded-2xl border p-4 cursor-pointer transition ${
                       selectedResultsRegionId === rs.id
@@ -2090,7 +2237,7 @@ function DashboardPage() {
                       const certNo = formatDeterministicCertNumber(
                         r.pin,
                         r.rollNumber,
-                        r.rank || idx + 1
+                        r.rank || idx + 1,
                       );
                       return (
                         <tr key={r.id} className="hover:bg-accent/40 transition-colors">
@@ -2143,7 +2290,8 @@ function DashboardPage() {
                   No Live Assessment Records Yet
                 </h3>
                 <p className="max-w-md mx-auto text-xs text-muted-foreground leading-relaxed">
-                  Real candidate telemetry, regional rankings, and verifiable certificates populate here automatically when examinees complete a live session.
+                  Real candidate telemetry, regional rankings, and verifiable certificates populate
+                  here automatically when examinees complete a live session.
                 </p>
                 <div className="pt-2 flex justify-center gap-3">
                   <button
@@ -2205,7 +2353,8 @@ function DashboardPage() {
                     No Official Certificates Issued Yet
                   </h3>
                   <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                    Certificates are automatically minted whenever examinees conclude a live model test.
+                    Certificates are automatically minted whenever examinees conclude a live model
+                    test.
                   </p>
                 </div>
               )}
@@ -2238,7 +2387,8 @@ function DashboardPage() {
                   {smsLogs.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="p-8 text-center text-muted-foreground">
-                        No SMS dispatched yet. Click &quot;Send Guardian SMS&quot; in the Results tab.
+                        No SMS dispatched yet. Click &quot;Send Guardian SMS&quot; in the Results
+                        tab.
                       </td>
                     </tr>
                   ) : (
@@ -2280,7 +2430,7 @@ function DashboardPage() {
               Manage your concurrent candidate capacity and view transaction receipts.
             </p>
 
-            <div className="bento-card p-6 shadow-sm flex items-center justify-between">
+            <div className="bento-card p-6 shadow-sm flex flex-wrap items-center justify-between gap-4">
               <div>
                 <div className="text-xs font-bold text-primary font-mono uppercase">
                   CURRENT PLAN
@@ -2300,6 +2450,65 @@ function DashboardPage() {
                 Change Plan
               </Link>
             </div>
+
+            <div className="overflow-x-auto rounded-3xl border border-border bg-card shadow-sm">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-border bg-muted/40 text-left font-display">
+                    <th className="p-4 font-bold">Date</th>
+                    <th className="p-4 font-bold">Transaction ID</th>
+                    <th className="p-4 font-bold">Plan</th>
+                    <th className="p-4 font-bold">Method / Account</th>
+                    <th className="p-4 font-bold text-right">Amount</th>
+                    <th className="p-4 font-bold text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {transactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                        {isSuperAdmin
+                          ? "No bKash or card invoice receipts recorded yet."
+                          : "Institutional invoice receipts are synchronized for Super Admin accounts. Contact your institutional administrator for billing statements."}
+                      </td>
+                    </tr>
+                  ) : (
+                    transactions.map((trx) => (
+                      <tr key={trx.id} className="hover:bg-accent/40 transition-colors">
+                        <td className="p-4 font-mono text-muted-foreground">
+                          {new Date(trx.date).toLocaleString()}
+                        </td>
+                        <td className="p-4 font-mono font-bold text-foreground">
+                          {trx.trxId || trx.id}
+                        </td>
+                        <td className="p-4 font-semibold uppercase text-foreground">
+                          {trx.planId}
+                        </td>
+                        <td className="p-4 font-mono text-muted-foreground">
+                          {trx.method?.toUpperCase()} {trx.msisdn ? `· ${trx.msisdn}` : ""}
+                        </td>
+                        <td className="p-4 font-mono font-bold text-right text-foreground">
+                          ৳{Number(trx.amount || 0).toLocaleString()}
+                        </td>
+                        <td className="p-4 text-center">
+                          <span
+                            className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${
+                              trx.status === "completed"
+                                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                                : trx.status === "failed"
+                                  ? "bg-destructive/15 text-destructive"
+                                  : "bg-amber-500/15 text-amber-600"
+                            }`}
+                          >
+                            {trx.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -2311,7 +2520,8 @@ function DashboardPage() {
                 Studio Settings &amp; API Integrations
               </h2>
               <p className="text-xs text-muted-foreground">
-                Configure your cloud Gemini AI engine, Bangladesh SMS gateway tokens, and institutional branding.
+                Configure your cloud Gemini AI engine, Bangladesh SMS gateway tokens, and
+                institutional branding.
               </p>
             </div>
 
@@ -2364,99 +2574,102 @@ function DashboardPage() {
                         <span>Joint Partner Logo (Optional Co-Branding)</span>
                       </h3>
                       <p className="text-[11px] text-muted-foreground mt-0.5">
-                        When enabled, your Joint Partner logo appears alongside Onnesha in the Top Header, Landing Page, Certificates, and Merit Gazette.
+                        When enabled, your Joint Partner logo appears alongside Onnesha in the Top
+                        Header, Landing Page, Certificates, and Merit Gazette.
                       </p>
                     </div>
 
-                  <label className="inline-flex items-center gap-2.5 cursor-pointer rounded-xl border border-border bg-background px-3.5 py-2 text-xs font-bold text-foreground">
-                    <input
-                      type="checkbox"
-                      checked={showPartnerLogo}
-                      onChange={(e) => setShowPartnerLogo(e.target.checked)}
-                      className="h-4 w-4 accent-emerald-600 rounded"
-                    />
-                    <span>Show Joint Partner Logo</span>
-                  </label>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-muted-foreground mb-1">
-                      Joint Partner / Co-Sponsor Organization Name
+                    <label className="inline-flex items-center gap-2.5 cursor-pointer rounded-xl border border-border bg-background px-3.5 py-2 text-xs font-bold text-foreground">
+                      <input
+                        type="checkbox"
+                        checked={showPartnerLogo}
+                        onChange={(e) => setShowPartnerLogo(e.target.checked)}
+                        className="h-4 w-4 accent-emerald-600 rounded"
+                      />
+                      <span>Show Joint Partner Logo</span>
                     </label>
-                    <input
-                      type="text"
-                      value={partnerName}
-                      onChange={(e) => setPartnerName(e.target.value)}
-                      placeholder="e.g. Dhaka University / Partner Academy"
-                      className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs font-semibold text-foreground outline-none focus:border-primary"
-                    />
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-muted-foreground mb-1">
-                      Partner Logo Image URL (or Upload File Below)
-                    </label>
-                    <div className="flex items-center gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-muted-foreground mb-1">
+                        Joint Partner / Co-Sponsor Organization Name
+                      </label>
                       <input
                         type="text"
-                        value={partnerLogoUrl}
-                        onChange={(e) => {
-                          setPartnerLogoUrl(e.target.value);
-                          if (e.target.value.trim()) setShowPartnerLogo(true);
-                        }}
-                        placeholder="https://example.org/logo.png or upload image"
-                        className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 font-mono text-xs font-semibold text-foreground outline-none focus:border-primary"
+                        value={partnerName}
+                        onChange={(e) => setPartnerName(e.target.value)}
+                        placeholder="e.g. Dhaka University / Partner Academy"
+                        className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs font-semibold text-foreground outline-none focus:border-primary"
                       />
-                      <label className="shrink-0 cursor-pointer inline-flex items-center gap-1.5 rounded-2xl border border-primary/40 bg-primary/10 px-3.5 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition">
-                        <Upload className="h-3.5 w-3.5" />
-                        <span>Upload</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handlePartnerLogoUpload}
-                          className="hidden"
-                        />
-                      </label>
                     </div>
-                  </div>
-                </div>
 
-                {partnerLogoUrl && (
-                  <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-background/70 p-3.5">
-                    <div className="flex items-center gap-3">
-                      <span className="text-[11px] font-mono font-bold uppercase text-muted-foreground">
-                        Live Co-Brand Preview:
-                      </span>
-                      <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-1.5">
-                        <span className="font-display text-xs font-black text-foreground">Onnesha</span>
-                        <span className="text-muted-foreground font-mono text-xs">×</span>
-                        <img
-                          src={partnerLogoUrl}
-                          alt={partnerName || "Partner Logo"}
-                          className="h-7 max-w-[110px] object-contain"
+                    <div>
+                      <label className="block text-xs font-bold text-muted-foreground mb-1">
+                        Partner Logo Image URL (or Upload File Below)
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={partnerLogoUrl}
+                          onChange={(e) => {
+                            setPartnerLogoUrl(e.target.value);
+                            if (e.target.value.trim()) setShowPartnerLogo(true);
+                          }}
+                          placeholder="https://example.org/logo.png or upload image"
+                          className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 font-mono text-xs font-semibold text-foreground outline-none focus:border-primary"
                         />
-                        {partnerName && (
-                          <span className="text-xs font-semibold text-muted-foreground">
-                            {partnerName}
-                          </span>
-                        )}
+                        <label className="shrink-0 cursor-pointer inline-flex items-center gap-1.5 rounded-2xl border border-primary/40 bg-primary/10 px-3.5 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition">
+                          <Upload className="h-3.5 w-3.5" />
+                          <span>Upload</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handlePartnerLogoUpload}
+                            className="hidden"
+                          />
+                        </label>
                       </div>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPartnerLogoUrl("");
-                        setPartnerName("");
-                        setShowPartnerLogo(false);
-                      }}
-                      className="text-xs font-bold text-destructive hover:underline"
-                    >
-                      Remove Partner Logo
-                    </button>
                   </div>
-                )}
+
+                  {partnerLogoUrl && (
+                    <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-background/70 p-3.5">
+                      <div className="flex items-center gap-3">
+                        <span className="text-[11px] font-mono font-bold uppercase text-muted-foreground">
+                          Live Co-Brand Preview:
+                        </span>
+                        <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-1.5">
+                          <span className="font-display text-xs font-black text-foreground">
+                            Onnesha
+                          </span>
+                          <span className="text-muted-foreground font-mono text-xs">×</span>
+                          <img
+                            src={partnerLogoUrl}
+                            alt={partnerName || "Partner Logo"}
+                            className="h-7 max-w-[110px] object-contain"
+                          />
+                          {partnerName && (
+                            <span className="text-xs font-semibold text-muted-foreground">
+                              {partnerName}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPartnerLogoUrl("");
+                          setPartnerName("");
+                          setShowPartnerLogo(false);
+                        }}
+                        className="text-xs font-bold text-destructive hover:underline"
+                      >
+                        Remove Partner Logo
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -2595,7 +2808,7 @@ function DashboardPage() {
             setShowAiModal(false);
             setActiveTab("quizzes");
             setSmsSuccessMsg(
-              `✓ Generated "${quiz.titleEn}" (${quiz.courseTitle ? `${quiz.courseTitle} · Quiz #${quiz.quizNumber}` : "AI Module"}) and saved to server database.`
+              `✓ Generated "${quiz.titleEn}" (${quiz.courseTitle ? `${quiz.courseTitle} · Quiz #${quiz.quizNumber}` : "AI Module"}) and saved to server database.`,
             );
             setTimeout(() => setSmsSuccessMsg(null), 4000);
           }}

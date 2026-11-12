@@ -4,7 +4,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { useAuth } from "@/lib/auth-context";
 import { useLanguage } from "@/lib/i18n";
-import { db } from "@/lib/db";
+import { db, DbSalesLead, DbTransaction } from "@/lib/db";
 import { gameEngine } from "@/lib/game-engine";
 import { serverGetActiveRooms } from "@/lib/server-session";
 import {
@@ -33,6 +33,7 @@ import {
   Play,
   Plus,
   Radio,
+  Receipt,
   RefreshCw,
   Search,
   Settings,
@@ -74,7 +75,7 @@ export const Route = createFileRoute("/admin")({
   component: SuperAdminPage,
 });
 
-type AdminTab = "courses" | "instructors" | "roster" | "settings";
+type AdminTab = "courses" | "instructors" | "roster" | "settings" | "sales_billing";
 
 function SuperAdminPage() {
   const { lang } = useLanguage();
@@ -99,6 +100,8 @@ function SuperAdminPage() {
   const [regions, setRegions] = useState<Region[]>([]);
   const [roster, setRoster] = useState<RosterStudent[]>([]);
   const [examSessions, setExamSessions] = useState<ExamSessionRecord[]>([]);
+  const [salesLeads, setSalesLeads] = useState<DbSalesLead[]>([]);
+  const [transactions, setTransactions] = useState<DbTransaction[]>([]);
   const [branding, setBranding] = useState<BrandingSettings>(() => db.getBranding());
   const [statusToast, setStatusToast] = useState<string | null>(null);
 
@@ -167,6 +170,8 @@ function SuperAdminPage() {
     setRegions(db.getRegions());
     setRoster(db.getRoster());
     setExamSessions(db.getExamSessions());
+    setSalesLeads(db.getSalesLeads());
+    setTransactions(db.getTransactions());
     setBranding(db.getBranding());
   };
 
@@ -211,7 +216,10 @@ function SuperAdminPage() {
     const instructorObjs = users.filter((u) => selectedCourseInstructors.includes(u.id));
     const id =
       editingCourseId ||
-      `course-${courseCode.trim().toLowerCase().replace(/[^a-z0-9]/g, "-")}-${Date.now().toString(36).slice(-4)}`;
+      `course-${courseCode
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "-")}-${Date.now().toString(36).slice(-4)}`;
 
     const courseObj: Course = {
       id,
@@ -219,10 +227,8 @@ function SuperAdminPage() {
       titleEn: courseTitleEn.trim(),
       titleBn: (courseTitleBn || courseTitleEn).trim(),
       descriptionEn:
-        courseDescEn.trim() ||
-        "Multi-quiz structured course managed under Onnesha Super Admin.",
-      descriptionBn:
-        courseDescEn.trim() || "অন্বেষা সুপার অ্যাডমিন পরিচালিত ধারাবাহিক কুইজ কোর্স।",
+        courseDescEn.trim() || "Multi-quiz structured course managed under Onnesha Super Admin.",
+      descriptionBn: courseDescEn.trim() || "অন্বেষা সুপার অ্যাডমিন পরিচালিত ধারাবাহিক কুইজ কোর্স।",
       categoryEn: courseCategory,
       categoryBn: courseCategory,
       icon: courseIcon || "🎯",
@@ -249,7 +255,9 @@ function SuperAdminPage() {
     setCourseTitleBn("");
     setCourseDescEn("");
     refreshAll();
-    showNotice(`Saved course "${courseObj.code} — ${courseObj.titleEn}" with ${instructorObjs.length} instructor(s).`);
+    showNotice(
+      `Saved course "${courseObj.code} — ${courseObj.titleEn}" with ${instructorObjs.length} instructor(s).`,
+    );
   };
 
   const handleEditCourse = (c: Course) => {
@@ -266,13 +274,17 @@ function SuperAdminPage() {
   // Create Sequential Quiz (Quiz 1, Quiz 2, Quiz 3...) under a Course
   const openAddSequentialQuiz = (course: Course) => {
     const courseQuizzes = quizzes.filter((q) => q.courseId === course.id);
-    const nextNum =
-      courseQuizzes.reduce((max, q) => Math.max(max, q.quizNumber || 0), 0) + 1;
+    const nextNum = courseQuizzes.reduce((max, q) => Math.max(max, q.quizNumber || 0), 0) + 1;
     setAddingQuizForCourse(course);
     setNewQuizNumber(nextNum);
     setNewQuizTitleEn(`Quiz ${nextNum} — ${course.titleEn}`);
     setNewQuizTitleBn(`কুইজ ${nextNum} — ${course.titleBn}`);
-    setNewQuizInstructorId(course.instructorIds[0] || "usr-instructor-1");
+    const fallbackInstructor =
+      course.instructorIds[0] ||
+      users.find((u) => u.role === "instructor")?.id ||
+      users[0]?.id ||
+      "";
+    setNewQuizInstructorId(fallbackInstructor);
   };
 
   const handleCreateSequentialQuiz = (e: React.FormEvent) => {
@@ -287,8 +299,8 @@ function SuperAdminPage() {
       courseId: addingQuizForCourse.id,
       courseTitle: addingQuizForCourse.titleEn,
       quizNumber: newQuizNumber,
-      instructorId: assignedInst?.id || "usr-instructor-1",
-      instructorName: assignedInst?.name || "Course Instructor",
+      instructorId: assignedInst?.id || user?.id || "",
+      instructorName: assignedInst?.name || user?.name || "Course Instructor",
       titleEn: newQuizTitleEn.trim(),
       titleBn: (newQuizTitleBn || newQuizTitleEn).trim(),
       descriptionEn: `Sequential Assessment Quiz #${newQuizNumber} under ${addingQuizForCourse.titleEn}`,
@@ -320,7 +332,9 @@ function SuperAdminPage() {
     db.saveCustomQuiz(newQuiz);
     setAddingQuizForCourse(null);
     refreshAll();
-    showNotice(`Created Quiz #${newQuizNumber} under ${addingQuizForCourse.titleEn}. Instructors can now add questions in Instructor Studio.`);
+    showNotice(
+      `Created Quiz #${newQuizNumber} under ${addingQuizForCourse.titleEn}. Instructors can now add questions in Instructor Studio.`,
+    );
   };
 
   // Add New Instructor / Admin Account
@@ -363,7 +377,9 @@ function SuperAdminPage() {
     setNewUserEmail("");
     setNewUserPhone("");
     refreshAll();
-    showNotice(`Added ${newUser.role.toUpperCase()} account: ${newUser.email} (Password set cleanly with salted scrypt)`);
+    showNotice(
+      `Added ${newUser.role.toUpperCase()} account: ${newUser.email} (Password set cleanly with salted scrypt)`,
+    );
   };
 
   const handleToggleUserStatus = (u: ManagedUser) => {
@@ -419,7 +435,9 @@ function SuperAdminPage() {
       } else if (!shouldHave && hasNow) {
         const nextIds = (c.instructorIds || []).filter((id) => id !== updatedUser.id);
         const nextNames = nextIds
-          .map((id) => (id === updatedUser.id ? updatedUser.name : users.find((x) => x.id === id)?.name || ""))
+          .map((id) =>
+            id === updatedUser.id ? updatedUser.name : users.find((x) => x.id === id)?.name || "",
+          )
           .filter(Boolean);
         db.saveCourse({
           ...c,
@@ -428,7 +446,9 @@ function SuperAdminPage() {
         });
       } else if (shouldHave && hasNow && updatedUser.name !== editingUser.name) {
         const nextNames = (c.instructorIds || [])
-          .map((id) => (id === updatedUser.id ? updatedUser.name : users.find((x) => x.id === id)?.name || ""))
+          .map((id) =>
+            id === updatedUser.id ? updatedUser.name : users.find((x) => x.id === id)?.name || "",
+          )
           .filter(Boolean);
         db.saveCourse({ ...c, instructorNames: nextNames });
       }
@@ -440,7 +460,7 @@ function SuperAdminPage() {
     showNotice(
       `Updated "${updatedUser.name}" (${editUserCourses.length} course(s)${
         editUserPassword.trim() ? ", password reset" : ""
-      }).`
+      }).`,
     );
   };
 
@@ -547,7 +567,10 @@ function SuperAdminPage() {
 
             <p className="text-xs text-muted-foreground leading-relaxed">
               This portal (<code className="font-mono text-foreground">/admin</code>) is strictly
-              separated from the Instructor Studio (<code className="font-mono text-foreground">/dashboard</code>). Sign in with Super Admin credentials to manage courses, multi-instructor assignments, regions, and anti-cheat locks.
+              separated from the Instructor Studio (
+              <code className="font-mono text-foreground">/dashboard</code>). Sign in with Super
+              Admin credentials to manage courses, multi-instructor assignments, regions, and
+              anti-cheat locks.
             </p>
 
             {loginError && (
@@ -583,26 +606,26 @@ function SuperAdminPage() {
                 />
               </div>
 
-              <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-[11px] font-mono">
-                <div>
-                  <div className="font-bold text-amber-600 dark:text-amber-400">
-                    Demo Admin Access:
+              {import.meta.env.DEV && (
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-[11px] font-mono">
+                  <div>
+                    <div className="font-bold text-amber-600 dark:text-amber-400">
+                      Demo Admin Access:
+                    </div>
+                    <div className="text-foreground">admin@onnesha.app · admin123</div>
                   </div>
-                  <div className="text-foreground">
-                    admin@onnesha.app · admin123
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginEmail("admin@onnesha.app");
+                      setLoginPassword("admin123");
+                    }}
+                    className="shrink-0 rounded-lg border border-amber-500/40 bg-background px-2.5 py-1 text-[10px] font-bold text-amber-600 dark:text-amber-300 hover:bg-amber-500/20"
+                  >
+                    Auto-Fill
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLoginEmail("admin@onnesha.app");
-                    setLoginPassword("admin123");
-                  }}
-                  className="shrink-0 rounded-lg border border-amber-500/40 bg-background px-2.5 py-1 text-[10px] font-bold text-amber-600 dark:text-amber-300 hover:bg-amber-500/20"
-                >
-                  Auto-Fill
-                </button>
-              </div>
+              )}
 
               <button
                 type="submit"
@@ -671,7 +694,8 @@ function SuperAdminPage() {
                 Institutional Command &amp; Multi-Course Governance
               </h1>
               <p className="text-xs text-muted-foreground">
-                Signed in as <strong>{user.name}</strong> ({user.email}) · Separate from Instructor Studio
+                Signed in as <strong>{user.name}</strong> ({user.email}) · Separate from Instructor
+                Studio
               </p>
             </div>
           </div>
@@ -705,9 +729,7 @@ function SuperAdminPage() {
             <div className="mt-2 font-mono text-2xl font-black text-foreground">
               {courses.length}
             </div>
-            <div className="text-[11px] text-muted-foreground">
-              With multi-instructor teams
-            </div>
+            <div className="text-[11px] text-muted-foreground">With multi-instructor teams</div>
           </div>
 
           <div className="rounded-2xl border border-border bg-card p-4">
@@ -715,9 +737,7 @@ function SuperAdminPage() {
               <span>Faculty &amp; Admins</span>
               <GraduationCap className="h-4 w-4 text-amber-500" />
             </div>
-            <div className="mt-2 font-mono text-2xl font-black text-foreground">
-              {users.length}
-            </div>
+            <div className="mt-2 font-mono text-2xl font-black text-foreground">{users.length}</div>
             <div className="text-[11px] text-muted-foreground">
               {users.filter((u) => u.role === "instructor").length} Instructors ·{" "}
               {users.filter((u) => u.role === "admin").length} Admins
@@ -732,9 +752,7 @@ function SuperAdminPage() {
             <div className="mt-2 font-mono text-2xl font-black text-foreground">
               {quizzes.length}
             </div>
-            <div className="text-[11px] text-muted-foreground">
-              4 question styles supported
-            </div>
+            <div className="text-[11px] text-muted-foreground">4 question styles supported</div>
           </div>
 
           <div className="rounded-2xl border border-border bg-card p-4">
@@ -755,7 +773,9 @@ function SuperAdminPage() {
         <div className="rounded-3xl border border-border bg-card p-4 sm:p-5 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <Radio className={`h-4 w-4 ${activeRooms.length > 0 ? "text-emerald-500 animate-pulse" : "text-muted-foreground"}`} />
+              <Radio
+                className={`h-4 w-4 ${activeRooms.length > 0 ? "text-emerald-500 animate-pulse" : "text-muted-foreground"}`}
+              />
               <h2 className="font-display text-sm font-black text-foreground">
                 Live Examination Rooms Oversight ({activeRooms.length} Active)
               </h2>
@@ -773,7 +793,8 @@ function SuperAdminPage() {
 
           {activeRooms.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              No live examination rooms are currently open. Launch any quiz below or monitor instructor sessions here.
+              No live examination rooms are currently open. Launch any quiz below or monitor
+              instructor sessions here.
             </p>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -880,6 +901,19 @@ function SuperAdminPage() {
           >
             <Settings className="h-4 w-4" />
             <span>4. Anti-Cheat Lock, Co-Branding &amp; DB Backup</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("sales_billing")}
+            className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-extrabold transition ${
+              activeTab === "sales_billing"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-card border border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Receipt className="h-4 w-4" />
+            <span>5. Sales Leads &amp; Billing ({salesLeads.length + transactions.length})</span>
           </button>
         </div>
 
@@ -993,13 +1027,15 @@ function SuperAdminPage() {
                                   setSelectedCourseInstructors((prev) =>
                                     prev.includes(inst.id)
                                       ? prev.filter((id) => id !== inst.id)
-                                      : [...prev, inst.id]
+                                      : [...prev, inst.id],
                                   );
                                 }}
                                 className="rounded border-border text-primary focus:ring-primary"
                               />
                               <div className="truncate">
-                                <div className="text-foreground font-bold truncate">{inst.name}</div>
+                                <div className="text-foreground font-bold truncate">
+                                  {inst.name}
+                                </div>
                                 <div className="text-[10px] text-muted-foreground truncate">
                                   {inst.email} · {inst.designation || inst.role}
                                 </div>
@@ -1074,9 +1110,7 @@ function SuperAdminPage() {
                           className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 transition"
                         >
                           <Plus className="h-3.5 w-3.5" />
-                          <span>
-                            Add Quiz #{courseQuizzes.length + 1}
-                          </span>
+                          <span>Add Quiz #{courseQuizzes.length + 1}</span>
                         </button>
                         <button
                           type="button"
@@ -1108,7 +1142,9 @@ function SuperAdminPage() {
                     {/* Sequential Quizzes List under this Course */}
                     <div className="space-y-2.5">
                       <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                        <span>Sequential Quizzes under {course.code} ({courseQuizzes.length})</span>
+                        <span>
+                          Sequential Quizzes under {course.code} ({courseQuizzes.length})
+                        </span>
                         <Link
                           to="/dashboard"
                           search={{ tab: "ai_creator", courseId: course.id } as any}
@@ -1120,8 +1156,8 @@ function SuperAdminPage() {
 
                       {courseQuizzes.length === 0 ? (
                         <div className="rounded-2xl border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-                          No quizzes added to this course yet. Click{" "}
-                          <strong>Add Quiz #1</strong> above to create the first quiz.
+                          No quizzes added to this course yet. Click <strong>Add Quiz #1</strong>{" "}
+                          above to create the first quiz.
                         </div>
                       ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1396,7 +1432,7 @@ function SuperAdminPage() {
                               setNewUserCourses((prev) =>
                                 prev.includes(c.id)
                                   ? prev.filter((id) => id !== c.id)
-                                  : [...prev, c.id]
+                                  : [...prev, c.id],
                               )
                             }
                           />
@@ -1436,7 +1472,7 @@ function SuperAdminPage() {
                   const assignedCourseObjs = courses.filter(
                     (c) =>
                       (u.assignedCourseIds || []).includes(c.id) ||
-                      (c.instructorIds || []).includes(u.id)
+                      (c.instructorIds || []).includes(u.id),
                   );
                   return (
                     <div
@@ -1758,7 +1794,8 @@ function SuperAdminPage() {
                       Enforce Fullscreen Exam Lock by Default
                     </div>
                     <div className="text-[11px] text-muted-foreground">
-                      Requires examinees to enter Fullscreen mode during active questions and logs a strike if they exit Fullscreen.
+                      Requires examinees to enter Fullscreen mode during active questions and logs a
+                      strike if they exit Fullscreen.
                     </div>
                   </div>
                   <input
@@ -1777,7 +1814,8 @@ function SuperAdminPage() {
                       Block Copy/Paste, Right-Click &amp; DevTools Shortcuts
                     </div>
                     <div className="text-[11px] text-muted-foreground">
-                      Prevents copying questions, pasting external answers, right-clicking, PrintScreen, or opening F12 Inspector.
+                      Prevents copying questions, pasting external answers, right-clicking,
+                      PrintScreen, or opening F12 Inspector.
                     </div>
                   </div>
                   <input
@@ -1796,7 +1834,8 @@ function SuperAdminPage() {
                       Automatic Seat Suspension Threshold (Strikes)
                     </div>
                     <div className="text-[11px] text-muted-foreground">
-                      Number of tab-switch / screen-blur violations before the candidate seat is automatically suspended.
+                      Number of tab-switch / screen-blur violations before the candidate seat is
+                      automatically suspended.
                     </div>
                   </div>
                   <input
@@ -1828,9 +1867,7 @@ function SuperAdminPage() {
                   <input
                     type="text"
                     value={branding.institutionTitle || ""}
-                    onChange={(e) =>
-                      setBranding({ ...branding, institutionTitle: e.target.value })
-                    }
+                    onChange={(e) => setBranding({ ...branding, institutionTitle: e.target.value })}
                     placeholder="Onnesha Assessment Arena"
                     className="w-full rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold"
                   />
@@ -1856,9 +1893,7 @@ function SuperAdminPage() {
                       <input
                         type="text"
                         value={branding.partnerName}
-                        onChange={(e) =>
-                          setBranding({ ...branding, partnerName: e.target.value })
-                        }
+                        onChange={(e) => setBranding({ ...branding, partnerName: e.target.value })}
                         placeholder="e.g. National Training Academy"
                         className="w-full rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold"
                       />
@@ -1895,7 +1930,10 @@ function SuperAdminPage() {
                 Database Persistence &amp; JSON Snapshot
               </h3>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                All courses, instructors, sequential quizzes, candidate rosters, and exam results are automatically persisted to the server store (<code className="font-mono text-foreground">onnesha-store.json</code>) and client SQLite. You can also export or restore a complete snapshot below.
+                All courses, instructors, sequential quizzes, candidate rosters, and exam results
+                are automatically persisted to the server store (
+                <code className="font-mono text-foreground">onnesha-store.json</code>) and client
+                SQLite. You can also export or restore a complete snapshot below.
               </p>
 
               <div className="space-y-3">
@@ -1924,7 +1962,9 @@ function SuperAdminPage() {
                   onClick={async () => {
                     await db.purgeDummyData();
                     refreshAll();
-                    showNotice("Purged pre-seeded dummy roster, bot exam records, and sample certificates.");
+                    showNotice(
+                      "Purged pre-seeded dummy roster, bot exam records, and sample certificates.",
+                    );
                   }}
                   className="flex w-full items-center justify-center gap-2 rounded-2xl border border-destructive/40 bg-destructive/10 py-3 text-xs font-bold text-destructive hover:bg-destructive/20 transition cursor-pointer"
                 >
@@ -1935,6 +1975,171 @@ function SuperAdminPage() {
             </div>
           </div>
         )}
+        {/* =================================================================== */}
+        {/* TAB 5: SALES LEADS & BKASH BILLING LEDGER                           */}
+        {/* =================================================================== */}
+        {activeTab === "sales_billing" && (
+          <div className="space-y-6">
+            <div className="rounded-3xl border border-border bg-card p-6 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="font-display text-lg font-black text-foreground">
+                    Enterprise &amp; Institutional Inquiries ({salesLeads.length})
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Leads submitted via `/contact-sales` persisted on the server disk store.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => db.syncFromServerStore().then(refreshAll)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-bold hover:bg-accent transition"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  <span>Sync Server</span>
+                </button>
+              </div>
+
+              <div className="overflow-x-auto rounded-2xl border border-border">
+                <table className="w-full border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/40 text-left font-display">
+                      <th className="p-3 font-bold">Date</th>
+                      <th className="p-3 font-bold">Organization</th>
+                      <th className="p-3 font-bold">Contact</th>
+                      <th className="p-3 font-bold">Candidates</th>
+                      <th className="p-3 font-bold">Notes</th>
+                      <th className="p-3 font-bold text-center">Stage</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {salesLeads.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-6 text-center text-muted-foreground">
+                          No enterprise inquiries received yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      salesLeads.map((lead) => (
+                        <tr key={lead.id} className="hover:bg-accent/30">
+                          <td className="p-3 font-mono text-muted-foreground whitespace-nowrap">
+                            {new Date(lead.createdAt).toLocaleDateString()}
+                          </td>
+                          <td className="p-3 font-bold text-foreground">{lead.organization}</td>
+                          <td className="p-3">
+                            <div className="font-semibold text-foreground">{lead.name}</div>
+                            <div className="font-mono text-[11px] text-muted-foreground">
+                              {lead.email} {lead.phone ? `· ${lead.phone}` : ""}
+                            </div>
+                          </td>
+                          <td className="p-3 font-mono font-bold text-primary">
+                            {lead.studentCount}
+                          </td>
+                          <td className="p-3 text-muted-foreground max-w-xs truncate">
+                            {lead.message || "—"}
+                          </td>
+                          <td className="p-3 text-center">
+                            <select
+                              value={lead.status || "new"}
+                              onChange={(e) => {
+                                db.updateSalesLeadStatus(lead.id, e.target.value);
+                                refreshAll();
+                                showNotice(
+                                  `Lead "${lead.organization}" updated to ${e.target.value}.`,
+                                );
+                              }}
+                              className="rounded-xl border border-border bg-background px-2.5 py-1 font-mono text-[11px] font-bold uppercase text-foreground"
+                            >
+                              <option value="new">New</option>
+                              <option value="contacted">Contacted</option>
+                              <option value="qualified">Qualified</option>
+                              <option value="closed">Closed</option>
+                            </select>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-border bg-card p-6 space-y-4">
+              <div>
+                <h3 className="font-display text-lg font-black text-foreground">
+                  Subscription &amp; bKash Payment Ledger ({transactions.length})
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Review payment submissions from `/pricing` bKash checkout and reconcile
+                  verification statuses.
+                </p>
+              </div>
+
+              <div className="overflow-x-auto rounded-2xl border border-border">
+                <table className="w-full border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/40 text-left font-display">
+                      <th className="p-3 font-bold">Date</th>
+                      <th className="p-3 font-bold">TrxID</th>
+                      <th className="p-3 font-bold">Plan</th>
+                      <th className="p-3 font-bold">MSISDN / Method</th>
+                      <th className="p-3 font-bold text-right">Amount</th>
+                      <th className="p-3 font-bold text-center">Verification</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {transactions.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-6 text-center text-muted-foreground">
+                          No bKash or card payment transactions recorded yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      transactions.map((trx) => (
+                        <tr key={trx.id} className="hover:bg-accent/30">
+                          <td className="p-3 font-mono text-muted-foreground whitespace-nowrap">
+                            {new Date(trx.date).toLocaleString()}
+                          </td>
+                          <td className="p-3 font-mono font-bold text-foreground">
+                            {trx.trxId || trx.id}
+                          </td>
+                          <td className="p-3 font-bold uppercase text-primary">{trx.planId}</td>
+                          <td className="p-3 font-mono text-muted-foreground">
+                            {trx.method?.toUpperCase()} {trx.msisdn ? `· ${trx.msisdn}` : ""}
+                          </td>
+                          <td className="p-3 font-mono font-bold text-right text-foreground">
+                            ৳{Number(trx.amount || 0).toLocaleString()}
+                          </td>
+                          <td className="p-3 text-center">
+                            <select
+                              value={trx.status || "completed"}
+                              onChange={(e) => {
+                                db.updateTransactionStatus(
+                                  trx.id,
+                                  e.target.value as DbTransaction["status"],
+                                );
+                                refreshAll();
+                                showNotice(
+                                  `Transaction ${trx.trxId || trx.id} marked ${e.target.value}.`,
+                                );
+                              }}
+                              className="rounded-xl border border-border bg-background px-2.5 py-1 font-mono text-[11px] font-bold uppercase text-foreground"
+                            >
+                              <option value="completed">Completed</option>
+                              <option value="pending">Pending</option>
+                              <option value="failed">Failed</option>
+                            </select>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Edit Instructor / Reset Password Modal */}
         {editingUser && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in">
@@ -2057,7 +2262,7 @@ function SuperAdminPage() {
                               setEditUserCourses((prev) =>
                                 prev.includes(c.id)
                                   ? prev.filter((id) => id !== c.id)
-                                  : [...prev, c.id]
+                                  : [...prev, c.id],
                               )
                             }
                           />
@@ -2094,4 +2299,3 @@ function SuperAdminPage() {
     </div>
   );
 }
-

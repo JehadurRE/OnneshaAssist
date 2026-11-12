@@ -1,4 +1,4 @@
-import { createServerFn } from '@tanstack/react-start';
+import { createServerFn } from "@tanstack/react-start";
 import {
   BrandingSettings,
   CertificateData,
@@ -16,8 +16,14 @@ import {
   Quiz,
   Region,
   RosterStudent,
-} from './types';
-import { DEFAULT_COURSES, DEFAULT_REGIONS, DEFAULT_USERS, READY_MADE_PACKS, SAMPLE_ROSTER } from './mock-data';
+} from "./types";
+import {
+  DEFAULT_COURSES,
+  DEFAULT_REGIONS,
+  DEFAULT_USERS,
+  READY_MADE_PACKS,
+  SAMPLE_ROSTER,
+} from "./mock-data";
 import {
   canActorMutateStoreAction,
   generateHostToken,
@@ -27,12 +33,8 @@ import {
   signSessionToken,
   verifyPasswordScrypt,
   verifySessionToken,
-} from './server-security';
-import {
-  computeTotalQuizMarks,
-  evaluateQuestionAnswer,
-  resolveOrgName,
-} from './scoring';
+} from "./server-security";
+import { computeTotalQuizMarks, evaluateQuestionAnswer, resolveOrgName } from "./scoring";
 
 // ============================================================================
 // SERVER-AUTHORITATIVE PERSISTENT STORE (Render Persistent Disk / Node FS)
@@ -44,7 +46,7 @@ export interface ServerTransactionRecord {
   amount: number;
   msisdn: string;
   trxId: string;
-  method: 'bkash' | 'nagad' | 'card' | string;
+  method: "bkash" | "nagad" | "card" | string;
   status: string;
   userId?: string | undefined;
   createdAt: string;
@@ -59,7 +61,7 @@ export interface ServerSmsLogRecord {
   score: number;
   rank: number;
   messageText: string;
-  status: 'delivered' | 'queued' | 'failed';
+  status: "delivered" | "queued" | "failed";
   createdAt: string;
 }
 
@@ -77,9 +79,9 @@ export interface ServerSalesLeadRecord {
 
 const DEFAULT_BRANDING: BrandingSettings = {
   showPartnerLogo: false,
-  partnerName: '',
-  partnerLogoUrl: '',
-  institutionTitle: 'Onnesha Assessment Arena',
+  partnerName: "",
+  partnerLogoUrl: "",
+  institutionTitle: "Onnesha Assessment Arena",
   defaultEnforceFullscreen: false,
   defaultBlockCopyPaste: true,
   defaultMaxProctorViolations: 3,
@@ -103,6 +105,7 @@ interface PersistentStoreData {
 
 type ServerLiveSession = GameSession & {
   updatedAt: number;
+  countdownStartedAt?: number | undefined;
   hostToken?: string | undefined;
   fullQuiz?: Quiz | undefined;
   cachedTop5?: Participant[] | undefined;
@@ -115,21 +118,22 @@ interface PendingPhoneOtp {
   attempts: number;
 }
 
-function getNodeFs(): typeof import('node:fs') | null {
+function getNodeFs(): typeof import("node:fs") | null {
   try {
     const proc = globalThis.process as unknown as {
-      getBuiltinModule?: (id: string) => typeof import('node:fs');
+      getBuiltinModule?: (id: string) => typeof import("node:fs");
     };
-    return proc?.getBuiltinModule ? proc.getBuiltinModule('node:fs') : null;
+    return proc?.getBuiltinModule ? proc.getBuiltinModule("node:fs") : null;
   } catch {
     return null;
   }
 }
 
 function getStorePaths(): { dataDir: string; storeFile: string; liveFile: string } {
-  const cwd = typeof process !== 'undefined' && typeof process.cwd === 'function' ? process.cwd() : '.';
-  const dataDir = (typeof process !== 'undefined' && process.env?.['DATA_DIR']) || `${cwd}/.data`;
-  const normalizedDir = dataDir.replace(/[\\/]+$/, '');
+  const cwd =
+    typeof process !== "undefined" && typeof process.cwd === "function" ? process.cwd() : ".";
+  const dataDir = (typeof process !== "undefined" && process.env?.["DATA_DIR"]) || `${cwd}/.data`;
+  const normalizedDir = dataDir.replace(/[\\/]+$/, "");
   return {
     dataDir: normalizedDir,
     storeFile: `${normalizedDir}/onnesha-store.json`,
@@ -146,10 +150,10 @@ const globalStore = globalThis as unknown as {
   __onneshaPhoneOtps?: Record<string, PendingPhoneOtp>;
 };
 
-const AUTH_COOKIE_NAME = 'onnesha_sid';
+const AUTH_COOKIE_NAME = "onnesha_sid";
 
 async function getServerHelpers() {
-  return await import('@tanstack/react-start/server');
+  return await import("@tanstack/react-start/server");
 }
 
 async function getActorFromRequest(): Promise<ManagedUser | null> {
@@ -163,7 +167,7 @@ async function getActorFromRequest(): Promise<ManagedUser | null> {
     if (!verified) return null;
     const store = getStore();
     const user = store.users.find((u) => u.id === verified.uid);
-    if (!user || user.status === 'suspended') return null;
+    if (!user || user.status === "suspended") return null;
     return user;
   } catch {
     return null;
@@ -181,14 +185,14 @@ async function setAuthCookieForUser(user: ManagedUser): Promise<void> {
         role: user.role,
         exp: Date.now() + 7 * 24 * 3600 * 1000,
       },
-      secret
+      secret,
     );
     setCookie(AUTH_COOKIE_NAME, token, {
       httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
+      sameSite: "lax",
+      path: "/",
       maxAge: 7 * 24 * 3600,
-      secure: typeof process !== 'undefined' && process.env['NODE_ENV'] === 'production',
+      secure: typeof process !== "undefined" && process.env["NODE_ENV"] === "production",
     });
   } catch {
     // Ignore outside HTTP request context (e.g., unit tests)
@@ -198,7 +202,7 @@ async function setAuthCookieForUser(user: ManagedUser): Promise<void> {
 async function clearAuthCookie(): Promise<void> {
   try {
     const { deleteCookie } = await getServerHelpers();
-    deleteCookie(AUTH_COOKIE_NAME, { path: '/' });
+    deleteCookie(AUTH_COOKIE_NAME, { path: "/" });
   } catch {
     // Ignore outside HTTP request context
   }
@@ -206,7 +210,7 @@ async function clearAuthCookie(): Promise<void> {
 
 function ensureDefaultUsers(existing?: ManagedUser[]): ManagedUser[] {
   const list = (existing?.length ? [...existing] : []).map((u) => {
-    if (u.passwordHash && !u.passwordHash.startsWith('scrypt:')) {
+    if (u.passwordHash && !u.passwordHash.startsWith("scrypt:")) {
       return { ...u, passwordHash: hashPasswordScrypt(u.passwordHash) };
     }
     return u;
@@ -232,13 +236,13 @@ function loadInitialStore(): PersistentStoreData {
         fs.mkdirSync(dataDir, { recursive: true });
       }
       if (fs.existsSync(storeFile)) {
-        const raw = fs.readFileSync(storeFile, 'utf-8');
+        const raw = fs.readFileSync(storeFile, "utf-8");
         const parsed = JSON.parse(raw) as Partial<PersistentStoreData>;
         const cleanedRoster = (parsed.roster || []).filter(
-          (s) => !(/^st-([1-9]|10)$/.test(s.id) && s.email?.endsWith('@academy.edu.bd'))
+          (s) => !(/^st-([1-9]|10)$/.test(s.id) && s.email?.endsWith("@academy.edu.bd")),
         );
         const cleanedResults = (parsed.examResults || []).filter(
-          (r) => !(r.participantId || '').startsWith('bot-')
+          (r) => !(r.participantId || "").startsWith("bot-"),
         );
         return {
           regions: parsed.regions?.length ? parsed.regions : [...DEFAULT_REGIONS],
@@ -260,7 +264,7 @@ function loadInitialStore(): PersistentStoreData {
       }
     }
   } catch (err) {
-    console.warn('[OnneshaServerStore] Initializing fresh store in memory:', err);
+    console.warn("[OnneshaServerStore] Initializing fresh store in memory:", err);
   }
 
   return {
@@ -294,7 +298,7 @@ function getLiveSessions(): Record<string, ServerLiveSession> {
       const fs = getNodeFs();
       const { liveFile } = getStorePaths();
       if (fs && fs.existsSync(liveFile)) {
-        const raw = fs.readFileSync(liveFile, 'utf-8');
+        const raw = fs.readFileSync(liveFile, "utf-8");
         const parsed = JSON.parse(raw) as Record<string, ServerLiveSession>;
         const cutoff = Date.now() - 12 * 3600 * 1000;
         for (const [pin, sess] of Object.entries(parsed)) {
@@ -323,7 +327,7 @@ function scheduleLiveSessionsPersist() {
       }
       const sessions = getLiveSessions();
       const tmp = `${liveFile}.tmp`;
-      await fs.promises.writeFile(tmp, JSON.stringify(sessions), 'utf-8');
+      await fs.promises.writeFile(tmp, JSON.stringify(sessions), "utf-8");
       await fs.promises.rename(tmp, liveFile);
     } catch {
       // silent background save guard
@@ -347,29 +351,39 @@ function scheduleDiskPersist() {
         await fs.promises.mkdir(dataDir, { recursive: true });
       }
       const tmpFile = `${storeFile}.tmp`;
-      await fs.promises.writeFile(tmpFile, JSON.stringify(store), 'utf-8');
+      await fs.promises.writeFile(tmpFile, JSON.stringify(store), "utf-8");
       await fs.promises.rename(tmpFile, storeFile);
     } catch (err) {
-      console.warn('[OnneshaServerStore] Disk persist warning:', err);
+      console.warn("[OnneshaServerStore] Disk persist warning:", err);
     }
   }, 350);
 }
 
 function toHostSessionView(session: ServerLiveSession): GameSession {
-  const { fullQuiz: _q, hostToken: _t, cachedTop5: _top5, cachedSanitizedQuestion: _sq, ...hostView } = session;
+  const {
+    fullQuiz: _q,
+    hostToken: _t,
+    cachedTop5: _top5,
+    cachedSanitizedQuestion: _sq,
+    ...hostView
+  } = session;
   return hostView;
 }
 
 function normalizeDigits(val?: string): string {
-  return (val || '').replace(/\D/g, '');
+  return (val || "").replace(/\D/g, "");
 }
 
 function normalizeCode(val?: string): string {
-  return (val || '').trim().toLowerCase();
+  return (val || "").trim().toLowerCase();
 }
 
 function makeCertificateNumber(pin: string, rollNumber?: string, fallbackIdx = 1): string {
-  const cleanRoll = (rollNumber || `${100 + fallbackIdx}`).replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(-6).padStart(4, '0');
+  const cleanRoll = (rollNumber || `${100 + fallbackIdx}`)
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toUpperCase()
+    .slice(-6)
+    .padStart(4, "0");
   return `ONN-${pin.slice(0, 4)}-${cleanRoll}`;
 }
 
@@ -393,14 +407,21 @@ function recalculateSessionMetrics(session: ServerLiveSession) {
       answers: {},
     };
   });
-  session.cachedSanitizedQuestion = sanitizeQuestionForPlayer(session.currentQuestion, session.phase);
+  session.cachedSanitizedQuestion = sanitizeQuestionForPlayer(
+    session.currentQuestion,
+    session.phase,
+  );
   session.updatedAt = Date.now();
 }
 
-function sanitizeQuestionForPlayer(q?: Question, phase?: GameSession['phase']): Question | undefined {
+function sanitizeQuestionForPlayer(
+  q?: Question,
+  phase?: GameSession["phase"],
+): Question | undefined {
   if (!q) return undefined;
   // Only reveal correct answers after the active question timer closes
-  const canRevealAnswers = phase === 'chart' || phase === 'leaderboard' || phase === 'podium' || phase === 'finished';
+  const canRevealAnswers =
+    phase === "chart" || phase === "leaderboard" || phase === "podium" || phase === "finished";
   if (canRevealAnswers) return q;
 
   return {
@@ -415,7 +436,10 @@ function sanitizeQuestionForPlayer(q?: Question, phase?: GameSession['phase']): 
   };
 }
 
-function buildPlayerSessionProjection(session: ServerLiveSession, participantId?: string): GameSession {
+function buildPlayerSessionProjection(
+  session: ServerLiveSession,
+  participantId?: string,
+): GameSession {
   // O(1) constant-time projection for 500+ concurrent examinees
   const compactParticipants: Record<string, Participant> = {};
   if (participantId && session.participants[participantId]) {
@@ -450,7 +474,7 @@ function buildPlayerSessionProjection(session: ServerLiveSession, participantId?
     updatedAt: session.updatedAt,
     participantCount: session.participantCount ?? Object.keys(session.participants).length,
     answeredCount: session.answeredCount ?? 0,
-    completedQuestions: session.phase === 'podium' ? session.fullQuiz?.questions : undefined,
+    completedQuestions: session.phase === "podium" ? session.fullQuiz?.questions : undefined,
   };
 }
 
@@ -471,11 +495,11 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
     id: sessionId,
     pin: session.pin,
     quizId: session.quizId,
-    quizTitleEn: session.quizTitleEn || 'Onnesha Assessment',
-    quizTitleBn: session.quizTitleBn || 'অন্বেষা মডেল টেস্ট',
-    hostId: session.hostId || 'host',
-    allowedRegionId: session.settings.allowedRegionId || 'all',
-    allowedRegionName: session.settings.allowedRegionName || 'All Regions',
+    quizTitleEn: session.quizTitleEn || "Onnesha Assessment",
+    quizTitleBn: session.quizTitleBn || "অন্বেষা মডেল টেস্ট",
+    hostId: session.hostId || "host",
+    allowedRegionId: session.settings.allowedRegionId || "all",
+    allowedRegionName: session.settings.allowedRegionName || "All Regions",
     totalQuestions: session.totalQuestions,
     participantCount: count,
     averageScore: avgScore,
@@ -501,7 +525,9 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
     const answersList = Object.values(p.answers || {});
     const correctCount = answersList.filter((a) => a.isCorrect).length;
     const incorrectCount = answersList.filter(
-      (a) => !a.isCorrect && ((a.selectedOptionIds && a.selectedOptionIds.length > 0) || !!a.writtenAnswer)
+      (a) =>
+        !a.isCorrect &&
+        ((a.selectedOptionIds && a.selectedOptionIds.length > 0) || !!a.writtenAnswer),
     ).length;
     const unattemptedCount = Math.max(0, session.totalQuestions - answersList.length);
     const totalAnswers = answersList.length;
@@ -515,9 +541,9 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
       participantId: p.id,
       rollNumber: roll,
       name: p.nickname || p.name || `Candidate ${idx + 1}`,
-      phone: p.phone || '',
-      regionId: p.regionId || 'reg-dhaka',
-      regionName: p.regionName || 'Dhaka Range',
+      phone: p.phone || "",
+      regionId: p.regionId || "reg-dhaka",
+      regionName: p.regionName || "Dhaka Range",
       score: p.score,
       rank: p.rank || idx + 1,
       correctCount,
@@ -535,8 +561,8 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
       certificateNumber: certNo,
       studentName: p.nickname || p.name || `Candidate ${idx + 1}`,
       studentRoll: roll,
-      regionName: p.regionName || 'Dhaka Range',
-      quizTitle: session.quizTitleBn || session.quizTitleEn || 'Institutional Assessment',
+      regionName: p.regionName || "Dhaka Range",
+      quizTitle: session.quizTitleBn || session.quizTitleEn || "Institutional Assessment",
       score: p.score,
       marksObtained: p.score,
       totalPoints: totalMarks,
@@ -547,26 +573,113 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
       scorePct: accuracy,
       issueDate: createdAt.slice(0, 10),
       organizationName: resolveOrgName(store.branding),
-      institutionName: store.branding?.institutionTitle || 'Onnesha Assessment Arena',
-      instructorName: 'Chief Assessment Officer',
+      institutionName: store.branding?.institutionTitle || "Onnesha Assessment Arena",
+      instructorName: "Chief Assessment Officer",
       verificationUrl: `/verify/${certNo}`,
       verified: true,
     };
 
     store.certificates = [
       certRecord,
-      ...store.certificates.filter((c) => c.certificateNumber.toLowerCase() !== certNo.toLowerCase()),
+      ...store.certificates.filter(
+        (c) => c.certificateNumber.toLowerCase() !== certNo.toLowerCase(),
+      ),
     ];
   });
 
   scheduleDiskPersist();
 }
 
+function resolveSessionQuiz(
+  session: ServerLiveSession,
+  store: PersistentStoreData,
+): Quiz | undefined {
+  if (session.fullQuiz) return session.fullQuiz;
+  const found =
+    store.customQuizzes.find((q) => q.id === session.quizId || q.slug === session.quizId) ||
+    READY_MADE_PACKS.find((q) => q.id === session.quizId || q.slug === session.quizId) ||
+    READY_MADE_PACKS[0];
+  if (found) session.fullQuiz = found;
+  return found;
+}
+
+function advanceSessionToQuestion(
+  session: ServerLiveSession,
+  store: PersistentStoreData,
+  questionIndex?: number,
+) {
+  const quiz = resolveSessionQuiz(session, store);
+  const idx = questionIndex ?? session.currentQuestionIndex + 1;
+  const question = quiz?.questions[idx];
+  if (!quiz || !question || idx >= quiz.questions.length) {
+    session.phase = "podium";
+    recalculateSessionMetrics(session);
+    persistCompletedExamToStore(session);
+    return;
+  }
+
+  session.phase = "question";
+  session.currentQuestionIndex = idx;
+  session.currentQuestion = question;
+  session.questionStartTime = Date.now();
+  session.questionEndTime = Date.now() + question.timeLimitSec * 1000;
+  recalculateSessionMetrics(session);
+
+  // Simulate bot answers if any bots exist in the session
+  Object.values(session.participants).forEach((p) => {
+    if (!p.isBot) return;
+    const isBotCorrect = Math.random() > 0.3;
+    const isWrittenStyle = question.type === "written" || question.type === "fill_blank";
+    const chosen = isWrittenStyle
+      ? []
+      : isBotCorrect
+        ? [...question.correctOptionIds]
+        : [
+            question.options.find((o) => !question.correctOptionIds.includes(o.id))?.id ||
+              question.options[0]?.id ||
+              "opt-none",
+          ].filter(Boolean);
+    const botWritten = isWrittenStyle
+      ? isBotCorrect
+        ? question.acceptedAnswers?.[0] || "1971"
+        : "0000"
+      : undefined;
+    const timeLimit = question.timeLimitSec || 20;
+    const timeTakenSec = Math.round(2 + Math.random() * Math.max(3, timeLimit * 0.6));
+    let pointsAwarded = 0;
+    let newStreak = p.streak;
+    if (isBotCorrect) {
+      newStreak += 1;
+      const mult = newStreak >= 3 ? 1.5 : newStreak >= 2 ? 1.2 : 1.0;
+      const speed = Math.max(0.5, 1 - (timeTakenSec / timeLimit) * 0.5);
+      pointsAwarded = Math.round((question.points || 1000) * speed * mult);
+    } else {
+      newStreak = 0;
+      if (session.settings.negativeMarking > 0) {
+        pointsAwarded = -Math.round((question.points || 1000) * session.settings.negativeMarking);
+      }
+    }
+    p.answers[question.id] = {
+      questionId: question.id,
+      selectedOptionIds: chosen,
+      writtenAnswer: botWritten,
+      isCorrect: isBotCorrect,
+      timeTakenSec,
+      pointsAwarded,
+      streakCount: newStreak,
+      answeredAt: Date.now(),
+    };
+    p.score = Math.max(0, p.score + pointsAwarded);
+    p.streak = newStreak;
+  });
+  recalculateSessionMetrics(session);
+}
+
 // ============================================================================
 // 1. AUTHENTICATION & BOOTSTRAP ENDPOINTS (SIGNED HTTP-ONLY SESSION COOKIE)
 // ============================================================================
 
-export const serverGetCurrentUser = createServerFn({ method: 'GET' }).handler(async () => {
+export const serverGetCurrentUser = createServerFn({ method: "GET" }).handler(async () => {
   const actor = await getActorFromRequest();
   return {
     success: true,
@@ -574,15 +687,15 @@ export const serverGetCurrentUser = createServerFn({ method: 'GET' }).handler(as
   };
 });
 
-export const serverLogout = createServerFn({ method: 'POST' }).handler(async () => {
+export const serverLogout = createServerFn({ method: "POST" }).handler(async () => {
   await clearAuthCookie();
   return { success: true };
 });
 
-export const serverGetBootstrapData = createServerFn({ method: 'GET' }).handler(async () => {
+export const serverGetBootstrapData = createServerFn({ method: "GET" }).handler(async () => {
   const store = getStore();
   const actor = await getActorFromRequest();
-  const isStaff = !!actor && (actor.role === 'admin' || actor.role === 'instructor');
+  const isStaff = !!actor && (actor.role === "admin" || actor.role === "instructor");
 
   return {
     success: true,
@@ -594,30 +707,33 @@ export const serverGetBootstrapData = createServerFn({ method: 'GET' }).handler(
     examSessions: store.examSessions,
     examResults: isStaff ? store.examResults : [],
     certificates: store.certificates,
-    transactions: actor?.role === 'admin' ? store.transactions : [],
+    transactions: actor?.role === "admin" ? store.transactions : [],
     smsLogs: isStaff ? store.smsLogs : [],
-    salesLeads: actor?.role === 'admin' ? store.salesLeads : [],
+    salesLeads: actor?.role === "admin" ? store.salesLeads : [],
     branding: store.branding,
   };
 });
 
-export const serverAuthenticateUser = createServerFn({ method: 'POST' })
+export const serverAuthenticateUser = createServerFn({ method: "POST" })
   .validator((data: { email: string; password: string }) => data)
   .handler(async ({ data }) => {
     const store = getStore();
-    const cleanEmail = (data.email || '').trim().toLowerCase();
+    const cleanEmail = (data.email || "").trim().toLowerCase();
     const foundIdx = store.users.findIndex((u) => u.email.toLowerCase() === cleanEmail);
     const found = foundIdx >= 0 ? store.users[foundIdx] : undefined;
     if (!found) {
-      return { success: false, error: 'Account not found. Check your email or use one of the demo credentials.' };
+      return {
+        success: false,
+        error: "Account not found. Check your email or use one of the demo credentials.",
+      };
     }
-    if (found.status === 'suspended') {
-      return { success: false, error: 'This account has been suspended by the Super Admin.' };
+    if (found.status === "suspended") {
+      return { success: false, error: "This account has been suspended by the Super Admin." };
     }
 
-    const check = verifyPasswordScrypt(data.password || '', found.passwordHash);
+    const check = verifyPasswordScrypt(data.password || "", found.passwordHash);
     if (!check.valid) {
-      return { success: false, error: 'Incorrect password.' };
+      return { success: false, error: "Incorrect password." };
     }
     if (check.needsRehash && foundIdx >= 0) {
       store.users[foundIdx] = {
@@ -634,49 +750,50 @@ export const serverAuthenticateUser = createServerFn({ method: 'POST' })
     };
   });
 
-export const serverSignupUser = createServerFn({ method: 'POST' })
+export const serverSignupUser = createServerFn({ method: "POST" })
   .validator(
     (data: {
       email: string;
       name: string;
       password: string;
-      role: 'instructor' | 'candidate' | 'admin';
+      role: "instructor" | "candidate" | "admin";
       institutionName?: string | undefined;
       phone?: string | undefined;
-    }) => data
+    }) => data,
   )
   .handler(async ({ data }) => {
     const store = getStore();
-    const cleanEmail = (data.email || '').trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      return { success: false, error: 'Please enter a valid email address.' };
+    const cleanEmail = (data.email || "").trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      return { success: false, error: "Please enter a valid email address." };
     }
     if (!data.password || data.password.length < 6) {
-      return { success: false, error: 'Password must be at least 6 characters long.' };
+      return { success: false, error: "Password must be at least 6 characters long." };
     }
-    if (data.role === 'admin') {
+    if (data.role === "admin") {
       return {
         success: false,
-        error: 'Super Admin accounts cannot be self-registered. Please contact your institution administrator.',
+        error:
+          "Super Admin accounts cannot be self-registered. Please contact your institution administrator.",
       };
     }
 
     if (store.users.some((u) => u.email.toLowerCase() === cleanEmail)) {
-      return { success: false, error: 'An account with this email already exists.' };
+      return { success: false, error: "An account with this email already exists." };
     }
 
-    const safeRole: ManagedUser['role'] = data.role === 'candidate' ? 'candidate' : 'instructor';
+    const safeRole: ManagedUser["role"] = data.role === "candidate" ? "candidate" : "instructor";
     const id = `usr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`;
     const newUser: ManagedUser = {
       id,
       email: cleanEmail,
-      name: (data.name || '').trim() || cleanEmail.split('@')[0] || 'Instructor',
+      name: (data.name || "").trim() || cleanEmail.split("@")[0] || "Instructor",
       role: safeRole,
-      institutionName: data.institutionName?.trim() || 'Onnesha Member Institution',
-      institution: data.institutionName?.trim() || 'Onnesha Member Institution',
+      institutionName: data.institutionName?.trim() || "Onnesha Member Institution",
+      institution: data.institutionName?.trim() || "Onnesha Member Institution",
       phone: data.phone?.trim(),
       passwordHash: hashPasswordScrypt(data.password),
-      status: 'active',
+      status: "active",
       aiCredits: 50,
       createdAt: new Date().toISOString(),
     };
@@ -691,16 +808,17 @@ export const serverSignupUser = createServerFn({ method: 'POST' })
     };
   });
 
-export const serverRequestPhoneOtp = createServerFn({ method: 'POST' })
+export const serverRequestPhoneOtp = createServerFn({ method: "POST" })
   .validator((data: { phone: string }) => data)
   .handler(async ({ data }) => {
     const cleanPhone = normalizeDigits(data.phone);
     if (cleanPhone.length < 11) {
-      return { success: false, error: 'Please enter a valid 11-digit Bangladeshi mobile number.' };
+      return { success: false, error: "Please enter a valid 11-digit Bangladeshi mobile number." };
     }
 
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const smsToken = typeof process !== 'undefined' ? process.env['GREENWEB_SMS_TOKEN']?.trim() : undefined;
+    const smsToken =
+      typeof process !== "undefined" ? process.env["GREENWEB_SMS_TOKEN"]?.trim() : undefined;
 
     if (!globalStore.__onneshaPhoneOtps) {
       globalStore.__onneshaPhoneOtps = {};
@@ -715,22 +833,22 @@ export const serverRequestPhoneOtp = createServerFn({ method: 'POST' })
       try {
         const message = `[Onnesha Arena] Your login verification code is ${otpCode}. Valid for 5 minutes.`;
         const url = `https://api.greenweb.com.bd/api.php?token=${encodeURIComponent(smsToken)}&to=${encodeURIComponent(cleanPhone)}&message=${encodeURIComponent(message)}`;
-        const res = await fetch(url, { method: 'GET' });
+        const res = await fetch(url, { method: "GET" });
         if (!res.ok) {
-          return { success: false, error: 'SMS provider returned an error while sending OTP.' };
+          return { success: false, error: "SMS provider returned an error while sending OTP." };
         }
         return { success: true };
       } catch {
-        return { success: false, error: 'Failed to reach SMS OTP gateway.' };
+        return { success: false, error: "Failed to reach SMS OTP gateway." };
       }
     }
 
-    const isProd = typeof process !== 'undefined' && process.env['NODE_ENV'] === 'production';
+    const isProd = typeof process !== "undefined" && process.env["NODE_ENV"] === "production";
     if (isProd) {
       return {
         success: false,
         error:
-          'Phone SMS OTP gateway (GREENWEB_SMS_TOKEN) is not configured on this server. Please sign in with email & password.',
+          "Phone SMS OTP gateway (GREENWEB_SMS_TOKEN) is not configured on this server. Please sign in with email & password.",
       };
     }
 
@@ -738,25 +856,25 @@ export const serverRequestPhoneOtp = createServerFn({ method: 'POST' })
     return { success: true, devOtp: otpCode };
   });
 
-export const serverVerifyPhoneOtp = createServerFn({ method: 'POST' })
+export const serverVerifyPhoneOtp = createServerFn({ method: "POST" })
   .validator((data: { phone: string; otp: string }) => data)
   .handler(async ({ data }) => {
     const cleanPhone = normalizeDigits(data.phone);
     const pending = globalStore.__onneshaPhoneOtps?.[cleanPhone];
     if (!pending) {
-      return { success: false, error: 'OTP not requested or expired. Please request a new code.' };
+      return { success: false, error: "OTP not requested or expired. Please request a new code." };
     }
     if (Date.now() > pending.expiresAt) {
       delete globalStore.__onneshaPhoneOtps?.[cleanPhone];
-      return { success: false, error: 'OTP expired. Please request a new code.' };
+      return { success: false, error: "OTP expired. Please request a new code." };
     }
     pending.attempts += 1;
     if (pending.attempts > 5) {
       delete globalStore.__onneshaPhoneOtps?.[cleanPhone];
-      return { success: false, error: 'Too many invalid OTP attempts. Please request a new code.' };
+      return { success: false, error: "Too many invalid OTP attempts. Please request a new code." };
     }
-    if (pending.code !== (data.otp || '').trim()) {
-      return { success: false, error: 'Invalid OTP verification code.' };
+    if (pending.code !== (data.otp || "").trim()) {
+      return { success: false, error: "Invalid OTP verification code." };
     }
 
     delete globalStore.__onneshaPhoneOtps?.[cleanPhone];
@@ -769,10 +887,10 @@ export const serverVerifyPhoneOtp = createServerFn({ method: 'POST' })
         id,
         email: `${cleanPhone}@mobile.onnesha.app`,
         name: `User (${cleanPhone})`,
-        role: 'instructor',
+        role: "instructor",
         phone: cleanPhone,
-        institutionName: 'Mobile Quick Login',
-        status: 'active',
+        institutionName: "Mobile Quick Login",
+        status: "active",
         aiCredits: 50,
         createdAt: new Date().toISOString(),
       };
@@ -780,8 +898,8 @@ export const serverVerifyPhoneOtp = createServerFn({ method: 'POST' })
       scheduleDiskPersist();
     }
 
-    if (found.status === 'suspended') {
-      return { success: false, error: 'This account has been suspended by the Super Admin.' };
+    if (found.status === "suspended") {
+      return { success: false, error: "This account has been suspended by the Super Admin." };
     }
 
     await setAuthCookieForUser(found);
@@ -791,7 +909,7 @@ export const serverVerifyPhoneOtp = createServerFn({ method: 'POST' })
     };
   });
 
-export const serverSubmitSalesLead = createServerFn({ method: 'POST' })
+export const serverSubmitSalesLead = createServerFn({ method: "POST" })
   .validator(
     (data: {
       name: string;
@@ -800,11 +918,11 @@ export const serverSubmitSalesLead = createServerFn({ method: 'POST' })
       phone: string;
       studentCount: string;
       message: string;
-    }) => data
+    }) => data,
   )
   .handler(async ({ data }) => {
     if (!data.name?.trim() || !data.email?.trim() || !data.organization?.trim()) {
-      return { success: false, error: 'Name, organization, and email are required.' };
+      return { success: false, error: "Name, organization, and email are required." };
     }
     const store = getStore();
     const lead: ServerSalesLeadRecord = {
@@ -812,10 +930,10 @@ export const serverSubmitSalesLead = createServerFn({ method: 'POST' })
       name: data.name.trim(),
       organization: data.organization.trim(),
       email: data.email.trim().toLowerCase(),
-      phone: (data.phone || '').trim(),
-      studentCount: (data.studentCount || '500-1000').trim(),
-      message: (data.message || '').trim(),
-      status: 'new',
+      phone: (data.phone || "").trim(),
+      studentCount: (data.studentCount || "500-1000").trim(),
+      message: (data.message || "").trim(),
+      status: "new",
       createdAt: new Date().toISOString(),
     };
     store.salesLeads.unshift(lead);
@@ -826,7 +944,7 @@ export const serverSubmitSalesLead = createServerFn({ method: 'POST' })
     return { success: true, leadId: lead.id };
   });
 
-export const serverRecordTransaction = createServerFn({ method: 'POST' })
+export const serverRecordTransaction = createServerFn({ method: "POST" })
   .validator(
     (data: {
       planId: string;
@@ -835,7 +953,7 @@ export const serverRecordTransaction = createServerFn({ method: 'POST' })
       trxId: string;
       method?: string | undefined;
       status?: string | undefined;
-    }) => data
+    }) => data,
   )
   .handler(async ({ data }) => {
     const actor = await getActorFromRequest();
@@ -844,10 +962,10 @@ export const serverRecordTransaction = createServerFn({ method: 'POST' })
       id: `trx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       planId: data.planId,
       amount: Number(data.amount) || 0,
-      msisdn: (data.msisdn || '').trim(),
-      trxId: (data.trxId || '').trim(),
-      method: data.method || 'bkash',
-      status: data.status || 'completed',
+      msisdn: (data.msisdn || "").trim(),
+      trxId: (data.trxId || "").trim(),
+      method: data.method || "bkash",
+      status: data.status || "completed",
       userId: actor?.id,
       createdAt: new Date().toISOString(),
     };
@@ -859,7 +977,7 @@ export const serverRecordTransaction = createServerFn({ method: 'POST' })
     return { success: true, transaction: record };
   });
 
-export const serverSendGuardianSms = createServerFn({ method: 'POST' })
+export const serverSendGuardianSms = createServerFn({ method: "POST" })
   .validator(
     (data: {
       guardianPhone: string;
@@ -870,37 +988,42 @@ export const serverSendGuardianSms = createServerFn({ method: 'POST' })
       totalPoints: number;
       rank: number;
       totalParticipants: number;
-    }) => data
+    }) => data,
   )
   .handler(async ({ data }) => {
     const actor = await getActorFromRequest();
-    if (!actor || (actor.role !== 'admin' && actor.role !== 'instructor')) {
-      return { success: false, error: 'Instructor or Admin login required to dispatch guardian SMS.' };
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return {
+        success: false,
+        error: "Instructor or Admin login required to dispatch guardian SMS.",
+      };
     }
     const cleanPhone = normalizeDigits(data.guardianPhone);
     if (cleanPhone.length < 10) {
-      return { success: false, error: 'Invalid guardian phone number.' };
+      return { success: false, error: "Invalid guardian phone number." };
     }
 
     const messageText = `[ফলাফল বার্তা]\nশ্রদ্ধেয় অভিভাবক, আপনার সন্তান ${data.studentName} (রোল: ${data.rollNumber}) "${data.quizTitle}" পরীক্ষায় ${data.score}/${data.totalPoints} পেয়ে ${data.totalParticipants} জনের মধ্যে ${data.rank}ম স্থান অর্জন করেছে।\n- অন্বেষা এক্সাম অ্যারেনা`;
 
-    const token = typeof process !== 'undefined' ? process.env['GREENWEB_SMS_TOKEN']?.trim() : undefined;
-    let status: 'delivered' | 'queued' | 'failed' = token ? 'queued' : 'failed';
+    const token =
+      typeof process !== "undefined" ? process.env["GREENWEB_SMS_TOKEN"]?.trim() : undefined;
+    let status: "delivered" | "queued" | "failed" = token ? "queued" : "failed";
 
     if (token && token.length > 5) {
       try {
         const url = `https://api.greenweb.com.bd/api.php?token=${encodeURIComponent(token)}&to=${encodeURIComponent(cleanPhone)}&message=${encodeURIComponent(messageText)}`;
-        const response = await fetch(url, { method: 'GET' });
+        const response = await fetch(url, { method: "GET" });
         if (response.ok) {
           const resText = (await response.text()).toLowerCase();
-          status = resText.includes('ok') || resText.includes('success') || resText.includes('100')
-            ? 'delivered'
-            : 'queued';
+          status =
+            resText.includes("ok") || resText.includes("success") || resText.includes("100")
+              ? "delivered"
+              : "queued";
         } else {
-          status = 'failed';
+          status = "failed";
         }
       } catch {
-        status = 'failed';
+        status = "failed";
       }
     }
 
@@ -924,55 +1047,60 @@ export const serverSendGuardianSms = createServerFn({ method: 'POST' })
     scheduleDiskPersist();
 
     return {
-      success: status !== 'failed',
+      success: status !== "failed",
       configured: !!(token && token.length > 5),
       log,
     };
   });
 
-export const serverGenerateQuizWithAi = createServerFn({ method: 'POST' })
+export const serverGenerateQuizWithAi = createServerFn({ method: "POST" })
   .validator(
     (data: {
       topic: string;
       sourceText?: string | undefined;
       questionCount: number;
-      difficulty: 'easy' | 'medium' | 'hard';
+      difficulty: "easy" | "medium" | "hard";
       category: string;
       courseId?: string | undefined;
       courseTitle?: string | undefined;
       quizNumber?: number | undefined;
-      questionStyleMode?: 'mixed_all_4' | 'single_mcq' | undefined;
-    }) => data
+      questionStyleMode?: "mixed_all_4" | "single_mcq" | undefined;
+    }) => data,
   )
   .handler(async ({ data }) => {
     const actor = await getActorFromRequest();
-    if (!actor || (actor.role !== 'admin' && actor.role !== 'instructor')) {
-      return { success: false, quiz: null, error: 'Instructor or Admin login required.' };
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false, quiz: null, error: "Instructor or Admin login required." };
     }
 
-    const apiKey = typeof process !== 'undefined' ? process.env['GEMINI_API_KEY']?.trim() : undefined;
+    const apiKey =
+      typeof process !== "undefined" ? process.env["GEMINI_API_KEY"]?.trim() : undefined;
     if (!apiKey || apiKey.length < 10) {
-      return { success: false, quiz: null, error: 'GEMINI_API_KEY not configured on server' };
+      return { success: false, quiz: null, error: "GEMINI_API_KEY not configured on server" };
     }
 
     const store = getStore();
     const userIdx = store.users.findIndex((u) => u.id === actor.id);
     const currentCredits = userIdx >= 0 ? (store.users[userIdx]?.aiCredits ?? 50) : 50;
     if (currentCredits <= 0) {
-      return { success: false, quiz: null, error: 'No AI generation credits remaining for this account.' };
+      return {
+        success: false,
+        quiz: null,
+        error: "No AI generation credits remaining for this account.",
+      };
     }
 
     const count = Math.min(20, Math.max(3, data.questionCount || 5));
-    const styleMode = data.questionStyleMode || 'mixed_all_4';
+    const styleMode = data.questionStyleMode || "mixed_all_4";
     const styleInstructions =
-      styleMode === 'mixed_all_4'
+      styleMode === "mixed_all_4"
         ? `Include a balanced mix of question types: "single_mcq" (4 options, 1 correct), "true_false" (2 options: True/সত্য and False/মিথ্যা), "multi_mcq" (4 options, 2 or 3 correct), and "written" (options: [], acceptedAnswers: ["answer in English", "বাংলায় উত্তর"]).`
         : `All questions must be "single_mcq" with 4 options and 1 correct option.`;
 
     const prompt = `You are an expert exam paper setter for competitive examinations in Bangladesh (BCS, Bank Jobs, Cadet Colleges, University Admission).
 Generate an official ${count}-question assessment on the topic: "${data.topic}".
 Course context: "${data.courseTitle || data.category}".
-Additional syllabus text: "${data.sourceText || 'Standard BCS & Institutional Syllabus'}".
+Additional syllabus text: "${data.sourceText || "Standard BCS & Institutional Syllabus"}".
 Difficulty: ${data.difficulty}. Language requirement: bilingual English and Bengali.
 ${styleInstructions}
 
@@ -1004,16 +1132,16 @@ Return ONLY a valid JSON object matching this exact schema:
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
         {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {
-              responseMimeType: 'application/json',
+              responseMimeType: "application/json",
               temperature: 0.25,
             },
           }),
-        }
+        },
       );
 
       if (!response.ok) {
@@ -1024,7 +1152,7 @@ Return ONLY a valid JSON object matching this exact schema:
       };
       const rawJsonText = payload.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!rawJsonText) {
-        return { success: false, quiz: null, error: 'Empty Gemini response' };
+        return { success: false, quiz: null, error: "Empty Gemini response" };
       }
 
       const parsed = JSON.parse(rawJsonText) as {
@@ -1046,25 +1174,28 @@ Return ONLY a valid JSON object matching this exact schema:
       };
 
       const id = `ai-quiz-${Date.now()}`;
-      const slug = `ai-${data.topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 25)}-${Date.now() % 10000}`;
+      const slug = `ai-${data.topic
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .slice(0, 25)}-${Date.now() % 10000}`;
 
       const questions: Question[] = (parsed.questions || []).map((q, idx) => {
         const qId = `q-ai-${idx + 1}-${Date.now() % 10000}`;
         const qType: QuestionType =
-          q.type === 'true_false' || q.type === 'multi_mcq' || q.type === 'written'
+          q.type === "true_false" || q.type === "multi_mcq" || q.type === "written"
             ? q.type
-            : 'single_mcq';
+            : "single_mcq";
 
-        if (qType === 'written') {
+        if (qType === "written") {
           const accepted =
             Array.isArray(q.acceptedAnswers) && q.acceptedAnswers.length > 0
               ? q.acceptedAnswers.map((a) => String(a).trim()).filter(Boolean)
-              : ['1971', '১৯৭১'];
+              : ["1971", "১৯৭১"];
           return {
             id: qId,
             textEn: q.textEn || `${data.topic} Short Answer #${idx + 1}`,
             textBn: q.textBn || `${data.topic} সংক্ষিপ্ত প্রশ্ন #${idx + 1}`,
-            type: 'written',
+            type: "written",
             timeLimitSec: 30,
             points: 1000,
             negativeMarks: 0,
@@ -1095,7 +1226,7 @@ Return ONLY a valid JSON object matching this exact schema:
           textEn: q.textEn || `${data.topic} Question #${idx + 1}`,
           textBn: q.textBn || `${data.topic} প্রশ্ন #${idx + 1}`,
           type: qType,
-          timeLimitSec: qType === 'multi_mcq' ? 25 : 20,
+          timeLimitSec: qType === "multi_mcq" ? 25 : 20,
           points: 1000,
           negativeMarks: 0.25,
           options,
@@ -1123,15 +1254,15 @@ Return ONLY a valid JSON object matching this exact schema:
         quizNumber: data.quizNumber,
         instructorId: actor.id,
         instructorName: actor.name,
-        icon: '✨',
+        icon: "✨",
         titleEn: parsed.titleEn || `${data.topic} (${data.difficulty.toUpperCase()})`,
         titleBn: parsed.titleBn || `${data.topic} (এআই মডেল টেস্ট)`,
         descriptionEn: parsed.descriptionEn || `AI synthesized assessment on ${data.topic}.`,
         descriptionBn: parsed.descriptionBn || `${data.topic} বিষয়ের ওপর নির্মিত এআই মূল্যায়ন।`,
-        categoryEn: parsed.categoryEn || data.category || 'General',
-        categoryBn: parsed.categoryBn || 'সাধারণ',
-        color: 'from-violet-500/20 to-fuchsia-500/20',
-        tags: ['AI Studio', data.difficulty, data.category],
+        categoryEn: parsed.categoryEn || data.category || "General",
+        categoryBn: parsed.categoryBn || "সাধারণ",
+        color: "from-violet-500/20 to-fuchsia-500/20",
+        tags: ["AI Studio", data.difficulty, data.category],
         questions,
         author: actor.name,
         isTemplate: false,
@@ -1144,15 +1275,15 @@ Return ONLY a valid JSON object matching this exact schema:
         remainingCredits: Math.max(0, currentCredits - 1),
       };
     } catch {
-      return { success: false, quiz: null, error: 'Gemini synthesis error' };
+      return { success: false, quiz: null, error: "Gemini synthesis error" };
     }
   });
 
-export const serverVerifyCertificate = createServerFn({ method: 'GET' })
+export const serverVerifyCertificate = createServerFn({ method: "GET" })
   .validator((data: { certId?: string; certNo?: string }) => data)
   .handler(async ({ data }) => {
     const store = getStore();
-    const rawCert = (data.certNo || data.certId || '').trim();
+    const rawCert = (data.certNo || data.certId || "").trim();
     const target = rawCert.toLowerCase();
     const found = store.certificates.find((c) => c.certificateNumber.toLowerCase() === target);
     if (found) {
@@ -1168,34 +1299,41 @@ export const serverVerifyCertificate = createServerFn({ method: 'GET' })
       const pinPrefix = match[1];
       const rollSuffix = match[2];
       const matchedResult = store.examResults.find((r) => {
-        const cleanRoll = (r.rollNumber || '')
-          .replace(/[^a-zA-Z0-9]/g, '')
+        const cleanRoll = (r.rollNumber || "")
+          .replace(/[^a-zA-Z0-9]/g, "")
           .toUpperCase()
           .slice(-6)
-          .padStart(4, '0');
+          .padStart(4, "0");
         return r.pin.startsWith(pinPrefix) && cleanRoll === rollSuffix;
       });
 
       if (matchedResult) {
         const matchedSession = store.examSessions.find(
-          (s) => s.id === matchedResult.sessionId || s.pin === matchedResult.pin
+          (s) => s.id === matchedResult.sessionId || s.pin === matchedResult.pin,
         );
         const quizObj = matchedSession
-          ? store.customQuizzes.find((q) => q.id === matchedSession.quizId || q.slug === matchedSession.quizId) ||
-            READY_MADE_PACKS.find((q) => q.id === matchedSession.quizId || q.slug === matchedSession.quizId)
+          ? store.customQuizzes.find(
+              (q) => q.id === matchedSession.quizId || q.slug === matchedSession.quizId,
+            ) ||
+            READY_MADE_PACKS.find(
+              (q) => q.id === matchedSession.quizId || q.slug === matchedSession.quizId,
+            )
           : undefined;
-        const totalMarks = computeTotalQuizMarks(quizObj?.questions, matchedSession?.totalQuestions || 5);
+        const totalMarks = computeTotalQuizMarks(
+          quizObj?.questions,
+          matchedSession?.totalQuestions || 5,
+        );
         const certNoUpper = rawCert.toUpperCase();
         const synthesized: CertificateData = {
           id: `cert-${certNoUpper.toLowerCase()}`,
           certificateNumber: certNoUpper,
           studentName: matchedResult.name,
           studentRoll: matchedResult.rollNumber,
-          regionName: matchedResult.regionName || 'Dhaka Range',
+          regionName: matchedResult.regionName || "Dhaka Range",
           quizTitle:
             matchedSession?.quizTitleBn ||
             matchedSession?.quizTitleEn ||
-            'Onnesha Assessment Evaluation',
+            "Onnesha Assessment Evaluation",
           score: matchedResult.score,
           marksObtained: matchedResult.score,
           totalPoints: totalMarks,
@@ -1206,8 +1344,8 @@ export const serverVerifyCertificate = createServerFn({ method: 'GET' })
           scorePct: matchedResult.accuracyPct,
           issueDate: (matchedResult.createdAt || new Date().toISOString()).slice(0, 10),
           organizationName: resolveOrgName(store.branding),
-          institutionName: store.branding?.institutionTitle || 'Onnesha Assessment Arena',
-          instructorName: 'Chief Assessment Officer',
+          institutionName: store.branding?.institutionTitle || "Onnesha Assessment Arena",
+          instructorName: "Chief Assessment Officer",
           verificationUrl: `/verify/${certNoUpper}`,
           verified: true,
         };
@@ -1225,24 +1363,24 @@ export const serverVerifyCertificate = createServerFn({ method: 'GET' })
     };
   });
 
-export const serverChangeOwnPassword = createServerFn({ method: 'POST' })
+export const serverChangeOwnPassword = createServerFn({ method: "POST" })
   .validator((data: { oldPassword: string; newPassword: string }) => data)
   .handler(async ({ data }) => {
     const actor = await getActorFromRequest();
     if (!actor) {
-      return { success: false, error: 'Authentication required.' };
+      return { success: false, error: "Authentication required." };
     }
     if (!data.newPassword || data.newPassword.length < 6) {
-      return { success: false, error: 'New password must be at least 6 characters long.' };
+      return { success: false, error: "New password must be at least 6 characters long." };
     }
     const store = getStore();
     const idx = store.users.findIndex((u) => u.id === actor.id);
     if (idx < 0 || !store.users[idx]) {
-      return { success: false, error: 'Account not found.' };
+      return { success: false, error: "Account not found." };
     }
-    const check = verifyPasswordScrypt(data.oldPassword || '', store.users[idx].passwordHash);
+    const check = verifyPasswordScrypt(data.oldPassword || "", store.users[idx].passwordHash);
     if (!check.valid) {
-      return { success: false, error: 'Current password is incorrect.' };
+      return { success: false, error: "Current password is incorrect." };
     }
     store.users[idx] = {
       ...store.users[idx],
@@ -1252,31 +1390,33 @@ export const serverChangeOwnPassword = createServerFn({ method: 'POST' })
     return { success: true };
   });
 
-export const serverUpdateOwnProfile = createServerFn({ method: 'POST' })
+export const serverUpdateOwnProfile = createServerFn({ method: "POST" })
   .validator(
     (data: {
       name?: string | undefined;
       institutionName?: string | undefined;
       designation?: string | undefined;
       phone?: string | undefined;
-    }) => data
+    }) => data,
   )
   .handler(async ({ data }) => {
     const actor = await getActorFromRequest();
     if (!actor) {
-      return { success: false, user: null, error: 'Authentication required.' };
+      return { success: false, user: null, error: "Authentication required." };
     }
     const store = getStore();
     const idx = store.users.findIndex((u) => u.id === actor.id);
     if (idx < 0 || !store.users[idx]) {
-      return { success: false, user: null, error: 'Account not found.' };
+      return { success: false, user: null, error: "Account not found." };
     }
     const existing = store.users[idx];
     const updated: ManagedUser = {
       ...existing,
       name: data.name?.trim() || existing.name,
-      institutionName: data.institutionName !== undefined ? data.institutionName.trim() : existing.institutionName,
-      institution: data.institutionName !== undefined ? data.institutionName.trim() : existing.institution,
+      institutionName:
+        data.institutionName !== undefined ? data.institutionName.trim() : existing.institutionName,
+      institution:
+        data.institutionName !== undefined ? data.institutionName.trim() : existing.institution,
       designation: data.designation !== undefined ? data.designation.trim() : existing.designation,
       phone: data.phone !== undefined ? data.phone.trim() : existing.phone,
     };
@@ -1285,26 +1425,28 @@ export const serverUpdateOwnProfile = createServerFn({ method: 'POST' })
     return { success: true, user: sanitizeUserForClient(updated) };
   });
 
-export const serverAdminMutateStore = createServerFn({ method: 'POST' })
+export const serverAdminMutateStore = createServerFn({ method: "POST" })
   .validator(
     (data: {
       action:
-        | 'add_region'
-        | 'delete_region'
-        | 'add_student'
-        | 'bulk_add_students'
-        | 'delete_student'
-        | 'clear_roster'
-        | 'save_course'
-        | 'delete_course'
-        | 'save_user'
-        | 'delete_user'
-        | 'save_quiz'
-        | 'delete_quiz'
-        | 'issue_certificate'
-        | 'update_branding'
-        | 'import_store_backup'
-        | 'purge_dummy_data';
+        | "add_region"
+        | "delete_region"
+        | "add_student"
+        | "bulk_add_students"
+        | "delete_student"
+        | "clear_roster"
+        | "save_course"
+        | "delete_course"
+        | "save_user"
+        | "delete_user"
+        | "save_quiz"
+        | "delete_quiz"
+        | "issue_certificate"
+        | "update_branding"
+        | "update_sales_lead"
+        | "update_transaction"
+        | "import_store_backup"
+        | "purge_dummy_data";
       region?: Region | undefined;
       regionId?: string | undefined;
       student?: RosterStudent | undefined;
@@ -1318,26 +1460,38 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
       quizId?: string | undefined;
       certificate?: CertificateData | undefined;
       branding?: BrandingSettings | undefined;
+      leadId?: string | undefined;
+      leadStatus?: string | undefined;
+      trxId?: string | undefined;
+      trxStatus?: string | undefined;
       backup?: Partial<PersistentStoreData> | undefined;
-    }) => data
+    }) => data,
   )
   .handler(async ({ data }) => {
     const store = getStore();
     const actor = await getActorFromRequest();
 
-    const targetQuiz =
-      data.action === 'delete_quiz' && data.quizId
+    const targetCustomQuiz =
+      data.action === "delete_quiz" && data.quizId
         ? store.customQuizzes.find((q) => q.id === data.quizId || q.slug === data.quizId)
-        : undefined;
+        : data.action === "save_quiz" && data.quiz
+          ? store.customQuizzes.find((q) => q.id === data.quiz!.id || q.slug === data.quiz!.slug)
+          : undefined;
+    const collidesWithTemplate =
+      data.action === "save_quiz" && data.quiz
+        ? READY_MADE_PACKS.some((q) => q.id === data.quiz!.id || q.slug === data.quiz!.slug)
+        : false;
+
     const perm = canActorMutateStoreAction(
       actor ? { id: actor.id, role: actor.role } : null,
       data.action,
-      targetQuiz?.instructorId
+      targetCustomQuiz?.instructorId,
+      collidesWithTemplate || targetCustomQuiz?.isTemplate,
     );
     if (!perm.allowed) {
       return {
         success: false,
-        error: perm.reason || 'Unauthorized',
+        error: perm.reason || "Unauthorized",
         regions: store.regions,
         roster: [],
         courses: store.courses,
@@ -1348,10 +1502,11 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
     }
 
     switch (data.action) {
-      case 'add_region': {
+      case "add_region": {
         if (data.region) {
           const existsIdx = store.regions.findIndex(
-            (r) => r.id === data.region!.id || r.code.toLowerCase() === data.region!.code.toLowerCase()
+            (r) =>
+              r.id === data.region!.id || r.code.toLowerCase() === data.region!.code.toLowerCase(),
           );
           if (existsIdx >= 0) {
             store.regions[existsIdx] = data.region;
@@ -1362,19 +1517,19 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
         }
         break;
       }
-      case 'delete_region': {
+      case "delete_region": {
         if (data.regionId) {
           store.regions = store.regions.filter((r) => r.id !== data.regionId);
           scheduleDiskPersist();
         }
         break;
       }
-      case 'add_student': {
+      case "add_student": {
         if (data.student) {
           const existingIdx = store.roster.findIndex(
             (s) =>
               s.id === data.student!.id ||
-              normalizeCode(s.rollNumber) === normalizeCode(data.student!.rollNumber)
+              normalizeCode(s.rollNumber) === normalizeCode(data.student!.rollNumber),
           );
           if (existingIdx >= 0) {
             store.roster[existingIdx] = data.student;
@@ -1385,11 +1540,11 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
         }
         break;
       }
-      case 'bulk_add_students': {
+      case "bulk_add_students": {
         if (data.students?.length) {
           for (const st of data.students) {
             const idx = store.roster.findIndex(
-              (s) => s.id === st.id || normalizeCode(s.rollNumber) === normalizeCode(st.rollNumber)
+              (s) => s.id === st.id || normalizeCode(s.rollNumber) === normalizeCode(st.rollNumber),
             );
             if (idx >= 0) {
               store.roster[idx] = st;
@@ -1401,22 +1556,23 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
         }
         break;
       }
-      case 'delete_student': {
+      case "delete_student": {
         if (data.studentId) {
           store.roster = store.roster.filter((s) => s.id !== data.studentId);
           scheduleDiskPersist();
         }
         break;
       }
-      case 'clear_roster': {
+      case "clear_roster": {
         store.roster = [];
         scheduleDiskPersist();
         break;
       }
-      case 'save_course': {
+      case "save_course": {
         if (data.course) {
           const idx = store.courses.findIndex(
-            (c) => c.id === data.course!.id || c.code.toLowerCase() === data.course!.code.toLowerCase()
+            (c) =>
+              c.id === data.course!.id || c.code.toLowerCase() === data.course!.code.toLowerCase(),
           );
           if (idx >= 0) {
             store.courses[idx] = data.course;
@@ -1436,21 +1592,22 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
         }
         break;
       }
-      case 'delete_course': {
+      case "delete_course": {
         if (data.courseId) {
           store.courses = store.courses.filter((c) => c.id !== data.courseId);
           scheduleDiskPersist();
         }
         break;
       }
-      case 'save_user': {
+      case "save_user": {
         if (data.user) {
           const idx = store.users.findIndex(
-            (u) => u.id === data.user!.id || u.email.toLowerCase() === data.user!.email.toLowerCase()
+            (u) =>
+              u.id === data.user!.id || u.email.toLowerCase() === data.user!.email.toLowerCase(),
           );
           const incomingPass = data.user.passwordHash?.trim();
           const nextHash =
-            incomingPass && !incomingPass.startsWith('scrypt:')
+            incomingPass && !incomingPass.startsWith("scrypt:")
               ? hashPasswordScrypt(incomingPass)
               : incomingPass;
           const existing = idx >= 0 ? store.users[idx] : undefined;
@@ -1461,32 +1618,73 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
               passwordHash: nextHash || existing.passwordHash,
             };
           } else {
+            if (!nextHash) {
+              return {
+                success: false,
+                error: "A password is required when creating a new user account.",
+                regions: store.regions,
+                roster: store.roster,
+                courses: store.courses,
+                users: store.users.map(sanitizeUserForClient),
+                customQuizzes: store.customQuizzes,
+                branding: store.branding,
+              };
+            }
             store.users.push({
               ...data.user,
-              passwordHash: nextHash || hashPasswordScrypt('instructor123'),
+              passwordHash: nextHash,
             });
           }
           scheduleDiskPersist();
         }
         break;
       }
-      case 'delete_user': {
+      case "delete_user": {
         if (data.userId) {
+          const deletedUser = store.users.find((u) => u.id === data.userId);
           store.users = store.users.filter((u) => u.id !== data.userId);
+          store.courses = store.courses.map((course) => {
+            if (!(course.instructorIds || []).includes(data.userId!)) {
+              return course;
+            }
+            const nextIds = (course.instructorIds || []).filter((id) => id !== data.userId);
+            const nextNames = nextIds
+              .map((id) => store.users.find((u) => u.id === id)?.name)
+              .filter((n): n is string => Boolean(n));
+            const fallbackNames = deletedUser
+              ? (course.instructorNames || []).filter((n) => n !== deletedUser.name)
+              : course.instructorNames || [];
+            return {
+              ...course,
+              instructorIds: nextIds,
+              instructorNames:
+                nextNames.length > 0 || nextIds.length === 0 ? nextNames : fallbackNames,
+            };
+          });
           scheduleDiskPersist();
         }
         break;
       }
-      case 'save_quiz': {
+      case "save_quiz": {
         if (data.quiz) {
+          const idx = store.customQuizzes.findIndex(
+            (q) => q.id === data.quiz!.id || q.slug === data.quiz!.slug,
+          );
+          const existingQuiz = idx >= 0 ? store.customQuizzes[idx] : undefined;
+          const ownerId =
+            actor?.role === "admin"
+              ? data.quiz.instructorId || existingQuiz?.instructorId || actor.id
+              : existingQuiz?.instructorId || actor?.id;
+          const ownerName =
+            actor?.role === "admin"
+              ? data.quiz.instructorName || existingQuiz?.instructorName || actor.name
+              : existingQuiz?.instructorName || actor?.name;
           const quizRecord: Quiz = {
             ...data.quiz,
-            instructorId: data.quiz.instructorId || actor?.id,
-            instructorName: data.quiz.instructorName || actor?.name,
+            isTemplate: false,
+            instructorId: ownerId,
+            instructorName: ownerName,
           };
-          const idx = store.customQuizzes.findIndex(
-            (q) => q.id === quizRecord.id || q.slug === quizRecord.slug
-          );
           if (idx >= 0) {
             store.customQuizzes[idx] = quizRecord;
           } else {
@@ -1496,31 +1694,34 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
         }
         break;
       }
-      case 'delete_quiz': {
+      case "delete_quiz": {
         if (data.quizId) {
           store.customQuizzes = store.customQuizzes.filter(
-            (q) => q.id !== data.quizId && q.slug !== data.quizId
+            (q) => q.id !== data.quizId && q.slug !== data.quizId,
           );
           scheduleDiskPersist();
         }
         break;
       }
-      case 'issue_certificate': {
+      case "issue_certificate": {
         if (data.certificate) {
           store.certificates = [
             data.certificate,
             ...store.certificates.filter(
-              (c) => c.certificateNumber.toLowerCase() !== data.certificate!.certificateNumber.toLowerCase()
+              (c) =>
+                c.certificateNumber.toLowerCase() !==
+                data.certificate!.certificateNumber.toLowerCase(),
             ),
           ];
           scheduleDiskPersist();
         }
         break;
       }
-      case 'update_branding': {
+      case "update_branding": {
         if (data.branding) {
           store.branding = {
             ...DEFAULT_BRANDING,
+            ...store.branding,
             ...data.branding,
             updatedAt: Date.now(),
           };
@@ -1528,7 +1729,25 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
         }
         break;
       }
-      case 'import_store_backup': {
+      case "update_sales_lead": {
+        if (data.leadId && data.leadStatus) {
+          store.salesLeads = store.salesLeads.map((l) =>
+            l.id === data.leadId ? { ...l, status: data.leadStatus! } : l,
+          );
+          scheduleDiskPersist();
+        }
+        break;
+      }
+      case "update_transaction": {
+        if (data.trxId && data.trxStatus) {
+          store.transactions = store.transactions.map((t) =>
+            t.id === data.trxId || t.trxId === data.trxId ? { ...t, status: data.trxStatus! } : t,
+          );
+          scheduleDiskPersist();
+        }
+        break;
+      }
+      case "import_store_backup": {
         if (data.backup) {
           if (data.backup.regions?.length) store.regions = data.backup.regions;
           if (data.backup.roster?.length) store.roster = data.backup.roster;
@@ -1538,26 +1757,27 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
           if (data.backup.examSessions) store.examSessions = data.backup.examSessions;
           if (data.backup.examResults) store.examResults = data.backup.examResults;
           if (data.backup.certificates) store.certificates = data.backup.certificates;
-          if (data.backup.branding) store.branding = { ...DEFAULT_BRANDING, ...data.backup.branding };
+          if (data.backup.branding)
+            store.branding = { ...DEFAULT_BRANDING, ...data.backup.branding };
           scheduleDiskPersist();
         }
         break;
       }
-      case 'purge_dummy_data': {
+      case "purge_dummy_data": {
         store.roster = store.roster.filter(
-          (s) => !(/^st-([1-9]|10)$/.test(s.id) && s.email?.endsWith('@academy.edu.bd'))
+          (s) => !(/^st-([1-9]|10)$/.test(s.id) && s.email?.endsWith("@academy.edu.bd")),
         );
         store.examResults = store.examResults.filter(
-          (r) => !(r.participantId || '').startsWith('bot-')
+          (r) => !(r.participantId || "").startsWith("bot-"),
         );
         store.users = ensureDefaultUsers(
-          store.users.filter((u) => !['usr-instructor-2', 'usr-instructor-3'].includes(u.id))
+          store.users.filter((u) => !["usr-instructor-2", "usr-instructor-3"].includes(u.id)),
         );
         store.courses = store.courses.filter(
-          (c) => !['course-field-safety', 'course-science-stem'].includes(c.id)
+          (c) => !["course-field-safety", "course-science-stem"].includes(c.id),
         );
         store.certificates = store.certificates.filter(
-          (c) => !['ONN-4821-9982', 'ONN-4634-026104'].includes(c.certificateNumber.toUpperCase())
+          (c) => !["ONN-4821-9982", "ONN-4634-026104"].includes(c.certificateNumber.toUpperCase()),
         );
         scheduleDiskPersist();
         break;
@@ -1572,6 +1792,8 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
       users: store.users.map(sanitizeUserForClient),
       customQuizzes: store.customQuizzes,
       branding: store.branding,
+      salesLeads: actor?.role === "admin" ? store.salesLeads : [],
+      transactions: actor?.role === "admin" ? store.transactions : [],
     };
   });
 
@@ -1579,7 +1801,7 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
 // 2. CANDIDATE DIRECTORY & NUMBER LOOKUP FOR JOIN TERMINAL
 // ============================================================================
 
-export const serverGetJoinDirectory = createServerFn({ method: 'GET' })
+export const serverGetJoinDirectory = createServerFn({ method: "GET" })
   .validator((data: { pin: string }) => data)
   .handler(async ({ data }) => {
     const store = getStore();
@@ -1606,9 +1828,9 @@ export const serverGetJoinDirectory = createServerFn({ method: 'GET' })
         id: s.id,
         name: s.name,
         rollNumber: s.rollNumber,
-        regionId: s.regionId || 'reg-dhaka',
-        regionName: s.regionName || 'Dhaka Range',
-        batch: s.batch || '46th BCS & Cadet Batch',
+        regionId: s.regionId || "reg-dhaka",
+        regionName: s.regionName || "Dhaka Range",
+        batch: s.batch || "46th BCS & Cadet Batch",
         maskedPhone,
         isAlreadyJoined:
           activeSeatCandidateIds.has(s.id) || activeSeatRollSet.has(normalizeCode(s.rollNumber)),
@@ -1619,24 +1841,27 @@ export const serverGetJoinDirectory = createServerFn({ method: 'GET' })
       success: true,
       regions: store.regions,
       candidates,
-      allowedRegionId: session?.settings?.allowedRegionId || 'all',
-      allowedRegionName: session?.settings?.allowedRegionName || 'All Regions',
+      allowedRegionId: session?.settings?.allowedRegionId || "all",
+      allowedRegionName: session?.settings?.allowedRegionName || "All Regions",
     };
   });
 
-export const serverLookupCandidateByNumber = createServerFn({ method: 'GET' })
+export const serverLookupCandidateByNumber = createServerFn({ method: "GET" })
   .validator((data: { pin: string; query: string; regionId?: string }) => data)
   .handler(async ({ data }) => {
     const store = getStore();
     const sessions = getLiveSessions();
     const session = sessions[data.pin];
 
-    const rawQuery = (data.query || '').trim();
+    const rawQuery = (data.query || "").trim();
     const digitsQuery = normalizeDigits(rawQuery);
     const codeQuery = normalizeCode(rawQuery);
 
     if (!rawQuery || rawQuery.length < 2) {
-      return { success: false, error: 'Enter at least 3 digits of your Mobile Number or Roll Number.' };
+      return {
+        success: false,
+        error: "Enter at least 3 digits of your Mobile Number or Roll Number.",
+      };
     }
 
     const matched = store.roster.find((s) => {
@@ -1644,7 +1869,8 @@ export const serverLookupCandidateByNumber = createServerFn({ method: 'GET' })
       const sPhone = normalizeDigits(s.phone);
       const sGuardian = normalizeDigits(s.guardianPhone);
 
-      const rollMatch = sRoll === codeQuery || (digitsQuery.length >= 3 && sRoll.endsWith(digitsQuery));
+      const rollMatch =
+        sRoll === codeQuery || (digitsQuery.length >= 3 && sRoll.endsWith(digitsQuery));
       const phoneMatch =
         digitsQuery.length >= 6 &&
         ((sPhone && (sPhone === digitsQuery || sPhone.endsWith(digitsQuery))) ||
@@ -1656,13 +1882,14 @@ export const serverLookupCandidateByNumber = createServerFn({ method: 'GET' })
     if (!matched) {
       return {
         success: false,
-        error: 'No enrolled candidate matched this Mobile / Roll Number. You can also select your Region and Name below.',
+        error:
+          "No enrolled candidate matched this Mobile / Roll Number. You can also select your Region and Name below.",
       };
     }
 
     if (
       session?.settings?.allowedRegionId &&
-      session.settings.allowedRegionId !== 'all' &&
+      session.settings.allowedRegionId !== "all" &&
       matched.regionId !== session.settings.allowedRegionId
     ) {
       return {
@@ -1675,7 +1902,7 @@ export const serverLookupCandidateByNumber = createServerFn({ method: 'GET' })
       ? Object.values(session.participants).find(
           (p) =>
             p.candidateId === matched.id ||
-            normalizeCode(p.rollNumber) === normalizeCode(matched.rollNumber)
+            normalizeCode(p.rollNumber) === normalizeCode(matched.rollNumber),
         )
       : undefined;
 
@@ -1685,10 +1912,10 @@ export const serverLookupCandidateByNumber = createServerFn({ method: 'GET' })
         id: matched.id,
         name: matched.name,
         rollNumber: matched.rollNumber,
-        phone: matched.phone || matched.guardianPhone || '',
-        regionId: matched.regionId || 'reg-dhaka',
-        regionName: matched.regionName || 'Dhaka Range',
-        batch: matched.batch || '46th BCS & Cadet Batch',
+        phone: matched.phone || matched.guardianPhone || "",
+        regionId: matched.regionId || "reg-dhaka",
+        regionName: matched.regionName || "Dhaka Range",
+        batch: matched.batch || "46th BCS & Cadet Batch",
         isSeatLocked: !!activeParticipant,
       },
     };
@@ -1698,11 +1925,11 @@ export const serverLookupCandidateByNumber = createServerFn({ method: 'GET' })
 // 3. LIVE SESSION LIFECYCLE & 500+ CONCURRENCY DELTA ENGINE
 // ============================================================================
 
-export const serverGetActiveRooms = createServerFn({ method: 'GET' }).handler(async () => {
+export const serverGetActiveRooms = createServerFn({ method: "GET" }).handler(async () => {
   const sessions = getLiveSessions();
   const cutoff = Date.now() - 4 * 3600 * 1000;
   const activeRooms = Object.values(sessions)
-    .filter((s) => s.updatedAt >= cutoff && s.phase !== 'podium')
+    .filter((s) => s.updatedAt >= cutoff && s.phase !== "podium")
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, 12)
     .map((s) => ({
@@ -1714,7 +1941,7 @@ export const serverGetActiveRooms = createServerFn({ method: 'GET' }).handler(as
       phase: s.phase,
       participantCount: s.participantCount ?? Object.keys(s.participants).length,
       totalQuestions: s.totalQuestions,
-      allowedRegionName: s.settings.allowedRegionName || 'All Regions',
+      allowedRegionName: s.settings.allowedRegionName || "All Regions",
       createdAt: s.createdAt,
     }));
 
@@ -1724,7 +1951,7 @@ export const serverGetActiveRooms = createServerFn({ method: 'GET' }).handler(as
   };
 });
 
-export const serverCreateSession = createServerFn({ method: 'POST' })
+export const serverCreateSession = createServerFn({ method: "POST" })
   .validator(
     (data: {
       quiz: Quiz;
@@ -1735,7 +1962,7 @@ export const serverCreateSession = createServerFn({ method: 'POST' })
       enforceFullscreen?: boolean | undefined;
       blockCopyPaste?: boolean | undefined;
       maxProctorViolations?: number | undefined;
-    }) => data
+    }) => data,
   )
   .handler(async ({ data }) => {
     const sessions = getLiveSessions();
@@ -1754,7 +1981,7 @@ export const serverCreateSession = createServerFn({ method: 'POST' })
     // Only authenticated staff persist new quizzes into server customQuizzes
     if (
       actor &&
-      (actor.role === 'admin' || actor.role === 'instructor') &&
+      (actor.role === "admin" || actor.role === "instructor") &&
       data.quiz &&
       !READY_MADE_PACKS.some((p) => p.id === data.quiz.id)
     ) {
@@ -1795,7 +2022,7 @@ export const serverCreateSession = createServerFn({ method: 'POST' })
       quizTitleBn: data.quiz.titleBn,
       hostId: actor?.id || `host-${now}`,
       hostToken,
-      phase: 'lobby',
+      phase: "lobby",
       currentQuestionIndex: -1,
       questionStartTime: 0,
       questionEndTime: 0,
@@ -1809,8 +2036,8 @@ export const serverCreateSession = createServerFn({ method: 'POST' })
         isFormalAssessment: isFormal,
         requireRollNumber: isFormal,
         requireRosterVerification: true,
-        allowedRegionId: data.allowedRegionId || 'all',
-        allowedRegionName: data.allowedRegionName || 'All Regions (National)',
+        allowedRegionId: data.allowedRegionId || "all",
+        allowedRegionName: data.allowedRegionName || "All Regions (National)",
         enforceFullscreen: enforceFs,
         blockCopyPaste: blockCopy,
         maxProctorViolations: maxViol,
@@ -1830,20 +2057,30 @@ export const serverCreateSession = createServerFn({ method: 'POST' })
     return { success: true, session: toHostSessionView(newSession), hostToken };
   });
 
-export const serverGetSession = createServerFn({ method: 'GET' })
+export const serverGetSession = createServerFn({ method: "GET" })
   .validator(
     (data: {
       pin: string;
-      role?: 'host' | 'player' | undefined;
+      role?: "host" | "player" | undefined;
       participantId?: string | undefined;
       sinceUpdatedAt?: number | undefined;
-    }) => data
+    }) => data,
   )
   .handler(async ({ data }) => {
     const sessions = getLiveSessions();
+    const store = getStore();
     const session = sessions[data.pin];
     if (!session) {
       return { success: false, notFound: true, session: null };
+    }
+
+    // Server-authoritative countdown auto-advance so disconnecting host never strands rooms
+    if (session.phase === "countdown") {
+      const started = session.countdownStartedAt || session.updatedAt;
+      if (Date.now() - started >= 2800) {
+        advanceSessionToQuestion(session, store, 0);
+        scheduleLiveSessionsPersist();
+      }
     }
 
     // Fast 304-style delta short-circuit if nothing changed since client's last poll
@@ -1856,7 +2093,7 @@ export const serverGetSession = createServerFn({ method: 'GET' })
       };
     }
 
-    if (data.role === 'player') {
+    if (data.role === "player") {
       return {
         success: true,
         unchanged: false,
@@ -1873,12 +2110,12 @@ export const serverGetSession = createServerFn({ method: 'GET' })
     };
   });
 
-export const serverSyncSession = createServerFn({ method: 'POST' })
+export const serverSyncSession = createServerFn({ method: "POST" })
   .validator((data: { session: GameSession; hostToken?: string | undefined }) => data)
   .handler(async ({ data }) => {
     const sessions = getLiveSessions();
     if (!data?.session?.pin) {
-      return { success: false, error: 'Invalid session payload' };
+      return { success: false, error: "Invalid session payload" };
     }
     const existing = sessions[data.session.pin];
     if (!existing) {
@@ -1895,10 +2132,10 @@ export const serverSyncSession = createServerFn({ method: 'POST' })
     const actor = await getActorFromRequest();
     const isAuthorized =
       (existing.hostToken && data.hostToken === existing.hostToken) ||
-      actor?.role === 'admin' ||
+      actor?.role === "admin" ||
       (!!actor && actor.id === existing.hostId);
     if (!isAuthorized) {
-      return { success: false, error: 'Host authorization required.' };
+      return { success: false, error: "Host authorization required." };
     }
 
     existing.phase = data.session.phase;
@@ -1919,21 +2156,21 @@ export const serverSyncSession = createServerFn({ method: 'POST' })
     return { success: true, session: toHostSessionView(existing) };
   });
 
-export const serverJoinSession = createServerFn({ method: 'POST' })
+export const serverJoinSession = createServerFn({ method: "POST" })
   .validator(
     (data: {
       pin: string;
       participant: Participant;
       verificationNumber?: string | undefined;
       seatToken?: string | undefined;
-    }) => data
+    }) => data,
   )
   .handler(async ({ data }) => {
     const sessions = getLiveSessions();
     const store = getStore();
     const session = sessions[data.pin];
     if (!session) {
-      return { success: false, error: 'No active examination room found for this PIN.' };
+      return { success: false, error: "No active examination room found for this PIN." };
     }
 
     const incoming = data.participant;
@@ -1944,7 +2181,7 @@ export const serverJoinSession = createServerFn({ method: 'POST' })
     // 1. Check Region Restriction
     if (
       session.settings.allowedRegionId &&
-      session.settings.allowedRegionId !== 'all' &&
+      session.settings.allowedRegionId !== "all" &&
       incoming.regionId &&
       incoming.regionId !== session.settings.allowedRegionId
     ) {
@@ -1958,13 +2195,15 @@ export const serverJoinSession = createServerFn({ method: 'POST' })
     const rosterMatch = store.roster.find(
       (s) =>
         (requestedCandidateId && s.id === requestedCandidateId) ||
-        (requestedRoll && normalizeCode(s.rollNumber) === requestedRoll)
+        (requestedRoll && normalizeCode(s.rollNumber) === requestedRoll),
     );
 
     if (rosterMatch) {
       const enrolledPhone = normalizeDigits(rosterMatch.phone || rosterMatch.guardianPhone);
       const enrolledRoll = normalizeCode(rosterMatch.rollNumber);
-      const verifyInput = normalizeDigits(data.verificationNumber || incoming.phone || incoming.rollNumber);
+      const verifyInput = normalizeDigits(
+        data.verificationNumber || incoming.phone || incoming.rollNumber,
+      );
       const verifyCodeInput = normalizeCode(data.verificationNumber || incoming.rollNumber);
 
       // Verify ownership so Student A cannot pick Student B from the Region dropdown without knowing their number
@@ -1977,7 +2216,7 @@ export const serverJoinSession = createServerFn({ method: 'POST' })
       if (!phoneMatches && !rollMatches) {
         return {
           success: false,
-          code: 'VERIFICATION_FAILED',
+          code: "VERIFICATION_FAILED",
           error: `Identity Verification Failed for ${rosterMatch.name}. Please enter the registered Mobile Number or exact Roll Number (${rosterMatch.rollNumber}) to unlock this seat.`,
         };
       }
@@ -1988,8 +2227,8 @@ export const serverJoinSession = createServerFn({ method: 'POST' })
       incoming.nickname = rosterMatch.name;
       incoming.rollNumber = rosterMatch.rollNumber;
       incoming.phone = rosterMatch.phone || rosterMatch.guardianPhone;
-      incoming.regionId = rosterMatch.regionId || incoming.regionId || 'reg-dhaka';
-      incoming.regionName = rosterMatch.regionName || incoming.regionName || 'Dhaka Range';
+      incoming.regionId = rosterMatch.regionId || incoming.regionId || "reg-dhaka";
+      incoming.regionName = rosterMatch.regionName || incoming.regionName || "Dhaka Range";
       incoming.batch = rosterMatch.batch;
     } else if (incoming.rollNumber && incoming.name) {
       // Auto-enroll new verified candidate into the Region roster so Admin has their record
@@ -1997,11 +2236,11 @@ export const serverJoinSession = createServerFn({ method: 'POST' })
         id: `std-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
         rollNumber: incoming.rollNumber,
         name: incoming.name,
-        phone: incoming.phone || data.verificationNumber || '',
-        regionId: incoming.regionId || 'reg-dhaka',
-        regionName: incoming.regionName || 'Dhaka Range',
-        batch: 'Live Arena Induction',
-        guardianPhone: incoming.phone || '',
+        phone: incoming.phone || data.verificationNumber || "",
+        regionId: incoming.regionId || "reg-dhaka",
+        regionName: incoming.regionName || "Dhaka Range",
+        batch: "Live Arena Induction",
+        guardianPhone: incoming.phone || "",
         createdAt: new Date().toISOString(),
       };
       store.roster.push(newStd);
@@ -2013,11 +2252,15 @@ export const serverJoinSession = createServerFn({ method: 'POST' })
     const existingSeat = Object.values(session.participants).find(
       (p) =>
         (incoming.candidateId && p.candidateId === incoming.candidateId) ||
-        (incoming.rollNumber && normalizeCode(p.rollNumber) === normalizeCode(incoming.rollNumber)) ||
-        (requestedPhone.length >= 10 && normalizeDigits(p.phone) === requestedPhone)
+        (incoming.rollNumber &&
+          normalizeCode(p.rollNumber) === normalizeCode(incoming.rollNumber)) ||
+        (requestedPhone.length >= 10 && normalizeDigits(p.phone) === requestedPhone),
     );
 
-    const clientSeatToken = data.seatToken || incoming.seatToken || `seat-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const clientSeatToken =
+      data.seatToken ||
+      incoming.seatToken ||
+      `seat-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
     if (existingSeat) {
       // Allow seamless reconnection ONLY if the browser presents the matching seatToken
@@ -2036,8 +2279,8 @@ export const serverJoinSession = createServerFn({ method: 'POST' })
 
       return {
         success: false,
-        code: 'SEAT_LOCKED',
-        error: `Anti-Impersonation Lock: ${existingSeat.nickname} (Roll: ${existingSeat.rollNumber || 'N/A'}) is already active in this exam room on another device. Nobody else can appear in their exam. If you switched phones, ask the Host to click "Unlock Seat".`,
+        code: "SEAT_LOCKED",
+        error: `Anti-Impersonation Lock: ${existingSeat.nickname} (Roll: ${existingSeat.rollNumber || "N/A"}) is already active in this exam room on another device. Nobody else can appear in their exam. If you switched phones, ask the Host to click "Unlock Seat".`,
       };
     }
 
@@ -2066,7 +2309,7 @@ export const serverJoinSession = createServerFn({ method: 'POST' })
     };
   });
 
-export const serverSubmitAnswer = createServerFn({ method: 'POST' })
+export const serverSubmitAnswer = createServerFn({ method: "POST" })
   .validator(
     (data: {
       pin: string;
@@ -2079,22 +2322,22 @@ export const serverSubmitAnswer = createServerFn({ method: 'POST' })
       // Legacy fallback fields
       answer?: ParticipantAnswer | undefined;
       scoreDelta?: number | undefined;
-    }) => data
+    }) => data,
   )
   .handler(async ({ data }) => {
     const sessions = getLiveSessions();
     const session = sessions[data.pin];
     if (!session) {
-      return { success: false, error: 'Session not found on server' };
+      return { success: false, error: "Session not found on server" };
     }
 
     const p = session.participants[data.participantId];
     if (!p) {
-      return { success: false, error: 'Participant not found in session' };
+      return { success: false, error: "Participant not found in session" };
     }
 
     if (p.isSuspended) {
-      return { success: false, error: 'Exam suspended by Proctor due to focus violations.' };
+      return { success: false, error: "Exam suspended by Proctor due to focus violations." };
     }
 
     // Prevent duplicate answer submission for the same question
@@ -2115,16 +2358,20 @@ export const serverSubmitAnswer = createServerFn({ method: 'POST' })
       session.currentQuestion;
 
     const selectedIds = data.selectedOptionIds || data.answer?.selectedOptionIds || [];
-    const written = (data.writtenAnswer ?? data.answer?.writtenAnswer ?? '').trim();
+    const written = (data.writtenAnswer ?? data.answer?.writtenAnswer ?? "").trim();
 
     let answerRecord: ParticipantAnswer;
 
     if (fullQuestion) {
       // Support offline-queued answers with fair timestamp clamping
       const effectiveTimestamp = data.clientAnsweredAt
-        ? Math.max(session.questionStartTime || Date.now(), Math.min(Date.now(), data.clientAnsweredAt))
+        ? Math.max(
+            session.questionStartTime || Date.now(),
+            Math.min(Date.now(), data.clientAnsweredAt),
+          )
         : Date.now();
-      const elapsedSec = (effectiveTimestamp - (session.questionStartTime || effectiveTimestamp)) / 1000;
+      const elapsedSec =
+        (effectiveTimestamp - (session.questionStartTime || effectiveTimestamp)) / 1000;
       const timeTakenSec = Math.max(1, Math.min(fullQuestion.timeLimitSec || 20, elapsedSec));
 
       const graded = evaluateQuestionAnswer({
@@ -2159,7 +2406,7 @@ export const serverSubmitAnswer = createServerFn({ method: 'POST' })
       p.streak = data.answer.isCorrect ? p.streak + 1 : 0;
       p.lastActive = Date.now();
     } else {
-      return { success: false, error: 'Unable to grade question' };
+      return { success: false, error: "Unable to grade question" };
     }
 
     recalculateSessionMetrics(session);
@@ -2172,13 +2419,13 @@ export const serverSubmitAnswer = createServerFn({ method: 'POST' })
     };
   });
 
-export const serverReportProctorIncident = createServerFn({ method: 'POST' })
+export const serverReportProctorIncident = createServerFn({ method: "POST" })
   .validator(
     (data: {
       pin: string;
       participantId: string;
-      type: 'tab_switch' | 'window_blur' | 'fullscreen_exit' | 'copy_attempt' | 'devtools_attempt';
-    }) => data
+      type: "tab_switch" | "window_blur" | "fullscreen_exit" | "copy_attempt" | "devtools_attempt";
+    }) => data,
   )
   .handler(async ({ data }) => {
     const sessions = getLiveSessions();
@@ -2218,155 +2465,90 @@ export const serverReportProctorIncident = createServerFn({ method: 'POST' })
     };
   });
 
-export const serverHostControl = createServerFn({ method: 'POST' })
+export const serverHostControl = createServerFn({ method: "POST" })
   .validator(
     (data: {
       pin: string;
       hostToken?: string | undefined;
       action:
-        | 'start_game'
-        | 'next_question'
-        | 'show_chart'
-        | 'show_leaderboard'
-        | 'end_game'
-        | 'close_room'
-        | 'kick_player'
-        | 'pardon_player'
-        | 'add_bots'
-        | 'update_settings';
+        | "start_game"
+        | "next_question"
+        | "show_chart"
+        | "show_leaderboard"
+        | "end_game"
+        | "close_room"
+        | "kick_player"
+        | "pardon_player"
+        | "add_bots"
+        | "update_settings";
       questionIndex?: number | undefined;
       participantId?: string | undefined;
       botCount?: number | undefined;
       settings?: Partial<GameSettings> | undefined;
-    }) => data
+    }) => data,
   )
   .handler(async ({ data }) => {
     const sessions = getLiveSessions();
     const store = getStore();
     const session = sessions[data.pin];
     if (!session) {
-      return { success: false, error: 'Session not found' };
+      return { success: false, error: "Session not found" };
     }
 
     const actor = await getActorFromRequest();
     const isAuthorized =
       (!!session.hostToken && data.hostToken === session.hostToken) ||
-      actor?.role === 'admin' ||
+      actor?.role === "admin" ||
       (!!actor && actor.id === session.hostId);
     if (!isAuthorized) {
       return {
         success: false,
-        error: 'Unauthorized: host control requires the room host token or administrator sign-in.',
+        error: "Unauthorized: host control requires the room host token or administrator sign-in.",
       };
     }
 
-    const resolveQuiz = (): Quiz | undefined => {
-      if (session.fullQuiz) return session.fullQuiz;
-      const found =
-        store.customQuizzes.find((q) => q.id === session.quizId || q.slug === session.quizId) ||
-        READY_MADE_PACKS.find((q) => q.id === session.quizId || q.slug === session.quizId) ||
-        READY_MADE_PACKS[0];
-      if (found) session.fullQuiz = found;
-      return found;
-    };
-
     switch (data.action) {
-      case 'start_game': {
-        session.phase = 'countdown';
-        session.updatedAt = Date.now();
+      case "start_game": {
+        session.phase = "countdown";
+        session.countdownStartedAt = Date.now();
+        session.updatedAt = session.countdownStartedAt;
         break;
       }
-      case 'next_question': {
-        const quiz = resolveQuiz();
-        const idx = data.questionIndex ?? session.currentQuestionIndex + 1;
-        const question = quiz?.questions[idx];
-        if (!quiz || !question || idx >= quiz.questions.length) {
-          session.phase = 'podium';
-          recalculateSessionMetrics(session);
-          persistCompletedExamToStore(session);
-        } else {
-          session.phase = 'question';
-          session.currentQuestionIndex = idx;
-          session.currentQuestion = question;
-          session.questionStartTime = Date.now();
-          session.questionEndTime = Date.now() + question.timeLimitSec * 1000;
-          recalculateSessionMetrics(session);
-
-          // Simulate bot answers if any bots exist in the session
-          Object.values(session.participants).forEach((p) => {
-            if (!p.isBot) return;
-            const isBotCorrect = Math.random() > 0.3;
-            const isWrittenStyle = question.type === 'written' || question.type === 'fill_blank';
-            const chosen = isWrittenStyle
-              ? []
-              : isBotCorrect
-                ? [...question.correctOptionIds]
-                : [
-                    question.options.find((o) => !question.correctOptionIds.includes(o.id))?.id ||
-                      question.options[0]?.id ||
-                      'opt-none',
-                  ].filter(Boolean);
-            const botWritten = isWrittenStyle
-              ? isBotCorrect
-                ? question.acceptedAnswers?.[0] || '1971'
-                : '0000'
-              : undefined;
-            const timeLimit = question.timeLimitSec || 20;
-            const timeTakenSec = Math.round(2 + Math.random() * Math.max(3, timeLimit * 0.6));
-            let pointsAwarded = 0;
-            let newStreak = p.streak;
-            if (isBotCorrect) {
-              newStreak += 1;
-              const mult = newStreak >= 3 ? 1.5 : newStreak >= 2 ? 1.2 : 1.0;
-              const speed = Math.max(0.5, 1 - (timeTakenSec / timeLimit) * 0.5);
-              pointsAwarded = Math.round((question.points || 1000) * speed * mult);
-            } else {
-              newStreak = 0;
-              if (session.settings.negativeMarking > 0) {
-                pointsAwarded = -Math.round((question.points || 1000) * session.settings.negativeMarking);
-              }
-            }
-            p.answers[question.id] = {
-              questionId: question.id,
-              selectedOptionIds: chosen,
-              writtenAnswer: botWritten,
-              isCorrect: isBotCorrect,
-              timeTakenSec,
-              pointsAwarded,
-              streakCount: newStreak,
-              answeredAt: Date.now(),
-            };
-            p.score = Math.max(0, p.score + pointsAwarded);
-            p.streak = newStreak;
-          });
-          recalculateSessionMetrics(session);
+      case "next_question": {
+        if (
+          data.questionIndex === 0 &&
+          session.phase === "question" &&
+          session.currentQuestionIndex === 0
+        ) {
+          break;
         }
+        advanceSessionToQuestion(session, store, data.questionIndex);
         break;
       }
-      case 'show_chart': {
-        session.phase = 'chart';
+      case "show_chart": {
+        session.phase = "chart";
         recalculateSessionMetrics(session);
         break;
       }
-      case 'show_leaderboard': {
-        session.phase = 'leaderboard';
+      case "show_leaderboard": {
+        session.phase = "leaderboard";
         recalculateSessionMetrics(session);
         break;
       }
-      case 'end_game': {
-        session.phase = 'podium';
+      case "end_game": {
+        session.phase = "podium";
         recalculateSessionMetrics(session);
         persistCompletedExamToStore(session);
         break;
       }
-      case 'kick_player': {
+      case "kick_player": {
         if (data.participantId && session.participants[data.participantId]) {
           delete session.participants[data.participantId];
           recalculateSessionMetrics(session);
         }
         break;
       }
-      case 'pardon_player': {
+      case "pardon_player": {
         const target = data.participantId ? session.participants[data.participantId] : undefined;
         if (target) {
           target.isSuspended = false;
@@ -2375,25 +2557,25 @@ export const serverHostControl = createServerFn({ method: 'POST' })
         }
         break;
       }
-      case 'update_settings': {
+      case "update_settings": {
         if (data.settings) {
           session.settings = { ...session.settings, ...data.settings };
           session.updatedAt = Date.now();
         }
         break;
       }
-      case 'add_bots': {
+      case "add_bots": {
         const count = data.botCount || 8;
         const sampleRegions = store.regions.length ? store.regions : DEFAULT_REGIONS;
         const botProfiles = [
-          { name: 'Cadet Tanvir', emoji: '🦅', bg: '#059669' },
-          { name: 'Cadet Sadia', emoji: '⚡', bg: '#0284c7' },
-          { name: 'Cadet Rafiul', emoji: '🛡️', bg: '#d97706' },
-          { name: 'Cadet Nusrat', emoji: '🎯', bg: '#0d9488' },
-          { name: 'Cadet Farhan', emoji: '🚀', bg: '#2563eb' },
-          { name: 'Cadet Mehnaz', emoji: '⭐', bg: '#e11d48' },
-          { name: 'Cadet Tahmid', emoji: '🔥', bg: '#ea580c' },
-          { name: 'Cadet Sumaiya', emoji: '🏆', bg: '#16a34a' },
+          { name: "Cadet Tanvir", emoji: "🦅", bg: "#059669" },
+          { name: "Cadet Sadia", emoji: "⚡", bg: "#0284c7" },
+          { name: "Cadet Rafiul", emoji: "🛡️", bg: "#d97706" },
+          { name: "Cadet Nusrat", emoji: "🎯", bg: "#0d9488" },
+          { name: "Cadet Farhan", emoji: "🚀", bg: "#2563eb" },
+          { name: "Cadet Mehnaz", emoji: "⭐", bg: "#e11d48" },
+          { name: "Cadet Tahmid", emoji: "🔥", bg: "#ea580c" },
+          { name: "Cadet Sumaiya", emoji: "🏆", bg: "#16a34a" },
         ];
         botProfiles.slice(0, count).forEach((b, idx) => {
           const reg = sampleRegions[idx % sampleRegions.length] || DEFAULT_REGIONS[0];
@@ -2405,8 +2587,8 @@ export const serverHostControl = createServerFn({ method: 'POST' })
             avatarEmoji: b.emoji,
             avatarBg: b.bg,
             rollNumber: `2026-${200 + idx + 1}`,
-            regionId: reg?.id || 'reg-dhaka',
-            regionName: reg?.nameEn || 'Dhaka Range',
+            regionId: reg?.id || "reg-dhaka",
+            regionName: reg?.nameEn || "Dhaka Range",
             score: 0,
             streak: 0,
             rank: Object.keys(session.participants).length + 1,
@@ -2419,7 +2601,7 @@ export const serverHostControl = createServerFn({ method: 'POST' })
         recalculateSessionMetrics(session);
         break;
       }
-      case 'close_room': {
+      case "close_room": {
         delete sessions[data.pin];
         scheduleLiveSessionsPersist();
         return {

@@ -1,5 +1,5 @@
-import initSqlJs, { Database, SqlJsStatic } from 'sql.js';
-import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
+import initSqlJs, { Database, SqlJsStatic } from "sql.js";
+import sqlWasmUrl from "sql.js/dist/sql-wasm.wasm?url";
 
 class SQLiteEngine {
   private SQL: SqlJsStatic | null = null;
@@ -8,7 +8,7 @@ class SQLiteEngine {
   private initPromise: Promise<void> | null = null;
 
   constructor() {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       this.initPromise = this.init();
     }
   }
@@ -18,16 +18,16 @@ class SQLiteEngine {
 
     try {
       this.SQL = await initSqlJs({
-        locateFile: () => sqlWasmUrl || '/sql-wasm.wasm',
+        locateFile: () => sqlWasmUrl || "/sql-wasm.wasm",
       });
 
-      const savedDbBase64 = localStorage.getItem('onnesha_sqlite_db_bin');
+      const savedDbBase64 = localStorage.getItem("onnesha_sqlite_db_bin");
       if (savedDbBase64) {
         try {
           const binary = Uint8Array.from(atob(savedDbBase64), (c) => c.charCodeAt(0));
           this.db = new this.SQL.Database(binary);
         } catch (e) {
-          console.warn('Failed to load saved SQLite binary, creating fresh DB:', e);
+          console.warn("Failed to load saved SQLite binary, creating fresh DB:", e);
           this.db = new this.SQL.Database();
         }
       } else {
@@ -37,16 +37,16 @@ class SQLiteEngine {
       this.createTables();
       this.isInitialized = true;
     } catch (err) {
-      console.warn('SQLite Engine local wasm notice, attempting CDN fallback:', err);
+      console.warn("SQLite Engine local wasm notice, attempting CDN fallback:", err);
       try {
         this.SQL = await initSqlJs({
-          locateFile: () => 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.12.0/sql-wasm.wasm',
+          locateFile: () => "https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.12.0/sql-wasm.wasm",
         });
         this.db = new this.SQL.Database();
         this.createTables();
         this.isInitialized = true;
       } catch (fallbackErr) {
-        console.warn('SQLite Engine fallback notice:', fallbackErr);
+        console.warn("SQLite Engine fallback notice:", fallbackErr);
       }
     }
   }
@@ -190,6 +190,7 @@ class SQLiteEngine {
         phone TEXT,
         studentCount TEXT,
         message TEXT,
+        status TEXT,
         createdAt TEXT
       );
 
@@ -234,26 +235,27 @@ class SQLiteEngine {
 
     // Safe column migrations for any pre-existing local DBs
     const migrations = [
-      'ALTER TABLE roster_students ADD COLUMN phone TEXT',
-      'ALTER TABLE roster_students ADD COLUMN regionId TEXT',
-      'ALTER TABLE roster_students ADD COLUMN regionName TEXT',
-      'ALTER TABLE roster_students ADD COLUMN passcode TEXT',
-      'ALTER TABLE certificates ADD COLUMN regionName TEXT',
-      'ALTER TABLE exam_sessions ADD COLUMN allowedRegionId TEXT',
-      'ALTER TABLE exam_sessions ADD COLUMN allowedRegionName TEXT',
-      'ALTER TABLE exam_results ADD COLUMN phone TEXT',
-      'ALTER TABLE exam_results ADD COLUMN regionId TEXT',
-      'ALTER TABLE exam_results ADD COLUMN regionName TEXT',
-      'ALTER TABLE quizzes ADD COLUMN courseId TEXT',
-      'ALTER TABLE quizzes ADD COLUMN courseTitle TEXT',
-      'ALTER TABLE quizzes ADD COLUMN quizNumber INTEGER',
-      'ALTER TABLE quizzes ADD COLUMN instructorId TEXT',
-      'ALTER TABLE quizzes ADD COLUMN instructorName TEXT',
-      'ALTER TABLE users ADD COLUMN institution TEXT',
-      'ALTER TABLE users ADD COLUMN designation TEXT',
-      'ALTER TABLE users ADD COLUMN plan TEXT',
-      'ALTER TABLE users ADD COLUMN assignedCourseIdsJson TEXT',
-      'ALTER TABLE users ADD COLUMN status TEXT',
+      "ALTER TABLE roster_students ADD COLUMN phone TEXT",
+      "ALTER TABLE roster_students ADD COLUMN regionId TEXT",
+      "ALTER TABLE roster_students ADD COLUMN regionName TEXT",
+      "ALTER TABLE roster_students ADD COLUMN passcode TEXT",
+      "ALTER TABLE certificates ADD COLUMN regionName TEXT",
+      "ALTER TABLE exam_sessions ADD COLUMN allowedRegionId TEXT",
+      "ALTER TABLE exam_sessions ADD COLUMN allowedRegionName TEXT",
+      "ALTER TABLE exam_results ADD COLUMN phone TEXT",
+      "ALTER TABLE exam_results ADD COLUMN regionId TEXT",
+      "ALTER TABLE exam_results ADD COLUMN regionName TEXT",
+      "ALTER TABLE quizzes ADD COLUMN courseId TEXT",
+      "ALTER TABLE quizzes ADD COLUMN courseTitle TEXT",
+      "ALTER TABLE quizzes ADD COLUMN quizNumber INTEGER",
+      "ALTER TABLE quizzes ADD COLUMN instructorId TEXT",
+      "ALTER TABLE quizzes ADD COLUMN instructorName TEXT",
+      "ALTER TABLE users ADD COLUMN institution TEXT",
+      "ALTER TABLE users ADD COLUMN designation TEXT",
+      "ALTER TABLE users ADD COLUMN plan TEXT",
+      "ALTER TABLE users ADD COLUMN assignedCourseIdsJson TEXT",
+      "ALTER TABLE users ADD COLUMN status TEXT",
+      "ALTER TABLE sales_leads ADD COLUMN status TEXT",
     ];
     for (const sql of migrations) {
       try {
@@ -267,21 +269,21 @@ class SQLiteEngine {
   }
 
   public persist(): void {
-    if (!this.db || typeof window === 'undefined') return;
+    if (!this.db || typeof window === "undefined") return;
     try {
       const data = this.db.export();
       // Guard against 5MB localStorage overflow on huge datasets
       if (data.byteLength > 3_500_000) return;
-      let binary = '';
+      let binary = "";
       const len = data.byteLength;
       for (let i = 0; i < len; i++) {
         const byte = data[i];
         if (byte !== undefined) binary += String.fromCharCode(byte);
       }
       const base64 = btoa(binary);
-      localStorage.setItem('onnesha_sqlite_db_bin', base64);
+      localStorage.setItem("onnesha_sqlite_db_bin", base64);
     } catch (e) {
-      console.warn('SQLite persistence error:', e);
+      console.warn("SQLite persistence error:", e);
     }
   }
 
@@ -303,7 +305,7 @@ class SQLiteEngine {
       stmt.free();
       return results;
     } catch (e) {
-      console.warn('SQLite query error:', sql, e);
+      console.warn("SQLite query error:", sql, e);
       return [];
     }
   }

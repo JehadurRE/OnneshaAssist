@@ -124,7 +124,11 @@ function LoginPage() {
         <div className="w-full max-w-md bento-card p-6 sm:p-8 shadow-glow">
           {/* Brand Emblem & Header */}
           <div className="text-center">
-            <img src={onnesha.url} alt="Onnesha" className="h-11 mx-auto rounded-lg object-contain mb-3" />
+            <img
+              src={onnesha.url}
+              alt="Onnesha"
+              className="h-11 mx-auto rounded-lg object-contain mb-3"
+            />
             <h1 className="font-display text-2xl font-black text-foreground tracking-tight">
               {lang === "bn" ? "অন্বেষা কন্ট্রোল ও স্টুডিও লগইন" : "Sign In to Onnesha Portal"}
             </h1>
@@ -220,38 +224,44 @@ function LoginPage() {
                 </div>
               </div>
 
-              {/* Quick Credentials Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={loadAdminCredentials}
-                  className="text-left rounded-xl border border-amber-500/40 bg-amber-500/10 p-2.5 hover:bg-amber-500/15 transition"
-                >
-                  <div className="flex items-center gap-1.5 text-[11px] font-black text-amber-600 dark:text-amber-400">
-                    <Shield className="h-3.5 w-3.5" />
-                    <span>Super Admin Panel</span>
-                  </div>
-                  <div className="mt-1 font-mono text-[10px] text-foreground font-bold truncate">
-                    admin@onnesha.app
-                  </div>
-                  <div className="font-mono text-[10px] text-muted-foreground">Pass: admin123</div>
-                </button>
+              {/* Quick Credentials Cards (Dev Sandbox Only) */}
+              {import.meta.env.DEV && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={loadAdminCredentials}
+                    className="text-left rounded-xl border border-amber-500/40 bg-amber-500/10 p-2.5 hover:bg-amber-500/15 transition"
+                  >
+                    <div className="flex items-center gap-1.5 text-[11px] font-black text-amber-600 dark:text-amber-400">
+                      <Shield className="h-3.5 w-3.5" />
+                      <span>Super Admin Panel</span>
+                    </div>
+                    <div className="mt-1 font-mono text-[10px] text-foreground font-bold truncate">
+                      admin@onnesha.app
+                    </div>
+                    <div className="font-mono text-[10px] text-muted-foreground">
+                      Pass: admin123
+                    </div>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={loadInstructorCredentials}
-                  className="text-left rounded-xl border border-primary/40 bg-primary/10 p-2.5 hover:bg-primary/15 transition"
-                >
-                  <div className="flex items-center gap-1.5 text-[11px] font-black text-primary">
-                    <GraduationCap className="h-3.5 w-3.5" />
-                    <span>Instructor Studio</span>
-                  </div>
-                  <div className="mt-1 font-mono text-[10px] text-foreground font-bold truncate">
-                    instructor@onnesha.app
-                  </div>
-                  <div className="font-mono text-[10px] text-muted-foreground">Pass: instructor123</div>
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={loadInstructorCredentials}
+                    className="text-left rounded-xl border border-primary/40 bg-primary/10 p-2.5 hover:bg-primary/15 transition"
+                  >
+                    <div className="flex items-center gap-1.5 text-[11px] font-black text-primary">
+                      <GraduationCap className="h-3.5 w-3.5" />
+                      <span>Instructor Studio</span>
+                    </div>
+                    <div className="mt-1 font-mono text-[10px] text-foreground font-bold truncate">
+                      instructor@onnesha.app
+                    </div>
+                    <div className="font-mono text-[10px] text-muted-foreground">
+                      Pass: instructor123
+                    </div>
+                  </button>
+                </div>
+              )}
 
               <button
                 type="submit"
@@ -310,7 +320,9 @@ function LoginPage() {
                   </div>
                   <div className="flex items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
                     <CheckCircle2 className="h-3.5 w-3.5" />
-                    <span>Security OTP has been dispatched to {phone}. Please check your phone.</span>
+                    <span>
+                      Security OTP has been dispatched to {phone}. Please check your phone.
+                    </span>
                   </div>
                 </div>
               )}
