@@ -13,6 +13,7 @@ import { gameEngine, JoinSessionParams, JoinSessionResult } from "@/lib/game-eng
 import { audioEngine } from "@/lib/audio-engine";
 import { proctorEngine, ProctorIncident } from "@/lib/proctor-engine";
 import { db, formatDeterministicCertNumber } from "@/lib/db";
+import { computeTotalQuizMarks, resolveOrgName } from "@/lib/scoring";
 import { serverGetActiveRooms } from "@/lib/server-session";
 import { READY_MADE_PACKS } from "@/lib/mock-data";
 import { CertificateData, Course, GameSession, Participant, Question, Quiz } from "@/lib/types";
@@ -40,8 +41,8 @@ import {
 } from "lucide-react";
 
 interface PlaySearch {
-  pin?: string;
-  practice?: string;
+  pin?: string | undefined;
+  practice?: string | undefined;
 }
 
 interface ActiveRoomSummary {
@@ -58,8 +59,8 @@ interface ActiveRoomSummary {
 export const Route = createFileRoute("/play")({
   validateSearch: (search: Record<string, unknown>): PlaySearch => {
     return {
-      pin: typeof search.pin === "string" ? search.pin : undefined,
-      practice: typeof search.practice === "string" ? search.practice : undefined,
+      pin: typeof search["pin"] === "string" ? search["pin"] : undefined,
+      practice: typeof search["practice"] === "string" ? search["practice"] : undefined,
     };
   },
   head: () => ({
@@ -420,6 +421,16 @@ function PlayPage() {
       ? formatDeterministicCertNumber(session.pin, participant.rollNumber, participant.rank)
       : "";
 
+  const branding = db.getBranding();
+  const certQuestions = (() => {
+    const completed = session?.completedQuestions || [];
+    if (completed.length > 0 && completed.length >= (session?.totalQuestions || 0)) {
+      return completed;
+    }
+    return session?.quizId ? db.getQuizBySlug(session.quizId)?.questions : undefined;
+  })();
+  const certTotalMarks = computeTotalQuizMarks(certQuestions, session?.totalQuestions || 1);
+
   const certificateData: CertificateData | null =
     participant && session
       ? {
@@ -432,14 +443,14 @@ function PlayPage() {
           scorePct: studentStats.accuracyPct,
           marksObtained: participant.score,
           score: participant.score,
-          totalMarks: session.totalQuestions * 1000,
-          totalPoints: session.totalQuestions * 1000,
+          totalMarks: certTotalMarks,
+          totalPoints: certTotalMarks,
           rank: participant.rank,
           totalParticipants: totalParticipantsCount,
           accuracyPercent: studentStats.accuracyPct,
           issueDate: new Date().toISOString().slice(0, 10),
-          organizationName: "Onnesha Assessment & Examination Arena",
-          institutionName: db.getBranding().institutionTitle || "Onnesha Assessment Arena",
+          organizationName: resolveOrgName(branding),
+          institutionName: branding.institutionTitle || "Onnesha Assessment Arena",
           instructorName: "Chief Assessment Officer",
           verificationUrl:
             typeof window !== "undefined"

@@ -1,4 +1,5 @@
 import { db, DbSmsLog } from './db';
+import { serverSendGuardianSms } from './server-session';
 
 export interface SmsPayload {
   studentName: string;
@@ -19,33 +20,58 @@ export class SmsGateway {
   static async sendGuardianScorecard(payload: SmsPayload): Promise<{ success: boolean; log: DbSmsLog }> {
     const messageText = this.formatMessage(payload);
     const cleanPhone = payload.guardianPhone.replace(/\D/g, '');
+    let status: 'delivered' | 'queued' | 'failed' = 'queued';
+
+    try {
+      const serverRes = await serverSendGuardianSms({
+        data: {
+          guardianPhone: payload.guardianPhone,
+          studentName: payload.studentName,
+          rollNumber: payload.rollNumber,
+          quizTitle: payload.quizTitle,
+          score: payload.score,
+          totalPoints: payload.totalPoints,
+          rank: payload.rank,
+          totalParticipants: payload.totalParticipants,
+        },
+      });
+      if (serverRes.configured && serverRes.log) {
+        status = serverRes.log.status;
+        const localLog = db.logSms({
+          recipientPhone: payload.guardianPhone,
+          studentName: payload.studentName,
+          rollNumber: payload.rollNumber,
+          quizTitle: payload.quizTitle,
+          score: payload.score,
+          rank: payload.rank,
+          messageText,
+          status,
+        });
+        return { success: serverRes.success, log: localLog };
+      }
+    } catch {
+      // Optional local key or offline queue fallback
+    }
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('onnesha_sms_token') : null;
-    let status: 'delivered' | 'queued' | 'failed' = 'delivered';
-
     if (token && token.trim().length > 5) {
       try {
         const url = `https://api.greenweb.com.bd/api.php?token=${encodeURIComponent(token.trim())}&to=${encodeURIComponent(cleanPhone)}&message=${encodeURIComponent(messageText)}`;
         const response = await fetch(url, { method: 'GET' });
         if (response.ok) {
-          const resText = await response.text();
-          if (resText.toLowerCase().includes('ok') || resText.toLowerCase().includes('success') || resText.toLowerCase().includes('100')) {
-            status = 'delivered';
-          } else {
-            console.warn('GreenWeb SMS response note:', resText);
-            status = 'queued';
-          }
+          const resText = (await response.text()).toLowerCase();
+          status =
+            resText.includes('ok') || resText.includes('success') || resText.includes('100')
+              ? 'delivered'
+              : 'queued';
         } else {
           status = 'failed';
         }
-      } catch (err) {
-        console.warn('SMS Gateway network dispatch notice:', err);
+      } catch {
         status = 'queued';
       }
     } else {
-      // Local recorded dispatch mode
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      status = 'delivered';
+      status = 'failed';
     }
 
     const log = db.logSms({
@@ -59,7 +85,6 @@ export class SmsGateway {
       status,
     });
 
-    console.log(`[SMS DISPATCHED to ${payload.guardianPhone}]:`, messageText);
     return { success: status !== 'failed', log };
   }
 
@@ -71,8 +96,10 @@ export class SmsGateway {
     let failed = 0;
 
     for (let i = 0; i < payloads.length; i++) {
+      const item = payloads[i];
+      if (!item) continue;
       try {
-        const res = await this.sendGuardianScorecard(payloads[i]);
+        const res = await this.sendGuardianScorecard(item);
         if (res.success) {
           sent++;
         } else {

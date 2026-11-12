@@ -7,11 +7,17 @@ services:
     numInstances: 1
     buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
+    disk:
+      name: onnesha-data
+      mountPath: /opt/render/project/src/.data
+      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
       - key: NITRO_PRESET
         value: node-server
+      - key: DATA_DIR
+        value: /opt/render/project/src/.data
 
 
 

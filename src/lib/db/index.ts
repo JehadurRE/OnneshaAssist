@@ -13,6 +13,7 @@ import {
 import { DEFAULT_COURSES, DEFAULT_REGIONS, DEFAULT_USERS, READY_MADE_PACKS, SAMPLE_ROSTER } from '../mock-data';
 import { sqliteEngine } from './sqlite-engine';
 import { serverAdminMutateStore, serverGetBootstrapData } from '../server-session';
+import { computeTotalQuizMarks, resolveOrgName } from '../scoring';
 
 export interface DbTransaction {
   id: string;
@@ -318,12 +319,12 @@ class OnneshaDatabase {
       const existing = sqliteEngine.query<RosterStudent>('SELECT * FROM roster_students');
       existing.forEach((s, idx) => {
         if (!s.regionId || !s.phone) {
-          const fallbackReg = DEFAULT_REGIONS[idx % DEFAULT_REGIONS.length];
+          const fallbackReg = DEFAULT_REGIONS[idx % DEFAULT_REGIONS.length] || DEFAULT_REGIONS[0];
           sqliteEngine.run(
             'UPDATE roster_students SET regionId = ?, regionName = ?, phone = ? WHERE id = ?',
             [
-              s.regionId || fallbackReg.id,
-              s.regionName || fallbackReg.nameEn,
+              s.regionId || fallbackReg?.id || 'reg-dhaka',
+              s.regionName || fallbackReg?.nameEn || 'Dhaka Range',
               s.phone || s.guardianPhone || `01711000${101 + idx}`,
               s.id,
             ]
@@ -668,8 +669,8 @@ class OnneshaDatabase {
       ...student,
       id,
       phone: student.phone || student.guardianPhone || '',
-      regionId: matchedReg.id,
-      regionName: matchedReg.nameEn,
+      regionId: matchedReg?.id || 'reg-dhaka',
+      regionName: matchedReg?.nameEn || 'Dhaka Range',
       guardianPhone: student.guardianPhone || student.phone || '',
       createdAt,
     };
@@ -738,7 +739,7 @@ class OnneshaDatabase {
 
     const totalScore = participantsList.reduce((acc, p) => acc + p.score, 0);
     const avgScore = count > 0 ? Math.round(totalScore / count) : 0;
-    const highestScore = count > 0 ? participantsList[0].score : 0;
+    const highestScore = participantsList[0]?.score ?? 0;
 
     sqliteEngine.run(
       'INSERT OR REPLACE INTO exam_sessions (id, pin, quizId, quizTitleEn, quizTitleBn, hostId, allowedRegionId, allowedRegionName, totalQuestions, participantCount, averageScore, highestScore, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -795,6 +796,11 @@ class OnneshaDatabase {
       );
 
       const branding = this.getBranding();
+      const quizQuestions =
+        session.completedQuestions && session.completedQuestions.length >= session.totalQuestions
+          ? session.completedQuestions
+          : this.getQuizBySlug(session.quizId)?.questions || [];
+      const computedTotalPoints = computeTotalQuizMarks(quizQuestions, session.totalQuestions);
       const certNo = formatDeterministicCertNumber(session.pin, roll, idx + 1);
       this.issueCertificate({
         certificateNumber: certNo,
@@ -803,15 +809,12 @@ class OnneshaDatabase {
         regionName: p.regionName || 'Dhaka Range',
         quizTitle: session.quizTitleBn || session.quizTitleEn || 'Institutional Assessment',
         score: p.score,
-        totalPoints: session.totalQuestions * 1000,
+        totalPoints: computedTotalPoints,
         rank: p.rank || idx + 1,
         totalParticipants: count,
         accuracyPercent: accuracy,
         issueDate: createdAt.slice(0, 10),
-        organizationName:
-          branding.showPartnerLogo && branding.partnerName
-            ? `Onnesha × ${branding.partnerName}`
-            : 'Onnesha Assessment & Examination Arena',
+        organizationName: resolveOrgName(branding),
         institutionName: branding.institutionTitle || 'Onnesha Assessment Arena',
         instructorName: 'Chief Assessment Officer',
         verificationUrl:
@@ -879,8 +882,9 @@ class OnneshaDatabase {
 
     // Deterministic resolution ONLY when backed by an actual examResult record
     const match = certNo.trim().toUpperCase().match(/^ONN-([A-Z0-9]{4})-([A-Z0-9]{4,6})$/);
-    if (match) {
-      const [, pinPrefix, rollSuffix] = match;
+    if (match && match[1] && match[2]) {
+      const pinPrefix = match[1];
+      const rollSuffix = match[2];
       const results = this.getAllExamResults();
       const matchedResult = results.find((r) => {
         const cleanRoll = (r.rollNumber || '')

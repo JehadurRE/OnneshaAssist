@@ -15,9 +15,9 @@ export interface ProctorIncident {
 }
 
 export interface ProctorOptions {
-  enforceFullscreen?: boolean;
-  blockCopyPaste?: boolean;
-  onFullscreenChange?: (isFullscreen: boolean) => void;
+  enforceFullscreen?: boolean | undefined;
+  blockCopyPaste?: boolean | undefined;
+  onFullscreenChange?: ((isFullscreen: boolean) => void) | undefined;
 }
 
 type ProctorCallback = (incident: ProctorIncident) => void;

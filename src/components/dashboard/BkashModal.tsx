@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { PricingTier } from '@/lib/types';
 import { useLanguage } from '@/lib/i18n';
 import { db } from '@/lib/db';
-import { CheckCircle2, Lock, Printer, Receipt, ShieldCheck, X } from 'lucide-react';
+import { serverRecordTransaction } from '@/lib/server-session';
+import { CheckCircle2, Download, Lock, Receipt, ShieldCheck, X } from 'lucide-react';
 
 interface BkashModalProps {
   tier: PricingTier | null;
@@ -29,7 +30,8 @@ export const BkashModal: React.FC<BkashModalProps> = ({
 
   if (!isOpen || !tier) return null;
 
-  const price = billingCycle === 'yearly' ? tier.yearlyPrice : tier.monthlyPrice;
+  const rawPrice = billingCycle === 'yearly' ? tier.yearlyPrice : tier.monthlyPrice;
+  const price = rawPrice ?? 0;
 
   const handleSendOtp = (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,6 +60,16 @@ export const BkashModal: React.FC<BkashModalProps> = ({
         method: 'bkash',
         status: 'completed',
       });
+      serverRecordTransaction({
+        data: {
+          planId: tier.id,
+          amount: price,
+          msisdn: phone,
+          trxId: generatedTrxId,
+          method: 'bkash',
+          status: 'completed',
+        },
+      }).catch(() => {});
 
       setTrxId(generatedTrxId);
       setIsProcessing(false);
@@ -188,11 +200,30 @@ export const BkashModal: React.FC<BkashModalProps> = ({
               <div className="pt-2 flex gap-2">
                 <button
                   type="button"
-                  onClick={() => window.print()}
+                  onClick={() => {
+                    const receiptText = [
+                      'ONNESHA ARENA - INSTITUTIONAL PAYMENT RECEIPT',
+                      `Plan: ${tier.nameEn} (${billingCycle})`,
+                      `Amount: BDT ${price.toLocaleString()}`,
+                      `Transaction ID: ${trxId}`,
+                      `MSISDN: ${phone}`,
+                      `Date: ${new Date().toISOString()}`,
+                      'Status: COMPLETED',
+                    ].join('\n');
+                    const blob = new Blob([receiptText], { type: 'text/plain;charset=utf-8' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `Onnesha-Receipt-${trxId}.txt`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    setTimeout(() => URL.revokeObjectURL(url), 5000);
+                  }}
                   className="flex-1 flex items-center justify-center gap-1 rounded-2xl border border-border bg-background py-2.5 text-xs font-bold text-foreground hover:bg-accent"
                 >
-                  <Printer className="h-3.5 w-3.5" />
-                  <span>Print Receipt</span>
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Save Receipt</span>
                 </button>
                 <button
                   type="button"

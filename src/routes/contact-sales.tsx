@@ -6,6 +6,7 @@ import { Footer } from "@/components/layout/Footer";
 import { Building, CheckCircle2, Mail, Phone, Send, User } from "lucide-react";
 
 import { db } from "@/lib/db";
+import { serverSubmitSalesLead } from "@/lib/server-session";
 
 export const Route = createFileRoute("/contact-sales")({
   head: () => ({
@@ -39,6 +40,16 @@ function ContactSalesPage() {
       studentCount: formData.students,
       message: formData.message,
     });
+    serverSubmitSalesLead({
+      data: {
+        name: formData.name,
+        organization: formData.org,
+        email: formData.email,
+        phone: formData.phone,
+        studentCount: formData.students,
+        message: formData.message,
+      },
+    }).catch(() => {});
     setSubmitted(true);
   };
 

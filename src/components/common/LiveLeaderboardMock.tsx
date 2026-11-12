@@ -72,11 +72,13 @@ export const LiveLeaderboardMock: React.FC<{ sessionPin?: string }> = ({ session
         setCandidates((prev) => {
           const next = [...prev];
           const randomIdx = Math.floor(Math.random() * next.length);
+          const target = next[randomIdx];
+          if (!target) return prev;
           const bonus = Math.floor(Math.random() * 80) + 20;
           next[randomIdx] = {
-            ...next[randomIdx],
-            score: next[randomIdx].score + bonus,
-            streak: Math.min(8, next[randomIdx].streak + 1),
+            ...target,
+            score: target.score + bonus,
+            streak: Math.min(8, target.streak + 1),
             status: 'transmitting',
           };
           return next.sort((a, b) => b.score - a.score);

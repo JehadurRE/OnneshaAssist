@@ -4,7 +4,8 @@ import { useLanguage } from '@/lib/i18n';
 import { Confetti } from '@/components/common/Confetti';
 import { CertificateView } from '@/components/common/CertificateView';
 import { db, formatDeterministicCertNumber } from '@/lib/db';
-import { Award, FileSpreadsheet, Printer, RotateCcw, ShieldCheck, Trophy, Users } from 'lucide-react';
+import { downloadMeritGazettePdf } from '@/lib/pdf-generator';
+import { Award, FileSpreadsheet, FileDown, RotateCcw, ShieldCheck, Trophy, Users, X } from 'lucide-react';
 import { audioEngine } from '@/lib/audio-engine';
 
 interface HostPodiumProps {
@@ -35,6 +36,9 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
         ? Math.round((correctCount / session.totalQuestions) * 100)
         : 100;
     const branding = db.getBranding();
+    const totalMarks = session.completedQuestions?.length
+      ? session.completedQuestions.reduce((acc, q) => acc + (q.points || 1000), 0)
+      : session.totalQuestions * 1000;
     const cert: CertificateData = {
       id: `cert-${certNo.toLowerCase()}`,
       certificateNumber: certNo,
@@ -46,8 +50,8 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
       accuracyPercent: accuracyPct,
       marksObtained: player.score,
       score: player.score,
-      totalMarks: session.totalQuestions * 1000,
-      totalPoints: session.totalQuestions * 1000,
+      totalMarks,
+      totalPoints: totalMarks,
       rank,
       totalParticipants: sorted.length,
       issueDate: new Date().toISOString().slice(0, 10),
@@ -215,11 +219,40 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
           </button>
 
           <button
-            onClick={() => window.print()}
+            onClick={() => {
+              const branding = db.getBranding();
+              const participants = sorted.map((p, idx) => {
+                const ansList = Object.values(p.answers || {});
+                const correctCount = ansList.filter((a) => a.isCorrect).length;
+                const incorrectCount = ansList.filter(
+                  (a) =>
+                    !a.isCorrect &&
+                    ((a.selectedOptionIds && a.selectedOptionIds.length > 0) || !!a.writtenAnswer)
+                ).length;
+                return {
+                  id: p.id,
+                  nickname: p.nickname,
+                  rollNumber: p.rollNumber || `2026-${100 + idx + 1}`,
+                  regionId: p.regionId,
+                  regionName: p.regionName,
+                  finalScore: p.score,
+                  rank: idx + 1,
+                  correctCount,
+                  incorrectCount,
+                  unansweredCount: Math.max(0, session.totalQuestions - ansList.length),
+                };
+              });
+              downloadMeritGazettePdf({
+                quizTitle: session.quizTitleBn || session.quizTitleEn,
+                regionLabel: session.settings.allowedRegionName || 'All Divisions',
+                participants,
+                branding,
+              }).catch(() => {});
+            }}
             className="flex items-center gap-2 rounded-2xl border border-border bg-background px-5 py-3 text-xs font-bold text-foreground shadow-sm hover:bg-accent transition-all"
           >
-            <Printer className="h-4 w-4 text-primary" />
-            <span>{lang === 'bn' ? 'অফিসিয়াল মেধা তালিকা প্রিন্ট' : 'Print Merit Notice'}</span>
+            <FileDown className="h-4 w-4 text-primary" />
+            <span>{lang === 'bn' ? 'অফিসিয়াল মেধা তালিকা (PDF)' : 'Download Merit Gazette PDF'}</span>
           </button>
 
           <button
@@ -234,14 +267,17 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
 
       {/* Certificate Modal Viewer */}
       {selectedCert && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4 overflow-y-auto animate-in fade-in">
-          <div className="relative my-8 w-full max-w-3xl">
-            <button
-              onClick={() => setSelectedCert(null)}
-              className="absolute -top-12 right-0 rounded-full bg-white/20 px-4 py-1.5 text-xs font-bold text-white hover:bg-white/30"
-            >
-              ✕ Close
-            </button>
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75 backdrop-blur-md p-2 sm:p-6 animate-in fade-in">
+          <div className="mx-auto my-2 sm:my-6 w-full max-w-4xl">
+            <div className="mb-3 flex justify-end">
+              <button
+                onClick={() => setSelectedCert(null)}
+                className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-4 py-2 text-xs font-bold text-white hover:bg-white/30"
+              >
+                <X className="h-4 w-4" />
+                <span>Close</span>
+              </button>
+            </div>
             <CertificateView certificate={selectedCert} />
           </div>
         </div>

@@ -33,9 +33,9 @@ interface DirectoryCandidate {
 interface PlayerLobbyProps {
   pin: string;
   onJoinVerified: (params: JoinSessionParams) => Promise<JoinSessionResult>;
-  requireRoll?: boolean;
-  allowedRegionId?: string;
-  allowedRegionName?: string;
+  requireRoll?: boolean | undefined;
+  allowedRegionId?: string | undefined;
+  allowedRegionName?: string | undefined;
 }
 
 const CADET_CRESTS = ['🦅', '⚡', '🛡️', '🎯', '🚀', '⭐', '🔥', '🐯'];
@@ -111,7 +111,7 @@ export const PlayerLobby: React.FC<PlayerLobbyProps> = ({
         }
       } catch {
         if (active) {
-          setSelectedRegionId(DEFAULT_REGIONS[0].id);
+          setSelectedRegionId(DEFAULT_REGIONS[0]?.id || 'reg-dhaka');
         }
       } finally {
         if (active) setIsLoadingDirectory(false);
@@ -199,8 +199,8 @@ export const PlayerLobby: React.FC<PlayerLobbyProps> = ({
         pin,
         candidateId: matchedCandidate.id,
         nickname: matchedCandidate.name,
-        avatarEmoji: selectedCrest,
-        avatarBg: selectedColor,
+        avatarEmoji: selectedCrest || '🦅',
+        avatarBg: selectedColor || '#6366f1',
         rollNumber: matchedCandidate.rollNumber,
         phone: matchedCandidate.phone,
         regionId: matchedCandidate.regionId,
@@ -238,8 +238,8 @@ export const PlayerLobby: React.FC<PlayerLobbyProps> = ({
         pin,
         candidateId: selectedDirectoryCandidate.id,
         nickname: selectedDirectoryCandidate.name,
-        avatarEmoji: selectedCrest,
-        avatarBg: selectedColor,
+        avatarEmoji: selectedCrest || '🦅',
+        avatarBg: selectedColor || '#6366f1',
         rollNumber: selectedDirectoryCandidate.rollNumber,
         regionId: selectedDirectoryCandidate.regionId,
         regionName: selectedDirectoryCandidate.regionName,
@@ -268,12 +268,12 @@ export const PlayerLobby: React.FC<PlayerLobbyProps> = ({
     const res = await onJoinVerified({
       pin,
       nickname: customName.trim(),
-      avatarEmoji: selectedCrest,
-      avatarBg: selectedColor,
+      avatarEmoji: selectedCrest || '🦅',
+      avatarBg: selectedColor || '#6366f1',
       rollNumber: customRoll.trim(),
       phone: customPhone.trim(),
-      regionId: regObj.id,
-      regionName: regObj.nameEn,
+      regionId: regObj?.id || 'reg-dhaka',
+      regionName: regObj?.nameEn || 'Dhaka Range',
       verificationNumber: customPhone.trim(),
     });
     setIsSubmitting(false);

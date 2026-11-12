@@ -30,8 +30,8 @@ interface QueuedAnswerPayload {
   participantId: string;
   questionId: string;
   selectedOptionIds: string[];
-  writtenAnswer?: string;
-  seatToken?: string;
+  writtenAnswer?: string | undefined;
+  seatToken?: string | undefined;
   clientAnsweredAt: number;
 }
 
@@ -51,20 +51,20 @@ export interface JoinSessionParams {
   nickname: string;
   avatarEmoji: string;
   avatarBg: string;
-  rollNumber?: string;
-  phone?: string;
-  regionId?: string;
-  regionName?: string;
-  candidateId?: string;
-  verificationNumber?: string;
+  rollNumber?: string | undefined;
+  phone?: string | undefined;
+  regionId?: string | undefined;
+  regionName?: string | undefined;
+  candidateId?: string | undefined;
+  verificationNumber?: string | undefined;
 }
 
 export interface JoinSessionResult {
   success: boolean;
-  reconnected?: boolean;
-  participant?: Participant;
-  error?: string;
-  code?: string;
+  reconnected?: boolean | undefined;
+  participant?: Participant | undefined;
+  error?: string | undefined;
+  code?: string | undefined;
 }
 
 class RealtimeGameEngine {
@@ -187,6 +187,21 @@ class RealtimeGameEngine {
     return localStorage.getItem(`onnesha_seat_pid_${pin}`) || undefined;
   }
 
+  public getStoredHostToken(pin: string): string | undefined {
+    if (typeof window === 'undefined') return undefined;
+    return (
+      sessionStorage.getItem(`onnesha_host_token_${pin}`) ||
+      localStorage.getItem(`onnesha_host_token_${pin}`) ||
+      undefined
+    );
+  }
+
+  public saveStoredHostToken(pin: string, hostToken?: string) {
+    if (typeof window === 'undefined' || !hostToken) return;
+    sessionStorage.setItem(`onnesha_host_token_${pin}`, hostToken);
+    localStorage.setItem(`onnesha_host_token_${pin}`, hostToken);
+  }
+
   public getSession(pin: string): GameSession | null {
     if (typeof window === 'undefined') return null;
     try {
@@ -216,16 +231,17 @@ class RealtimeGameEngine {
     participantId?: string
   ): Promise<GameSession | null> {
     try {
+      const effectivePid = participantId || this.getStoredParticipantId(pin);
       const res = await serverGetSession({
         data: {
           pin,
           role,
-          participantId: participantId || this.getStoredParticipantId(pin),
+          ...(effectivePid ? { participantId: effectivePid } : {}),
         },
       });
       if (res.success && res.session) {
         this.cacheSessionLocally(res.session);
-        this.startPolling(pin, role, participantId || this.getStoredParticipantId(pin));
+        this.startPolling(pin, role, effectivePid);
         return res.session;
       }
     } catch (e) {
@@ -245,7 +261,14 @@ class RealtimeGameEngine {
     if (typeof window === 'undefined') return;
     session.updatedAt = Date.now();
     this.cacheSessionLocally(session);
-    serverSyncSession({ data: { session } }).catch(() => {});
+    const hostToken = this.getStoredHostToken(session.pin);
+    serverSyncSession({ data: { session, hostToken } })
+      .then((res) => {
+        if (res.success && res.hostToken) {
+          this.saveStoredHostToken(session.pin, res.hostToken);
+        }
+      })
+      .catch(() => {});
   }
 
   // Jittered Delta Polling engineered for 500+ concurrent clients
@@ -273,11 +296,12 @@ class RealtimeGameEngine {
         if (this.pollingRole === 'player' && this.getOfflineOutbox().length > 0) {
           await this.flushOfflineOutbox();
         }
+        const effectivePid = this.pollingParticipantId || this.getStoredParticipantId(pin);
         const res = await serverGetSession({
           data: {
             pin,
             role: this.pollingRole,
-            participantId: this.pollingParticipantId || this.getStoredParticipantId(pin),
+            ...(effectivePid ? { participantId: effectivePid } : {}),
             sinceUpdatedAt: this.lastKnownUpdatedAt,
           },
         });
@@ -361,6 +385,9 @@ class RealtimeGameEngine {
         },
       });
       if (res.success && res.session) {
+        if (res.hostToken) {
+          this.saveStoredHostToken(res.session.pin, res.hostToken);
+        }
         this.cacheSessionLocally(res.session);
         this.startPolling(res.session.pin, 'host');
         return res.session;
@@ -380,6 +407,7 @@ class RealtimeGameEngine {
     serverHostControl({
       data: {
         pin,
+        hostToken: this.getStoredHostToken(pin),
         action: 'update_settings',
         settings,
       },
@@ -395,6 +423,7 @@ class RealtimeGameEngine {
     serverHostControl({
       data: {
         pin,
+        hostToken: this.getStoredHostToken(pin),
         action: 'add_bots',
         botCount: count,
       },
@@ -418,8 +447,8 @@ class RealtimeGameEngine {
             avatarEmoji: b.emoji,
             avatarBg: b.bg,
             rollNumber: `2026-${200 + idx + 1}`,
-            regionId: reg.id,
-            regionName: reg.nameEn,
+            regionId: reg?.id || 'reg-dhaka',
+            regionName: reg?.nameEn || 'Dhaka Range',
             score: 0,
             streak: 0,
             rank: idx + 1,
@@ -564,7 +593,13 @@ class RealtimeGameEngine {
       this.cacheSessionLocally(session);
     }
 
-    serverHostControl({ data: { pin, action: 'start_game' } })
+    serverHostControl({
+      data: {
+        pin,
+        hostToken: this.getStoredHostToken(pin),
+        action: 'start_game',
+      },
+    })
       .then((res) => {
         if (res.success && res.session) this.cacheSessionLocally(res.session);
       })
@@ -580,6 +615,7 @@ class RealtimeGameEngine {
     serverHostControl({
       data: {
         pin,
+        hostToken: this.getStoredHostToken(pin),
         action: 'next_question',
         questionIndex: index,
       },
@@ -601,11 +637,11 @@ class RealtimeGameEngine {
           db.getQuizBySlug(session.quizId) ||
           db.getQuizzes().find((q) => q.id === session.quizId) ||
           READY_MADE_PACKS[0];
-        if (index >= quiz.questions.length) {
+        const question = quiz?.questions[index];
+        if (!quiz || !question || index >= quiz.questions.length) {
           this.endGame(pin);
           return;
         }
-        const question = quiz.questions[index];
         session.phase = 'question';
         session.currentQuestionIndex = index;
         session.currentQuestion = question;
@@ -679,7 +715,12 @@ class RealtimeGameEngine {
       this.cacheSessionLocally(session);
     }
     serverHostControl({
-      data: { pin, action: 'kick_player', participantId },
+      data: {
+        pin,
+        hostToken: this.getStoredHostToken(pin),
+        action: 'kick_player',
+        participantId,
+      },
     })
       .then((res) => {
         if (res.success && res.session) this.cacheSessionLocally(res.session);
@@ -689,7 +730,12 @@ class RealtimeGameEngine {
 
   public pardonPlayer(pin: string, participantId: string) {
     serverHostControl({
-      data: { pin, action: 'pardon_player', participantId },
+      data: {
+        pin,
+        hostToken: this.getStoredHostToken(pin),
+        action: 'pardon_player',
+        participantId,
+      },
     })
       .then((res) => {
         if (res.success && res.session) this.cacheSessionLocally(res.session);
@@ -704,7 +750,9 @@ class RealtimeGameEngine {
 
   public showChart(pin: string) {
     this.clearBotTimers();
-    serverHostControl({ data: { pin, action: 'show_chart' } })
+    serverHostControl({
+      data: { pin, hostToken: this.getStoredHostToken(pin), action: 'show_chart' },
+    })
       .then((res) => {
         if (res.success && res.session) this.cacheSessionLocally(res.session);
       })
@@ -717,7 +765,9 @@ class RealtimeGameEngine {
   }
 
   public showLeaderboard(pin: string) {
-    serverHostControl({ data: { pin, action: 'show_leaderboard' } })
+    serverHostControl({
+      data: { pin, hostToken: this.getStoredHostToken(pin), action: 'show_leaderboard' },
+    })
       .then((res) => {
         if (res.success && res.session) this.cacheSessionLocally(res.session);
       })
@@ -732,7 +782,9 @@ class RealtimeGameEngine {
 
   public endGame(pin: string) {
     this.clearBotTimers();
-    serverHostControl({ data: { pin, action: 'end_game' } })
+    serverHostControl({
+      data: { pin, hostToken: this.getStoredHostToken(pin), action: 'end_game' },
+    })
       .then((res) => {
         if (res.success && res.session) {
           this.cacheSessionLocally(res.session);
@@ -759,7 +811,8 @@ class RealtimeGameEngine {
   private recalculateRanks(session: GameSession) {
     const sorted = Object.values(session.participants).sort((a, b) => b.score - a.score);
     sorted.forEach((p, idx) => {
-      session.participants[p.id].rank = idx + 1;
+      const target = session.participants[p.id];
+      if (target) target.rank = idx + 1;
     });
   }
 }

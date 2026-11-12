@@ -54,7 +54,7 @@ function SignupPage() {
       email,
       password,
       role,
-      institutionName: institutionName || undefined,
+      ...(institutionName.trim() ? { institutionName: institutionName.trim() } : {}),
     });
     setIsLoading(false);
 

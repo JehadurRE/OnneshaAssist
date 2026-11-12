@@ -13,10 +13,10 @@ export const Route = createFileRoute("/vault/$slug")({
     const pack = db.getQuizBySlug(params.slug) || READY_MADE_PACKS.find((p) => p.slug === params.slug) || READY_MADE_PACKS[0];
     return {
       meta: [
-        { title: `${pack.titleBn || pack.titleEn} — Verified Curriculum Assessment · Onnesha Arena` },
+        { title: `${pack?.titleBn || pack?.titleEn || 'Curriculum'} — Verified Curriculum Assessment · Onnesha Arena` },
         {
           name: "description",
-          content: `${pack.titleBn} - ${pack.questions.length} verified assessment items with pedagogical rationale.`,
+          content: `${pack?.titleBn || 'Onnesha Curriculum'} - ${pack?.questions.length || 0} verified assessment items with pedagogical rationale.`,
         },
       ],
     };

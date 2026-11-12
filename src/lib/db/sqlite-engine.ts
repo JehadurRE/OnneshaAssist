@@ -275,7 +275,8 @@ class SQLiteEngine {
       let binary = '';
       const len = data.byteLength;
       for (let i = 0; i < len; i++) {
-        binary += String.fromCharCode(data[i]);
+        const byte = data[i];
+        if (byte !== undefined) binary += String.fromCharCode(byte);
       }
       const base64 = btoa(binary);
       localStorage.setItem('onnesha_sqlite_db_bin', base64);
@@ -309,7 +310,7 @@ class SQLiteEngine {
 
   public queryOne<T = any>(sql: string, params: any[] = []): T | null {
     const res = this.query<T>(sql, params);
-    return res.length > 0 ? res[0] : null;
+    return res[0] ?? null;
   }
 }
 

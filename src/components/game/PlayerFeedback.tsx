@@ -4,7 +4,7 @@ import { useLanguage } from '@/lib/i18n';
 import { CheckCircle2, ChevronRight, Clock, Flame, Trophy, XCircle } from 'lucide-react';
 
 interface PlayerFeedbackProps {
-  answer?: ParticipantAnswer;
+  answer?: ParticipantAnswer | undefined;
   question: Question;
   currentRank: number;
   totalScore: number;

@@ -424,6 +424,7 @@ function PricingPage() {
             </div>
 
             {/* Right Recommended Box */}
+            {recommendedPlan && (
             <div className="lg:col-span-5 rounded-3xl border-2 border-primary/40 bg-card p-6 shadow-tactical space-y-4">
               <div className="text-xs font-bold uppercase tracking-widest text-primary">
                 Recommended Configuration
@@ -440,9 +441,13 @@ function PricingPage() {
 
               <div className="flex items-baseline gap-1 font-mono">
                 <span className="text-4xl font-black text-foreground">
-                  {recommendedPlan.monthlyPrice === 0 ? 'Free' : `৳${recommendedPlan.monthlyPrice.toLocaleString()}`}
+                  {recommendedPlan.monthlyPrice === null
+                    ? 'Custom'
+                    : recommendedPlan.monthlyPrice === 0
+                      ? 'Free'
+                      : `৳${recommendedPlan.monthlyPrice.toLocaleString()}`}
                 </span>
-                {recommendedPlan.monthlyPrice > 0 && (
+                {recommendedPlan.monthlyPrice !== null && recommendedPlan.monthlyPrice > 0 && (
                   <span className="text-xs text-muted-foreground">/ month</span>
                 )}
               </div>
@@ -459,6 +464,7 @@ function PricingPage() {
                 🔒 Verified 256-Bit Encrypted Institutional Gateway
               </div>
             </div>
+            )}
           </div>
         </section>
 

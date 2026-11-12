@@ -132,7 +132,7 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
               const count = counts[opt.id] || 0;
               const heightPct = Math.max(12, (count / maxCount) * 100);
               const isCorrect = question.correctOptionIds.includes(opt.id);
-              const style = BAR_STYLES[idx % BAR_STYLES.length];
+              const style = BAR_STYLES[idx % BAR_STYLES.length]!;
 
               return (
                 <div key={opt.id} className="flex flex-col items-center gap-3">

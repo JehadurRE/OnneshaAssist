@@ -38,6 +38,8 @@ function HostPage() {
       READY_MADE_PACKS.find((p) => p.id === quizId || p.slug === quizId) ||
       READY_MADE_PACKS[0];
 
+    if (!quiz) return undefined;
+
     gameEngine.createSessionAsync(quiz, true).then((newSession) => {
       if (!active) return;
       setSession(newSession);

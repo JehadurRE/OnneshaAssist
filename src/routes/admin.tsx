@@ -213,7 +213,7 @@ function SuperAdminPage() {
     setCourseTitleEn(c.titleEn);
     setCourseTitleBn(c.titleBn);
     setCourseDescEn(c.descriptionEn);
-    setCourseCategory(c.categoryEn);
+    setCourseCategory(c.categoryEn || "BCS / Job");
     setCourseIcon(c.icon || "🎯");
     setSelectedCourseInstructors(c.instructorIds || []);
   };
@@ -248,8 +248,8 @@ function SuperAdminPage() {
       titleBn: (newQuizTitleBn || newQuizTitleEn).trim(),
       descriptionEn: `Sequential Assessment Quiz #${newQuizNumber} under ${addingQuizForCourse.titleEn}`,
       descriptionBn: `${addingQuizForCourse.titleBn} এর অধীনে ধারাবাহিক কুইজ #${newQuizNumber}`,
-      categoryEn: addingQuizForCourse.categoryEn,
-      categoryBn: addingQuizForCourse.categoryBn,
+      categoryEn: addingQuizForCourse.categoryEn || "BCS / Job",
+      categoryBn: addingQuizForCourse.categoryBn || "বিসিএস / চাকরি",
       icon: addingQuizForCourse.icon || "🎯",
       createdAt: new Date().toISOString(),
       questions: [
@@ -318,7 +318,7 @@ function SuperAdminPage() {
     setNewUserEmail("");
     setNewUserPhone("");
     refreshAll();
-    showNotice(`Added ${newUser.role.toUpperCase()} account: ${newUser.email} (Password: ${newUser.passwordHash})`);
+    showNotice(`Added ${newUser.role.toUpperCase()} account: ${newUser.email} (Password set cleanly with salted scrypt)`);
   };
 
   const handleToggleUserStatus = (u: ManagedUser) => {
@@ -1267,7 +1267,7 @@ function SuperAdminPage() {
                         <div className="font-mono text-xs text-muted-foreground">
                           Email: <strong className="text-foreground">{u.email}</strong> · Password:{" "}
                           <code className="rounded bg-muted px-1.5 py-0.5 text-primary font-bold">
-                            {u.passwordHash || "instructor123"}
+                            Protected (scrypt)
                           </code>
                         </div>
 

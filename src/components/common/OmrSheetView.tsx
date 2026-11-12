@@ -188,7 +188,7 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
           const correctOptIdx = q.options.findIndex(
             (o) => q.correctOptionIds.includes(o.id) || o.isCorrect
           );
-          detectedBubbles[qNum] = options[Math.max(0, correctOptIdx)];
+          detectedBubbles[qNum] = options[Math.max(0, correctOptIdx)] || 'A';
         } else {
           const wrongIdx = (idx + 1) % Math.max(2, q.options.length);
           detectedBubbles[qNum] = options[wrongIdx] || 'B';

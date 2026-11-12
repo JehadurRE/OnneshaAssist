@@ -25,15 +25,15 @@ export interface Question {
   type: QuestionType;
   options: QuestionOption[];
   correctOptionIds: string[];
-  acceptedAnswers?: string[]; // for written / fill_blank questions
-  explanationEn?: string;
-  explanationBn?: string;
+  acceptedAnswers?: string[] | undefined; // for written / fill_blank questions
+  explanationEn?: string | undefined;
+  explanationBn?: string | undefined;
   timeLimitSec: number;
   points: number;
-  negativeMarks?: number; // e.g. 0.25, 0.5
-  imageUrl?: string;
-  category?: string;
-  difficulty?: 'easy' | 'medium' | 'hard';
+  negativeMarks?: number | undefined; // e.g. 0.25, 0.5
+  imageUrl?: string | undefined;
+  category?: string | undefined;
+  difficulty?: 'easy' | 'medium' | 'hard' | undefined;
 }
 
 export interface Course {
@@ -43,8 +43,13 @@ export interface Course {
   titleBn: string;
   descriptionEn: string;
   descriptionBn: string;
+  categoryEn?: string | undefined;
+  categoryBn?: string | undefined;
+  icon?: string | undefined;
+  color?: string | undefined;
   instructorIds: string[];
   instructorNames: string[];
+  status?: 'active' | 'archived' | string | undefined;
   createdAt: string;
 }
 
@@ -53,12 +58,16 @@ export interface ManagedUser {
   email: string;
   name: string;
   role: 'admin' | 'instructor' | 'candidate';
-  institutionName?: string;
-  designation?: string;
-  phone?: string;
-  passwordHash: string;
-  assignedCourseIds?: string[];
-  status?: 'active' | 'suspended';
+  institutionName?: string | undefined;
+  institution?: string | undefined;
+  designation?: string | undefined;
+  phone?: string | undefined;
+  plan?: string | undefined;
+  /** Stored only on server; stripped from client bootstrap/auth responses. May be sent on create/password update. */
+  passwordHash?: string | undefined;
+  assignedCourseIds?: string[] | undefined;
+  status?: 'active' | 'suspended' | undefined;
+  aiCredits?: number | undefined;
   createdAt: string;
 }
 
@@ -72,18 +81,18 @@ export interface Quiz {
   categoryEn: string;
   categoryBn: string;
   icon: string;
-  color?: string;
+  color?: string | undefined;
   questions: Question[];
-  author?: string;
-  courseId?: string;
-  courseTitle?: string;
-  quizNumber?: number; // e.g. Quiz 1, Quiz 2, Quiz 3 under a course
-  instructorId?: string;
-  instructorName?: string;
-  isTemplate?: boolean;
-  totalTimeSec?: number;
-  tags?: string[];
-  createdAt?: string;
+  author?: string | undefined;
+  courseId?: string | undefined;
+  courseTitle?: string | undefined;
+  quizNumber?: number | undefined; // e.g. Quiz 1, Quiz 2, Quiz 3 under a course
+  instructorId?: string | undefined;
+  instructorName?: string | undefined;
+  isTemplate?: boolean | undefined;
+  totalTimeSec?: number | undefined;
+  tags?: string[] | undefined;
+  createdAt?: string | undefined;
 }
 
 export type SessionPhase =
@@ -107,12 +116,12 @@ export interface Region {
 export interface ParticipantAnswer {
   questionId: string;
   selectedOptionIds: string[];
-  writtenAnswer?: string;
+  writtenAnswer?: string | undefined;
   isCorrect: boolean;
   pointsAwarded: number;
   timeTakenSec: number;
-  streakCount?: number;
-  answeredAt?: number;
+  streakCount?: number | undefined;
+  answeredAt?: number | undefined;
 }
 
 export interface ProctorIncidentRecord {
@@ -121,36 +130,36 @@ export interface ProctorIncidentRecord {
   timestamp: string;
   candidateId: string;
   candidateName: string;
-  rollNumber?: string;
-  regionName?: string;
+  rollNumber?: string | undefined;
+  regionName?: string | undefined;
 }
 
 export interface Participant {
   id: string;
-  candidateId?: string;
+  candidateId?: string | undefined;
   name: string;
   nickname: string;
   avatarEmoji: string;
   avatarBg: string;
-  rollNumber?: string;
-  phone?: string;
-  regionId?: string;
-  regionName?: string;
-  batch?: string;
-  seatToken?: string;
+  rollNumber?: string | undefined;
+  phone?: string | undefined;
+  regionId?: string | undefined;
+  regionName?: string | undefined;
+  batch?: string | undefined;
+  seatToken?: string | undefined;
   score: number;
   streak: number;
   rank: number;
-  isBot?: boolean;
+  isBot?: boolean | undefined;
   answers: Record<string, ParticipantAnswer>;
   connected: boolean;
   lastActive: number;
-  proctorFlags?: number;
-  isSuspended?: boolean;
+  proctorFlags?: number | undefined;
+  isSuspended?: boolean | undefined;
 }
 
 export interface GameSettings {
-  timePerQuestion?: number;
+  timePerQuestion?: number | undefined;
   speedBonus: boolean;
   negativeMarking: number; // 0, 0.25, 0.5, 1.0
   shuffleQuestions: boolean;
@@ -159,13 +168,13 @@ export interface GameSettings {
   musicEnabled: boolean;
   isFormalAssessment: boolean;
   requireRollNumber: boolean;
-  requireRosterVerification?: boolean;
-  allowedRegionId?: string; // 'all' or specific region.id
-  allowedRegionName?: string;
-  enforceFullscreen?: boolean;
-  blockCopyPaste?: boolean;
-  proctorMode?: boolean;
-  maxProctorViolations?: number;
+  requireRosterVerification?: boolean | undefined;
+  allowedRegionId?: string | undefined; // 'all' or specific region.id
+  allowedRegionName?: string | undefined;
+  enforceFullscreen?: boolean | undefined;
+  blockCopyPaste?: boolean | undefined;
+  proctorMode?: boolean | undefined;
+  maxProctorViolations?: number | undefined;
 }
 
 export interface GameSession {
@@ -176,42 +185,42 @@ export interface GameSession {
   hostId: string;
   phase: SessionPhase;
   currentQuestionIndex: number;
-  currentQuestion?: Question;
+  currentQuestion?: Question | undefined;
   questionStartTime: number;
   questionEndTime: number;
   settings: GameSettings;
   participants: Record<string, Participant>;
   totalQuestions: number;
   createdAt: number;
-  updatedAt?: number;
-  answeredCount?: number;
-  participantCount?: number;
-  proctorIncidents?: ProctorIncidentRecord[];
-  completedQuestions?: Question[];
-  isSelfPractice?: boolean;
+  updatedAt?: number | undefined;
+  answeredCount?: number | undefined;
+  participantCount?: number | undefined;
+  proctorIncidents?: ProctorIncidentRecord[] | undefined;
+  completedQuestions?: Question[] | undefined;
+  isSelfPractice?: boolean | undefined;
 }
 
 export interface RosterStudent {
   id: string;
   rollNumber: string;
   name: string;
-  phone?: string;
-  regionId?: string;
-  regionName?: string;
-  section?: string;
-  batch?: string;
-  guardianPhone?: string;
-  email?: string;
-  passcode?: string;
-  createdAt?: string;
+  phone?: string | undefined;
+  regionId?: string | undefined;
+  regionName?: string | undefined;
+  section?: string | undefined;
+  batch?: string | undefined;
+  guardianPhone?: string | undefined;
+  email?: string | undefined;
+  passcode?: string | undefined;
+  createdAt?: string | undefined;
 }
 
 export interface MeritParticipant {
   id: string;
   nickname: string;
-  rollNumber?: string;
-  regionId?: string;
-  regionName?: string;
+  rollNumber?: string | undefined;
+  regionId?: string | undefined;
+  regionName?: string | undefined;
   finalScore: number;
   rank: number;
   correctCount: number;
@@ -319,16 +328,16 @@ export interface ExamResultRecord {
   participantId: string;
   rollNumber: string;
   name: string;
-  phone?: string;
-  regionId?: string;
-  regionName?: string;
+  phone?: string | undefined;
+  regionId?: string | undefined;
+  regionName?: string | undefined;
   score: number;
   rank: number;
   correctCount: number;
   incorrectCount: number;
   unattemptedCount: number;
   accuracyPct: number;
-  answersJson?: string;
+  answersJson?: string | undefined;
   createdAt: string;
 }
 
@@ -336,10 +345,13 @@ export interface BrandingSettings {
   showPartnerLogo: boolean;
   partnerName: string;
   partnerLogoUrl: string;
-  institutionTitle?: string;
-  enforceFullscreenDefault?: boolean;
-  blockCopyPasteDefault?: boolean;
-  maxProctorViolationsDefault?: number;
-  updatedAt?: number;
+  institutionTitle?: string | undefined;
+  defaultEnforceFullscreen?: boolean | undefined;
+  defaultBlockCopyPaste?: boolean | undefined;
+  defaultMaxProctorViolations?: number | undefined;
+  enforceFullscreenDefault?: boolean | undefined;
+  blockCopyPasteDefault?: boolean | undefined;
+  maxProctorViolationsDefault?: number | undefined;
+  updatedAt?: number | undefined;
 }
 

@@ -381,6 +381,7 @@ function DashboardPage() {
     if (!newStudentName || !newStudentRoll) return;
 
     const reg = regions.find((r) => r.id === newStudentRegionId) || regions[0] || DEFAULT_REGIONS[0];
+    if (!reg) return;
 
     db.addStudentToRoster({
       name: newStudentName.trim(),
@@ -439,12 +440,15 @@ function DashboardPage() {
       if (!text) return;
 
       const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-      const startIndex = lines[0].toLowerCase().includes("roll") ? 1 : 0;
+      const firstLine = lines[0] ?? "";
+      const startIndex = firstLine.toLowerCase().includes("roll") ? 1 : 0;
       const toImport: Omit<RosterStudent, "id" | "createdAt">[] = [];
       const currentRegions = db.getRegions();
 
       for (let i = startIndex; i < lines.length; i++) {
-        const parts = lines[i].split(",").map((p) => p.replace(/^["']|["']$/g, "").trim());
+        const rawLine = lines[i];
+        if (!rawLine) continue;
+        const parts = rawLine.split(",").map((p) => p.replace(/^["']|["']$/g, "").trim());
         if (parts.length >= 2 && parts[0] && parts[1]) {
           // Format supported: Roll, Name, RegionName (optional), CandidatePhone, GuardianPhone, Batch
           const regionText = parts[2] || "Dhaka Range";
@@ -456,8 +460,10 @@ function DashboardPage() {
                 r.nameBn.includes(regionText)
             ) ||
             currentRegions.find((r) => r.id === selectedRosterRegionId) ||
-            currentRegions[0];
+            currentRegions[0] ||
+            DEFAULT_REGIONS[0];
 
+          if (!matchedRegion) continue;
           const candPhone = parts[3] || parts[4] || "";
           const guardPhone = parts[4] || parts[3] || "";
 
@@ -851,7 +857,7 @@ function DashboardPage() {
                   Print standardized A4 OMR bubble sheets and region-wise official Merit Gazette notice boards.
                 </p>
                 <button
-                  onClick={() => setSelectedQuizForOmr(quizzes[0] || READY_MADE_PACKS[0])}
+                  onClick={() => setSelectedQuizForOmr(quizzes[0] || READY_MADE_PACKS[0] || null)}
                   className="inline-flex items-center gap-1 text-xs font-bold text-amber-600 hover:underline"
                 >
                   <span>Open OMR Bubble Studio →</span>
@@ -1498,7 +1504,7 @@ function DashboardPage() {
                       const count = quizzes.filter((q) => q.courseId === cid).length;
                       setNewQuizNumber(count + 1);
                       const matched = courses.find((c) => c.id === cid);
-                      if (matched) setNewQuizCategory(matched.categoryEn);
+                      if (matched) setNewQuizCategory(matched.categoryEn || "BCS / Job");
                     }}
                     className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs sm:text-sm font-bold text-foreground outline-none focus:border-primary"
                   >
@@ -1612,27 +1618,29 @@ function DashboardPage() {
                           onChange={(e) => {
                             const nextType = e.target.value as QuestionType;
                             const updated = [...newQuestions];
-                            updated[qIdx].type = nextType;
+                            const target = updated[qIdx];
+                            if (!target) return;
+                            target.type = nextType;
                             if (nextType === "true_false") {
-                              updated[qIdx].options = [
+                              target.options = [
                                 { id: `${q.id}-tf-1`, textEn: "True", textBn: "সত্য (True)", isCorrect: true },
                                 { id: `${q.id}-tf-2`, textEn: "False", textBn: "মিথ্যা (False)" },
                               ];
-                              updated[qIdx].correctOptionIds = [`${q.id}-tf-1`];
+                              target.correctOptionIds = [`${q.id}-tf-1`];
                             } else if (nextType === "written" || nextType === "fill_blank") {
-                              updated[qIdx].options = [];
-                              updated[qIdx].correctOptionIds = [];
-                              if (!updated[qIdx].acceptedAnswers?.length) {
-                                updated[qIdx].acceptedAnswers = ["1971", "১৯৭১"];
+                              target.options = [];
+                              target.correctOptionIds = [];
+                              if (!target.acceptedAnswers?.length) {
+                                target.acceptedAnswers = ["1971", "১৯৭১"];
                               }
-                            } else if (updated[qIdx].options.length < 4) {
-                              updated[qIdx].options = [
+                            } else if (target.options.length < 4) {
+                              target.options = [
                                 { id: `${q.id}-1`, textEn: "Option A", textBn: "অপশন ক", isCorrect: true },
                                 { id: `${q.id}-2`, textEn: "Option B", textBn: "অপশন খ" },
                                 { id: `${q.id}-3`, textEn: "Option C", textBn: "অপশন গ" },
                                 { id: `${q.id}-4`, textEn: "Option D", textBn: "অপশন ঘ" },
                               ];
-                              updated[qIdx].correctOptionIds = [`${q.id}-1`];
+                              target.correctOptionIds = [`${q.id}-1`];
                             }
                             setNewQuestions(updated);
                           }}
@@ -1654,7 +1662,9 @@ function DashboardPage() {
                             value={q.timeLimitSec}
                             onChange={(e) => {
                               const updated = [...newQuestions];
-                              updated[qIdx].timeLimitSec = Number(e.target.value) || 20;
+                              const target = updated[qIdx];
+                              if (!target) return;
+                              target.timeLimitSec = Number(e.target.value) || 20;
                               setNewQuestions(updated);
                             }}
                             className="w-14 rounded-lg border border-border bg-card px-2 py-0.5 font-mono text-xs font-bold text-foreground"
@@ -1681,8 +1691,10 @@ function DashboardPage() {
                       value={q.textBn}
                       onChange={(e) => {
                         const updated = [...newQuestions];
-                        updated[qIdx].textBn = e.target.value;
-                        updated[qIdx].textEn = e.target.value;
+                        const target = updated[qIdx];
+                        if (!target) return;
+                        target.textBn = e.target.value;
+                        target.textEn = e.target.value;
                         setNewQuestions(updated);
                       }}
                       placeholder="প্রশ্ন বাংলায় বা ইংরেজিতে লিখুন..."
@@ -1699,7 +1711,9 @@ function DashboardPage() {
                           value={(q.acceptedAnswers || []).join(", ")}
                           onChange={(e) => {
                             const updated = [...newQuestions];
-                            updated[qIdx].acceptedAnswers = e.target.value
+                            const target = updated[qIdx];
+                            if (!target) return;
+                            target.acceptedAnswers = e.target.value
                               .split(",")
                               .map((s) => s.trim())
                               .filter(Boolean);
@@ -1722,13 +1736,15 @@ function DashboardPage() {
                                 checked={isChecked}
                                 onChange={() => {
                                   const updated = [...newQuestions];
+                                  const target = updated[qIdx];
+                                  if (!target) return;
                                   if (isMulti) {
-                                    const prev = updated[qIdx].correctOptionIds;
-                                    updated[qIdx].correctOptionIds = prev.includes(opt.id)
+                                    const prev = target.correctOptionIds;
+                                    target.correctOptionIds = prev.includes(opt.id)
                                       ? prev.filter((id) => id !== opt.id)
                                       : [...prev, opt.id];
                                   } else {
-                                    updated[qIdx].correctOptionIds = [opt.id];
+                                    target.correctOptionIds = [opt.id];
                                   }
                                   setNewQuestions(updated);
                                 }}
@@ -1739,8 +1755,11 @@ function DashboardPage() {
                                 value={opt.textBn}
                                 onChange={(e) => {
                                   const updated = [...newQuestions];
-                                  updated[qIdx].options[optIdx].textBn = e.target.value;
-                                  updated[qIdx].options[optIdx].textEn = e.target.value;
+                                  const target = updated[qIdx];
+                                  const optTarget = target?.options[optIdx];
+                                  if (!optTarget) return;
+                                  optTarget.textBn = e.target.value;
+                                  optTarget.textEn = e.target.value;
                                   setNewQuestions(updated);
                                 }}
                                 className="flex-1 rounded-xl border border-border bg-card px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"

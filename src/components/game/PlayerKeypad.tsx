@@ -204,7 +204,7 @@ export const PlayerKeypad: React.FC<PlayerKeypadProps> = ({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-4">
         {question.options.map((opt, idx) => {
-          const style = KEY_STYLES[idx % KEY_STYLES.length];
+          const style = KEY_STYLES[idx % KEY_STYLES.length]!;
           const isSelected =
             question.type === 'multi_mcq'
               ? multiSelected.includes(opt.id)

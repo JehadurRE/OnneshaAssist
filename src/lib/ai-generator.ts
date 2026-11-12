@@ -1,18 +1,19 @@
 import { Question, QuestionType, Quiz } from './types';
+import { serverGenerateQuizWithAi } from './server-session';
 
 export interface AiGenerateParams {
   topic: string;
-  sourceText?: string;
+  sourceText?: string | undefined;
   questionCount: number; // 3, 5, 10, 20
   language: 'bn' | 'en' | 'both';
   difficulty: 'easy' | 'medium' | 'hard';
   category: string;
-  courseId?: string;
-  courseTitle?: string;
-  quizNumber?: number;
-  instructorId?: string;
-  instructorName?: string;
-  questionStyleMode?: 'mixed_all_4' | 'single_mcq';
+  courseId?: string | undefined;
+  courseTitle?: string | undefined;
+  quizNumber?: number | undefined;
+  instructorId?: string | undefined;
+  instructorName?: string | undefined;
+  questionStyleMode?: 'mixed_all_4' | 'single_mcq' | undefined;
 }
 
 export function getAiCredits(): number {
@@ -42,6 +43,31 @@ export async function generateQuizWithAi(params: AiGenerateParams): Promise<Quiz
   const id = `ai-quiz-${Date.now()}`;
   const slug = `ai-${params.topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 25)}-${Date.now() % 10000}`;
   const styleMode = params.questionStyleMode || 'mixed_all_4';
+
+  // Prefer server-side Gemini AI generation (keeps API key & credits authoritative on server)
+  try {
+    const serverRes = await serverGenerateQuizWithAi({
+      data: {
+        topic: params.topic,
+        sourceText: params.sourceText,
+        questionCount: count,
+        difficulty: params.difficulty,
+        category: params.category,
+        courseId: params.courseId,
+        courseTitle: params.courseTitle,
+        quizNumber: params.quizNumber,
+        questionStyleMode: styleMode,
+      },
+    });
+    if (serverRes.success && serverRes.quiz) {
+      if (typeof serverRes.remainingCredits === 'number' && typeof window !== 'undefined') {
+        localStorage.setItem('onnesha_ai_credits', serverRes.remainingCredits.toString());
+      }
+      return serverRes.quiz;
+    }
+  } catch {
+    // Fall back to optional local key / curated offline synthesis
+  }
 
   const apiKey = typeof window !== 'undefined' ? localStorage.getItem('onnesha_gemini_key') : null;
 
@@ -289,6 +315,7 @@ Return ONLY a valid JSON object matching this exact schema:
   for (let i = 1; i <= count; i++) {
     const qId = `q-ai-${i}-${Date.now() % 10000}`;
     const template = curatedPool[(i - 1) % curatedPool.length];
+    if (!template) continue;
     const effectiveType: QuestionType =
       styleMode === 'single_mcq' ? 'single_mcq' : template.type;
 

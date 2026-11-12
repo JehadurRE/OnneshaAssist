@@ -1,0 +1,94 @@
+import { BrandingSettings, Question } from './types';
+
+export function computeTotalQuizMarks(
+  questions?: Pick<Question, 'points'>[] | null,
+  fallbackTotalQuestions = 5
+): number {
+  if (questions && questions.length > 0) {
+    const sum = questions.reduce((acc, q) => acc + (q.points || 1000), 0);
+    if (sum > 0) return sum;
+  }
+  return Math.max(1, fallbackTotalQuestions) * 1000;
+}
+
+export function resolveOrgName(branding?: BrandingSettings): string {
+  if (branding?.showPartnerLogo && branding?.partnerName?.trim()) {
+    return `Onnesha × ${branding.partnerName.trim()}`;
+  }
+  return 'Onnesha Assessment & Examination Arena';
+}
+
+export interface EvaluateAnswerInput {
+  question: Question;
+  selectedOptionIds?: string[];
+  writtenAnswer?: string;
+  currentStreak: number;
+  timeTakenSec: number;
+  speedBonus: boolean;
+  negativeMarking: number;
+}
+
+export interface EvaluateAnswerResult {
+  isCorrect: boolean;
+  pointsAwarded: number;
+  newStreak: number;
+}
+
+/**
+ * Pure server/domain grading function used by live & practice exam scoring.
+ */
+export function evaluateQuestionAnswer(input: EvaluateAnswerInput): EvaluateAnswerResult {
+  const {
+    question,
+    selectedOptionIds = [],
+    writtenAnswer = '',
+    currentStreak,
+    timeTakenSec,
+    speedBonus,
+    negativeMarking,
+  } = input;
+
+  let isCorrect = false;
+  const isWrittenStyle = question.type === 'written' || question.type === 'fill_blank';
+
+  if (isWrittenStyle) {
+    const acceptedPool = [
+      ...(question.acceptedAnswers || []),
+      ...(question.correctOptionIds || []),
+      ...question.options.filter((o) => o.isCorrect).flatMap((o) => [o.textEn, o.textBn]),
+    ]
+      .map((s) => (s || '').trim().toLowerCase())
+      .filter(Boolean);
+
+    const cleanWritten = writtenAnswer.trim().toLowerCase();
+    isCorrect = cleanWritten.length > 0 && acceptedPool.includes(cleanWritten);
+  } else if (question.correctOptionIds && question.correctOptionIds.length > 0) {
+    isCorrect =
+      question.correctOptionIds.length === selectedOptionIds.length &&
+      question.correctOptionIds.every((id) => selectedOptionIds.includes(id));
+  }
+
+  let pointsAwarded = 0;
+  let newStreak = currentStreak;
+
+  if (isCorrect) {
+    newStreak = currentStreak + 1;
+    const streakMultiplier = newStreak >= 3 ? 1.5 : newStreak >= 2 ? 1.2 : 1.0;
+    const clampedTime = Math.max(1, Math.min(question.timeLimitSec || 20, timeTakenSec));
+    const speedFactor = speedBonus
+      ? Math.max(0.5, 1 - (clampedTime / (question.timeLimitSec || 20)) * 0.5)
+      : 1;
+    pointsAwarded = Math.round((question.points || 1000) * speedFactor * streakMultiplier);
+  } else {
+    newStreak = 0;
+    if (negativeMarking > 0) {
+      pointsAwarded = -Math.round((question.points || 1000) * negativeMarking);
+    }
+  }
+
+  return {
+    isCorrect,
+    pointsAwarded,
+    newStreak,
+  };
+}

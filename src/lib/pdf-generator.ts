@@ -110,7 +110,7 @@ function buildPdfFromCanvases(
 
 function triggerBlobDownload(bytes: Uint8Array, filename: string) {
   const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '-');
-  const blob = new Blob([bytes], { type: 'application/pdf' });
+  const blob = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -283,7 +283,7 @@ export function drawCertificateOnCanvas(
   ctx.strokeRect(82, 82, W - 164, H - 164);
 
   // Corner Ornaments
-  const corners = [
+  const corners: ReadonlyArray<readonly [number, number, number, number]> = [
     [82, 82, 1, 1],
     [W - 82, 82, -1, 1],
     [82, H - 82, 1, -1],
@@ -907,29 +907,29 @@ export async function downloadMeritGazettePdf(params: {
       ctx.fillStyle = '#0f172a';
       ctx.font = 'bold 20px monospace';
       ctx.textAlign = 'left';
-      ctx.fillText(`#${globalRank}`, cols[0].x, y + 38);
-      ctx.fillText(p.rollNumber || `2026-${100 + globalRank}`, cols[1].x, y + 38);
+      ctx.fillText(`#${globalRank}`, cols[0]!.x, y + 38);
+      ctx.fillText(p.rollNumber || `2026-${100 + globalRank}`, cols[1]!.x, y + 38);
 
       ctx.font = 'bold 20px sans-serif';
-      ctx.fillText((p.nickname || 'Candidate').slice(0, 26), cols[2].x, y + 38);
+      ctx.fillText((p.nickname || 'Candidate').slice(0, 26), cols[2]!.x, y + 38);
 
       ctx.font = '600 19px sans-serif';
       ctx.fillStyle = '#334155';
-      ctx.fillText((p.regionName || 'Dhaka Range').slice(0, 20), cols[3].x, y + 38);
+      ctx.fillText((p.regionName || 'Dhaka Range').slice(0, 20), cols[3]!.x, y + 38);
 
       ctx.textAlign = 'center';
       ctx.fillStyle = '#047857';
       ctx.font = 'bold 20px monospace';
-      ctx.fillText(String(p.correctCount ?? 0), cols[4].x, y + 38);
+      ctx.fillText(String(p.correctCount ?? 0), cols[4]!.x, y + 38);
 
       ctx.fillStyle = '#0f172a';
-      ctx.fillText(String(p.finalScore ?? 0), cols[5].x, y + 38);
+      ctx.fillText(String(p.finalScore ?? 0), cols[5]!.x, y + 38);
 
       ctx.textAlign = 'right';
       const qualified = (p.finalScore ?? 0) >= 500;
       ctx.fillStyle = qualified ? '#047857' : '#64748b';
       ctx.font = 'bold 18px sans-serif';
-      ctx.fillText(qualified ? 'QUALIFIED' : 'STANDBY', cols[6].x, y + 38);
+      ctx.fillText(qualified ? 'QUALIFIED' : 'STANDBY', cols[6]!.x, y + 38);
     });
 
     // Footer

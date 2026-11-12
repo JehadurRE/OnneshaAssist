@@ -4,7 +4,7 @@ import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
 import { CertificateView } from '@/components/common/CertificateView';
 import { db } from '@/lib/db';
-import { serverAdminMutateStore, serverVerifyCertificate } from '@/lib/server-session';
+import { serverVerifyCertificate } from '@/lib/server-session';
 import { CertificateData } from '@/lib/types';
 import { AlertCircle, ArrowLeft, CheckCircle2, Loader2, Search, ShieldCheck } from 'lucide-react';
 
@@ -25,10 +25,6 @@ function VerifyCertPage() {
     if (localCert) {
       setCert(localCert);
       setIsLoadingServer(false);
-      // Ensure server store also has this certificate for cross-device QR scans
-      serverAdminMutateStore({
-        data: { action: 'issue_certificate', certificate: localCert },
-      }).catch(() => {});
       return;
     }
 

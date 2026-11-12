@@ -20,7 +20,7 @@ export const Confetti: React.FC<{ active?: boolean }> = ({ active = true }) => {
       x: Math.random() * canvas.width,
       y: Math.random() * -canvas.height,
       size: Math.random() * 8 + 4,
-      color: colors[Math.floor(Math.random() * colors.length)],
+      color: colors[Math.floor(Math.random() * colors.length)] || '#10b981',
       speedY: Math.random() * 4 + 2,
       speedX: (Math.random() - 0.5) * 4,
       rotation: Math.random() * 360,

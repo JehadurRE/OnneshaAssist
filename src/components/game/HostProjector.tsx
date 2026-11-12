@@ -55,6 +55,7 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
       }, 1200);
       return () => clearTimeout(autoTimer);
     }
+    return undefined;
   }, [answeredCount, totalPlayers, isPaused, onSkipTimer]);
 
   useEffect(() => {
@@ -229,7 +230,7 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {question.options.map((opt, idx) => {
-              const style = RESPONSE_STYLES[idx % RESPONSE_STYLES.length];
+              const style = RESPONSE_STYLES[idx % RESPONSE_STYLES.length]!;
               return (
                 <div
                   key={opt.id}

@@ -117,7 +117,7 @@ function HomePage() {
     setSelectedOption(index);
     setSampleAnswered(true);
 
-    const isCorrect = sampleQuestion.options[index].isCorrect;
+    const isCorrect = !!sampleQuestion.options[index]?.isCorrect;
     if (isCorrect) {
       setSampleScore(1.0);
       try {
@@ -156,10 +156,11 @@ function HomePage() {
     selectedVaultCategory === "all"
       ? availablePacks.slice(0, 6)
       : availablePacks.filter((p) => {
+          const tags = p.tags || [];
           if (selectedVaultCategory === "bcs")
-            return p.categoryEn.includes("BCS") || p.titleEn.includes("BCS") || p.tags.includes("BCS");
+            return p.categoryEn.includes("BCS") || p.titleEn.includes("BCS") || tags.includes("BCS");
           if (selectedVaultCategory === "academy")
-            return p.tags.some(
+            return tags.some(
               (tag) =>
                 tag.includes("Defense") ||
                 tag.includes("Security") ||
@@ -168,7 +169,7 @@ function HomePage() {
           if (selectedVaultCategory === "varsity")
             return p.categoryEn.includes("Science") || p.categoryEn.includes("General");
           if (selectedVaultCategory === "ict")
-            return p.categoryEn.includes("ICT") || p.tags.includes("ICT");
+            return p.categoryEn.includes("ICT") || tags.includes("ICT");
           return true;
         }).slice(0, 6);
 
