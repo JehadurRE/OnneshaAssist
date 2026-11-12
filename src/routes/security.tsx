@@ -67,8 +67,8 @@ function SecurityPage() {
               </h2>
               <p className="text-xs text-muted-foreground">
                 {lang === "bn"
-                  ? "যেকোনো সনদের ইউনিক আইডি (যেমন: ONN-4821-9982) লিখে সত্যতা যাচাই করুন।"
-                  : "Enter any issued credential ID (e.g. ONN-4821-9982) to verify candidate rank, score, and authenticity."}
+                  ? "যেকোনো ইস্যুকৃত সনদের ইউনিক আইডি (যেমন: ONN-XXXX-YYYYYY) লিখে সত্যতা যাচাই করুন।"
+                  : "Enter any issued credential serial ID (e.g. ONN-XXXX-YYYYYY) to verify candidate rank, score, and authenticity."}
               </p>
             </div>
           </div>
@@ -80,7 +80,7 @@ function SecurityPage() {
                 type="text"
                 value={certQuery}
                 onChange={(e) => setCertQuery(e.target.value)}
-                placeholder="Enter Certificate ID (e.g. ONN-4821-9982)"
+                placeholder="Enter Certificate ID (e.g. ONN-4821-101)"
                 className="w-full rounded-2xl border border-border bg-background pl-10 pr-4 py-3 font-mono text-xs sm:text-sm font-bold uppercase text-foreground outline-none focus:border-primary"
               />
             </div>
@@ -93,28 +93,23 @@ function SecurityPage() {
             </button>
           </form>
 
-          <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
-            <span className="text-muted-foreground font-semibold">
-              {lang === "bn" ? "দ্রুত যাচাই করুন:" : "Quick Verify:"}
-            </span>
-            <Link
-              to="/verify/$certId"
-              params={{ certId: "ONN-4821-9982" }}
-              className="rounded-xl border border-primary/30 bg-primary/10 px-3 py-1 font-mono text-[11px] font-bold text-primary hover:bg-primary/20 transition"
-            >
-              ONN-4821-9982 (Official Demo)
-            </Link>
-            {recentCerts.map((c) => (
-              <Link
-                key={c.id}
-                to="/verify/$certId"
-                params={{ certId: c.certificateNumber }}
-                className="rounded-xl border border-border bg-background px-3 py-1 font-mono text-[11px] font-bold text-foreground hover:border-primary/40 transition"
-              >
-                {c.certificateNumber} ({c.studentName})
-              </Link>
-            ))}
-          </div>
+          {recentCerts.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+              <span className="text-muted-foreground font-semibold">
+                {lang === "bn" ? "সাম্প্রতিক সনদ:" : "Recently Issued:"}
+              </span>
+              {recentCerts.map((c) => (
+                <Link
+                  key={c.id}
+                  to="/verify/$certId"
+                  params={{ certId: c.certificateNumber }}
+                  className="rounded-xl border border-border bg-background px-3 py-1 font-mono text-[11px] font-bold text-foreground hover:border-primary/40 transition"
+                >
+                  {c.certificateNumber} ({c.studentName})
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Security Cards */}

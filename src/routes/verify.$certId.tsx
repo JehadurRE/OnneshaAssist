@@ -152,26 +152,8 @@ function VerifyCertPage() {
             <p className="mt-2 text-xs sm:text-sm text-muted-foreground leading-relaxed">
               No verified credential matching serial{' '}
               <span className="font-mono font-bold text-red-400 break-all">{certId}</span> was found
-              in the registry. Please check the serial number or try our sample verified credential:
+              in the registry. Please check the serial number issued on your scorecard and try again.
             </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-2.5">
-              <Link
-                to="/verify/$certId"
-                params={{ certId: 'ONN-4634-026104' }}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 px-4 py-2.5 text-xs font-bold text-emerald-400 hover:bg-emerald-500/25 transition"
-              >
-                <CheckCircle2 className="h-4 w-4 shrink-0" />
-                <span>View ONN-4634-026104</span>
-              </Link>
-              <Link
-                to="/verify/$certId"
-                params={{ certId: 'ONN-4821-9982' }}
-                className="inline-flex items-center gap-2 rounded-xl bg-secondary border border-border px-4 py-2.5 text-xs font-bold text-foreground hover:border-emerald-500/30 transition"
-              >
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
-                <span>View ONN-4821-9982</span>
-              </Link>
-            </div>
           </div>
         )}
       </main>

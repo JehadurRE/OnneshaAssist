@@ -320,8 +320,6 @@ function PlayPage() {
       setIsSelfPractice(true);
       setSession({ ...created, isSelfPractice: true });
       setPin(created.pin);
-      // Add 5 simulated peer cadets so the student gets live comparative ranking (#1 of 6)
-      gameEngine.addBotPlayers(created.pin, 5);
     } finally {
       setIsStartingPractice(false);
     }

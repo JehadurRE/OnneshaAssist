@@ -730,8 +730,11 @@ class OnneshaDatabase {
   recordExamSession(session: GameSession): void {
     const sessionId = `exam-${session.pin}`;
     const createdAt = new Date().toISOString();
-    const participantsList = Object.values(session.participants).sort((a, b) => b.score - a.score);
+    const participantsList = Object.values(session.participants)
+      .filter((p) => !p.isBot)
+      .sort((a, b) => b.score - a.score);
     const count = participantsList.length;
+    if (count === 0) return;
 
     const totalScore = participantsList.reduce((acc, p) => acc + p.score, 0);
     const avgScore = count > 0 ? Math.round(totalScore / count) : 0;
@@ -874,32 +877,7 @@ class OnneshaDatabase {
     const matched = certs.find((c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase());
     if (matched) return matched;
 
-    if (certNo.trim().toUpperCase() === 'ONN-4821-9982') {
-      return {
-        id: 'cert-onn-4821-9982',
-        certificateNumber: 'ONN-4821-9982',
-        studentName: 'Cadet Tanvir Hossain',
-        studentRoll: '2026-101',
-        regionName: 'Dhaka Range',
-        quizTitle: '৪৬তম বিসিএস প্রিলিমিনারি ও মুক্তিযুদ্ধ মডেল টেস্ট',
-        score: 4850,
-        marksObtained: 4850,
-        totalPoints: 5000,
-        totalMarks: 5000,
-        rank: 1,
-        totalParticipants: 500,
-        accuracyPercent: 97,
-        scorePct: 97,
-        issueDate: '2026-03-15',
-        organizationName: 'Onnesha Assessment & Examination Arena',
-        institutionName: 'Onnesha Assessment Arena',
-        instructorName: 'Chief Assessment Officer',
-        verificationUrl: '/verify/ONN-4821-9982',
-        verified: true,
-      };
-    }
-
-    // Deterministic resolution for any ONN-<PIN>-<ROLL> credential
+    // Deterministic resolution ONLY when backed by an actual examResult record
     const match = certNo.trim().toUpperCase().match(/^ONN-([A-Z0-9]{4})-([A-Z0-9]{4,6})$/);
     if (match) {
       const [, pinPrefix, rollSuffix] = match;
@@ -913,43 +891,41 @@ class OnneshaDatabase {
         return r.pin.startsWith(pinPrefix) && cleanRoll === rollSuffix;
       });
 
-      const roster = this.getRoster();
-      const matchedStudent = roster.find((s) => {
-        const cleanRoll = (s.rollNumber || '')
-          .replace(/[^a-zA-Z0-9]/g, '')
-          .toUpperCase()
-          .slice(-6)
-          .padStart(4, '0');
-        return cleanRoll === rollSuffix;
-      });
-
-      const branding = this.getBranding();
-      const certNoUpper = certNo.trim().toUpperCase();
-      return {
-        id: `cert-${certNoUpper.toLowerCase()}`,
-        certificateNumber: certNoUpper,
-        studentName: matchedResult?.name || matchedStudent?.name || 'Cadet Farhana Yasmin',
-        studentRoll: matchedResult?.rollNumber || matchedStudent?.rollNumber || `2026-${rollSuffix.slice(-3)}`,
-        regionName: matchedResult?.regionName || matchedStudent?.regionName || 'Dhaka Range',
-        quizTitle: '৪৬তম বিসিএস প্রিলিমিনারি ও প্রাতিষ্ঠানিক মেধা মূল্যায়ন (Onnesha Assessment)',
-        score: matchedResult?.score ?? 4650,
-        marksObtained: matchedResult?.score ?? 4650,
-        totalPoints: 5000,
-        totalMarks: 5000,
-        rank: matchedResult?.rank ?? 1,
-        totalParticipants: Math.max(roster.length, 25),
-        accuracyPercent: matchedResult?.accuracyPct ?? 94,
-        scorePct: matchedResult?.accuracyPct ?? 94,
-        issueDate: (matchedResult?.createdAt || new Date().toISOString()).slice(0, 10),
-        organizationName:
-          branding.showPartnerLogo && branding.partnerName
-            ? `Onnesha × ${branding.partnerName}`
-            : 'Onnesha Assessment & Examination Arena',
-        institutionName: branding.institutionTitle || 'Onnesha Assessment Arena',
-        instructorName: 'Chief Assessment Officer',
-        verificationUrl: `/verify/${certNoUpper}`,
-        verified: true,
-      };
+      if (matchedResult) {
+        const matchedSession = this.getExamSessions().find(
+          (s) => s.id === matchedResult.sessionId || s.pin === matchedResult.pin
+        );
+        const branding = this.getBranding();
+        const certNoUpper = certNo.trim().toUpperCase();
+        return {
+          id: `cert-${certNoUpper.toLowerCase()}`,
+          certificateNumber: certNoUpper,
+          studentName: matchedResult.name,
+          studentRoll: matchedResult.rollNumber,
+          regionName: matchedResult.regionName || 'Dhaka Range',
+          quizTitle:
+            matchedSession?.quizTitleBn ||
+            matchedSession?.quizTitleEn ||
+            'Onnesha Assessment Evaluation',
+          score: matchedResult.score,
+          marksObtained: matchedResult.score,
+          totalPoints: (matchedSession?.totalQuestions || 5) * 1000,
+          totalMarks: (matchedSession?.totalQuestions || 5) * 1000,
+          rank: matchedResult.rank,
+          totalParticipants: matchedSession?.participantCount || 1,
+          accuracyPercent: matchedResult.accuracyPct,
+          scorePct: matchedResult.accuracyPct,
+          issueDate: (matchedResult.createdAt || new Date().toISOString()).slice(0, 10),
+          organizationName:
+            branding.showPartnerLogo && branding.partnerName
+              ? `Onnesha × ${branding.partnerName}`
+              : 'Onnesha Assessment & Examination Arena',
+          institutionName: branding.institutionTitle || 'Onnesha Assessment Arena',
+          instructorName: 'Chief Assessment Officer',
+          verificationUrl: `/verify/${certNoUpper}`,
+          verified: true,
+        };
+      }
     }
 
     return undefined;
@@ -1055,6 +1031,19 @@ class OnneshaDatabase {
       console.warn('Failed to import backup:', err);
       return false;
     }
+  }
+
+  async purgeDummyData(): Promise<void> {
+    sqliteEngine.run("DELETE FROM roster_students WHERE email LIKE '%@academy.edu.bd'");
+    sqliteEngine.run("DELETE FROM exam_results WHERE participantId LIKE 'bot-%'");
+    sqliteEngine.run("DELETE FROM courses WHERE id IN ('course-field-safety', 'course-science-stem')");
+    sqliteEngine.run("DELETE FROM users WHERE id IN ('usr-instructor-2', 'usr-instructor-3')");
+    sqliteEngine.run("DELETE FROM certificates WHERE UPPER(certificateNumber) IN ('ONN-4821-9982', 'ONN-4634-026104')");
+    try {
+      await serverAdminMutateStore({ data: { action: 'purge_dummy_data' } });
+      await this.syncFromServerStore();
+    } catch {}
+    this.notifyListeners();
   }
 
   // ---------------- TRANSACTIONS ----------------

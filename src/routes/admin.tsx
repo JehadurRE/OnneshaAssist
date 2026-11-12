@@ -1703,6 +1703,19 @@ function SuperAdminPage() {
                     className="hidden"
                   />
                 </label>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await db.purgeDummyData();
+                    refreshAll();
+                    showNotice("Purged pre-seeded dummy roster, bot exam records, and sample certificates.");
+                  }}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-destructive/40 bg-destructive/10 py-3 text-xs font-bold text-destructive hover:bg-destructive/20 transition cursor-pointer"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span>Purge Residual Dummy / Test Seed Data</span>
+                </button>
               </div>
             </div>
           </div>

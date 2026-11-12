@@ -1,12 +1,14 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLanguage } from "@/lib/i18n";
 import { useBranding } from "@/hooks/use-branding";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { PinInput } from "@/components/common/PinInput";
 import { READY_MADE_PACKS } from "@/lib/mock-data";
+import { db } from "@/lib/db";
 import { audioEngine } from "@/lib/audio-engine";
+import { ExamResultRecord, Quiz, RosterStudent } from "@/lib/types";
 import onnesha from "@/assets/onnesha.jpg.asset.json";
 import {
   Activity,
@@ -60,8 +62,21 @@ function HomePage() {
   const [sampleAnswered, setSampleAnswered] = useState(false);
   const [sampleScore, setSampleScore] = useState<number>(0);
 
-  // Interactive Candidate Lookup Preview inside the Architecture Section
-  const [demoQuery, setDemoQuery] = useState("01711000101");
+  // Interactive Candidate Lookup Preview backed by live database roster
+  const [demoQuery, setDemoQuery] = useState("");
+  const [realResults, setRealResults] = useState<ExamResultRecord[]>([]);
+  const [realRoster, setRealRoster] = useState<RosterStudent[]>([]);
+  const [availablePacks, setAvailablePacks] = useState<Quiz[]>(READY_MADE_PACKS);
+
+  useEffect(() => {
+    const sync = () => {
+      setRealResults(db.getAllExamResults());
+      setRealRoster(db.getRoster());
+      setAvailablePacks(db.getQuizzes());
+    };
+    sync();
+    return db.subscribe(sync);
+  }, []);
 
   const sampleQuestion = {
     code: "BCS-46 · CONST-39",
@@ -81,25 +96,21 @@ function HomePage() {
       "Article 39 of Part III of the Constitution guarantees freedom of thought, conscience, and speech.",
   };
 
-  const liveRegionalFeed = [
-    { rank: 1, name: "Nusrat Jahan", roll: "2026-101", region: "Dhaka Range", score: "19.75", locked: true },
-    { rank: 2, name: "Tanvir Ahmed", roll: "2026-102", region: "Chattogram Range", score: "19.00", locked: true },
-    { rank: 3, name: "Sadia Islam", roll: "2026-103", region: "Rajshahi Range", score: "18.50", locked: true },
-    { rank: 4, name: "Mehedi Hasan", roll: "2026-104", region: "Sylhet Range", score: "18.25", locked: true },
-  ];
+  const liveRegionalFeed = realResults.slice(0, 4).map((r, idx) => ({
+    rank: r.rank || idx + 1,
+    name: r.name,
+    roll: r.rollNumber,
+    region: r.regionName || "Dhaka Range",
+    score: String(r.score),
+  }));
 
-  const demoRosterPreview = [
-    { phone: "01711000101", roll: "2026-101", name: "Nusrat Jahan", region: "Dhaka Range", center: "Dhaka HQ Center" },
-    { phone: "01711000102", roll: "2026-102", name: "Tanvir Ahmed", region: "Chattogram Range", center: "Chattogram Divisional Hall" },
-    { phone: "01711000103", roll: "2026-103", name: "Sadia Islam", region: "Rajshahi Range", center: "Rajshahi Regional Center" },
-  ];
-
-  const matchedDemoCandidate =
-    demoRosterPreview.find(
-      (c) =>
-        c.phone.includes(demoQuery.trim()) ||
-        c.roll.toLowerCase() === demoQuery.trim().toLowerCase()
-    ) || demoRosterPreview[0];
+  const matchedDemoCandidate = demoQuery.trim()
+    ? realRoster.find(
+        (c) =>
+          (c.phone || "").includes(demoQuery.trim()) ||
+          c.rollNumber.toLowerCase() === demoQuery.trim().toLowerCase()
+      )
+    : realRoster[0];
 
   const handleSampleOptionClick = (index: number) => {
     if (sampleAnswered) return;
@@ -143,10 +154,10 @@ function HomePage() {
 
   const filteredPacks =
     selectedVaultCategory === "all"
-      ? READY_MADE_PACKS.slice(0, 6)
-      : READY_MADE_PACKS.filter((p) => {
+      ? availablePacks.slice(0, 6)
+      : availablePacks.filter((p) => {
           if (selectedVaultCategory === "bcs")
-            return p.categoryEn.includes("BCS") || p.titleEn.includes("BCS");
+            return p.categoryEn.includes("BCS") || p.titleEn.includes("BCS") || p.tags.includes("BCS");
           if (selectedVaultCategory === "academy")
             return p.tags.some(
               (tag) =>
@@ -457,37 +468,45 @@ function HomePage() {
                   </div>
 
                   <div className="divide-y divide-border rounded-xl border border-border bg-card overflow-hidden">
-                    {liveRegionalFeed.map((row) => (
-                      <div
-                        key={row.roll}
-                        className="flex items-center justify-between px-3.5 py-2.5 text-xs"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span className="font-mono font-bold text-primary w-5">
-                            #{row.rank}
-                          </span>
-                          <div className="truncate">
-                            <span className="font-bold text-foreground">{row.name}</span>
-                            <span className="ml-2 font-mono text-[11px] text-muted-foreground">
-                              {row.roll}
+                    {liveRegionalFeed.length > 0 ? (
+                      liveRegionalFeed.map((row) => (
+                        <div
+                          key={`${row.roll}-${row.rank}`}
+                          className="flex items-center justify-between px-3.5 py-2.5 text-xs"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="font-mono font-bold text-primary w-5">
+                              #{row.rank}
+                            </span>
+                            <div className="truncate">
+                              <span className="font-bold text-foreground">{row.name}</span>
+                              <span className="ml-2 font-mono text-[11px] text-muted-foreground">
+                                {row.roll}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className="hidden sm:inline-flex items-center gap-1 rounded-md border border-border bg-muted/50 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                              {row.region}
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-primary">
+                              <Lock className="h-3 w-3" />
+                              <span>SEAT LOCKED</span>
+                            </span>
+                            <span className="font-mono font-black tabular-nums text-foreground w-12 text-right">
+                              {row.score}
                             </span>
                           </div>
                         </div>
-
-                        <div className="flex items-center gap-3 shrink-0">
-                          <span className="hidden sm:inline-flex items-center gap-1 rounded-md border border-border bg-muted/50 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                            {row.region}
-                          </span>
-                          <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-primary">
-                            <Lock className="h-3 w-3" />
-                            <span>SEAT LOCKED</span>
-                          </span>
-                          <span className="font-mono font-black tabular-nums text-foreground w-12 text-right">
-                            {row.score}
-                          </span>
-                        </div>
+                      ))
+                    ) : (
+                      <div className="px-4 py-5 text-center text-xs text-muted-foreground">
+                        {lang === "bn"
+                          ? "লাইভ পরীক্ষার পর প্রকৃত প্রার্থীদের অঞ্চলভিত্তিক মেধা তালিকা এখানে রিয়েল-টাইমে প্রদর্শিত হবে।"
+                          : "Live candidate rankings and division scores appear here in real time once an examination concludes."}
                       </div>
-                    ))}
+                    )}
                   </div>
                 </div>
               </div>
@@ -524,47 +543,45 @@ function HomePage() {
                     <Phone className="h-3.5 w-3.5 text-primary" />
                     <span>
                       {lang === "bn"
-                        ? "লাইভ রোল / মোবাইল সার্চ প্রিভিউ"
-                        : "Try Live Roster Auto-Fill Preview"}
+                        ? "রস্টার মোবাইল / রোল সার্চ"
+                        : "Roster Mobile / Roll Lookup"}
                     </span>
                   </span>
-                  <div className="flex gap-1.5 font-mono text-[10px]">
-                    {["01711000101", "2026-102", "2026-103"].map((sample) => (
-                      <button
-                        key={sample}
-                        type="button"
-                        onClick={() => setDemoQuery(sample)}
-                        className={`rounded px-2 py-0.5 border transition ${
-                          demoQuery === sample
-                            ? "border-primary bg-primary/10 text-primary font-bold"
-                            : "border-border text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        {sample}
-                      </button>
-                    ))}
-                  </div>
+                  {realRoster.length > 0 && (
+                    <span className="font-mono text-[10px] font-bold text-primary">
+                      {realRoster.length} ENROLLED
+                    </span>
+                  )}
                 </div>
 
                 <input
                   type="text"
                   value={demoQuery}
                   onChange={(e) => setDemoQuery(e.target.value)}
-                  placeholder="Enter Mobile (01711000101) or Roll (2026-101)"
+                  placeholder="Enter Enrolled Mobile or Roll Number..."
                   className="w-full rounded-xl border border-border bg-background px-3.5 py-2 font-mono text-xs font-bold text-foreground outline-none focus:border-primary"
                 />
 
-                <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 flex items-center justify-between text-xs">
-                  <div>
-                    <div className="font-bold text-foreground">{matchedDemoCandidate.name}</div>
-                    <div className="font-mono text-[11px] text-muted-foreground">
-                      Roll: {matchedDemoCandidate.roll} · {matchedDemoCandidate.region}
+                {matchedDemoCandidate ? (
+                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 flex items-center justify-between text-xs">
+                    <div>
+                      <div className="font-bold text-foreground">{matchedDemoCandidate.name}</div>
+                      <div className="font-mono text-[11px] text-muted-foreground">
+                        Roll: {matchedDemoCandidate.rollNumber} ·{" "}
+                        {matchedDemoCandidate.regionName || "Dhaka Range"}
+                      </div>
                     </div>
+                    <span className="rounded-md bg-primary/15 px-2.5 py-1 font-mono text-[10px] font-bold text-primary">
+                      AUTO-FILLED
+                    </span>
                   </div>
-                  <span className="rounded-md bg-primary/15 px-2.5 py-1 font-mono text-[10px] font-bold text-primary">
-                    AUTO-FILLED
-                  </span>
-                </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-border bg-background/60 p-3 text-xs text-muted-foreground">
+                    {lang === "bn"
+                      ? "অ্যাডমিন/ইন্সট্রাক্টর ড্যাশবোর্ড থেকে শিক্ষার্থী তালিকা যুক্ত করলে এখান থেকে তাৎক্ষণিক সার্চ কাজ করবে।"
+                      : "Enroll trainees in Admin/Instructor Studio to verify instant phone & roll auto-fill."}
+                  </div>
+                )}
               </div>
             </div>
 

@@ -48,8 +48,8 @@ function DevelopersPage() {
         }));
         setApiResponse(JSON.stringify({ status: "success", count: data.length, data }, null, 2));
       } else if (selectedEndpoint === "get_certificate") {
-        const cert = db.getCertificateById("ONN-4821-9982");
-        setApiResponse(JSON.stringify({ status: "success", certificate: cert }, null, 2));
+        const certs = db.getCertificates();
+        setApiResponse(JSON.stringify({ status: "success", count: certs.length, certificates: certs.slice(0, 5) }, null, 2));
       } else {
         const roster = db.getRoster().slice(0, 3);
         setApiResponse(JSON.stringify({ status: "success", count: roster.length, roster }, null, 2));

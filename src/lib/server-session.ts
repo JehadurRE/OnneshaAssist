@@ -101,14 +101,21 @@ function loadInitialStore(): PersistentStoreData {
       if (fs.existsSync(storeFile)) {
         const raw = fs.readFileSync(storeFile, 'utf-8');
         const parsed = JSON.parse(raw) as Partial<PersistentStoreData>;
+        // Filter out legacy pre-seeded mock roster rows and simulated bot exam records
+        const cleanedRoster = (parsed.roster || []).filter(
+          (s) => !(/^st-([1-9]|10)$/.test(s.id) && s.email?.endsWith('@academy.edu.bd'))
+        );
+        const cleanedResults = (parsed.examResults || []).filter(
+          (r) => !(r.participantId || '').startsWith('bot-')
+        );
         return {
           regions: parsed.regions?.length ? parsed.regions : [...DEFAULT_REGIONS],
-          roster: parsed.roster?.length ? parsed.roster : [...SAMPLE_ROSTER],
+          roster: cleanedRoster,
           courses: parsed.courses?.length ? parsed.courses : [...DEFAULT_COURSES],
           users: ensureDefaultUsers(parsed.users),
           customQuizzes: parsed.customQuizzes || [],
           examSessions: parsed.examSessions || [],
-          examResults: parsed.examResults || [],
+          examResults: cleanedResults,
           certificates: parsed.certificates || [],
           branding: parsed.branding
             ? { ...DEFAULT_BRANDING, ...parsed.branding }
@@ -271,8 +278,11 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
   const store = getStore();
   const sessionId = `exam-${session.pin}`;
   const createdAt = new Date().toISOString();
-  const participantsList = Object.values(session.participants).sort((a, b) => b.score - a.score);
+  const participantsList = Object.values(session.participants)
+    .filter((p) => !p.isBot)
+    .sort((a, b) => b.score - a.score);
   const count = participantsList.length;
+  if (count === 0) return;
   const totalScore = participantsList.reduce((acc, p) => acc + p.score, 0);
   const avgScore = count > 0 ? Math.round(totalScore / count) : 0;
   const highestScore = count > 0 ? participantsList[0].score : 0;
@@ -423,7 +433,7 @@ export const serverVerifyCertificate = createServerFn({ method: 'GET' })
       };
     }
 
-    // Check if it matches a deterministic ONN-<PIN>-<ROLL> pattern from roster or exam results
+    // Check if it matches a deterministic ONN-<PIN>-<ROLL> pattern backed by a real exam result
     const match = rawCert.toUpperCase().match(/^ONN-([A-Z0-9]{4})-([A-Z0-9]{4,6})$/);
     if (match) {
       const [, pinPrefix, rollSuffix] = match;
@@ -436,46 +446,45 @@ export const serverVerifyCertificate = createServerFn({ method: 'GET' })
         return r.pin.startsWith(pinPrefix) && cleanRoll === rollSuffix;
       });
 
-      const matchedStudent = store.roster.find((s) => {
-        const cleanRoll = (s.rollNumber || '')
-          .replace(/[^a-zA-Z0-9]/g, '')
-          .toUpperCase()
-          .slice(-6)
-          .padStart(4, '0');
-        return cleanRoll === rollSuffix;
-      });
+      if (matchedResult) {
+        const matchedSession = store.examSessions.find(
+          (s) => s.id === matchedResult.sessionId || s.pin === matchedResult.pin
+        );
+        const certNoUpper = rawCert.toUpperCase();
+        const synthesized: CertificateData = {
+          id: `cert-${certNoUpper.toLowerCase()}`,
+          certificateNumber: certNoUpper,
+          studentName: matchedResult.name,
+          studentRoll: matchedResult.rollNumber,
+          regionName: matchedResult.regionName || 'Dhaka Range',
+          quizTitle:
+            matchedSession?.quizTitleBn ||
+            matchedSession?.quizTitleEn ||
+            'Onnesha Assessment Evaluation',
+          score: matchedResult.score,
+          marksObtained: matchedResult.score,
+          totalPoints: (matchedSession?.totalQuestions || 5) * 1000,
+          totalMarks: (matchedSession?.totalQuestions || 5) * 1000,
+          rank: matchedResult.rank,
+          totalParticipants: matchedSession?.participantCount || 1,
+          accuracyPercent: matchedResult.accuracyPct,
+          scorePct: matchedResult.accuracyPct,
+          issueDate: (matchedResult.createdAt || new Date().toISOString()).slice(0, 10),
+          organizationName:
+            store.branding?.showPartnerLogo && store.branding?.partnerName
+              ? `Onnesha × ${store.branding.partnerName}`
+              : 'Onnesha Assessment & Examination Arena',
+          institutionName: store.branding?.institutionTitle || 'Onnesha Assessment Arena',
+          instructorName: 'Chief Assessment Officer',
+          verificationUrl: `/verify/${certNoUpper}`,
+          verified: true,
+        };
 
-      const certNoUpper = rawCert.toUpperCase();
-      const synthesized: CertificateData = {
-        id: `cert-${certNoUpper.toLowerCase()}`,
-        certificateNumber: certNoUpper,
-        studentName: matchedResult?.name || matchedStudent?.name || 'Cadet Farhana Yasmin',
-        studentRoll: matchedResult?.rollNumber || matchedStudent?.rollNumber || `2026-${rollSuffix.slice(-3)}`,
-        regionName: matchedResult?.regionName || matchedStudent?.regionName || 'Dhaka Range',
-        quizTitle: '৪৬তম বিসিএস প্রিলিমিনারি ও প্রাতিষ্ঠানিক মেধা মূল্যায়ন (Onnesha Assessment)',
-        score: matchedResult?.score ?? 4650,
-        marksObtained: matchedResult?.score ?? 4650,
-        totalPoints: 5000,
-        totalMarks: 5000,
-        rank: matchedResult?.rank ?? 1,
-        totalParticipants: Math.max(store.roster.length, 25),
-        accuracyPercent: matchedResult?.accuracyPct ?? 94,
-        scorePct: matchedResult?.accuracyPct ?? 94,
-        issueDate: (matchedResult?.createdAt || new Date().toISOString()).slice(0, 10),
-        organizationName:
-          store.branding?.showPartnerLogo && store.branding?.partnerName
-            ? `Onnesha × ${store.branding.partnerName}`
-            : 'Onnesha Assessment & Examination Arena',
-        institutionName: store.branding?.institutionTitle || 'Onnesha Assessment Arena',
-        instructorName: 'Chief Assessment Officer',
-        verificationUrl: `/verify/${certNoUpper}`,
-        verified: true,
-      };
-
-      return {
-        success: true,
-        certificate: synthesized,
-      };
+        return {
+          success: true,
+          certificate: synthesized,
+        };
+      }
     }
 
     return {
@@ -501,7 +510,8 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
         | 'delete_quiz'
         | 'issue_certificate'
         | 'update_branding'
-        | 'import_store_backup';
+        | 'import_store_backup'
+        | 'purge_dummy_data';
       region?: Region;
       regionId?: string;
       student?: RosterStudent;
@@ -697,6 +707,26 @@ export const serverAdminMutateStore = createServerFn({ method: 'POST' })
           if (data.backup.branding) store.branding = { ...DEFAULT_BRANDING, ...data.backup.branding };
           scheduleDiskPersist();
         }
+        break;
+      }
+      case 'purge_dummy_data': {
+        // Clear pre-seeded mock roster, dummy instructors, bot exam results, and sample exams
+        store.roster = store.roster.filter(
+          (s) => !(/^st-([1-9]|10)$/.test(s.id) && s.email?.endsWith('@academy.edu.bd'))
+        );
+        store.examResults = store.examResults.filter(
+          (r) => !(r.participantId || '').startsWith('bot-')
+        );
+        store.users = ensureDefaultUsers(
+          store.users.filter((u) => !['usr-instructor-2', 'usr-instructor-3'].includes(u.id))
+        );
+        store.courses = store.courses.filter(
+          (c) => !['course-field-safety', 'course-science-stem'].includes(c.id)
+        );
+        store.certificates = store.certificates.filter(
+          (c) => !['ONN-4821-9982', 'ONN-4634-026104'].includes(c.certificateNumber.toUpperCase())
+        );
+        scheduleDiskPersist();
         break;
       }
     }

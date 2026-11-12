@@ -27,9 +27,9 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
   const branding = useBranding();
   const [selectedStudentId, setSelectedStudentId] = useState<string>(roster[0]?.id || '');
   const [candidateName, setCandidateName] = useState<string>(
-    roster[0]?.name || 'Cadet Tanvir Hossain'
+    roster[0]?.name || 'Registered Candidate'
   );
-  const [candidateRoll, setCandidateRoll] = useState<string>(roster[0]?.rollNumber || '2026-101');
+  const [candidateRoll, setCandidateRoll] = useState<string>(roster[0]?.rollNumber || 'ROLL-001');
   const [candidateRegionName, setCandidateRegionName] = useState<string>(
     roster[0]?.regionName || 'Dhaka Range'
   );
