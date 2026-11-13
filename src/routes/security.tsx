@@ -11,7 +11,10 @@ export const Route = createFileRoute("/security")({
   head: () => ({
     meta: [
       { title: "Security & Verifiable Certificates · Onnesha Quiz" },
-      { name: "description", content: "Per-organization data isolation and tamper-proof digital certificates." },
+      {
+        name: "description",
+        content: "Per-organization data isolation and tamper-proof digital certificates.",
+      },
     ],
   }),
   component: SecurityPage,
@@ -24,7 +27,13 @@ function SecurityPage() {
   const [recentCerts, setRecentCerts] = useState<CertificateData[]>([]);
 
   useEffect(() => {
-    setRecentCerts(db.getCertificates().slice(0, 4));
+    const refresh = () => setRecentCerts(db.getCertificates().slice(0, 4));
+    refresh();
+    const unsub = db.subscribe(refresh);
+    db.syncFromServerStore();
+    return () => {
+      unsub();
+    };
   }, []);
 
   const handleVerifySubmit = (e: React.FormEvent) => {
@@ -44,7 +53,9 @@ function SecurityPage() {
             <ShieldCheck className="h-8 w-8" />
           </div>
           <h1 className="font-display text-3xl sm:text-4xl font-extrabold text-foreground tracking-tight">
-            {lang === "bn" ? "নিরাপত্তা ও যাচাইযোগ্য ডিজিটাল সনদ" : "Enterprise Security & Verifiable Certificates"}
+            {lang === "bn"
+              ? "নিরাপত্তা ও যাচাইযোগ্য ডিজিটাল সনদ"
+              : "Enterprise Security & Verifiable Certificates"}
           </h1>
           <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
             {lang === "bn"
@@ -120,7 +131,9 @@ function SecurityPage() {
               <QrCode className="h-5 w-5" />
             </div>
             <h3 className="font-display text-base font-bold text-foreground">
-              {lang === "bn" ? "QR কোড ও ক্রিপ্টোগ্রাফিক সনদ যাচাই" : "Cryptographic QR Verification"}
+              {lang === "bn"
+                ? "QR কোড ও ক্রিপ্টোগ্রাফিক সনদ যাচাই"
+                : "Cryptographic QR Verification"}
             </h3>
             <p className="text-xs text-muted-foreground leading-relaxed">
               {lang === "bn"
@@ -135,7 +148,9 @@ function SecurityPage() {
               <Server className="h-5 w-5" />
             </div>
             <h3 className="font-display text-base font-bold text-foreground">
-              {lang === "bn" ? "প্রতি প্রতিষ্ঠানের ডেটা আইসোলেশন" : "Per-Organization Data Isolation"}
+              {lang === "bn"
+                ? "প্রতি প্রতিষ্ঠানের ডেটা আইসোলেশন"
+                : "Per-Organization Data Isolation"}
             </h3>
             <p className="text-xs text-muted-foreground leading-relaxed">
               {lang === "bn"
