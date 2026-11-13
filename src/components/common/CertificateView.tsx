@@ -8,17 +8,23 @@ import {
   Maximize2,
   Minimize2,
 } from "lucide-react";
-import { CertificateData } from "@/lib/types";
+import { BrandingSettings, CertificateData } from "@/lib/types";
 import { useBranding } from "@/hooks/use-branding";
 import { downloadCertificatePdf, populateCertificateCanvas } from "@/lib/pdf-generator";
 
 interface CertificateViewProps {
   certificate: CertificateData;
+  brandingOverride?: BrandingSettings | undefined;
   onDownload?: () => void;
 }
 
-export const CertificateView: React.FC<CertificateViewProps> = ({ certificate, onDownload }) => {
-  const branding = useBranding();
+export const CertificateView: React.FC<CertificateViewProps> = ({
+  certificate,
+  brandingOverride,
+  onDownload,
+}) => {
+  const hookBranding = useBranding();
+  const branding = brandingOverride ?? hookBranding;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const zoomCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
@@ -67,7 +73,7 @@ export const CertificateView: React.FC<CertificateViewProps> = ({ certificate, o
   return (
     <div className="mx-auto w-full max-w-4xl">
       {/* Proportional A4 Landscape Certificate Sheet — Scales identically to the printed PDF on Mobile & Desktop */}
-      <div className="group relative w-full overflow-hidden rounded-xl sm:rounded-2xl border-2 border-amber-500/40 bg-[#fffdf7] shadow-2xl">
+      <div className="group relative w-full overflow-hidden rounded-xl sm:rounded-2xl border-2 border-amber-500/40 bg-slate-950/5 shadow-2xl">
         <canvas
           ref={canvasRef}
           width={2400}

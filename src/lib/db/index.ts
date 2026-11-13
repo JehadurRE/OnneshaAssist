@@ -20,6 +20,7 @@ import {
 import { sqliteEngine } from "./sqlite-engine";
 import { serverAdminMutateStore, serverGetBootstrapData } from "../server-session";
 import { computeTotalQuizMarks, resolveOrgName } from "../scoring";
+import { DEFAULT_BRANDING_SETTINGS, mergeBrandingSettings } from "../branding";
 
 export interface DbTransaction {
   id: string;
@@ -363,10 +364,11 @@ class OnneshaDatabase {
       }
 
       if (res.branding) {
-        this.setStorage("branding_settings", res.branding);
+        const mergedBranding = mergeBrandingSettings(res.branding, DEFAULT_BRANDING_SETTINGS);
+        this.setStorage("branding_settings", mergedBranding);
         if (typeof window !== "undefined") {
           window.dispatchEvent(
-            new CustomEvent("onnesha-branding-updated", { detail: res.branding }),
+            new CustomEvent("onnesha-branding-updated", { detail: mergedBranding }),
           );
         }
       }
@@ -1115,33 +1117,19 @@ class OnneshaDatabase {
 
   // ---------------- BRANDING & JOINT PARTNER LOGO ----------------
   getBranding(): BrandingSettings {
-    return this.getStorage<BrandingSettings>("branding_settings", {
-      showPartnerLogo: false,
-      partnerName: "",
-      partnerLogoUrl: "",
-      institutionTitle: "Onnesha Assessment Arena",
-    });
+    const stored = this.getStorage<BrandingSettings>(
+      "branding_settings",
+      DEFAULT_BRANDING_SETTINGS,
+    );
+    return mergeBrandingSettings(stored, DEFAULT_BRANDING_SETTINGS);
   }
 
   saveBranding(branding: BrandingSettings): BrandingSettings {
     const current = this.getBranding();
-    const updated: BrandingSettings = {
-      showPartnerLogo: !!branding.showPartnerLogo,
-      partnerName: (branding.partnerName || "").trim(),
-      partnerLogoUrl: (branding.partnerLogoUrl || "").trim(),
-      institutionTitle: (
-        branding.institutionTitle ||
-        current.institutionTitle ||
-        "Onnesha Assessment Arena"
-      ).trim(),
-      defaultEnforceFullscreen:
-        branding.defaultEnforceFullscreen ?? current.defaultEnforceFullscreen ?? false,
-      defaultBlockCopyPaste:
-        branding.defaultBlockCopyPaste ?? current.defaultBlockCopyPaste ?? true,
-      defaultMaxProctorViolations:
-        branding.defaultMaxProctorViolations || current.defaultMaxProctorViolations || 3,
-      updatedAt: Date.now(),
-    };
+    const updated: BrandingSettings = mergeBrandingSettings(
+      { ...branding, updatedAt: Date.now() },
+      current,
+    );
     this.setStorage("branding_settings", updated);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("onnesha-branding-updated", { detail: updated }));

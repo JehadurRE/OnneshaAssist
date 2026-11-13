@@ -1,16 +1,10 @@
-import { useEffect, useState } from 'react';
-import { BrandingSettings } from '@/lib/types';
-import { db } from '@/lib/db';
-
-const DEFAULT_BRANDING: BrandingSettings = {
-  showPartnerLogo: false,
-  partnerName: '',
-  partnerLogoUrl: '',
-  institutionTitle: 'Onnesha Assessment Arena',
-};
+import { useEffect, useState } from "react";
+import { BrandingSettings } from "@/lib/types";
+import { db } from "@/lib/db";
+import { DEFAULT_BRANDING_SETTINGS, mergeBrandingSettings } from "@/lib/branding";
 
 export function useBranding(): BrandingSettings {
-  const [branding, setBranding] = useState<BrandingSettings>(DEFAULT_BRANDING);
+  const [branding, setBranding] = useState<BrandingSettings>(DEFAULT_BRANDING_SETTINGS);
 
   useEffect(() => {
     setBranding(db.getBranding());
@@ -18,7 +12,7 @@ export function useBranding(): BrandingSettings {
     const handleUpdate = (e: Event) => {
       const custom = e as CustomEvent<BrandingSettings>;
       if (custom.detail) {
-        setBranding(custom.detail);
+        setBranding(mergeBrandingSettings(custom.detail));
       } else {
         setBranding(db.getBranding());
       }
@@ -28,13 +22,12 @@ export function useBranding(): BrandingSettings {
       setBranding(db.getBranding());
     });
 
-    window.addEventListener('onnesha-branding-updated', handleUpdate);
+    window.addEventListener("onnesha-branding-updated", handleUpdate);
     return () => {
       unsub();
-      window.removeEventListener('onnesha-branding-updated', handleUpdate);
+      window.removeEventListener("onnesha-branding-updated", handleUpdate);
     };
   }, []);
 
   return branding;
 }
-

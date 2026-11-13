@@ -372,11 +372,46 @@ export interface ExamResultRecord {
   createdAt: string;
 }
 
+export type CertificateThemePreset =
+  "emerald_gold" | "dhaka_ai_navy" | "bangla_heritage" | "sovereign_slate" | "custom";
+
+export interface CertificatePartnerLogo {
+  id: string;
+  name: string;
+  logoUrl: string;
+}
+
+export interface CertificateSignatory {
+  id: string;
+  name: string;
+  title: string;
+  signatureText?: string | undefined;
+  signatureImageUrl?: string | undefined;
+  signatureStyle?: "script" | "formal" | "mono" | undefined;
+}
+
 export interface BrandingSettings {
   showPartnerLogo: boolean;
   partnerName: string;
   partnerLogoUrl: string;
   institutionTitle?: string | undefined;
+  leftLogoUrl?: string | undefined;
+  leftLogoLabel?: string | undefined;
+  rightLogoUrl?: string | undefined;
+  rightLogoLabel?: string | undefined;
+  partnerLogos?: CertificatePartnerLogo[] | undefined;
+  certThemePreset?: CertificateThemePreset | undefined;
+  certShowBangladeshAiMap?: boolean | undefined;
+  certMapOpacity?: number | undefined;
+  certBgPrimaryColor?: string | undefined;
+  certBgSecondaryColor?: string | undefined;
+  certAccentColor?: string | undefined;
+  certBorderColor?: string | undefined;
+  certCustomBgUrl?: string | undefined;
+  certCustomBgOpacity?: number | undefined;
+  certBadgeTitle?: string | undefined;
+  certAuthoritySubtitle?: string | undefined;
+  certSignatories?: CertificateSignatory[] | undefined;
   defaultEnforceFullscreen?: boolean | undefined;
   defaultBlockCopyPaste?: boolean | undefined;
   defaultMaxProctorViolations?: number | undefined;

@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import React, { useEffect, useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
+import { CertificateDesignerStudio } from "@/components/admin/CertificateDesignerStudio";
 import { useAuth } from "@/lib/auth-context";
 import { useLanguage } from "@/lib/i18n";
 import { db, DbSalesLead, DbTransaction } from "@/lib/db";
@@ -1769,208 +1770,159 @@ function SuperAdminPage() {
         )}
 
         {/* =================================================================== */}
-        {/* TAB 4: ANTI-CHEAT LOCK, CO-BRANDING & FULL DATABASE BACKUP          */}
+        {/* TAB 4: CERTIFICATE DESIGNER, ANTI-CHEAT LOCK & FULL DATABASE BACKUP */}
         {/* =================================================================== */}
         {activeTab === "settings" && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <form
-              onSubmit={handleSaveBrandingAndSecurity}
-              className="lg:col-span-7 rounded-3xl border border-border bg-card p-6 space-y-5"
-            >
-              <h3 className="font-display text-lg font-black text-foreground flex items-center gap-2">
-                <ShieldAlert className="h-5 w-5 text-primary" />
-                <span>Global Anti-Cheat Screen Lock &amp; Co-Branding Policy</span>
-              </h3>
+          <div className="space-y-6">
+            <CertificateDesignerStudio
+              branding={branding}
+              onChange={setBranding}
+              onSave={() => {
+                db.saveBranding(branding);
+                showNotice(
+                  "Saved Certificate Theme, Logos, Partners, Signatories & Policy to Server.",
+                );
+              }}
+            />
 
-              {/* Anti-Cheat Controls */}
-              <div className="rounded-2xl border border-border bg-background p-4 space-y-4">
-                <div className="text-xs font-black uppercase tracking-wider text-primary">
-                  Proctoring &amp; Screen-Switch Prevention
-                </div>
-
-                <label className="flex items-start justify-between gap-4 cursor-pointer">
-                  <div>
-                    <div className="text-xs font-bold text-foreground">
-                      Enforce Fullscreen Exam Lock by Default
-                    </div>
-                    <div className="text-[11px] text-muted-foreground">
-                      Requires examinees to enter Fullscreen mode during active questions and logs a
-                      strike if they exit Fullscreen.
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={!!branding.defaultEnforceFullscreen}
-                    onChange={(e) =>
-                      setBranding({ ...branding, defaultEnforceFullscreen: e.target.checked })
-                    }
-                    className="mt-1 h-4 w-4 rounded border-border text-primary"
-                  />
-                </label>
-
-                <label className="flex items-start justify-between gap-4 cursor-pointer">
-                  <div>
-                    <div className="text-xs font-bold text-foreground">
-                      Block Copy/Paste, Right-Click &amp; DevTools Shortcuts
-                    </div>
-                    <div className="text-[11px] text-muted-foreground">
-                      Prevents copying questions, pasting external answers, right-clicking,
-                      PrintScreen, or opening F12 Inspector.
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={branding.defaultBlockCopyPaste ?? true}
-                    onChange={(e) =>
-                      setBranding({ ...branding, defaultBlockCopyPaste: e.target.checked })
-                    }
-                    className="mt-1 h-4 w-4 rounded border-border text-primary"
-                  />
-                </label>
-
-                <div className="flex items-center justify-between gap-4 pt-2 border-t border-border/60">
-                  <div>
-                    <div className="text-xs font-bold text-foreground">
-                      Automatic Seat Suspension Threshold (Strikes)
-                    </div>
-                    <div className="text-[11px] text-muted-foreground">
-                      Number of tab-switch / screen-blur violations before the candidate seat is
-                      automatically suspended.
-                    </div>
-                  </div>
-                  <input
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={branding.defaultMaxProctorViolations || 3}
-                    onChange={(e) =>
-                      setBranding({
-                        ...branding,
-                        defaultMaxProctorViolations: parseInt(e.target.value, 10) || 3,
-                      })
-                    }
-                    className="w-20 rounded-xl border border-border bg-card px-3 py-1.5 font-mono text-xs font-bold text-center"
-                  />
-                </div>
-              </div>
-
-              {/* Joint Partner Logo Co-Branding */}
-              <div className="rounded-2xl border border-border bg-background p-4 space-y-3.5">
-                <div className="text-xs font-black uppercase tracking-wider text-primary">
-                  Optional Joint Partner Logo Co-Branding
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
-                    Institution / Arena Title
-                  </label>
-                  <input
-                    type="text"
-                    value={branding.institutionTitle || ""}
-                    onChange={(e) => setBranding({ ...branding, institutionTitle: e.target.value })}
-                    placeholder="Onnesha Assessment Arena"
-                    className="w-full rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold"
-                  />
-                </div>
-
-                <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-foreground">
-                  <input
-                    type="checkbox"
-                    checked={branding.showPartnerLogo}
-                    onChange={(e) =>
-                      setBranding({ ...branding, showPartnerLogo: e.target.checked })
-                    }
-                  />
-                  <span>Display Joint Partner Logo in Navbar, Certificates &amp; Exam Hall</span>
-                </label>
-
-                {branding.showPartnerLogo && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                    <div>
-                      <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
-                        Joint Partner Name
-                      </label>
-                      <input
-                        type="text"
-                        value={branding.partnerName}
-                        onChange={(e) => setBranding({ ...branding, partnerName: e.target.value })}
-                        placeholder="e.g. National Training Academy"
-                        className="w-full rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
-                        Partner Logo URL (SVG/PNG)
-                      </label>
-                      <input
-                        type="text"
-                        value={branding.partnerLogoUrl}
-                        onChange={(e) =>
-                          setBranding({ ...branding, partnerLogoUrl: e.target.value })
-                        }
-                        placeholder="https://example.com/logo.svg"
-                        className="w-full rounded-xl border border-border bg-card px-3 py-2 text-xs font-mono"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <button
-                type="submit"
-                className="w-full rounded-2xl bg-primary py-3 text-xs font-extrabold text-primary-foreground shadow-sm hover:bg-primary/90 transition"
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              <form
+                onSubmit={handleSaveBrandingAndSecurity}
+                className="lg:col-span-7 rounded-3xl border border-border bg-card p-6 space-y-5"
               >
-                Save Global Security &amp; Co-Branding Settings
-              </button>
-            </form>
+                <h3 className="font-display text-lg font-black text-foreground flex items-center gap-2">
+                  <ShieldAlert className="h-5 w-5 text-primary" />
+                  <span>Global Anti-Cheat Screen Lock Policy</span>
+                </h3>
 
-            {/* Right: Database Backup & Restore */}
-            <div className="lg:col-span-5 rounded-3xl border border-border bg-card p-6 space-y-5 h-fit">
-              <h3 className="font-display text-lg font-black text-foreground">
-                Database Persistence &amp; JSON Snapshot
-              </h3>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                All courses, instructors, sequential quizzes, candidate rosters, and exam results
-                are automatically persisted to the server store (
-                <code className="font-mono text-foreground">onnesha-store.json</code>) and client
-                SQLite. You can also export or restore a complete snapshot below.
-              </p>
+                {/* Anti-Cheat Controls */}
+                <div className="rounded-2xl border border-border bg-background p-4 space-y-4">
+                  <div className="text-xs font-black uppercase tracking-wider text-primary">
+                    Proctoring &amp; Screen-Switch Prevention
+                  </div>
 
-              <div className="space-y-3">
+                  <label className="flex items-start justify-between gap-4 cursor-pointer">
+                    <div>
+                      <div className="text-xs font-bold text-foreground">
+                        Enforce Fullscreen Exam Lock by Default
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        Requires examinees to enter Fullscreen mode during active questions and logs
+                        a strike if they exit Fullscreen.
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={!!branding.defaultEnforceFullscreen}
+                      onChange={(e) =>
+                        setBranding({ ...branding, defaultEnforceFullscreen: e.target.checked })
+                      }
+                      className="mt-1 h-4 w-4 rounded border-border text-primary"
+                    />
+                  </label>
+
+                  <label className="flex items-start justify-between gap-4 cursor-pointer">
+                    <div>
+                      <div className="text-xs font-bold text-foreground">
+                        Block Copy/Paste, Right-Click &amp; DevTools Shortcuts
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        Prevents copying questions, pasting external answers, right-clicking,
+                        PrintScreen, or opening F12 Inspector.
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={branding.defaultBlockCopyPaste ?? true}
+                      onChange={(e) =>
+                        setBranding({ ...branding, defaultBlockCopyPaste: e.target.checked })
+                      }
+                      className="mt-1 h-4 w-4 rounded border-border text-primary"
+                    />
+                  </label>
+
+                  <div className="flex items-center justify-between gap-4 pt-2 border-t border-border/60">
+                    <div>
+                      <div className="text-xs font-bold text-foreground">
+                        Automatic Seat Suspension Threshold (Strikes)
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        Number of tab-switch / screen-blur violations before the candidate seat is
+                        automatically suspended.
+                      </div>
+                    </div>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={branding.defaultMaxProctorViolations || 3}
+                      onChange={(e) =>
+                        setBranding({
+                          ...branding,
+                          defaultMaxProctorViolations: parseInt(e.target.value, 10) || 3,
+                        })
+                      }
+                      className="w-20 rounded-xl border border-border bg-card px-3 py-1.5 font-mono text-xs font-bold text-center"
+                    />
+                  </div>
+                </div>
+
                 <button
-                  type="button"
-                  onClick={handleExportDatabase}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3 text-xs font-extrabold text-primary-foreground shadow-sm hover:bg-primary/90 transition"
+                  type="submit"
+                  className="w-full rounded-2xl bg-primary py-3 text-xs font-extrabold text-primary-foreground shadow-sm hover:bg-primary/90 transition"
                 >
-                  <Download className="h-4 w-4" />
-                  <span>Export Full Database Snapshot (.json)</span>
+                  Save Global Security &amp; Branding Settings
                 </button>
+              </form>
 
-                <label className="flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-background py-3 text-xs font-bold text-foreground hover:bg-accent transition cursor-pointer">
-                  <Upload className="h-4 w-4 text-primary" />
-                  <span>Import / Restore Database Snapshot (.json)</span>
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={handleImportDatabase}
-                    className="hidden"
-                  />
-                </label>
+              {/* Right: Database Backup & Restore */}
+              <div className="lg:col-span-5 rounded-3xl border border-border bg-card p-6 space-y-5 h-fit">
+                <h3 className="font-display text-lg font-black text-foreground">
+                  Database Persistence &amp; JSON Snapshot
+                </h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  All courses, instructors, sequential quizzes, candidate rosters, and exam results
+                  are automatically persisted to the server store (
+                  <code className="font-mono text-foreground">onnesha-store.json</code>) and client
+                  SQLite. You can also export or restore a complete snapshot below.
+                </p>
 
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await db.purgeDummyData();
-                    refreshAll();
-                    showNotice(
-                      "Purged pre-seeded dummy roster, bot exam records, and sample certificates.",
-                    );
-                  }}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-destructive/40 bg-destructive/10 py-3 text-xs font-bold text-destructive hover:bg-destructive/20 transition cursor-pointer"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  <span>Purge Residual Dummy / Test Seed Data</span>
-                </button>
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={handleExportDatabase}
+                    className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3 text-xs font-extrabold text-primary-foreground shadow-sm hover:bg-primary/90 transition"
+                  >
+                    <Download className="h-4 w-4" />
+                    <span>Export Full Database Snapshot (.json)</span>
+                  </button>
+
+                  <label className="flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-background py-3 text-xs font-bold text-foreground hover:bg-accent transition cursor-pointer">
+                    <Upload className="h-4 w-4 text-primary" />
+                    <span>Import / Restore Database Snapshot (.json)</span>
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={handleImportDatabase}
+                      className="hidden"
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await db.purgeDummyData();
+                      refreshAll();
+                      showNotice(
+                        "Purged pre-seeded dummy roster, bot exam records, and sample certificates.",
+                      );
+                    }}
+                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-destructive/40 bg-destructive/10 py-3 text-xs font-bold text-destructive hover:bg-destructive/20 transition cursor-pointer"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    <span>Purge Residual Dummy / Test Seed Data</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

@@ -18,6 +18,12 @@ import {
   resolveOrgName,
 } from "../scoring";
 import {
+  CERTIFICATE_THEME_PRESETS,
+  DEFAULT_BRANDING_SETTINGS,
+  mergeBrandingSettings,
+  resolveCertificateTheme,
+} from "../branding";
+import {
   anchorCertificateToRekor,
   anchorDigestToOpenTimestamps,
   buildDidDocument,
@@ -526,5 +532,66 @@ describe("industrial transparency standards: W3C did:web + Sigstore Rekor + Open
     expect(inspectedBtc.bitcoinBlockHeight).toBe(
       (0x35 << 14) | ((0xcd & 0x7f) << 7) | (0xeb & 0x7f),
     );
+  });
+});
+
+describe("certificate designer branding, themes, Bangladesh map & multi-signatories", () => {
+  it("merges and clamps BrandingSettings defaults, partner logos, and up to 4 signatories safely", () => {
+    const merged = mergeBrandingSettings({
+      institutionTitle: "  Dhaka AI Academy ",
+      leftLogoUrl: "data:image/png;base64,AAA",
+      rightLogoUrl: "https://cdn.example.org/seal.png",
+      certThemePreset: "dhaka_ai_navy",
+      certShowBangladeshAiMap: true,
+      certMapOpacity: 0.99, // clamped to 0.45
+      certCustomBgOpacity: 0.01, // clamped to 0.05
+      certBgPrimaryColor: "not-a-hex", // sanitized back to default
+      partnerLogos: [
+        { id: "p1", name: "ICT Division", logoUrl: "data:image/png;base64,P1" },
+        { id: "p2", name: "", logoUrl: "" }, // empty item filtered out
+      ],
+      certSignatories: [
+        { id: "s1", name: "Prof. Rahman", title: "VC", signatureStyle: "script" },
+        { id: "s2", name: "Dr. Kabir", title: "Controller", signatureStyle: "formal" },
+        { id: "s3", name: "A. Hossain", title: "Director", signatureStyle: "mono" },
+        { id: "s4", name: "Extra 4", title: "Dean", signatureStyle: "script" },
+        { id: "s5", name: "Extra 5 (capped)", title: "Dropped", signatureStyle: "script" },
+      ],
+    });
+
+    expect(merged.institutionTitle).toBe("Dhaka AI Academy");
+    expect(merged.leftLogoUrl).toBe("data:image/png;base64,AAA");
+    expect(merged.rightLogoUrl).toBe("https://cdn.example.org/seal.png");
+    expect(merged.certThemePreset).toBe("dhaka_ai_navy");
+    expect(merged.certShowBangladeshAiMap).toBe(true);
+    expect(merged.certMapOpacity).toBe(0.45);
+    expect(merged.certCustomBgOpacity).toBe(0.05);
+    expect(merged.certBgPrimaryColor).toBe(DEFAULT_BRANDING_SETTINGS.certBgPrimaryColor);
+    expect(merged.partnerLogos).toHaveLength(1);
+    expect(merged.partnerLogos?.[0]?.name).toBe("ICT Division");
+    expect(merged.certSignatories).toHaveLength(4);
+    expect(merged.certSignatories?.[2]?.signatureStyle).toBe("mono");
+  });
+
+  it("resolves preset palettes cleanly and adapts ink contrast automatically for custom dark backgrounds", () => {
+    const navyTheme = resolveCertificateTheme({
+      ...DEFAULT_BRANDING_SETTINGS,
+      certThemePreset: "dhaka_ai_navy",
+    });
+    expect(navyTheme.isDark).toBe(true);
+    expect(navyTheme.bgPrimary).toBe(CERTIFICATE_THEME_PRESETS.dhaka_ai_navy.bgPrimary);
+
+    const customDarkTheme = resolveCertificateTheme({
+      ...DEFAULT_BRANDING_SETTINGS,
+      certThemePreset: "custom",
+      certBgPrimaryColor: "#0b132b",
+      certBgSecondaryColor: "#1c2541",
+      certAccentColor: "#5bc0be",
+      certBorderColor: "#f59e0b",
+    });
+    expect(customDarkTheme.isDark).toBe(true);
+    expect(customDarkTheme.textPrimary).toBe("#f8fafc");
+    expect(customDarkTheme.borderOuter).toBe("#f59e0b");
+    expect(customDarkTheme.accentColor).toBe("#5bc0be");
   });
 });

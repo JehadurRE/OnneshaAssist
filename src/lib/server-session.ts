@@ -18,6 +18,7 @@ import {
   Region,
   RosterStudent,
 } from "./types";
+import { DEFAULT_BRANDING_SETTINGS, mergeBrandingSettings } from "./branding";
 import {
   DEFAULT_COURSES,
   DEFAULT_REGIONS,
@@ -91,13 +92,7 @@ export interface ServerSalesLeadRecord {
 }
 
 const DEFAULT_BRANDING: BrandingSettings = {
-  showPartnerLogo: false,
-  partnerName: "",
-  partnerLogoUrl: "",
-  institutionTitle: "Onnesha Assessment Arena",
-  defaultEnforceFullscreen: false,
-  defaultBlockCopyPaste: true,
-  defaultMaxProctorViolations: 3,
+  ...DEFAULT_BRANDING_SETTINGS,
 };
 
 interface PersistentStoreData {
@@ -271,9 +266,7 @@ function loadInitialStore(): PersistentStoreData {
           transactions: parsed.transactions || [],
           smsLogs: parsed.smsLogs || [],
           salesLeads: parsed.salesLeads || [],
-          branding: parsed.branding
-            ? { ...DEFAULT_BRANDING, ...parsed.branding }
-            : { ...DEFAULT_BRANDING },
+          branding: mergeBrandingSettings(parsed.branding, DEFAULT_BRANDING),
           updatedAt: parsed.updatedAt || Date.now(),
         };
       }
@@ -1460,6 +1453,7 @@ export const serverVerifyCertificate = createServerFn({ method: "GET" })
         certificate:
           verification.status === "tampered" ? { ...activeCert, verified: false } : activeCert,
         verification,
+        branding: mergeBrandingSettings(store.branding, DEFAULT_BRANDING),
         didWeb,
         publicKeyMultibase,
       };
@@ -1547,6 +1541,7 @@ export const serverVerifyCertificate = createServerFn({ method: "GET" })
       success: false,
       certificate: null,
       verification: null,
+      branding: mergeBrandingSettings(store.branding, DEFAULT_BRANDING),
       didWeb,
       publicKeyMultibase,
     };
@@ -2089,12 +2084,10 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
       }
       case "update_branding": {
         if (data.branding) {
-          store.branding = {
-            ...DEFAULT_BRANDING,
-            ...store.branding,
-            ...data.branding,
-            updatedAt: Date.now(),
-          };
+          store.branding = mergeBrandingSettings(
+            { ...data.branding, updatedAt: Date.now() },
+            store.branding,
+          );
           scheduleDiskPersist();
         }
         break;
@@ -2128,7 +2121,7 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
           if (data.backup.examResults) store.examResults = data.backup.examResults;
           if (data.backup.certificates) store.certificates = data.backup.certificates;
           if (data.backup.branding)
-            store.branding = { ...DEFAULT_BRANDING, ...data.backup.branding };
+            store.branding = mergeBrandingSettings(data.backup.branding, DEFAULT_BRANDING);
           scheduleDiskPersist();
         }
         break;

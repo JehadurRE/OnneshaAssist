@@ -10,7 +10,7 @@ import {
   serverVerifyCertificate,
 } from "@/lib/server-session";
 import type { CertificateVerificationReport } from "@/lib/server-security";
-import { CertificateData } from "@/lib/types";
+import { BrandingSettings, CertificateData } from "@/lib/types";
 import {
   AlertCircle,
   AlertTriangle,
@@ -39,6 +39,7 @@ function VerifyCertPage() {
   const navigate = useNavigate();
   const [searchId, setSearchId] = useState(certId);
   const [cert, setCert] = useState<CertificateData | undefined>(undefined);
+  const [serverBranding, setServerBranding] = useState<BrandingSettings | undefined>(undefined);
   const [verification, setVerification] = useState<CertificateVerificationReport | null>(null);
   const [didWeb, setDidWeb] = useState<string | null>(null);
   const [publicKeyMultibase, setPublicKeyMultibase] = useState<string | null>(null);
@@ -62,6 +63,7 @@ function VerifyCertPage() {
         if (cancelled) return;
         if (res.success && res.certificate) {
           setCert(res.certificate);
+          setServerBranding(res.branding || undefined);
           setVerification(res.verification || null);
           setDidWeb(res.didWeb || null);
           setPublicKeyMultibase(res.publicKeyMultibase || null);
@@ -551,7 +553,7 @@ function VerifyCertPage() {
               </div>
             )}
 
-            <CertificateView certificate={cert} />
+            <CertificateView certificate={cert} brandingOverride={serverBranding} />
           </div>
         ) : (
           <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-6 sm:p-10 text-center max-w-xl mx-auto my-6 sm:my-8">
