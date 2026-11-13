@@ -263,7 +263,7 @@ class OnneshaDatabase {
       if (res.certificates?.length) {
         res.certificates.forEach((cert) => {
           sqliteEngine.run(
-            "INSERT OR REPLACE INTO certificates (id, certificateNumber, studentName, studentRoll, regionName, quizTitle, score, totalPoints, rank, totalParticipants, accuracyPercent, issueDate, organizationName, institutionName, instructorName, verificationUrl, signatureUrl, verified, payloadHash, prevBlockHash, ledgerIndex, chainHash, cryptoSignature, signerKeyId, signedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO certificates (id, certificateNumber, studentName, studentRoll, regionName, quizTitle, score, totalPoints, rank, totalParticipants, accuracyPercent, issueDate, organizationName, institutionName, instructorName, verificationUrl, signatureUrl, verified, payloadHash, prevBlockHash, ledgerIndex, chainHash, cryptoSignature, signerKeyId, signedAt, rekorEntryUuid, rekorLogIndex, rekorIntegratedTime, rekorLogId, rekorStatus, rekorReceiptDigest, rekorPublicKeyId, rekorExplorerUrl, otsStatus, otsProofBase64, otsChainHash, otsLedgerIndex, otsCalendarUrl, otsSubmittedAt, otsBitcoinBlockHeight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
               cert.id,
               cert.certificateNumber,
@@ -290,6 +290,21 @@ class OnneshaDatabase {
               cert.cryptoSignature || "",
               cert.signerKeyId || "",
               cert.signedAt || "",
+              cert.rekorEntryUuid || "",
+              cert.rekorLogIndex ?? null,
+              cert.rekorIntegratedTime ?? null,
+              cert.rekorLogId || "",
+              cert.rekorStatus || "",
+              cert.rekorReceiptDigest || "",
+              cert.rekorPublicKeyId || "",
+              cert.rekorExplorerUrl || "",
+              cert.otsStatus || "",
+              cert.otsProofBase64 || "",
+              cert.otsChainHash || "",
+              cert.otsLedgerIndex ?? null,
+              cert.otsCalendarUrl || "",
+              cert.otsSubmittedAt || "",
+              cert.otsBitcoinBlockHeight ?? null,
             ],
           );
         });

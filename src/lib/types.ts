@@ -289,6 +289,35 @@ export interface CertificateData {
   cryptoSignature?: string | undefined;
   signerKeyId?: string | undefined;
   signedAt?: string | undefined;
+  /** Public Sigstore Rekor Merkle transparency log metadata (zero-PII hash anchor) */
+  rekorEntryUuid?: string | undefined;
+  rekorLogIndex?: number | undefined;
+  rekorIntegratedTime?: number | undefined;
+  rekorLogId?: string | undefined;
+  rekorStatus?: "anchored" | "pending_retry" | undefined;
+  rekorReceiptDigest?: string | undefined;
+  rekorPublicKeyId?: string | undefined;
+  rekorExplorerUrl?: string | undefined;
+  /** OpenTimestamps Bitcoin blockchain anchoring proof (batch ledger checkpoint) */
+  otsStatus?: "pending_bitcoin" | "bitcoin_confirmed" | undefined;
+  otsProofBase64?: string | undefined;
+  otsChainHash?: string | undefined;
+  otsLedgerIndex?: number | undefined;
+  otsCalendarUrl?: string | undefined;
+  otsSubmittedAt?: string | undefined;
+  otsBitcoinBlockHeight?: number | undefined;
+}
+
+export interface LedgerOtsCheckpoint {
+  id: string;
+  ledgerIndex: number;
+  chainHash: string;
+  otsProofBase64: string;
+  calendarUrl: string;
+  status: "pending_bitcoin" | "bitcoin_confirmed";
+  bitcoinBlockHeight?: number | undefined;
+  submittedAt: string;
+  upgradedAt?: string | undefined;
 }
 
 export interface PricingTier {

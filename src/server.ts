@@ -47,6 +47,15 @@ function isH3SwallowedErrorBody(body: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      const pathname = new URL(request.url).pathname;
+      if (pathname === "/.well-known/did.json" || pathname.startsWith("/api/certificates/")) {
+        const { handlePublicStandardEndpoint } = await import("./lib/server-session");
+        const directResponse = await handlePublicStandardEndpoint(request);
+        if (directResponse) {
+          return directResponse;
+        }
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

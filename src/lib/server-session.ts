@@ -7,6 +7,7 @@ import {
   ExamSessionRecord,
   GameSession,
   GameSettings,
+  LedgerOtsCheckpoint,
   ManagedUser,
   Participant,
   ParticipantAnswer,
@@ -27,6 +28,7 @@ import {
 import {
   canActorMutateStoreAction,
   generateHostToken,
+  getCertificateSigningKeys,
   getServerSessionSecret,
   hashPasswordScrypt,
   sanitizeUserForClient,
@@ -37,6 +39,15 @@ import {
   verifySessionToken,
 } from "./server-security";
 import { computeTotalQuizMarks, evaluateQuestionAnswer, resolveOrgName } from "./scoring";
+import {
+  anchorCertificateToRekor,
+  anchorDigestToOpenTimestamps,
+  buildDidDocument,
+  buildW3CVerifiableCredential,
+  ed25519PemToMultibase,
+  getRekorAnchorKeys,
+  hostToDidWeb,
+} from "./transparency-anchor";
 
 // ============================================================================
 // SERVER-AUTHORITATIVE PERSISTENT STORE (Render Persistent Disk / Node FS)
@@ -98,6 +109,7 @@ interface PersistentStoreData {
   examSessions: ExamSessionRecord[];
   examResults: ExamResultRecord[];
   certificates: CertificateData[];
+  ledgerCheckpoints: LedgerOtsCheckpoint[];
   transactions: ServerTransactionRecord[];
   smsLogs: ServerSmsLogRecord[];
   salesLeads: ServerSalesLeadRecord[];
@@ -255,6 +267,7 @@ function loadInitialStore(): PersistentStoreData {
           examSessions: parsed.examSessions || [],
           examResults: cleanedResults,
           certificates: parsed.certificates || [],
+          ledgerCheckpoints: parsed.ledgerCheckpoints || [],
           transactions: parsed.transactions || [],
           smsLogs: parsed.smsLogs || [],
           salesLeads: parsed.salesLeads || [],
@@ -278,6 +291,7 @@ function loadInitialStore(): PersistentStoreData {
     examSessions: [],
     examResults: [],
     certificates: [],
+    ledgerCheckpoints: [],
     transactions: [],
     smsLogs: [],
     salesLeads: [],
@@ -480,6 +494,119 @@ function buildPlayerSessionProjection(
   };
 }
 
+function findCoveringOtsCheckpoint(
+  cert: CertificateData,
+  checkpoints: LedgerOtsCheckpoint[],
+): LedgerOtsCheckpoint | undefined {
+  if (typeof cert.ledgerIndex !== "number") return undefined;
+  const covering = checkpoints
+    .filter((cp) => cp.ledgerIndex >= cert.ledgerIndex!)
+    .sort((a, b) => {
+      if (a.status === "bitcoin_confirmed" && b.status !== "bitcoin_confirmed") return -1;
+      if (b.status === "bitcoin_confirmed" && a.status !== "bitcoin_confirmed") return 1;
+      return a.ledgerIndex - b.ledgerIndex;
+    });
+  return covering[0];
+}
+
+function enrichCertificateWithOtsCheckpoint(
+  cert: CertificateData,
+  checkpoints: LedgerOtsCheckpoint[],
+): CertificateData {
+  const cp = findCoveringOtsCheckpoint(cert, checkpoints);
+  if (!cp) return cert;
+  return {
+    ...cert,
+    otsStatus: cert.otsStatus === "bitcoin_confirmed" ? "bitcoin_confirmed" : cp.status,
+    otsProofBase64: cert.otsProofBase64 || cp.otsProofBase64,
+    otsChainHash: cert.otsChainHash || cp.chainHash,
+    otsLedgerIndex: cert.otsLedgerIndex ?? cp.ledgerIndex,
+    otsCalendarUrl: cert.otsCalendarUrl || cp.calendarUrl,
+    otsSubmittedAt: cert.otsSubmittedAt || cp.submittedAt,
+    otsBitcoinBlockHeight: cert.otsBitcoinBlockHeight ?? cp.bitcoinBlockHeight,
+  };
+}
+
+async function anchorSingleCertificateToRekor(
+  certNo: string,
+  timeoutMs = 3500,
+): Promise<{ anchored: boolean; error?: string }> {
+  const store = getStore();
+  const { dataDir } = getStorePaths();
+  const idx = store.certificates.findIndex(
+    (c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase(),
+  );
+  const current = idx >= 0 ? store.certificates[idx] : undefined;
+  if (!current || !current.chainHash) {
+    return { anchored: false, error: "Unsealed certificate" };
+  }
+  if (current.rekorStatus === "anchored" && current.rekorEntryUuid) {
+    return { anchored: true };
+  }
+
+  const res = await anchorCertificateToRekor(current, { dataDir, timeoutMs });
+  if (Object.keys(res.fields).length > 0) {
+    store.certificates = store.certificates.map((c) =>
+      c.certificateNumber.toLowerCase() === certNo.toLowerCase() ? { ...c, ...res.fields } : c,
+    );
+    scheduleDiskPersist();
+  }
+  return { anchored: res.anchored, ...(res.error ? { error: res.error } : {}) };
+}
+
+async function ensureLatestLedgerOtsCheckpoint(
+  targetLedgerIndex?: number,
+  timeoutMs = 3800,
+): Promise<{ anchored: boolean; checkpoint?: LedgerOtsCheckpoint; error?: string }> {
+  const store = getStore();
+  const signedTip = store.certificates
+    .filter((c) => typeof c.ledgerIndex === "number" && !!c.chainHash)
+    .sort((a, b) => (b.ledgerIndex || 0) - (a.ledgerIndex || 0))[0];
+
+  if (!signedTip || !signedTip.chainHash || typeof signedTip.ledgerIndex !== "number") {
+    return { anchored: false, error: "No signed ledger blocks to checkpoint" };
+  }
+
+  const minNeededIndex = targetLedgerIndex ?? signedTip.ledgerIndex;
+  const existing = store.ledgerCheckpoints.find((cp) => cp.ledgerIndex >= minNeededIndex);
+  if (existing) {
+    return { anchored: true, checkpoint: existing };
+  }
+
+  const otsRes = await anchorDigestToOpenTimestamps(signedTip.chainHash, { timeoutMs });
+  if (!otsRes.success || !otsRes.otsProofBase64 || !otsRes.calendarUrl) {
+    return { anchored: false, error: otsRes.error || "OpenTimestamps anchoring failed" };
+  }
+
+  const checkpoint: LedgerOtsCheckpoint = {
+    id: `ots-${signedTip.ledgerIndex}-${Date.now().toString(36)}`,
+    ledgerIndex: signedTip.ledgerIndex,
+    chainHash: signedTip.chainHash,
+    otsProofBase64: otsRes.otsProofBase64,
+    calendarUrl: otsRes.calendarUrl,
+    status: otsRes.status || "pending_bitcoin",
+    bitcoinBlockHeight: otsRes.bitcoinBlockHeight,
+    submittedAt: new Date().toISOString(),
+  };
+
+  store.ledgerCheckpoints = [
+    checkpoint,
+    ...store.ledgerCheckpoints.filter((cp) => cp.ledgerIndex !== checkpoint.ledgerIndex),
+  ].slice(0, 200);
+  scheduleDiskPersist();
+  return { anchored: true, checkpoint };
+}
+
+function triggerBackgroundExternalAnchoring(certNumbers: string[]): void {
+  if (certNumbers.length === 0) return;
+  void (async () => {
+    for (const certNo of certNumbers) {
+      await anchorSingleCertificateToRekor(certNo, 3500);
+    }
+    await ensureLatestLedgerOtsCheckpoint(undefined, 3800);
+  })();
+}
+
 function persistCompletedExamToStore(session: ServerLiveSession) {
   const store = getStore();
   const sessionId = `exam-${session.pin}`;
@@ -522,6 +649,7 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
     store.customQuizzes.find((q) => q.id === session.quizId || q.slug === session.quizId) ||
     READY_MADE_PACKS.find((q) => q.id === session.quizId || q.slug === session.quizId);
   const totalMarks = computeTotalQuizMarks(quizObj?.questions, session.totalQuestions);
+  const mintedCertNumbers: string[] = [];
 
   participantsList.forEach((p, idx) => {
     const answersList = Object.values(p.answers || {});
@@ -593,9 +721,11 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
         (c) => c.certificateNumber.toLowerCase() !== certNo.toLowerCase(),
       ),
     ];
+    mintedCertNumbers.push(certNo);
   });
 
   scheduleDiskPersist();
+  triggerBackgroundExternalAnchoring(mintedCertNumbers);
 }
 
 function resolveSessionQuiz(
@@ -1288,20 +1418,56 @@ Return ONLY a valid JSON object matching this exact schema:
   });
 
 export const serverVerifyCertificate = createServerFn({ method: "GET" })
-  .validator((data: { certId?: string; certNo?: string }) => data)
+  .validator(
+    (data: {
+      certId?: string | undefined;
+      certNo?: string | undefined;
+      origin?: string | undefined;
+    }) => data,
+  )
   .handler(async ({ data }) => {
     const store = getStore();
     const { dataDir } = getStorePaths();
     const rawCert = (data.certNo || data.certId || "").trim();
     const target = rawCert.toLowerCase();
-    const found = store.certificates.find((c) => c.certificateNumber.toLowerCase() === target);
-    if (found) {
-      const verification = verifyCertificateCryptographically(found, dataDir, store.certificates);
+    const certKeys = getCertificateSigningKeys(dataDir);
+    const didWeb = hostToDidWeb(data.origin);
+    const publicKeyMultibase = certKeys ? ed25519PemToMultibase(certKeys.publicKeyPem) : null;
+
+    const resolveVerifiedEnvelope = async (cert: CertificateData) => {
+      const verification = verifyCertificateCryptographically(cert, dataDir, store.certificates);
+      let activeCert = cert;
+      if (verification.status === "verified_signed") {
+        if (activeCert.rekorStatus !== "anchored" || !activeCert.rekorEntryUuid) {
+          await anchorSingleCertificateToRekor(activeCert.certificateNumber, 2600);
+          activeCert =
+            store.certificates.find(
+              (c) =>
+                c.certificateNumber.toLowerCase() === activeCert.certificateNumber.toLowerCase(),
+            ) || activeCert;
+        }
+        if (
+          typeof activeCert.ledgerIndex === "number" &&
+          !findCoveringOtsCheckpoint(activeCert, store.ledgerCheckpoints)
+        ) {
+          triggerBackgroundExternalAnchoring([activeCert.certificateNumber]);
+        }
+        activeCert = enrichCertificateWithOtsCheckpoint(activeCert, store.ledgerCheckpoints);
+      }
+
       return {
         success: true,
-        certificate: verification.status === "tampered" ? { ...found, verified: false } : found,
+        certificate:
+          verification.status === "tampered" ? { ...activeCert, verified: false } : activeCert,
         verification,
+        didWeb,
+        publicKeyMultibase,
       };
+    };
+
+    const found = store.certificates.find((c) => c.certificateNumber.toLowerCase() === target);
+    if (found) {
+      return await resolveVerifiedEnvelope(found);
     }
 
     // Check if it matches a deterministic ONN-<PIN>-<ROLL> pattern backed by a real exam result
@@ -1373,17 +1539,7 @@ export const serverVerifyCertificate = createServerFn({ method: "GET" })
         ];
         scheduleDiskPersist();
 
-        const verification = verifyCertificateCryptographically(
-          synthesized,
-          dataDir,
-          store.certificates,
-        );
-
-        return {
-          success: true,
-          certificate: synthesized,
-          verification,
-        };
+        return await resolveVerifiedEnvelope(synthesized);
       }
     }
 
@@ -1391,8 +1547,152 @@ export const serverVerifyCertificate = createServerFn({ method: "GET" })
       success: false,
       certificate: null,
       verification: null,
+      didWeb,
+      publicKeyMultibase,
     };
   });
+
+export const serverAnchorCertificateNow = createServerFn({ method: "POST" })
+  .validator((data: { certNo: string }) => data)
+  .handler(async ({ data }) => {
+    const store = getStore();
+    const { dataDir } = getStorePaths();
+    const certNo = (data.certNo || "").trim();
+    const found = store.certificates.find(
+      (c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase(),
+    );
+    if (!found) {
+      return { success: false, error: "Certificate not found" };
+    }
+    const verification = verifyCertificateCryptographically(found, dataDir, store.certificates);
+    if (verification.status !== "verified_signed") {
+      return { success: false, error: "Certificate is not cryptographically valid" };
+    }
+
+    const rekorRes = await anchorSingleCertificateToRekor(found.certificateNumber, 4500);
+    const otsRes = await ensureLatestLedgerOtsCheckpoint(found.ledgerIndex, 4500);
+    const updatedRaw =
+      store.certificates.find(
+        (c) => c.certificateNumber.toLowerCase() === found.certificateNumber.toLowerCase(),
+      ) || found;
+    const enriched = enrichCertificateWithOtsCheckpoint(updatedRaw, store.ledgerCheckpoints);
+
+    return {
+      success: rekorRes.anchored || otsRes.anchored,
+      certificate: enriched,
+      verification: verifyCertificateCryptographically(enriched, dataDir, store.certificates),
+      rekorAnchored: rekorRes.anchored,
+      otsAnchored: otsRes.anchored,
+      rekorError: rekorRes.error,
+      otsError: otsRes.error,
+    };
+  });
+
+export const serverExportVerifiableCredential = createServerFn({ method: "GET" })
+  .validator((data: { certNo: string; origin?: string | undefined }) => data)
+  .handler(async ({ data }) => {
+    const store = getStore();
+    const { dataDir } = getStorePaths();
+    const certKeys = getCertificateSigningKeys(dataDir);
+    const rekorKeys = getRekorAnchorKeys(dataDir);
+    const originUrl = (data.origin || "https://onnesha.app").replace(/\/+$/, "");
+    const raw = store.certificates.find(
+      (c) => c.certificateNumber.toLowerCase() === (data.certNo || "").trim().toLowerCase(),
+    );
+    if (!raw || !certKeys) {
+      return { success: false, credential: null, didDocument: null, otsProofBase64: null };
+    }
+    const checkpoint = findCoveringOtsCheckpoint(raw, store.ledgerCheckpoints);
+    const enriched = enrichCertificateWithOtsCheckpoint(raw, store.ledgerCheckpoints);
+    const credential = buildW3CVerifiableCredential(enriched, certKeys, {
+      originUrl,
+      checkpoint,
+    });
+    const didDocument = buildDidDocument(originUrl, certKeys, rekorKeys);
+    return {
+      success: true,
+      credential,
+      didDocument,
+      otsProofBase64: enriched.otsProofBase64 || checkpoint?.otsProofBase64 || null,
+    };
+  });
+
+/** Pure HTTP handler for /.well-known/did.json, /api/certificates/:certNo/vc.json, and timestamp.ots */
+export async function handlePublicStandardEndpoint(request: Request): Promise<Response | null> {
+  if (request.method !== "GET") return null;
+  const url = new URL(request.url);
+  const path = url.pathname;
+  const store = getStore();
+  const { dataDir } = getStorePaths();
+  const certKeys = getCertificateSigningKeys(dataDir);
+  const rekorKeys = getRekorAnchorKeys(dataDir);
+  const originUrl = `${url.protocol}//${url.host}`;
+
+  if (path === "/.well-known/did.json") {
+    if (!certKeys) {
+      return Response.json({ error: "Signing keys unavailable" }, { status: 503 });
+    }
+    return new Response(JSON.stringify(buildDidDocument(originUrl, certKeys, rekorKeys), null, 2), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/did+json; charset=utf-8",
+        "Cache-Control": "public, max-age=300",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  }
+
+  const vcMatch = path.match(/^\/api\/certificates\/([^/]+)\/vc\.json$/i);
+  if (vcMatch && vcMatch[1]) {
+    const certNo = decodeURIComponent(vcMatch[1]);
+    const raw = store.certificates.find(
+      (c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase(),
+    );
+    if (!raw || !certKeys) {
+      return Response.json({ error: "Credential not found" }, { status: 404 });
+    }
+    const checkpoint = findCoveringOtsCheckpoint(raw, store.ledgerCheckpoints);
+    const enriched = enrichCertificateWithOtsCheckpoint(raw, store.ledgerCheckpoints);
+    const vc = buildW3CVerifiableCredential(enriched, certKeys, { originUrl, checkpoint });
+    return new Response(JSON.stringify(vc, null, 2), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/vc+json; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${raw.certificateNumber}.vc.json"`,
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  }
+
+  const otsMatch = path.match(/^\/api\/certificates\/([^/]+)\/timestamp\.ots$/i);
+  if (otsMatch && otsMatch[1]) {
+    const certNo = decodeURIComponent(otsMatch[1]);
+    const raw = store.certificates.find(
+      (c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase(),
+    );
+    if (!raw) {
+      return Response.json({ error: "Credential not found" }, { status: 404 });
+    }
+    const enriched = enrichCertificateWithOtsCheckpoint(raw, store.ledgerCheckpoints);
+    if (!enriched.otsProofBase64) {
+      return Response.json(
+        { error: "Bitcoin OpenTimestamps checkpoint not yet attached" },
+        { status: 404 },
+      );
+    }
+    const binary = Buffer.from(enriched.otsProofBase64, "base64");
+    return new Response(new Uint8Array(binary), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "Content-Disposition": `attachment; filename="${raw.certificateNumber}.ots"`,
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  }
+
+  return null;
+}
 
 export const serverChangeOwnPassword = createServerFn({ method: "POST" })
   .validator((data: { oldPassword: string; newPassword: string }) => data)
@@ -1744,6 +2044,21 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
             cryptoSignature: _cs,
             signerKeyId: _sk,
             signedAt: _sa,
+            rekorEntryUuid: _reu,
+            rekorLogIndex: _rli,
+            rekorIntegratedTime: _rit,
+            rekorLogId: _rlid,
+            rekorStatus: _rs,
+            rekorReceiptDigest: _rrd,
+            rekorPublicKeyId: _rpk,
+            rekorExplorerUrl: _rex,
+            otsStatus: _os,
+            otsProofBase64: _opb,
+            otsChainHash: _och,
+            otsLedgerIndex: _oli,
+            otsCalendarUrl: _ocu,
+            otsSubmittedAt: _osa,
+            otsBitcoinBlockHeight: _obh,
             ...cleanCert
           } = data.certificate;
           const sealedCert = sealCertificateWithLedger(
@@ -1759,6 +2074,7 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
             ),
           ];
           scheduleDiskPersist();
+          triggerBackgroundExternalAnchoring([sealedCert.certificateNumber]);
         }
         break;
       }

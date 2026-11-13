@@ -547,11 +547,13 @@ export function drawCertificateOnCanvas(
   );
 
   ctx.fillStyle = "#64748b";
-  ctx.font = "600 15px monospace";
+  ctx.font = "600 14px monospace";
   ctx.fillText(
-    certificate.payloadHash
-      ? `SHA256:${certificate.payloadHash.slice(0, 12)}… · BLK #${certificate.ledgerIndex || 1}`
-      : "SCAN QR TO VERIFY ONLINE",
+    certificate.rekorStatus === "anchored" && typeof certificate.rekorLogIndex === "number"
+      ? `REKOR #${certificate.rekorLogIndex} · BLK #${certificate.ledgerIndex || 1}`
+      : certificate.payloadHash
+        ? `SHA256:${certificate.payloadHash.slice(0, 12)}… · BLK #${certificate.ledgerIndex || 1}`
+        : "SCAN QR TO VERIFY ONLINE",
     W / 2,
     qrBoxY + 308,
   );

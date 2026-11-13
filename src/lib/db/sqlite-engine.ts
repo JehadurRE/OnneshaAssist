@@ -162,7 +162,22 @@ class SQLiteEngine {
         chainHash TEXT,
         cryptoSignature TEXT,
         signerKeyId TEXT,
-        signedAt TEXT
+        signedAt TEXT,
+        rekorEntryUuid TEXT,
+        rekorLogIndex INTEGER,
+        rekorIntegratedTime INTEGER,
+        rekorLogId TEXT,
+        rekorStatus TEXT,
+        rekorReceiptDigest TEXT,
+        rekorPublicKeyId TEXT,
+        rekorExplorerUrl TEXT,
+        otsStatus TEXT,
+        otsProofBase64 TEXT,
+        otsChainHash TEXT,
+        otsLedgerIndex INTEGER,
+        otsCalendarUrl TEXT,
+        otsSubmittedAt TEXT,
+        otsBitcoinBlockHeight INTEGER
       );
 
       CREATE TABLE IF NOT EXISTS transactions (
@@ -270,6 +285,21 @@ class SQLiteEngine {
       "ALTER TABLE certificates ADD COLUMN cryptoSignature TEXT",
       "ALTER TABLE certificates ADD COLUMN signerKeyId TEXT",
       "ALTER TABLE certificates ADD COLUMN signedAt TEXT",
+      "ALTER TABLE certificates ADD COLUMN rekorEntryUuid TEXT",
+      "ALTER TABLE certificates ADD COLUMN rekorLogIndex INTEGER",
+      "ALTER TABLE certificates ADD COLUMN rekorIntegratedTime INTEGER",
+      "ALTER TABLE certificates ADD COLUMN rekorLogId TEXT",
+      "ALTER TABLE certificates ADD COLUMN rekorStatus TEXT",
+      "ALTER TABLE certificates ADD COLUMN rekorReceiptDigest TEXT",
+      "ALTER TABLE certificates ADD COLUMN rekorPublicKeyId TEXT",
+      "ALTER TABLE certificates ADD COLUMN rekorExplorerUrl TEXT",
+      "ALTER TABLE certificates ADD COLUMN otsStatus TEXT",
+      "ALTER TABLE certificates ADD COLUMN otsProofBase64 TEXT",
+      "ALTER TABLE certificates ADD COLUMN otsChainHash TEXT",
+      "ALTER TABLE certificates ADD COLUMN otsLedgerIndex INTEGER",
+      "ALTER TABLE certificates ADD COLUMN otsCalendarUrl TEXT",
+      "ALTER TABLE certificates ADD COLUMN otsSubmittedAt TEXT",
+      "ALTER TABLE certificates ADD COLUMN otsBitcoinBlockHeight INTEGER",
     ];
     for (const sql of migrations) {
       try {

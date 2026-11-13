@@ -2,7 +2,7 @@ import type * as NodeCrypto from "node:crypto";
 import type * as NodeFs from "node:fs";
 import { CertificateData, ManagedUser } from "./types";
 
-function getNodeCrypto(): typeof NodeCrypto | null {
+export function getNodeCrypto(): typeof NodeCrypto | null {
   try {
     const proc = globalThis.process as unknown as {
       getBuiltinModule?: (id: string) => typeof NodeCrypto;
@@ -13,7 +13,7 @@ function getNodeCrypto(): typeof NodeCrypto | null {
   }
 }
 
-function getNodeFsSafe(): typeof NodeFs | null {
+export function getNodeFsSafe(): typeof NodeFs | null {
   try {
     const proc = globalThis.process as unknown as {
       getBuiltinModule?: (id: string) => typeof NodeFs;

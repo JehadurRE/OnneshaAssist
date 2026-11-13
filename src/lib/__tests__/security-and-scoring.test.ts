@@ -17,6 +17,18 @@ import {
   gradeOmrSubmission,
   resolveOrgName,
 } from "../scoring";
+import {
+  anchorCertificateToRekor,
+  anchorDigestToOpenTimestamps,
+  buildDidDocument,
+  buildRekorHashedRekordPayload,
+  buildW3CVerifiableCredential,
+  computeZeroPiiRekorReceipt,
+  getRekorAnchorKeys,
+  inspectOtsProofStatus,
+  OTS_BITCOIN_ATTESTATION_TAG,
+  verifyW3CVerifiableCredentialProof,
+} from "../transparency-anchor";
 import { CertificateData, ManagedUser, Question } from "../types";
 
 describe("server-security: password hashing & user sanitization", () => {
@@ -310,6 +322,209 @@ describe("certificate Ed25519 signing & SHA-256 hash-chain ledger", () => {
     const legacy = baseCert("ONN-OLD-0001", "Legacy User", 2500);
     expect(verifyCertificateCryptographically(legacy, undefined, [c1], keys).status).toBe(
       "legacy_unsigned",
+    );
+  });
+});
+
+describe("industrial transparency standards: W3C did:web + Sigstore Rekor + OpenTimestamps", () => {
+  const edKeys = (() => {
+    const generated = crypto.generateKeyPairSync("ed25519", {
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    });
+    return {
+      publicKeyPem: generated.publicKey,
+      privateKeyPem: generated.privateKey,
+      keyId: "ed-test-key",
+    };
+  })();
+
+  const p256Keys = getRekorAnchorKeys();
+
+  it("generates W3C did:web document and verifiable credential whose Ed25519 proof validates and rejects tampering", () => {
+    const sealed = sealCertificateWithLedger(
+      {
+        id: "cert-vc-1",
+        certificateNumber: "ONN-9001-0101",
+        studentName: "Farhana Rahman",
+        studentRoll: "2026-888",
+        quizTitle: "46th BCS Preliminary Arena",
+        score: 4600,
+        marksObtained: 4600,
+        totalPoints: 5000,
+        totalMarks: 5000,
+        rank: 1,
+        totalParticipants: 40,
+        accuracyPercent: 92,
+        issueDate: "2026-11-13",
+        verified: true,
+        rekorStatus: "anchored",
+        rekorEntryUuid: "24296fb24b8ad77a1234567890abcdef",
+        rekorLogIndex: 98765432,
+        rekorExplorerUrl: "https://search.sigstore.dev/?logIndex=98765432",
+      },
+      [],
+      undefined,
+      edKeys,
+    );
+
+    const didDoc = buildDidDocument("https://exam.onnesha.app", edKeys, p256Keys);
+    expect(didDoc.id).toBe("did:web:exam.onnesha.app");
+    expect(String(didDoc.verificationMethod[0]?.publicKeyMultibase)).toMatch(/^z6Mk/);
+
+    const vc = buildW3CVerifiableCredential(sealed, edKeys, {
+      originUrl: "https://exam.onnesha.app",
+    });
+    expect(vc.issuer.id).toBe("did:web:exam.onnesha.app");
+    expect(verifyW3CVerifiableCredentialProof(vc, edKeys.publicKeyPem)).toBe(true);
+
+    const tamperedVc = {
+      ...vc,
+      credentialSubject: { ...vc.credentialSubject, scoreObtained: 5000 },
+    };
+    expect(verifyW3CVerifiableCredentialProof(tamperedVc, edKeys.publicKeyPem)).toBe(false);
+  });
+
+  it("constructs zero-PII Rekor hashedrekord ECDSA P-256 payload and handles 201, 409, and offline fallbacks", async () => {
+    expect(p256Keys).not.toBeNull();
+    const sealed = sealCertificateWithLedger(
+      {
+        id: "cert-rek-1",
+        certificateNumber: "ONN-7777-0101",
+        studentName: "Secret Student PII Name",
+        studentRoll: "ROLL-SECRET-99",
+        quizTitle: "Confidential Exam",
+        score: 4100,
+        totalPoints: 5000,
+        rank: 2,
+        totalParticipants: 25,
+        issueDate: "2026-11-13",
+        verified: true,
+      },
+      [],
+      undefined,
+      edKeys,
+    );
+
+    const { payload, receiptDigestHex } = buildRekorHashedRekordPayload(
+      sealed.chainHash!,
+      p256Keys!,
+    );
+    const serialized = JSON.stringify(payload);
+    // Strict privacy check: zero student PII leaves server
+    expect(serialized).not.toContain("Secret Student");
+    expect(serialized).not.toContain("ROLL-SECRET");
+    expect(serialized).not.toContain("Confidential Exam");
+
+    // Verify ECDSA DER signature inside hashedrekord matches the Rekor receipt bytes
+    const { receiptText } = computeZeroPiiRekorReceipt(sealed.chainHash!);
+    const sigBase64 = (payload["spec"] as { signature: { content: string } }).signature.content;
+    const isValidSig = crypto.verify(
+      "sha256",
+      Buffer.from(receiptText, "utf8"),
+      p256Keys!.publicKeyPem,
+      Buffer.from(sigBase64, "base64"),
+    );
+    expect(isValidSig).toBe(true);
+
+    // 1) Normal 201 Created response
+    const okFetch = (async () =>
+      new Response(
+        JSON.stringify({
+          uuid123456: {
+            logID: "c0d23d6ad406973f9559f3ba2d1ca01f84147d8ffc5b8445c224f98b9591801d",
+            logIndex: 145001234,
+            integratedTime: 1794510000,
+          },
+        }),
+        { status: 201 },
+      )) as unknown as typeof fetch;
+
+    const anchored = await anchorCertificateToRekor(sealed, {
+      keysOverride: p256Keys!,
+      fetchImpl: okFetch,
+    });
+    expect(anchored.anchored).toBe(true);
+    expect(anchored.fields.rekorStatus).toBe("anchored");
+    expect(anchored.fields.rekorLogIndex).toBe(145001234);
+    expect(anchored.fields.rekorReceiptDigest).toBe(receiptDigestHex);
+
+    // 2) 409 Conflict -> auto-recovers existing entry via Location/retrieve
+    const conflictFetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/log/entries/retrieve")) {
+        return new Response(
+          JSON.stringify([
+            {
+              uuidExisting: { logID: "abc", logIndex: 999111, integratedTime: 1794509000 },
+            },
+          ]),
+          { status: 200 },
+        );
+      }
+      return new Response("already exists", { status: 409 });
+    }) as unknown as typeof fetch;
+
+    const recovered = await anchorCertificateToRekor(sealed, {
+      keysOverride: p256Keys!,
+      fetchImpl: conflictFetch,
+    });
+    expect(recovered.anchored).toBe(true);
+    expect(recovered.fields.rekorLogIndex).toBe(999111);
+
+    // 3) Offline network failure -> non-throwing graceful pending_retry fallback
+    const offlineFetch = (async () => {
+      throw new Error("Network unreachable");
+    }) as unknown as typeof fetch;
+
+    const fallback = await anchorCertificateToRekor(sealed, {
+      keysOverride: p256Keys!,
+      fetchImpl: offlineFetch,
+    });
+    expect(fallback.anchored).toBe(false);
+    expect(fallback.fields.rekorStatus).toBe("pending_retry");
+  });
+
+  it("wraps OpenTimestamps binary proofs cleanly and parses pending vs bitcoin-confirmed block heights", async () => {
+    const sampleChainHash = crypto
+      .createHash("sha256")
+      .update("onnesha-tip-block-42")
+      .digest("hex");
+    // Mock calendar stream (append op + pending attestation tag)
+    const mockCalendarProof = Buffer.from(
+      "0083dfe30d2ef90c8e1f68747470733a2f2f612e706f6f6c",
+      "hex",
+    );
+
+    const otsFetch = (async () =>
+      new Response(new Uint8Array(mockCalendarProof), {
+        status: 200,
+      })) as unknown as typeof fetch;
+
+    const res = await anchorDigestToOpenTimestamps(sampleChainHash, {
+      calendars: ["https://a.pool.opentimestamps.org"],
+      fetchImpl: otsFetch,
+    });
+    expect(res.success).toBe(true);
+    expect(res.status).toBe("pending_bitcoin");
+    expect(res.otsProofBase64).toBeTruthy();
+
+    const fileBytes = Buffer.from(res.otsProofBase64!, "base64");
+    const inspectedPending = inspectOtsProofStatus(fileBytes);
+    expect(inspectedPending.validHeader).toBe(true);
+    expect(inspectedPending.status).toBe("pending_bitcoin");
+
+    // Simulate upgraded proof carrying BitcoinBlockHeaderAttestation with varint length=3 & block height 870123 (0xeb, 0xcd, 0x35)
+    const btcPayload = Buffer.concat([
+      fileBytes.subarray(0, 65),
+      OTS_BITCOIN_ATTESTATION_TAG,
+      Buffer.from([0x03, 0xeb, 0xcd, 0x35]),
+    ]);
+    const inspectedBtc = inspectOtsProofStatus(btcPayload);
+    expect(inspectedBtc.validHeader).toBe(true);
+    expect(inspectedBtc.status).toBe("bitcoin_confirmed");
+    expect(inspectedBtc.bitcoinBlockHeight).toBe(
+      (0x35 << 14) | ((0xcd & 0x7f) << 7) | (0xeb & 0x7f),
     );
   });
 });
