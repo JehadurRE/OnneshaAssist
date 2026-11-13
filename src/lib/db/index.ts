@@ -263,7 +263,7 @@ class OnneshaDatabase {
       if (res.certificates?.length) {
         res.certificates.forEach((cert) => {
           sqliteEngine.run(
-            "INSERT OR REPLACE INTO certificates (id, certificateNumber, studentName, studentRoll, regionName, quizTitle, score, totalPoints, rank, totalParticipants, accuracyPercent, issueDate, organizationName, institutionName, instructorName, verificationUrl, signatureUrl, verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO certificates (id, certificateNumber, studentName, studentRoll, regionName, quizTitle, score, totalPoints, rank, totalParticipants, accuracyPercent, issueDate, organizationName, institutionName, instructorName, verificationUrl, signatureUrl, verified, payloadHash, prevBlockHash, ledgerIndex, chainHash, cryptoSignature, signerKeyId, signedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
               cert.id,
               cert.certificateNumber,
@@ -283,6 +283,13 @@ class OnneshaDatabase {
               cert.verificationUrl || "",
               cert.signatureUrl || "",
               cert.verified ? 1 : 0,
+              cert.payloadHash || "",
+              cert.prevBlockHash || "",
+              cert.ledgerIndex ?? null,
+              cert.chainHash || "",
+              cert.cryptoSignature || "",
+              cert.signerKeyId || "",
+              cert.signedAt || "",
             ],
           );
         });
@@ -1081,9 +1088,13 @@ class OnneshaDatabase {
     const certs = this.getCertificates();
     this.setStorage("certificates", certs);
 
-    serverAdminMutateStore({ data: { action: "issue_certificate", certificate: newCert } }).catch(
-      () => {},
-    );
+    serverAdminMutateStore({ data: { action: "issue_certificate", certificate: newCert } })
+      .then((res) => {
+        if (res.success) {
+          this.syncFromServerStore();
+        }
+      })
+      .catch(() => {});
     return newCert;
   }
 

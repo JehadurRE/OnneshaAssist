@@ -30,7 +30,9 @@ import {
   getServerSessionSecret,
   hashPasswordScrypt,
   sanitizeUserForClient,
+  sealCertificateWithLedger,
   signSessionToken,
+  verifyCertificateCryptographically,
   verifyPasswordScrypt,
   verifySessionToken,
 } from "./server-security";
@@ -556,7 +558,7 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
     store.examResults.push(resultRecord);
 
     const certNo = makeCertificateNumber(session.pin, roll, idx + 1);
-    const certRecord: CertificateData = {
+    const unsignedCert: CertificateData = {
       id: `cert-${session.pin}-${p.id}`,
       certificateNumber: certNo,
       studentName: p.nickname || p.name || `Candidate ${idx + 1}`,
@@ -578,6 +580,12 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
       verificationUrl: `/verify/${certNo}`,
       verified: true,
     };
+
+    const certRecord = sealCertificateWithLedger(
+      unsignedCert,
+      store.certificates,
+      getStorePaths().dataDir,
+    );
 
     store.certificates = [
       certRecord,
@@ -1283,13 +1291,16 @@ export const serverVerifyCertificate = createServerFn({ method: "GET" })
   .validator((data: { certId?: string; certNo?: string }) => data)
   .handler(async ({ data }) => {
     const store = getStore();
+    const { dataDir } = getStorePaths();
     const rawCert = (data.certNo || data.certId || "").trim();
     const target = rawCert.toLowerCase();
     const found = store.certificates.find((c) => c.certificateNumber.toLowerCase() === target);
     if (found) {
+      const verification = verifyCertificateCryptographically(found, dataDir, store.certificates);
       return {
         success: true,
-        certificate: found,
+        certificate: verification.status === "tampered" ? { ...found, verified: false } : found,
+        verification,
       };
     }
 
@@ -1324,35 +1335,54 @@ export const serverVerifyCertificate = createServerFn({ method: "GET" })
           matchedSession?.totalQuestions || 5,
         );
         const certNoUpper = rawCert.toUpperCase();
-        const synthesized: CertificateData = {
-          id: `cert-${certNoUpper.toLowerCase()}`,
-          certificateNumber: certNoUpper,
-          studentName: matchedResult.name,
-          studentRoll: matchedResult.rollNumber,
-          regionName: matchedResult.regionName || "Dhaka Range",
-          quizTitle:
-            matchedSession?.quizTitleBn ||
-            matchedSession?.quizTitleEn ||
-            "Onnesha Assessment Evaluation",
-          score: matchedResult.score,
-          marksObtained: matchedResult.score,
-          totalPoints: totalMarks,
-          totalMarks,
-          rank: matchedResult.rank,
-          totalParticipants: matchedSession?.participantCount || 1,
-          accuracyPercent: matchedResult.accuracyPct,
-          scorePct: matchedResult.accuracyPct,
-          issueDate: (matchedResult.createdAt || new Date().toISOString()).slice(0, 10),
-          organizationName: resolveOrgName(store.branding),
-          institutionName: store.branding?.institutionTitle || "Onnesha Assessment Arena",
-          instructorName: "Chief Assessment Officer",
-          verificationUrl: `/verify/${certNoUpper}`,
-          verified: true,
-        };
+        const synthesized = sealCertificateWithLedger(
+          {
+            id: `cert-${certNoUpper.toLowerCase()}`,
+            certificateNumber: certNoUpper,
+            studentName: matchedResult.name,
+            studentRoll: matchedResult.rollNumber,
+            regionName: matchedResult.regionName || "Dhaka Range",
+            quizTitle:
+              matchedSession?.quizTitleBn ||
+              matchedSession?.quizTitleEn ||
+              "Onnesha Assessment Evaluation",
+            score: matchedResult.score,
+            marksObtained: matchedResult.score,
+            totalPoints: totalMarks,
+            totalMarks,
+            rank: matchedResult.rank,
+            totalParticipants: matchedSession?.participantCount || 1,
+            accuracyPercent: matchedResult.accuracyPct,
+            scorePct: matchedResult.accuracyPct,
+            issueDate: (matchedResult.createdAt || new Date().toISOString()).slice(0, 10),
+            organizationName: resolveOrgName(store.branding),
+            institutionName: store.branding?.institutionTitle || "Onnesha Assessment Arena",
+            instructorName: "Chief Assessment Officer",
+            verificationUrl: `/verify/${certNoUpper}`,
+            verified: true,
+          },
+          store.certificates,
+          dataDir,
+        );
+
+        store.certificates = [
+          synthesized,
+          ...store.certificates.filter(
+            (c) => c.certificateNumber.toLowerCase() !== certNoUpper.toLowerCase(),
+          ),
+        ];
+        scheduleDiskPersist();
+
+        const verification = verifyCertificateCryptographically(
+          synthesized,
+          dataDir,
+          store.certificates,
+        );
 
         return {
           success: true,
           certificate: synthesized,
+          verification,
         };
       }
     }
@@ -1360,6 +1390,7 @@ export const serverVerifyCertificate = createServerFn({ method: "GET" })
     return {
       success: false,
       certificate: null,
+      verification: null,
     };
   });
 
@@ -1705,12 +1736,26 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
       }
       case "issue_certificate": {
         if (data.certificate) {
+          const {
+            payloadHash: _ph,
+            prevBlockHash: _pbh,
+            ledgerIndex: _li,
+            chainHash: _ch,
+            cryptoSignature: _cs,
+            signerKeyId: _sk,
+            signedAt: _sa,
+            ...cleanCert
+          } = data.certificate;
+          const sealedCert = sealCertificateWithLedger(
+            cleanCert,
+            store.certificates,
+            getStorePaths().dataDir,
+          );
           store.certificates = [
-            data.certificate,
+            sealedCert,
             ...store.certificates.filter(
               (c) =>
-                c.certificateNumber.toLowerCase() !==
-                data.certificate!.certificateNumber.toLowerCase(),
+                c.certificateNumber.toLowerCase() !== sealedCert.certificateNumber.toLowerCase(),
             ),
           ];
           scheduleDiskPersist();

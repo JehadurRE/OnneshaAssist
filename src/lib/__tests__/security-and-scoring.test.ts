@@ -2,9 +2,12 @@ import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   canActorMutateStoreAction,
+  getCertificateSigningKeys,
   hashPasswordScrypt,
   sanitizeUserForClient,
+  sealCertificateWithLedger,
   signSessionToken,
+  verifyCertificateCryptographically,
   verifyPasswordScrypt,
   verifySessionToken,
 } from "../server-security";
@@ -14,7 +17,7 @@ import {
   gradeOmrSubmission,
   resolveOrgName,
 } from "../scoring";
-import { ManagedUser, Question } from "../types";
+import { CertificateData, ManagedUser, Question } from "../types";
 
 describe("server-security: password hashing & user sanitization", () => {
   it("hashes passwords with unique per-user scrypt salts and verifies cleanly", () => {
@@ -233,5 +236,80 @@ describe("scoring & certificate metadata helpers", () => {
     expect(omr.negativeDeduction).toBeCloseTo(1.0);
     expect(omr.netScore).toBe(0);
     expect(omr.maxPossibleScore).toBeCloseTo(2.5);
+  });
+});
+
+describe("certificate Ed25519 signing & SHA-256 hash-chain ledger", () => {
+  const keys = getCertificateSigningKeys()!;
+  const baseCert = (num: string, name: string, score: number): CertificateData => ({
+    id: `cert-${num}`,
+    certificateNumber: num,
+    studentName: name,
+    studentRoll: "2026-101",
+    quizTitle: "46th BCS Model Test",
+    score,
+    marksObtained: score,
+    totalPoints: 5000,
+    totalMarks: 5000,
+    rank: 1,
+    totalParticipants: 10,
+    accuracyPercent: 90,
+    issueDate: "2026-11-13",
+    verified: true,
+  });
+
+  it("seals sequential certificates in a linked SHA-256 + Ed25519 ledger and verifies validly", () => {
+    const c1 = sealCertificateWithLedger(
+      baseCert("ONN-1001-0101", "Tanvir", 4500),
+      [],
+      undefined,
+      keys,
+    );
+    const c2 = sealCertificateWithLedger(
+      baseCert("ONN-1001-0102", "Nusrat", 4200),
+      [c1],
+      undefined,
+      keys,
+    );
+
+    expect(c1.ledgerIndex).toBe(1);
+    expect(c1.prevBlockHash).toBe("0".repeat(64));
+    expect(c2.ledgerIndex).toBe(2);
+    expect(c2.prevBlockHash).toBe(c1.chainHash);
+
+    const r1 = verifyCertificateCryptographically(c1, undefined, [c2, c1], keys);
+    const r2 = verifyCertificateCryptographically(c2, undefined, [c2, c1], keys);
+
+    expect(r1.status).toBe("verified_signed");
+    expect(r1.signatureValid).toBe(true);
+    expect(r1.payloadMatch).toBe(true);
+    expect(r1.chainLinkValid).toBe(true);
+
+    expect(r2.status).toBe("verified_signed");
+    expect(r2.chainLinkValid).toBe(true);
+  });
+
+  it("detects tampered certificate scores, names, or broken chain links", () => {
+    const c1 = sealCertificateWithLedger(
+      baseCert("ONN-2002-0101", "Sadia", 3000),
+      [],
+      undefined,
+      keys,
+    );
+    const tamperedScore = { ...c1, score: 5000, marksObtained: 5000 };
+    const report = verifyCertificateCryptographically(tamperedScore, undefined, [c1], keys);
+
+    expect(report.status).toBe("tampered");
+    expect(report.payloadMatch).toBe(false);
+
+    const forgedSig = { ...c1, cryptoSignature: `${c1.cryptoSignature?.slice(0, -4)}AAAA` };
+    expect(verifyCertificateCryptographically(forgedSig, undefined, [c1], keys).status).toBe(
+      "tampered",
+    );
+
+    const legacy = baseCert("ONN-OLD-0001", "Legacy User", 2500);
+    expect(verifyCertificateCryptographically(legacy, undefined, [c1], keys).status).toBe(
+      "legacy_unsigned",
+    );
   });
 });

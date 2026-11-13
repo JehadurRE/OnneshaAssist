@@ -155,7 +155,14 @@ class SQLiteEngine {
         instructorName TEXT,
         verificationUrl TEXT,
         signatureUrl TEXT,
-        verified INTEGER DEFAULT 1
+        verified INTEGER DEFAULT 1,
+        payloadHash TEXT,
+        prevBlockHash TEXT,
+        ledgerIndex INTEGER,
+        chainHash TEXT,
+        cryptoSignature TEXT,
+        signerKeyId TEXT,
+        signedAt TEXT
       );
 
       CREATE TABLE IF NOT EXISTS transactions (
@@ -256,6 +263,13 @@ class SQLiteEngine {
       "ALTER TABLE users ADD COLUMN assignedCourseIdsJson TEXT",
       "ALTER TABLE users ADD COLUMN status TEXT",
       "ALTER TABLE sales_leads ADD COLUMN status TEXT",
+      "ALTER TABLE certificates ADD COLUMN payloadHash TEXT",
+      "ALTER TABLE certificates ADD COLUMN prevBlockHash TEXT",
+      "ALTER TABLE certificates ADD COLUMN ledgerIndex INTEGER",
+      "ALTER TABLE certificates ADD COLUMN chainHash TEXT",
+      "ALTER TABLE certificates ADD COLUMN cryptoSignature TEXT",
+      "ALTER TABLE certificates ADD COLUMN signerKeyId TEXT",
+      "ALTER TABLE certificates ADD COLUMN signedAt TEXT",
     ];
     for (const sql of migrations) {
       try {

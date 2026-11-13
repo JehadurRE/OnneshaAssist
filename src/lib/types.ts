@@ -1,15 +1,15 @@
-export type Language = 'en' | 'bn';
+export type Language = "en" | "bn";
 
 export type QuestionType =
-  | 'single_mcq'
-  | 'multi_mcq'
-  | 'true_false'
-  | 'fill_blank'
-  | 'written'
-  | 'poll'
-  | 'matching'
-  | 'ordering'
-  | 'image_mcq';
+  | "single_mcq"
+  | "multi_mcq"
+  | "true_false"
+  | "fill_blank"
+  | "written"
+  | "poll"
+  | "matching"
+  | "ordering"
+  | "image_mcq";
 
 export interface QuestionOption {
   id: string;
@@ -33,7 +33,7 @@ export interface Question {
   negativeMarks?: number | undefined; // e.g. 0.25, 0.5
   imageUrl?: string | undefined;
   category?: string | undefined;
-  difficulty?: 'easy' | 'medium' | 'hard' | undefined;
+  difficulty?: "easy" | "medium" | "hard" | undefined;
 }
 
 export interface Course {
@@ -49,7 +49,7 @@ export interface Course {
   color?: string | undefined;
   instructorIds: string[];
   instructorNames: string[];
-  status?: 'active' | 'archived' | string | undefined;
+  status?: "active" | "archived" | string | undefined;
   createdAt: string;
 }
 
@@ -57,7 +57,7 @@ export interface ManagedUser {
   id: string;
   email: string;
   name: string;
-  role: 'admin' | 'instructor' | 'candidate';
+  role: "admin" | "instructor" | "candidate";
   institutionName?: string | undefined;
   institution?: string | undefined;
   designation?: string | undefined;
@@ -66,7 +66,7 @@ export interface ManagedUser {
   /** Stored only on server; stripped from client bootstrap/auth responses. May be sent on create/password update. */
   passwordHash?: string | undefined;
   assignedCourseIds?: string[] | undefined;
-  status?: 'active' | 'suspended' | undefined;
+  status?: "active" | "suspended" | undefined;
   aiCredits?: number | undefined;
   createdAt: string;
 }
@@ -96,13 +96,7 @@ export interface Quiz {
 }
 
 export type SessionPhase =
-  | 'lobby'
-  | 'countdown'
-  | 'question'
-  | 'chart'
-  | 'leaderboard'
-  | 'podium'
-  | 'finished';
+  "lobby" | "countdown" | "question" | "chart" | "leaderboard" | "podium" | "finished";
 
 export interface Region {
   id: string;
@@ -126,7 +120,7 @@ export interface ParticipantAnswer {
 
 export interface ProctorIncidentRecord {
   id: string;
-  type: 'tab_switch' | 'window_blur' | 'fullscreen_exit' | 'copy_attempt' | 'devtools_attempt';
+  type: "tab_switch" | "window_blur" | "fullscreen_exit" | "copy_attempt" | "devtools_attempt";
   timestamp: string;
   candidateId: string;
   candidateName: string;
@@ -287,6 +281,14 @@ export interface CertificateData {
   signatureUrl?: string;
   qrCodeUrl?: string;
   verified: boolean;
+  /** Cryptographic integrity & hash-chain ledger metadata (server-signed Ed25519) */
+  payloadHash?: string | undefined;
+  prevBlockHash?: string | undefined;
+  ledgerIndex?: number | undefined;
+  chainHash?: string | undefined;
+  cryptoSignature?: string | undefined;
+  signerKeyId?: string | undefined;
+  signedAt?: string | undefined;
 }
 
 export interface PricingTier {
@@ -354,4 +356,3 @@ export interface BrandingSettings {
   maxProctorViolationsDefault?: number | undefined;
   updatedAt?: number | undefined;
 }
-

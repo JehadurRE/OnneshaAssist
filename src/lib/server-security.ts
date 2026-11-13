@@ -1,6 +1,6 @@
 import type * as NodeCrypto from "node:crypto";
 import type * as NodeFs from "node:fs";
-import { ManagedUser } from "./types";
+import { CertificateData, ManagedUser } from "./types";
 
 function getNodeCrypto(): typeof NodeCrypto | null {
   try {
@@ -266,4 +266,237 @@ export function canActorMutateStoreAction(
   }
 
   return { allowed: false, reason: `Unknown mutation action: ${action}` };
+}
+
+// ============================================================================
+// CRYPTOGRAPHIC CERTIFICATE SIGNING & APPEND-ONLY HASH-CHAIN LEDGER (Ed25519)
+// ============================================================================
+
+export interface CertificateSigningKeys {
+  publicKeyPem: string;
+  privateKeyPem: string;
+  keyId: string;
+}
+
+export interface CertificateVerificationReport {
+  status: "verified_signed" | "legacy_unsigned" | "tampered";
+  hasSignature: boolean;
+  payloadMatch: boolean;
+  signatureValid: boolean;
+  chainLinkValid: boolean | null;
+  expectedPayloadHash: string;
+  keyId?: string | undefined;
+  publicKeyPem?: string | undefined;
+}
+
+let cachedCertSigningKeys: CertificateSigningKeys | null = null;
+
+function computeKeyFingerprint(publicKeyPem: string): string {
+  const crypto = getNodeCrypto();
+  if (!crypto) return "unavailable";
+  return crypto.createHash("sha256").update(publicKeyPem, "utf8").digest("hex").slice(0, 12);
+}
+
+export function getCertificateSigningKeys(dataDir?: string): CertificateSigningKeys | null {
+  const crypto = getNodeCrypto();
+  if (!crypto) return null;
+
+  const envPriv =
+    typeof process !== "undefined" ? process.env["CERT_PRIVATE_KEY_PEM"]?.trim() : undefined;
+  const envPub =
+    typeof process !== "undefined" ? process.env["CERT_PUBLIC_KEY_PEM"]?.trim() : undefined;
+  if (envPriv && envPub) {
+    return {
+      privateKeyPem: envPriv.replace(/\\n/g, "\n"),
+      publicKeyPem: envPub.replace(/\\n/g, "\n"),
+      keyId: computeKeyFingerprint(envPub.replace(/\\n/g, "\n")),
+    };
+  }
+
+  if (cachedCertSigningKeys) return cachedCertSigningKeys;
+
+  const fs = getNodeFsSafe();
+  if (fs && dataDir) {
+    try {
+      const keyFile = `${dataDir}/.onnesha-cert-ed25519.json`;
+      if (fs.existsSync(keyFile)) {
+        const raw = JSON.parse(
+          fs.readFileSync(keyFile, "utf-8"),
+        ) as Partial<CertificateSigningKeys>;
+        if (raw.privateKeyPem && raw.publicKeyPem) {
+          cachedCertSigningKeys = {
+            privateKeyPem: raw.privateKeyPem,
+            publicKeyPem: raw.publicKeyPem,
+            keyId: raw.keyId || computeKeyFingerprint(raw.publicKeyPem),
+          };
+          return cachedCertSigningKeys;
+        }
+      }
+
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+      const generated = crypto.generateKeyPairSync("ed25519", {
+        publicKeyEncoding: { type: "spki", format: "pem" },
+        privateKeyEncoding: { type: "pkcs8", format: "pem" },
+      });
+      const bundle: CertificateSigningKeys = {
+        publicKeyPem: generated.publicKey,
+        privateKeyPem: generated.privateKey,
+        keyId: computeKeyFingerprint(generated.publicKey),
+      };
+      fs.writeFileSync(keyFile, JSON.stringify(bundle), { mode: 0o600 });
+      cachedCertSigningKeys = bundle;
+      return bundle;
+    } catch {
+      // Fall through to in-memory ephemeral keypair
+    }
+  }
+
+  const ephemeral = crypto.generateKeyPairSync("ed25519", {
+    publicKeyEncoding: { type: "spki", format: "pem" },
+    privateKeyEncoding: { type: "pkcs8", format: "pem" },
+  });
+  cachedCertSigningKeys = {
+    publicKeyPem: ephemeral.publicKey,
+    privateKeyPem: ephemeral.privateKey,
+    keyId: computeKeyFingerprint(ephemeral.publicKey),
+  };
+  return cachedCertSigningKeys;
+}
+
+export function computeCertificatePayloadHash(cert: CertificateData): string {
+  const crypto = getNodeCrypto();
+  if (!crypto) return "";
+  const canonical = JSON.stringify({
+    certificateNumber: (cert.certificateNumber || "").trim().toUpperCase(),
+    studentName: (cert.studentName || "").trim(),
+    studentRoll: (cert.studentRoll || "").trim(),
+    quizTitle: (cert.quizTitle || "").trim(),
+    score: Number(cert.marksObtained ?? cert.score ?? 0),
+    totalPoints: Number(cert.totalMarks ?? cert.totalPoints ?? 100),
+    rank: Number(cert.rank || 1),
+    issueDate: (cert.issueDate || "").trim(),
+  });
+  return crypto.createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+function computeChainBlockHash(
+  ledgerIndex: number,
+  prevBlockHash: string,
+  payloadHash: string,
+  signedAt: string,
+): string {
+  const crypto = getNodeCrypto();
+  if (!crypto) return "";
+  return crypto
+    .createHash("sha256")
+    .update(`${ledgerIndex}|${prevBlockHash}|${payloadHash}|${signedAt}`, "utf8")
+    .digest("hex");
+}
+
+export function sealCertificateWithLedger(
+  cert: CertificateData,
+  existingCertificates: CertificateData[],
+  dataDir?: string,
+  keysOverride?: CertificateSigningKeys,
+): CertificateData {
+  const crypto = getNodeCrypto();
+  const keys = keysOverride || getCertificateSigningKeys(dataDir);
+  if (!crypto || !keys) return cert;
+
+  const latestSigned = existingCertificates
+    .filter((c) => typeof c.ledgerIndex === "number" && !!c.chainHash)
+    .sort((a, b) => (b.ledgerIndex || 0) - (a.ledgerIndex || 0))[0];
+
+  const ledgerIndex = (latestSigned?.ledgerIndex || 0) + 1;
+  const prevBlockHash = latestSigned?.chainHash || "0".repeat(64);
+  const signedAt = new Date().toISOString();
+  const payloadHash = computeCertificatePayloadHash(cert);
+  const chainHash = computeChainBlockHash(ledgerIndex, prevBlockHash, payloadHash, signedAt);
+  const signature = crypto
+    .sign(null, Buffer.from(chainHash, "utf8"), keys.privateKeyPem)
+    .toString("base64url");
+
+  return {
+    ...cert,
+    verified: true,
+    payloadHash,
+    prevBlockHash,
+    ledgerIndex,
+    chainHash,
+    cryptoSignature: signature,
+    signerKeyId: keys.keyId,
+    signedAt,
+  };
+}
+
+export function verifyCertificateCryptographically(
+  cert: CertificateData,
+  dataDir?: string,
+  ledgerCertificates?: CertificateData[],
+  keysOverride?: CertificateSigningKeys,
+): CertificateVerificationReport {
+  const crypto = getNodeCrypto();
+  const keys = keysOverride || getCertificateSigningKeys(dataDir);
+  const expectedPayloadHash = computeCertificatePayloadHash(cert);
+
+  if (!cert.cryptoSignature || !cert.chainHash || !cert.payloadHash || !cert.signedAt) {
+    return {
+      status: "legacy_unsigned",
+      hasSignature: false,
+      payloadMatch: true,
+      signatureValid: false,
+      chainLinkValid: null,
+      expectedPayloadHash,
+      keyId: keys?.keyId,
+      publicKeyPem: keys?.publicKeyPem,
+    };
+  }
+
+  const payloadMatch = cert.payloadHash === expectedPayloadHash;
+  const expectedChainHash = computeChainBlockHash(
+    cert.ledgerIndex || 1,
+    cert.prevBlockHash || "0".repeat(64),
+    cert.payloadHash,
+    cert.signedAt,
+  );
+  const chainHashConsistent = cert.chainHash === expectedChainHash;
+
+  let signatureValid = false;
+  if (crypto && keys && chainHashConsistent) {
+    try {
+      signatureValid = crypto.verify(
+        null,
+        Buffer.from(cert.chainHash, "utf8"),
+        keys.publicKeyPem,
+        Buffer.from(cert.cryptoSignature, "base64url"),
+      );
+    } catch {
+      signatureValid = false;
+    }
+  }
+
+  let chainLinkValid: boolean | null = null;
+  if (ledgerCertificates && typeof cert.ledgerIndex === "number") {
+    if (cert.ledgerIndex <= 1) {
+      chainLinkValid = cert.prevBlockHash === "0".repeat(64);
+    } else {
+      const prevBlock = ledgerCertificates.find((c) => c.ledgerIndex === cert.ledgerIndex! - 1);
+      chainLinkValid = prevBlock ? prevBlock.chainHash === cert.prevBlockHash : true;
+    }
+  }
+
+  const allValid =
+    payloadMatch && chainHashConsistent && signatureValid && chainLinkValid !== false;
+  return {
+    status: allValid ? "verified_signed" : "tampered",
+    hasSignature: true,
+    payloadMatch,
+    signatureValid: signatureValid && chainHashConsistent,
+    chainLinkValid,
+    expectedPayloadHash,
+    keyId: cert.signerKeyId || keys?.keyId,
+    publicKeyPem: keys?.publicKeyPem,
+  };
 }
