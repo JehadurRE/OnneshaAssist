@@ -945,7 +945,7 @@ class OnneshaDatabase {
         verificationUrl:
           typeof window !== "undefined"
             ? `${window.location.origin}/verify/${certNo}`
-            : `https://onnesha.app/verify/${certNo}`,
+            : `https://arena.onnesha.courses/verify/${certNo}`,
         verified: true,
       });
     });

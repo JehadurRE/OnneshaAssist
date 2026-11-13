@@ -1,9 +1,22 @@
-import React, { useMemo, useState } from 'react';
-import { GameSession } from '@/lib/types';
-import { useLanguage } from '@/lib/i18n';
-import { db } from '@/lib/db';
-import { Bot, LockOpen, MapPin, Maximize2, Play, QrCode, ShieldAlert, ShieldCheck, Users, Volume2, VolumeX, X } from 'lucide-react';
-import { audioEngine } from '@/lib/audio-engine';
+import React, { useMemo, useState } from "react";
+import { GameSession } from "@/lib/types";
+import { useLanguage } from "@/lib/i18n";
+import { db } from "@/lib/db";
+import {
+  Bot,
+  LockOpen,
+  MapPin,
+  Maximize2,
+  Play,
+  QrCode,
+  ShieldAlert,
+  ShieldCheck,
+  Users,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react";
+import { audioEngine } from "@/lib/audio-engine";
 
 interface HostLobbyProps {
   session: GameSession;
@@ -11,7 +24,7 @@ interface HostLobbyProps {
   onAddBots: () => void;
   onKickPlayer: (participantId: string) => void;
   onToggleSound: () => void;
-  onUpdateSettings?: (settings: Partial<GameSession['settings']>) => void;
+  onUpdateSettings?: (settings: Partial<GameSession["settings"]>) => void;
 }
 
 export const HostLobby: React.FC<HostLobbyProps> = ({
@@ -25,21 +38,21 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
   const { lang, t } = useLanguage();
   const [showQr, setShowQr] = useState(false);
   const [isMuted, setIsMuted] = useState(audioEngine.isMuted());
-  const [filterRegionId, setFilterRegionId] = useState<string>('all');
+  const [filterRegionId, setFilterRegionId] = useState<string>("all");
 
   const regions = db.getRegions();
   const participants = Object.values(session.participants);
   const playerCount = participants.length;
 
   const filteredParticipants = useMemo(() => {
-    if (filterRegionId === 'all') return participants;
+    if (filterRegionId === "all") return participants;
     return participants.filter((p) => p.regionId === filterRegionId);
   }, [participants, filterRegionId]);
 
   const regionCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     participants.forEach((p) => {
-      const rId = p.regionId || 'reg-dhaka';
+      const rId = p.regionId || "reg-dhaka";
       counts[rId] = (counts[rId] || 0) + 1;
     });
     return counts;
@@ -52,18 +65,18 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
   };
 
   const joinUrl =
-    typeof window !== 'undefined'
+    typeof window !== "undefined"
       ? `${window.location.origin}/play?pin=${session.pin}`
-      : `https://onnesha.app/play?pin=${session.pin}`;
+      : `https://arena.onnesha.courses/play?pin=${session.pin}`;
 
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=${encodeURIComponent(joinUrl)}`;
 
   const handleRegionRestrictionChange = (regId: string) => {
     if (!onUpdateSettings) return;
-    if (regId === 'all') {
+    if (regId === "all") {
       onUpdateSettings({
-        allowedRegionId: 'all',
-        allowedRegionName: 'All Regions (National)',
+        allowedRegionId: "all",
+        allowedRegionName: "All Regions (National)",
       });
     } else {
       const reg = regions.find((r) => r.id === regId);
@@ -87,7 +100,7 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
               <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
             </span>
             <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              {t('lobby_title')} · 500+ Seat Delta Engine Active
+              {t("lobby_title")} · 500+ Seat Delta Engine Active
             </span>
           </div>
 
@@ -97,7 +110,7 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
               <MapPin className="h-3.5 w-3.5 text-primary" />
               <span className="font-bold text-muted-foreground hidden sm:inline">Scope:</span>
               <select
-                value={session.settings.allowedRegionId || 'all'}
+                value={session.settings.allowedRegionId || "all"}
                 onChange={(e) => handleRegionRestrictionChange(e.target.value)}
                 className="bg-transparent font-bold text-foreground outline-none cursor-pointer"
               >
@@ -135,18 +148,21 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
                 type="button"
                 onClick={() =>
                   onUpdateSettings({
-                    requireRosterVerification: !(session.settings.requireRosterVerification ?? true),
+                    requireRosterVerification: !(
+                      session.settings.requireRosterVerification ?? true
+                    ),
                   })
                 }
                 className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-bold transition ${
                   (session.settings.requireRosterVerification ?? true)
-                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                    : 'border-border bg-background text-muted-foreground hover:bg-accent'
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                    : "border-border bg-background text-muted-foreground hover:bg-accent"
                 }`}
                 title="Require candidates to verify against enrolled roster or allow open join"
               >
                 <span>
-                  Roster: {(session.settings.requireRosterVerification ?? true) ? 'Verified' : 'Open'}
+                  Roster:{" "}
+                  {(session.settings.requireRosterVerification ?? true) ? "Verified" : "Open"}
                 </span>
               </button>
             )}
@@ -163,8 +179,8 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
                 }
                 className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-bold transition ${
                   (session.settings.blockCopyPaste ?? true)
-                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                    : 'border-border bg-background text-muted-foreground hover:bg-accent'
+                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                    : "border-border bg-background text-muted-foreground hover:bg-accent"
                 }`}
                 title="Detect tab/screen switches, DevTools, and Copy/Paste"
               >
@@ -173,7 +189,7 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
                 ) : (
                   <ShieldAlert className="h-3.5 w-3.5 text-muted-foreground" />
                 )}
-                <span>Proctor: {(session.settings.blockCopyPaste ?? true) ? 'ON' : 'OFF'}</span>
+                <span>Proctor: {(session.settings.blockCopyPaste ?? true) ? "ON" : "OFF"}</span>
               </button>
             )}
 
@@ -188,13 +204,13 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
                 }
                 className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-bold transition ${
                   session.settings.enforceFullscreen
-                    ? 'border-primary/40 bg-primary/10 text-primary'
-                    : 'border-border bg-background text-muted-foreground hover:bg-accent'
+                    ? "border-primary/40 bg-primary/10 text-primary"
+                    : "border-border bg-background text-muted-foreground hover:bg-accent"
                 }`}
                 title="Require examinees to stay in Fullscreen mode during questions"
               >
                 <Maximize2 className="h-3.5 w-3.5" />
-                <span>Screen Lock: {session.settings.enforceFullscreen ? 'ON' : 'OFF'}</span>
+                <span>Screen Lock: {session.settings.enforceFullscreen ? "ON" : "OFF"}</span>
               </button>
             )}
 
@@ -202,7 +218,7 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
               type="button"
               onClick={toggleAudio}
               className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-background text-foreground hover:bg-accent"
-              title={isMuted ? 'Unmute Sound FX' : 'Mute Sound FX'}
+              title={isMuted ? "Unmute Sound FX" : "Mute Sound FX"}
             >
               {isMuted ? (
                 <VolumeX className="h-4 w-4 text-destructive" />
@@ -224,17 +240,17 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
         {/* Join Prompt & Giant PIN */}
         <div className="my-6">
           <p className="text-xs sm:text-sm font-semibold uppercase tracking-widest text-muted-foreground">
-            {lang === 'bn' ? 'অংশগ্রহণ করতে ব্রাউজারে প্রবেশ করুন' : 'Candidates join on mobile at'}{' '}
+            {lang === "bn" ? "অংশগ্রহণ করতে ব্রাউজারে প্রবেশ করুন" : "Candidates join on mobile at"}{" "}
             <span className="font-mono text-primary underline">/play</span>
           </p>
           <div className="mt-2 font-mono text-5xl sm:text-8xl font-black tracking-widest text-foreground tabular-nums select-all">
             {session.pin}
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            {session.quizTitleBn || session.quizTitleEn} · {session.totalQuestions}{' '}
-            {t('questions_count')} · Scope:{' '}
+            {session.quizTitleBn || session.quizTitleEn} · {session.totalQuestions}{" "}
+            {t("questions_count")} · Scope:{" "}
             <strong className="text-primary">
-              {session.settings.allowedRegionName || 'All Regions'}
+              {session.settings.allowedRegionName || "All Regions"}
             </strong>
           </p>
         </div>
@@ -248,7 +264,7 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
           >
             <Play className="h-5 w-5 fill-current" />
             <span>
-              {t('start_game_now')} ({playerCount})
+              {t("start_game_now")} ({playerCount})
             </span>
           </button>
 
@@ -297,7 +313,7 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
           <div className="flex items-center gap-2">
             <Users className="h-5 w-5 text-primary" />
             <h3 className="font-display text-base font-bold text-foreground">
-              {t('players_connected')} ({playerCount})
+              {t("players_connected")} ({playerCount})
             </h3>
           </div>
 
@@ -305,11 +321,11 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
           <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
-              onClick={() => setFilterRegionId('all')}
+              onClick={() => setFilterRegionId("all")}
               className={`rounded-xl px-3 py-1 text-xs font-bold transition ${
-                filterRegionId === 'all'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground hover:text-foreground'
+                filterRegionId === "all"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:text-foreground"
               }`}
             >
               All ({playerCount})
@@ -324,8 +340,8 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
                   onClick={() => setFilterRegionId(r.id)}
                   className={`rounded-xl px-3 py-1 text-xs font-bold transition ${
                     filterRegionId === r.id
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-muted-foreground hover:text-foreground'
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   {r.code}: {c}
@@ -338,14 +354,14 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
         {playerCount === 0 ? (
           <div className="py-10 text-center text-sm text-muted-foreground">
             <p>
-              {lang === 'bn'
-                ? 'এখনো কোনো পরীক্ষার্থী যুক্ত হয়নি।'
-                : 'No candidates have locked their seats yet.'}
+              {lang === "bn"
+                ? "এখনো কোনো পরীক্ষার্থী যুক্ত হয়নি।"
+                : "No candidates have locked their seats yet."}
             </p>
             <p className="mt-1.5 text-xs">
-              {lang === 'bn'
-                ? 'পরীক্ষার্থীরা মোবাইল নম্বর বা রোল দিয়ে প্রবেশ করলে এখানে অঞ্চলসহ (Region) দেখা যাবে।'
-                : 'Candidates appear here with their verified Region & Roll as soon as they join.'}
+              {lang === "bn"
+                ? "পরীক্ষার্থীরা মোবাইল নম্বর বা রোল দিয়ে প্রবেশ করলে এখানে অঞ্চলসহ (Region) দেখা যাবে।"
+                : "Candidates appear here with their verified Region & Roll as soon as they join."}
             </p>
           </div>
         ) : (
@@ -358,19 +374,19 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
                 <div className="flex items-center gap-2.5 min-w-0">
                   <span
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-sm shadow-sm"
-                    style={{ backgroundColor: p.avatarBg + '25' }}
+                    style={{ backgroundColor: p.avatarBg + "25" }}
                   >
                     {p.avatarEmoji}
                   </span>
                   <div className="min-w-0">
                     <div className="font-bold text-xs text-foreground truncate">{p.nickname}</div>
                     <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
-                      <span>{p.rollNumber || 'N/A'}</span>
+                      <span>{p.rollNumber || "N/A"}</span>
                       {p.regionName && (
                         <>
                           <span>•</span>
                           <span className="text-primary font-semibold truncate">
-                            {p.regionName.replace(' Range', '')}
+                            {p.regionName.replace(" Range", "")}
                           </span>
                         </>
                       )}

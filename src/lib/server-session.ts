@@ -1595,7 +1595,7 @@ export const serverExportVerifiableCredential = createServerFn({ method: "GET" }
     const { dataDir } = getStorePaths();
     const certKeys = getCertificateSigningKeys(dataDir);
     const rekorKeys = getRekorAnchorKeys(dataDir);
-    const originUrl = (data.origin || "https://onnesha.app").replace(/\/+$/, "");
+    const originUrl = (data.origin || "https://arena.onnesha.courses").replace(/\/+$/, "");
     const raw = store.certificates.find(
       (c) => c.certificateNumber.toLowerCase() === (data.certNo || "").trim().toLowerCase(),
     );
@@ -1626,7 +1626,16 @@ export async function handlePublicStandardEndpoint(request: Request): Promise<Re
   const { dataDir } = getStorePaths();
   const certKeys = getCertificateSigningKeys(dataDir);
   const rekorKeys = getRekorAnchorKeys(dataDir);
-  const originUrl = `${url.protocol}//${url.host}`;
+  const forwardedHost =
+    request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ||
+    request.headers.get("host")?.trim();
+  const forwardedProto =
+    request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ||
+    url.protocol.replace(":", "") ||
+    "https";
+  const originUrl = forwardedHost
+    ? `${forwardedProto}://${forwardedHost}`
+    : `${url.protocol}//${url.host}`;
 
   if (path === "/.well-known/did.json") {
     if (!certKeys) {

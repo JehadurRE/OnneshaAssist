@@ -243,7 +243,7 @@ export function drawCertificateOnCanvas(
     typeof window !== "undefined"
       ? `${window.location.origin}/verify/${certificate.certificateNumber}`
       : certificate.verificationUrl ||
-        `https://onnesha.app/verify/${certificate.certificateNumber}`;
+        `https://arena.onnesha.courses/verify/${certificate.certificateNumber}`;
 
   const onneshaImg = assets?.onneshaImg ?? null;
   const partnerImg = assets?.partnerImg ?? null;

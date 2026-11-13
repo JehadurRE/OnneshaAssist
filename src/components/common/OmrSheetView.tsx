@@ -99,7 +99,7 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
       verificationUrl:
         typeof window !== "undefined"
           ? `${window.location.origin}/verify/${certNo}`
-          : `https://onnesha.app/verify/${certNo}`,
+          : `https://arena.onnesha.courses/verify/${certNo}`,
       verified: true,
     });
     setSavedCertNumber(certNo);

@@ -103,7 +103,7 @@ function PlayPage() {
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [fullscreenDismissed, setFullscreenDismissed] = useState<boolean>(false);
   const [isOnline, setIsOnline] = useState<boolean>(
-    typeof navigator !== "undefined" ? navigator.onLine : true
+    typeof navigator !== "undefined" ? navigator.onLine : true,
   );
   const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0);
 
@@ -210,7 +210,7 @@ function PlayPage() {
                         proctorFlags: res.proctorFlags,
                         isSuspended: res.isSuspended,
                       }
-                    : curr
+                    : curr,
                 );
               }
             })
@@ -225,16 +225,14 @@ function PlayPage() {
                   ? "Fullscreen lock exited"
                   : "Tab switch / screen switch detected";
 
-          setLatestWarning(
-            `⚠️ Proctor Strike Logged: ${reasonLabel} — Reported to Invigilator`
-          );
+          setLatestWarning(`⚠️ Proctor Strike Logged: ${reasonLabel} — Reported to Invigilator`);
           setTimeout(() => setLatestWarning(null), 4000);
         },
         {
           enforceFullscreen: !!session.settings.enforceFullscreen,
           blockCopyPaste: session.settings.blockCopyPaste ?? true,
           onFullscreenChange: (full) => setIsFullscreen(full),
-        }
+        },
       );
     } else {
       proctorEngine.stop();
@@ -298,7 +296,7 @@ function PlayPage() {
     const existing = await gameEngine.getSessionAsync(pinToCheck, "player", storedPid);
     if (!existing) {
       setErrorMsg(
-        `No active exam room found for PIN: ${pinToCheck}. Check the Live Rooms below or launch a Self-Practice Exam.`
+        `No active exam room found for PIN: ${pinToCheck}. Check the Live Rooms below or launch a Self-Practice Exam.`,
       );
       return;
     }
@@ -356,7 +354,7 @@ function PlayPage() {
       participant.id,
       session.currentQuestion.id,
       optIds,
-      written
+      written,
     );
 
     try {
@@ -395,7 +393,7 @@ function PlayPage() {
     const wrongCount = ansList.filter(
       (a) =>
         !a.isCorrect &&
-        ((a.selectedOptionIds && a.selectedOptionIds.length > 0) || !!a.writtenAnswer)
+        ((a.selectedOptionIds && a.selectedOptionIds.length > 0) || !!a.writtenAnswer),
     ).length;
     const unattemptedCount = Math.max(0, session.totalQuestions - (correctCount + wrongCount));
     const accuracyPct =
@@ -455,7 +453,7 @@ function PlayPage() {
           verificationUrl:
             typeof window !== "undefined"
               ? `${window.location.origin}/verify/${certNumber}`
-              : `https://onnesha.app/verify/${certNumber}`,
+              : `https://arena.onnesha.courses/verify/${certNumber}`,
           verified: true,
         }
       : null;
@@ -469,7 +467,7 @@ function PlayPage() {
   const questionTimeLimit = session?.currentQuestion?.timeLimitSec || 20;
   const timerProgressPct = Math.max(
     0,
-    Math.min(100, Math.round((timeRemainingSec / questionTimeLimit) * 100))
+    Math.min(100, Math.round((timeRemainingSec / questionTimeLimit) * 100)),
   );
 
   return (
@@ -553,19 +551,22 @@ function PlayPage() {
               Examination Seat Suspended by Proctor
             </h2>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Multiple tab-switching or window-defocus violations ({participant?.proctorFlags || incidents.length} logged) have triggered an automatic seat lock.
+              Multiple tab-switching or window-defocus violations (
+              {participant?.proctorFlags || incidents.length} logged) have triggered an automatic
+              seat lock.
             </p>
             <div className="rounded-2xl border border-border bg-muted/30 p-3 font-mono text-xs space-y-1">
               <div>
-                Candidate: <strong className="text-foreground">{participant?.nickname}</strong> (Roll:{" "}
-                {participant?.rollNumber || "N/A"})
+                Candidate: <strong className="text-foreground">{participant?.nickname}</strong>{" "}
+                (Roll: {participant?.rollNumber || "N/A"})
               </div>
               {participant?.regionName && (
                 <div className="text-primary font-bold">Region: {participant.regionName}</div>
               )}
             </div>
             <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs font-semibold text-amber-600 dark:text-amber-400">
-              Awaiting Host Invigilator clearance. Only the Examination Controller can unlock your seat from the Host Projector.
+              Awaiting Host Invigilator clearance. Only the Examination Controller can unlock your
+              seat from the Host Projector.
             </div>
           </div>
         </div>
@@ -765,9 +766,7 @@ function PlayPage() {
                           className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary/10 border border-primary/30 py-2 text-xs font-extrabold text-primary hover:bg-primary hover:text-primary-foreground transition disabled:opacity-50"
                         >
                           <Play className="h-3.5 w-3.5 fill-current" />
-                          <span>
-                            {lang === "bn" ? "অনুশীলন শুরু করুন" : "Start Practice Exam"}
-                          </span>
+                          <span>{lang === "bn" ? "অনুশীলন শুরু করুন" : "Start Practice Exam"}</span>
                         </button>
                       </div>
                     ))}
@@ -1139,9 +1138,7 @@ function PlayPage() {
                 >
                   <BookOpen className="h-4 w-4 text-primary" />
                   <span>
-                    {lang === "bn"
-                      ? "উত্তরপত্র ও ব্যাখ্যা দেখুন"
-                      : "Review Full Answer Script"}
+                    {lang === "bn" ? "উত্তরপত্র ও ব্যাখ্যা দেখুন" : "Review Full Answer Script"}
                   </span>
                 </button>
 

@@ -80,12 +80,12 @@ export function ed25519PemToJwk(publicKeyPem: string): Record<string, unknown> |
 }
 
 export function normalizeOriginHost(originOrUrl?: string): string {
-  const raw = (originOrUrl || "").trim() || "onnesha.app";
+  const raw = (originOrUrl || "").trim() || "arena.onnesha.courses";
   try {
     const parsed = raw.includes("://") ? new URL(raw) : new URL(`https://${raw}`);
-    return parsed.host || "onnesha.app";
+    return parsed.host || "arena.onnesha.courses";
   } catch {
-    return raw.replace(/^https?:\/\//i, "").split("/")[0] || "onnesha.app";
+    return raw.replace(/^https?:\/\//i, "").split("/")[0] || "arena.onnesha.courses";
   }
 }
 
@@ -251,7 +251,7 @@ export function buildW3CVerifiableCredential(
     checkpoint?: LedgerOtsCheckpoint | undefined;
   },
 ): W3CVerifiableCredential {
-  const originUrl = (options?.originUrl || "https://onnesha.app").replace(/\/+$/, "");
+  const originUrl = (options?.originUrl || "https://arena.onnesha.courses").replace(/\/+$/, "");
   const did = hostToDidWeb(originUrl);
   const multibase = ed25519PemToMultibase(certKeys.publicKeyPem);
   const verificationMethod = `${did}#${multibase || certKeys.keyId}`;

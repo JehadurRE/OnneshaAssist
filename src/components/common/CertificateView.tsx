@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from "react";
 import {
   CheckCircle2,
   Copy,
@@ -7,10 +7,10 @@ import {
   Loader2,
   Maximize2,
   Minimize2,
-} from 'lucide-react';
-import { CertificateData } from '@/lib/types';
-import { useBranding } from '@/hooks/use-branding';
-import { downloadCertificatePdf, populateCertificateCanvas } from '@/lib/pdf-generator';
+} from "lucide-react";
+import { CertificateData } from "@/lib/types";
+import { useBranding } from "@/hooks/use-branding";
+import { downloadCertificatePdf, populateCertificateCanvas } from "@/lib/pdf-generator";
 
 interface CertificateViewProps {
   certificate: CertificateData;
@@ -26,9 +26,10 @@ export const CertificateView: React.FC<CertificateViewProps> = ({ certificate, o
   const [isZoomOpen, setIsZoomOpen] = useState(false);
 
   const verifyUrl =
-    typeof window !== 'undefined'
+    typeof window !== "undefined"
       ? `${window.location.origin}/verify/${certificate.certificateNumber}`
-      : certificate.verificationUrl || `https://onnesha.app/verify/${certificate.certificateNumber}`;
+      : certificate.verificationUrl ||
+        `https://arena.onnesha.courses/verify/${certificate.certificateNumber}`;
 
   useEffect(() => {
     if (canvasRef.current) {
@@ -56,7 +57,7 @@ export const CertificateView: React.FC<CertificateViewProps> = ({ certificate, o
   };
 
   const handleCopyVerifyLink = () => {
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
       navigator.clipboard.writeText(verifyUrl);
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2500);
