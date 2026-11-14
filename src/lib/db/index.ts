@@ -380,61 +380,100 @@ class OnneshaDatabase {
   }
 
   private seedInitialDataIfEmpty() {
-    // Seed default Regions
-    const regCount = sqliteEngine.queryOne<{ count: number }>(
-      "SELECT count(*) as count FROM regions",
-    );
-    if (!regCount || regCount.count === 0) {
-      DEFAULT_REGIONS.forEach((reg) => {
+    // Idempotently seed missing Regions & Training Centres
+    const existingRegions = sqliteEngine.query<Region>("SELECT * FROM regions");
+    const existingRegMap = new Map(existingRegions.map((r) => [r.id, r]));
+    DEFAULT_REGIONS.forEach((reg) => {
+      const prev = existingRegMap.get(reg.id);
+      if (!prev) {
         sqliteEngine.run(
           "INSERT OR IGNORE INTO regions (id, code, nameEn, nameBn, centerName, createdAt) VALUES (?, ?, ?, ?, ?, ?)",
           [reg.id, reg.code, reg.nameEn, reg.nameBn, reg.centerName || "", reg.createdAt],
         );
-      });
-    }
+      } else if (
+        (reg.id === "reg-sylhet" && prev.nameEn === "Sylhet Range") ||
+        (reg.id === "reg-barishal" && prev.nameEn === "Barishal Range")
+      ) {
+        sqliteEngine.run(
+          "UPDATE regions SET code = ?, nameEn = ?, nameBn = ?, centerName = ? WHERE id = ?",
+          [reg.code, reg.nameEn, reg.nameBn, reg.centerName || "", reg.id],
+        );
+      }
+    });
 
-    // Seed sample Roster with Regions & Phone Numbers
-    const countRow = sqliteEngine.queryOne<{ count: number }>(
-      "SELECT count(*) as count FROM roster_students",
+    // Idempotently seed missing official Courses (including Sanjibon Batch-04)
+    const existingCourses = sqliteEngine.query<{ id: string }>("SELECT id FROM courses");
+    const existingCourseIds = new Set(existingCourses.map((c) => c.id));
+    DEFAULT_COURSES.forEach((c) => {
+      if (!existingCourseIds.has(c.id)) {
+        sqliteEngine.run(
+          "INSERT OR IGNORE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          [
+            c.id,
+            c.code,
+            c.titleEn,
+            c.titleBn,
+            c.descriptionEn,
+            c.descriptionBn,
+            c.categoryEn || "",
+            c.categoryBn || "",
+            c.icon || "📚",
+            c.color || "from-emerald-500/20 to-teal-500/20",
+            JSON.stringify(c.instructorIds || []),
+            JSON.stringify(c.instructorNames || []),
+            c.status || "active",
+            c.createdAt || new Date().toISOString(),
+          ],
+        );
+      }
+    });
+
+    // Idempotently seed missing Roster Students (all 228 Sanjibon trainees)
+    const existingRoster = sqliteEngine.query<RosterStudent>("SELECT * FROM roster_students");
+    const existingStudentIds = new Set(existingRoster.map((s) => s.id));
+    const existingStudentRolls = new Set(
+      existingRoster.map((s) => (s.rollNumber || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "")),
     );
-    if (!countRow || countRow.count === 0) {
-      SAMPLE_ROSTER.forEach((s) => {
+    SAMPLE_ROSTER.forEach((s) => {
+      const cleanRoll = (s.rollNumber || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (!existingStudentIds.has(s.id) && (!cleanRoll || !existingStudentRolls.has(cleanRoll))) {
         sqliteEngine.run(
           "INSERT OR IGNORE INTO roster_students (id, rollNumber, name, phone, regionId, regionName, section, batch, guardianPhone, email, passcode, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
           [
             s.id,
             s.rollNumber,
             s.name,
-            s.phone || s.guardianPhone || "01711000101",
+            s.phone || s.guardianPhone || "",
             s.regionId || "reg-dhaka",
             s.regionName || "Dhaka Range",
-            s.section || "A",
-            s.batch || "46th BCS & Cadet Batch",
-            s.guardianPhone || "01711000001",
-            s.email || `${s.rollNumber}@academy.edu.bd`,
+            s.section || "",
+            s.batch || "Ansar VDP Digital Marketing Batch -04",
+            s.guardianPhone || s.phone || "",
+            s.email || `${s.rollNumber}@sanjibon.onnesha.courses`,
             s.passcode || "",
-            new Date().toISOString(),
+            s.createdAt || new Date().toISOString(),
           ],
         );
-      });
-    } else {
-      // Backfill any older rows missing regionId or phone
-      const existing = sqliteEngine.query<RosterStudent>("SELECT * FROM roster_students");
-      existing.forEach((s, idx) => {
-        if (!s.regionId || !s.phone) {
-          const fallbackReg = DEFAULT_REGIONS[idx % DEFAULT_REGIONS.length] || DEFAULT_REGIONS[0];
-          sqliteEngine.run(
-            "UPDATE roster_students SET regionId = ?, regionName = ?, phone = ? WHERE id = ?",
-            [
-              s.regionId || fallbackReg?.id || "reg-dhaka",
-              s.regionName || fallbackReg?.nameEn || "Dhaka Range",
-              s.phone || s.guardianPhone || `01711000${101 + idx}`,
-              s.id,
-            ],
-          );
-        }
-      });
-    }
+        existingStudentIds.add(s.id);
+        if (cleanRoll) existingStudentRolls.add(cleanRoll);
+      }
+    });
+
+    // Backfill any older custom rows missing regionId or phone
+    existingRoster.forEach((s, idx) => {
+      if (!s.regionId || !s.phone) {
+        const fallbackReg = DEFAULT_REGIONS[idx % DEFAULT_REGIONS.length] || DEFAULT_REGIONS[0];
+        sqliteEngine.run(
+          "UPDATE roster_students SET regionId = ?, regionName = ?, phone = ? WHERE id = ?",
+          [
+            s.regionId || fallbackReg?.id || "reg-dhaka",
+            s.regionName || fallbackReg?.nameEn || "Dhaka Range",
+            s.phone || s.guardianPhone || `01711000${101 + idx}`,
+            s.id,
+          ],
+        );
+      }
+    });
   }
 
   private getStorage<T>(key: string, defaultVal: T): T {

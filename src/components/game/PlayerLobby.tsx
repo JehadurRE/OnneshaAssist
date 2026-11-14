@@ -138,7 +138,7 @@ export const PlayerLobby: React.FC<PlayerLobbyProps> = ({
       setLookupError(null);
       try {
         const res = await serverLookupCandidateByNumber({
-          data: { pin, query: clean, regionId: selectedRegionId },
+          data: { pin, query: clean },
         });
         if (res.success && res.candidate) {
           setMatchedCandidate(res.candidate);
@@ -380,16 +380,16 @@ export const PlayerLobby: React.FC<PlayerLobbyProps> = ({
                   onChange={(e) => setSearchNumber(e.target.value)}
                   placeholder={
                     lang === 'bn'
-                      ? 'যেমন: 01711000101 অথবা 2026-101'
-                      : 'e.g. 01711000101 or 2026-101'
+                      ? 'যেমন: 017XXXXXXXX অথবা JHN-01 / GZP-01'
+                      : 'e.g. 017XXXXXXXX or JHN-01 / GZP-01'
                   }
                   className="w-full rounded-2xl border-2 border-border bg-background pl-11 pr-4 py-3.5 font-mono text-sm font-bold text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
               </div>
               <p className="mt-1.5 text-[11px] text-muted-foreground">
                 {lang === 'bn'
-                  ? 'নম্বর টাইপ করার সাথে সাথে আপনার নাম, রোল এবং অঞ্চল (Region) স্বয়ংক্রিয়ভাবে পূরণ হবে।'
-                  : 'Your verified Full Name, Region, and Roll will auto-fill automatically from the official roster.'}
+                  ? 'আপনার মোবাইল নম্বর (যেমন 017XXXXXXXX), রোল নম্বর (JHN-01) অথবা ইমেইল লিখলেই নাম ও কেন্দ্র অটো-ফিল হবে।'
+                  : 'Enter your registered Mobile Number (e.g. 017XXXXXXXX), Roll Number (e.g. JHN-01), or email to auto-fill your profile.'}
               </p>
             </div>
 

@@ -1,4 +1,10 @@
 import { Quiz, PricingTier, RosterStudent, MeritReport, Region, Course, ManagedUser } from './types';
+import {
+  SANJIBON_COURSE,
+  SANJIBON_QUIZZES,
+  SANJIBON_REGIONS,
+  SANJIBON_ROSTER,
+} from './sanjibon-seed-data';
 
 export const DEFAULT_USERS: ManagedUser[] = [
   {
@@ -11,7 +17,7 @@ export const DEFAULT_USERS: ManagedUser[] = [
     designation: 'System & Examination Controller',
     phone: '',
     plan: 'institution_max',
-    assignedCourseIds: ['course-bcs-foundation'],
+    assignedCourseIds: ['course-sanjibon-ai-dm', 'course-bcs-foundation'],
     status: 'active',
     createdAt: '2026-01-01T00:00:00Z',
   },
@@ -25,13 +31,14 @@ export const DEFAULT_USERS: ManagedUser[] = [
     designation: 'Course Instructor',
     phone: '',
     plan: 'institution_max',
-    assignedCourseIds: ['course-bcs-foundation'],
+    assignedCourseIds: ['course-sanjibon-ai-dm', 'course-bcs-foundation'],
     status: 'active',
     createdAt: '2026-01-02T00:00:00Z',
   },
 ];
 
 export const DEFAULT_COURSES: Course[] = [
+  SANJIBON_COURSE,
   {
     id: 'course-bcs-foundation',
     code: 'BCS-101',
@@ -50,18 +57,24 @@ export const DEFAULT_COURSES: Course[] = [
   },
 ];
 
-export const DEFAULT_REGIONS: Region[] = [
+const GENERAL_REGIONS: Region[] = [
   { id: 'reg-dhaka', code: 'DHK', nameEn: 'Dhaka Range', nameBn: 'ঢাকা রেঞ্জ', centerName: 'Dhaka Divisional Center', createdAt: '2026-01-01T00:00:00Z' },
   { id: 'reg-chattogram', code: 'CTG', nameEn: 'Chattogram Range', nameBn: 'চট্টগ্রাম রেঞ্জ', centerName: 'Chattogram Divisional Center', createdAt: '2026-01-01T00:00:00Z' },
   { id: 'reg-rajshahi', code: 'RAJ', nameEn: 'Rajshahi Range', nameBn: 'রাজশাহী রেঞ্জ', centerName: 'Rajshahi Divisional Center', createdAt: '2026-01-01T00:00:00Z' },
   { id: 'reg-khulna', code: 'KHL', nameEn: 'Khulna Range', nameBn: 'খুলনা রেঞ্জ', centerName: 'Khulna Divisional Center', createdAt: '2026-01-01T00:00:00Z' },
-  { id: 'reg-sylhet', code: 'SYL', nameEn: 'Sylhet Range', nameBn: 'সিলেট রেঞ্জ', centerName: 'Sylhet Divisional Center', createdAt: '2026-01-01T00:00:00Z' },
-  { id: 'reg-barishal', code: 'BAR', nameEn: 'Barishal Range', nameBn: 'বরিশাল রেঞ্জ', centerName: 'Barishal Divisional Center', createdAt: '2026-01-01T00:00:00Z' },
   { id: 'reg-rangpur', code: 'RNG', nameEn: 'Rangpur Range', nameBn: 'রংপুর রেঞ্জ', centerName: 'Rangpur Divisional Center', createdAt: '2026-01-01T00:00:00Z' },
   { id: 'reg-mymensingh', code: 'MYM', nameEn: 'Mymensingh Range', nameBn: 'ময়মনসিংহ রেঞ্জ', centerName: 'Mymensingh Divisional Center', createdAt: '2026-01-01T00:00:00Z' },
 ];
 
+const sanjibonRegionIds = new Set(SANJIBON_REGIONS.map((r) => r.id));
+
+export const DEFAULT_REGIONS: Region[] = [
+  ...SANJIBON_REGIONS,
+  ...GENERAL_REGIONS.filter((r) => !sanjibonRegionIds.has(r.id)),
+];
+
 export const READY_MADE_PACKS: Quiz[] = [
+  ...SANJIBON_QUIZZES,
   {
     id: 'pack-bcs-gk',
     slug: 'bcs-gk',
@@ -384,8 +397,8 @@ export const PRICING_TIERS: PricingTier[] = [
   },
 ];
 
-// Clean empty initial roster — no dummy students pre-seeded
-export const SAMPLE_ROSTER: RosterStudent[] = [];
+// Seeded official Ansar & VDP Sanjibon Batch-04 student roster (228 trainees across 11 centres)
+export const SAMPLE_ROSTER: RosterStudent[] = [...SANJIBON_ROSTER];
 
 export const SAMPLE_MERIT_REPORT: MeritReport = {
   sessionId: '',

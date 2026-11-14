@@ -26,6 +26,7 @@ import {
   READY_MADE_PACKS,
   SAMPLE_ROSTER,
 } from "./mock-data";
+import { normalizeBdPhone, normalizeRollToken } from "./sanjibon-seed-data";
 import {
   canActorMutateStoreAction,
   generateHostToken,
@@ -219,10 +220,19 @@ async function clearAuthCookie(): Promise<void> {
 
 function ensureDefaultUsers(existing?: ManagedUser[]): ManagedUser[] {
   const list = (existing?.length ? [...existing] : []).map((u) => {
-    if (u.passwordHash && !u.passwordHash.startsWith("scrypt:")) {
-      return { ...u, passwordHash: hashPasswordScrypt(u.passwordHash) };
+    const withCourse =
+      u.id === "usr-super-admin" || u.id === "usr-instructor-1"
+        ? {
+            ...u,
+            assignedCourseIds: Array.from(
+              new Set(["course-sanjibon-ai-dm", ...(u.assignedCourseIds || [])]),
+            ),
+          }
+        : u;
+    if (withCourse.passwordHash && !withCourse.passwordHash.startsWith("scrypt:")) {
+      return { ...withCourse, passwordHash: hashPasswordScrypt(withCourse.passwordHash) };
     }
-    return u;
+    return withCourse;
   });
   for (const def of DEFAULT_USERS) {
     if (!list.some((u) => u.email.toLowerCase() === def.email.toLowerCase())) {
@@ -234,6 +244,137 @@ function ensureDefaultUsers(existing?: ManagedUser[]): ManagedUser[] {
     }
   }
   return list;
+}
+
+/**
+ * Idempotently merges default/Sanijbon seed regions, courses, and student roster
+ * into an existing persistent store without overwriting user-added records.
+ */
+export function mergeSeededStoreData<
+  T extends {
+    regions: Region[];
+    courses: Course[];
+    roster: RosterStudent[];
+  },
+>(current: T): T {
+  const regions = [...current.regions];
+  for (const defReg of DEFAULT_REGIONS) {
+    const idx = regions.findIndex((r) => r.id === defReg.id);
+    if (idx === -1) {
+      regions.push(defReg);
+    } else if (
+      (defReg.id === "reg-sylhet" && regions[idx]?.nameEn === "Sylhet Range") ||
+      (defReg.id === "reg-barishal" && regions[idx]?.nameEn === "Barishal Range")
+    ) {
+      // Upgrade generic Sylhet/Barishal placeholder names to official Training Centres
+      regions[idx] = { ...regions[idx]!, ...defReg };
+    }
+  }
+
+  const courses = [...current.courses];
+  for (const defCourse of DEFAULT_COURSES) {
+    if (!courses.some((c) => c.id === defCourse.id)) {
+      if (defCourse.id === "course-sanjibon-ai-dm") {
+        courses.unshift(defCourse);
+      } else {
+        courses.push(defCourse);
+      }
+    }
+  }
+
+  const roster = [...current.roster];
+  const seenIds = new Set(roster.map((s) => s.id));
+  const seenRolls = new Set(roster.map((s) => normalizeRollToken(s.rollNumber)));
+  for (const defStudent of SAMPLE_ROSTER) {
+    const rollTok = normalizeRollToken(defStudent.rollNumber);
+    if (!seenIds.has(defStudent.id) && (!rollTok || !seenRolls.has(rollTok))) {
+      roster.push(defStudent);
+      seenIds.add(defStudent.id);
+      if (rollTok) seenRolls.add(rollTok);
+    }
+  }
+
+  return {
+    ...current,
+    regions,
+    courses,
+    roster,
+  };
+}
+
+/**
+ * Resolves a trainee from the roster by normalized BD mobile number (full or trailing digits),
+ * exact/case-insensitive Roll Number (`JHN-01` / `jhn01`), centre-scoped serial (`1` + regionId),
+ * or registered email address.
+ */
+export function findRosterCandidate(
+  roster: RosterStudent[],
+  query: string,
+  regionId?: string,
+): RosterStudent | undefined {
+  const rawQuery = (query || "").trim();
+  if (!rawQuery) return undefined;
+
+  const lowerQuery = rawQuery.toLowerCase();
+  const normRollQuery = normalizeRollToken(rawQuery);
+  const digitsQuery = normalizeDigits(rawQuery);
+  const normPhoneQuery = normalizeBdPhone(rawQuery);
+  const isSerialQuery = !!regionId && regionId !== "all" && /^\d{1,2}$/.test(rawQuery);
+
+  // 1. Exact Roll Number match (supports `JHN-01` and `jhn01`)
+  if (normRollQuery.length >= 3) {
+    const exactRoll = roster.find((s) => normalizeRollToken(s.rollNumber) === normRollQuery);
+    if (exactRoll) return exactRoll;
+  }
+
+  // 2. Email lookup (when input looks like an email)
+  if (lowerQuery.includes("@")) {
+    const emailMatch = roster.find((s) => (s.email || "").trim().toLowerCase() === lowerQuery);
+    if (emailMatch) return emailMatch;
+  }
+
+  // 3. Centre-scoped Serial Number lookup (e.g. typing `1` or `01` after picking a centre)
+  if (isSerialQuery && regionId) {
+    const padded = rawQuery.padStart(2, "0");
+    const serialMatch = roster.find(
+      (s) => s.regionId === regionId && s.rollNumber.toUpperCase().endsWith(`-${padded}`),
+    );
+    if (serialMatch) return serialMatch;
+  }
+
+  // 4. Exact Normalized BD Phone lookup (01XXXXXXXXX, +8801XXXXXXXXX, etc.)
+  if (normPhoneQuery.length >= 8) {
+    const exactPhone = roster.find((s) => {
+      const p1 = normalizeBdPhone(s.phone);
+      const p2 = normalizeBdPhone(s.guardianPhone);
+      return (p1 && p1 === normPhoneQuery) || (p2 && p2 === normPhoneQuery);
+    });
+    if (exactPhone) return exactPhone;
+  }
+
+  // 5. Partial suffix lookup (6+ trailing phone digits or 3+ roll suffix)
+  const scopedPool =
+    regionId && regionId !== "all" ? roster.filter((s) => s.regionId === regionId) : roster;
+  const searchPools = scopedPool.length < roster.length ? [scopedPool, roster] : [roster];
+
+  for (const pool of searchPools) {
+    const suffixMatch = pool.find((s) => {
+      const sRoll = normalizeCode(s.rollNumber);
+      const p1 = normalizeBdPhone(s.phone);
+      const p2 = normalizeBdPhone(s.guardianPhone);
+
+      const rollSuffix = digitsQuery.length >= 3 && sRoll.endsWith(digitsQuery);
+      const phoneSuffix =
+        digitsQuery.length >= 6 &&
+        ((p1 && (p1.endsWith(digitsQuery) || (p1.length >= 8 && normPhoneQuery.endsWith(p1)))) ||
+          (p2 && (p2.endsWith(digitsQuery) || (p2.length >= 8 && normPhoneQuery.endsWith(p2)))));
+
+      return rollSuffix || phoneSuffix;
+    });
+    if (suffixMatch) return suffixMatch;
+  }
+
+  return undefined;
 }
 
 function loadInitialStore(): PersistentStoreData {
@@ -253,7 +394,7 @@ function loadInitialStore(): PersistentStoreData {
         const cleanedResults = (parsed.examResults || []).filter(
           (r) => !(r.participantId || "").startsWith("bot-"),
         );
-        return {
+        return mergeSeededStoreData({
           regions: parsed.regions?.length ? parsed.regions : [...DEFAULT_REGIONS],
           roster: cleanedRoster,
           courses: parsed.courses?.length ? parsed.courses : [...DEFAULT_COURSES],
@@ -268,14 +409,14 @@ function loadInitialStore(): PersistentStoreData {
           salesLeads: parsed.salesLeads || [],
           branding: mergeBrandingSettings(parsed.branding, DEFAULT_BRANDING),
           updatedAt: parsed.updatedAt || Date.now(),
-        };
+        });
       }
     }
   } catch (err) {
     console.warn("[OnneshaServerStore] Initializing fresh store in memory:", err);
   }
 
-  return {
+  return mergeSeededStoreData({
     regions: [...DEFAULT_REGIONS],
     roster: [...SAMPLE_ROSTER],
     courses: [...DEFAULT_COURSES],
@@ -290,7 +431,7 @@ function loadInitialStore(): PersistentStoreData {
     salesLeads: [],
     branding: { ...DEFAULT_BRANDING },
     updatedAt: Date.now(),
-  };
+  });
 }
 
 function getStore(): PersistentStoreData {
@@ -2217,30 +2358,22 @@ export const serverLookupCandidateByNumber = createServerFn({ method: "GET" })
     const session = sessions[data.pin];
 
     const rawQuery = (data.query || "").trim();
-    const digitsQuery = normalizeDigits(rawQuery);
-    const codeQuery = normalizeCode(rawQuery);
+    const regionScope =
+      data.regionId && data.regionId !== "all"
+        ? data.regionId
+        : session?.settings?.allowedRegionId && session.settings.allowedRegionId !== "all"
+          ? session.settings.allowedRegionId
+          : undefined;
+    const isSerialLookup = !!regionScope && /^\d{1,2}$/.test(rawQuery);
 
-    if (!rawQuery || rawQuery.length < 2) {
+    if (!rawQuery || (!isSerialLookup && rawQuery.length < 2)) {
       return {
         success: false,
         error: "Enter at least 3 digits of your Mobile Number or Roll Number.",
       };
     }
 
-    const matched = store.roster.find((s) => {
-      const sRoll = normalizeCode(s.rollNumber);
-      const sPhone = normalizeDigits(s.phone);
-      const sGuardian = normalizeDigits(s.guardianPhone);
-
-      const rollMatch =
-        sRoll === codeQuery || (digitsQuery.length >= 3 && sRoll.endsWith(digitsQuery));
-      const phoneMatch =
-        digitsQuery.length >= 6 &&
-        ((sPhone && (sPhone === digitsQuery || sPhone.endsWith(digitsQuery))) ||
-          (sGuardian && (sGuardian === digitsQuery || sGuardian.endsWith(digitsQuery))));
-
-      return rollMatch || phoneMatch;
-    });
+    const matched = findRosterCandidate(store.roster, rawQuery, regionScope);
 
     if (!matched) {
       return {
@@ -2562,21 +2695,33 @@ export const serverJoinSession = createServerFn({ method: "POST" })
     );
 
     if (rosterMatch) {
-      const enrolledPhone = normalizeDigits(rosterMatch.phone || rosterMatch.guardianPhone);
-      const enrolledRoll = normalizeCode(rosterMatch.rollNumber);
-      const verifyInput = normalizeDigits(
-        data.verificationNumber || incoming.phone || incoming.rollNumber,
-      );
-      const verifyCodeInput = normalizeCode(data.verificationNumber || incoming.rollNumber);
+      const enrolledPhone = normalizeBdPhone(rosterMatch.phone || rosterMatch.guardianPhone);
+      const enrolledRollToken = normalizeRollToken(rosterMatch.rollNumber);
+      const rawVerify = (
+        data.verificationNumber ||
+        incoming.phone ||
+        incoming.rollNumber ||
+        ""
+      ).trim();
+      const verifyInput = normalizeBdPhone(rawVerify);
+      const verifyCodeInput = normalizeRollToken(rawVerify);
+      const verifyEmailInput = rawVerify.toLowerCase();
 
       // Verify ownership so Student A cannot pick Student B from the Region dropdown without knowing their number
       const phoneMatches =
         enrolledPhone.length >= 4 &&
         verifyInput.length >= 4 &&
-        (enrolledPhone === verifyInput || enrolledPhone.endsWith(verifyInput.slice(-4)));
-      const rollMatches = enrolledRoll && verifyCodeInput && enrolledRoll === verifyCodeInput;
+        (enrolledPhone === verifyInput ||
+          enrolledPhone.endsWith(verifyInput.slice(-4)) ||
+          (enrolledPhone.length >= 8 && verifyInput.endsWith(enrolledPhone)));
+      const rollMatches =
+        !!enrolledRollToken && !!verifyCodeInput && enrolledRollToken === verifyCodeInput;
+      const emailMatches =
+        !!rosterMatch.email &&
+        verifyEmailInput.includes("@") &&
+        rosterMatch.email.toLowerCase() === verifyEmailInput;
 
-      if (!phoneMatches && !rollMatches) {
+      if (!phoneMatches && !rollMatches && !emailMatches) {
         return {
           success: false,
           code: "VERIFICATION_FAILED",

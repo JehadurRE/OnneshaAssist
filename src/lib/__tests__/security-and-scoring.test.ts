@@ -35,7 +35,17 @@ import {
   OTS_BITCOIN_ATTESTATION_TAG,
   verifyW3CVerifiableCredentialProof,
 } from "../transparency-anchor";
-import { CertificateData, ManagedUser, Question } from "../types";
+import { CertificateData, Course, ManagedUser, Question, Region, RosterStudent } from "../types";
+import { DEFAULT_COURSES, DEFAULT_REGIONS, READY_MADE_PACKS, SAMPLE_ROSTER } from "../mock-data";
+import {
+  SANJIBON_COURSE,
+  SANJIBON_QUIZZES,
+  SANJIBON_REGIONS,
+  SANJIBON_ROSTER,
+  normalizeBdPhone,
+  normalizeRollToken,
+} from "../sanjibon-seed-data";
+import { findRosterCandidate, mergeSeededStoreData } from "../server-session";
 
 describe("server-security: password hashing & user sanitization", () => {
   it("hashes passwords with unique per-user scrypt salts and verifies cleanly", () => {
@@ -593,5 +603,91 @@ describe("certificate designer branding, themes, Bangladesh map & multi-signator
     expect(customDarkTheme.textPrimary).toBe("#f8fafc");
     expect(customDarkTheme.borderOuter).toBe("#f59e0b");
     expect(customDarkTheme.accentColor).toBe("#5bc0be");
+  });
+});
+
+describe("Sanjibon Batch-04 seed curriculum, 10 quizzes & 228 trainees roster", () => {
+  it("seeds the official course, 11 training centres, 10 quizzes (120 questions), and all 228 enrolled trainees", () => {
+    expect(SANJIBON_COURSE.id).toBe("course-sanjibon-ai-dm");
+    expect(DEFAULT_COURSES.some((c) => c.id === "course-sanjibon-ai-dm")).toBe(true);
+
+    expect(SANJIBON_REGIONS).toHaveLength(11);
+    for (const reg of SANJIBON_REGIONS) {
+      expect(DEFAULT_REGIONS.some((r) => r.id === reg.id)).toBe(true);
+    }
+
+    expect(SANJIBON_ROSTER).toHaveLength(228);
+    expect(SAMPLE_ROSTER.length).toBeGreaterThanOrEqual(228);
+
+    const std11Digits = SANJIBON_ROSTER.filter((s) => /^01\d{9}$/.test(s.phone || ""));
+    expect(std11Digits.length).toBeGreaterThanOrEqual(226);
+
+    expect(SANJIBON_QUIZZES).toHaveLength(10);
+    let totalQuestions = 0;
+    for (const qz of SANJIBON_QUIZZES) {
+      expect(qz.courseId).toBe("course-sanjibon-ai-dm");
+      expect(READY_MADE_PACKS.some((p) => p.id === qz.id)).toBe(true);
+      totalQuestions += qz.questions.length;
+      for (const question of qz.questions) {
+        expect(question.correctOptionIds.length).toBeGreaterThan(0);
+        const corr = question.correctOptionIds[0];
+        expect(question.options.some((o) => o.id === corr && o.isCorrect)).toBe(true);
+      }
+    }
+    expect(totalQuestions).toBe(120);
+    expect(SANJIBON_QUIZZES[9]?.questions).toHaveLength(30);
+  });
+
+  it("normalizes BD phone formats and resolves candidates by mobile, roll, serial+centre, and email", () => {
+    expect(normalizeBdPhone("+888801789121691")).toBe("01789121691");
+    expect(normalizeBdPhone("1817512835")).toBe("01817512835");
+    expect(normalizeBdPhone("+881961988682")).toBe("01961988682");
+    expect(normalizeRollToken("JHN-01")).toBe("jhn01");
+
+    expect(findRosterCandidate(SANJIBON_ROSTER, "01950350417")?.rollNumber).toBe("JHN-01");
+    expect(findRosterCandidate(SANJIBON_ROSTER, "+8801950350417")?.rollNumber).toBe("JHN-01");
+    expect(findRosterCandidate(SANJIBON_ROSTER, "350417")?.rollNumber).toBe("JHN-01");
+    expect(findRosterCandidate(SANJIBON_ROSTER, "JHN-01")?.name).toBe("Al Shahriar Shohan");
+    expect(findRosterCandidate(SANJIBON_ROSTER, "jhn01")?.rollNumber).toBe("JHN-01");
+    expect(findRosterCandidate(SANJIBON_ROSTER, "01817512835")?.rollNumber).toBe("GZP-01");
+    expect(findRosterCandidate(SANJIBON_ROSTER, "1", "reg-jhenaidah")?.rollNumber).toBe("JHN-01");
+    expect(findRosterCandidate(SANJIBON_ROSTER, "alshahriarshohan@gmail.com")?.rollNumber).toBe(
+      "JHN-01",
+    );
+  });
+
+  it("idempotently merges missing centres, course, and trainees into an existing store without duplicating or wiping custom items", () => {
+    const customStudent: RosterStudent = {
+      id: "std-custom-999",
+      rollNumber: "CUSTOM-99",
+      name: "Custom Trainee",
+      phone: "01700000999",
+      regionId: "reg-dhaka",
+      regionName: "Dhaka Range",
+    };
+    const legacySylhet: Region = {
+      id: "reg-sylhet",
+      code: "SYL",
+      nameEn: "Sylhet Range",
+      nameBn: "সিলেট রেঞ্জ",
+      createdAt: "2026-01-01T00:00:00Z",
+    };
+    const emptyCourses: Course[] = [];
+    const mergedOnce = mergeSeededStoreData({
+      regions: [legacySylhet],
+      courses: emptyCourses,
+      roster: [customStudent],
+    });
+
+    expect(mergedOnce.courses.some((c) => c.id === "course-sanjibon-ai-dm")).toBe(true);
+    expect(mergedOnce.regions.find((r) => r.id === "reg-sylhet")?.nameEn).toBe(
+      "Sylhet Training Centre",
+    );
+    expect(mergedOnce.roster.some((s) => s.id === "std-custom-999")).toBe(true);
+    expect(mergedOnce.roster.length).toBe(229);
+
+    const mergedTwice = mergeSeededStoreData(mergedOnce);
+    expect(mergedTwice.roster.length).toBe(229);
+    expect(mergedTwice.courses.length).toBe(mergedOnce.courses.length);
   });
 });
