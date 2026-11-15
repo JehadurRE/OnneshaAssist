@@ -28,6 +28,7 @@ import {
   isQuizPrivate,
 } from "@/lib/db";
 import { computeTotalQuizMarks, isPassingScore, resolvePassThresholdPct } from "@/lib/scoring";
+import { computeSessionRetakeDiagnostics } from "@/lib/retake-utils";
 import { gameEngine } from "@/lib/game-engine";
 import { serverGetActiveRooms } from "@/lib/server-session";
 import { SmsGateway } from "@/lib/sms-gateway";
@@ -51,6 +52,7 @@ import {
   Radio,
   Receipt,
   RefreshCw,
+  RotateCcw,
   Save,
   Search,
   Settings,
@@ -133,6 +135,7 @@ function DashboardPage() {
   const [rosterSearchQuery, setRosterSearchQuery] = useState<string>("");
   const [selectedSessionId, setSelectedSessionId] = useState<string>("all");
   const [selectedResultsRegionId, setSelectedResultsRegionId] = useState<string>("all");
+  const [retakeSkipCompleted, setRetakeSkipCompleted] = useState<boolean>(true);
 
   const [showAiModal, setShowAiModal] = useState(false);
   const [selectedQuizForOmr, setSelectedQuizForOmr] = useState<Quiz | null>(null);
@@ -308,6 +311,26 @@ function DashboardPage() {
       })
       .filter((r) => r.count > 0);
   }, [examResults, selectedSessionId, regions]);
+
+  const selectedExamSession = useMemo(
+    () =>
+      selectedSessionId === "all"
+        ? null
+        : examSessions.find(
+            (s) => s.id === selectedSessionId || s.pin === selectedSessionId,
+          ) || null,
+    [examSessions, selectedSessionId],
+  );
+
+  const selectedSessionRetakeDiag = useMemo(() => {
+    if (!selectedExamSession) return null;
+    return computeSessionRetakeDiagnostics({
+      session: selectedExamSession,
+      examResults,
+      roster,
+      regions,
+    });
+  }, [selectedExamSession, examResults, roster, regions]);
 
   // New / Edit Quiz Builder State
   const [editingQuizId, setEditingQuizId] = useState<string | null>(null);
@@ -2206,6 +2229,184 @@ function DashboardPage() {
               </div>
             </div>
 
+            {/* Supplementary / Affected Center Retake Diagnostics & Launcher */}
+            {selectedExamSession && selectedSessionRetakeDiag ? (
+              <div className="rounded-3xl border border-amber-300 dark:border-amber-500/40 bg-amber-50/70 dark:bg-amber-950/20 p-5 shadow-sm space-y-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-bold text-amber-800 dark:text-amber-300">
+                        <RotateCcw className="h-3.5 w-3.5" />
+                        {lang === "bn"
+                          ? "ক্ষতিগ্রস্ত কেন্দ্র / মিসড পরীক্ষার্থী পুনঃপরীক্ষা"
+                          : "Affected Center & Missed Examinee Retake"}
+                      </span>
+                      <span className="rounded-full bg-slate-900 dark:bg-slate-800 px-2.5 py-0.5 font-mono text-xs font-semibold text-white">
+                        ORIGIN PIN: {selectedExamSession.pin}
+                      </span>
+                      {(selectedExamSession.makeupRunsCount || 0) > 0 && (
+                        <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                          +{selectedExamSession.makeupRunsCount} Makeup Merged
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="mt-2 text-base font-bold text-foreground">
+                      {selectedExamSession.quizTitleBn ||
+                        selectedExamSession.quizTitleEn ||
+                        "Exam Session"}
+                    </h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {lang === "bn"
+                        ? "যারা ইতিমধ্যে অন্তত ১টি প্রশ্নের উত্তর দিয়েছেন তাদের নম্বর ও সার্টিফিকেট অক্ষুণ্ণ রেখে শুধুমাত্র শূন্য-উত্তর (প্রশ্ন পাননি) বা অনুপস্থিত পরীক্ষার্থীদের জন্য পুনরায় রুম চালু করুন।"
+                        : "Re-conduct this exam only for affected centers, zero-attempt joins, or missing roster students—completed examinees keep their original marks & sealed certificates and won't be asked to retake."}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+                    <span className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-emerald-700 dark:text-emerald-300">
+                      Completed: {selectedSessionRetakeDiag.completedCount}
+                    </span>
+                    <span className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-rose-700 dark:text-rose-300">
+                      0-Attempt Stuck: {selectedSessionRetakeDiag.zeroAttemptCount}
+                    </span>
+                    <span className="rounded-xl border border-border bg-card px-3 py-1.5 text-foreground">
+                      Roster Missing: {selectedSessionRetakeDiag.missingRosterCount}
+                    </span>
+                    <span className="rounded-xl border border-primary/30 bg-primary/10 px-3 py-1.5 text-primary">
+                      Eligible Retake: {selectedSessionRetakeDiag.totalEligibleRetakeCount}
+                    </span>
+                  </div>
+                </div>
+
+                {selectedSessionRetakeDiag.regionBreakdown.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                      Select Target Center / Region (
+                      {selectedResultsRegionId === "all"
+                        ? "All Affected"
+                        : regions.find((r) => r.id === selectedResultsRegionId)?.nameEn ||
+                          selectedResultsRegionId}
+                      )
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedResultsRegionId("all")}
+                        className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
+                          selectedResultsRegionId === "all"
+                            ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                            : "border-border bg-card text-foreground hover:border-primary/40"
+                        }`}
+                      >
+                        All Regions ({selectedSessionRetakeDiag.totalEligibleRetakeCount} eligible)
+                      </button>
+                      {selectedSessionRetakeDiag.regionBreakdown.map((reg) => {
+                        const isSelected = selectedResultsRegionId === reg.regionId;
+                        const hasIssues = reg.zeroAttemptCount > 0;
+                        return (
+                          <button
+                            key={reg.regionId}
+                            type="button"
+                            onClick={() => setSelectedResultsRegionId(reg.regionId)}
+                            className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs transition ${
+                              isSelected
+                                ? "border-amber-600 bg-amber-600 text-white shadow-sm"
+                                : hasIssues
+                                  ? "border-rose-400/60 bg-rose-500/10 text-foreground hover:border-rose-500"
+                                  : "border-border bg-card text-foreground hover:border-primary/40"
+                            }`}
+                          >
+                            <span className="font-bold">
+                              {lang === "bn" ? reg.regionNameBn : reg.regionNameEn}
+                            </span>
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                                isSelected
+                                  ? "bg-white/20 text-white"
+                                  : hasIssues
+                                    ? "bg-rose-500/20 text-rose-700 dark:text-rose-300"
+                                    : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              0-att: {reg.zeroAttemptCount} · miss: {reg.missingRosterCount} · done:{" "}
+                              {reg.completedCount}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-3 border-t border-amber-300/60 dark:border-amber-500/30 pt-3.5 sm:flex-row sm:items-center sm:justify-between">
+                  <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={retakeSkipCompleted}
+                      onChange={(e) => setRetakeSkipCompleted(e.target.checked)}
+                      className="h-4 w-4 rounded border-border text-amber-600 focus:ring-amber-500"
+                    />
+                    <span>
+                      Skip examinees who already completed (&ge;1 submitted answer) &amp; merge
+                      retake scores into original merit list
+                    </span>
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigate({
+                        to: "/host/$quizId",
+                        params: { quizId: selectedExamSession.quizId },
+                        search: {
+                          retakeSessionId: selectedExamSession.id,
+                          regionId: selectedResultsRegionId,
+                          skipCompleted: retakeSkipCompleted ? "1" : "0",
+                        },
+                      })
+                    }
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-amber-700"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    {selectedResultsRegionId === "all"
+                      ? "Launch Retake Room (All Regions)"
+                      : `Launch Center Retake (${regions.find((r) => r.id === selectedResultsRegionId)?.nameEn || selectedResultsRegionId})`}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              selectedSessionId === "all" &&
+              examSessions.length > 0 && (
+                <div className="flex flex-col gap-3 rounded-3xl border border-primary/20 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-foreground">
+                      Need to re-conduct an exam for an affected center or missed examinees?
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Pick an exam session to inspect 0-attempt joins by region and launch a retake
+                      room without re-asking completed students:
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {examSessions.slice(0, 4).map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => setSelectedSessionId(s.id)}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-primary/30 bg-card px-3 py-1.5 text-xs font-semibold text-foreground shadow-sm transition hover:border-primary hover:bg-primary/10"
+                      >
+                        <RotateCcw className="h-3.5 w-3.5 text-primary" />
+                        <span>
+                          PIN {s.pin} · {s.quizTitleEn || s.quizTitleBn || "Exam"} (
+                          {s.participantCount})
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )
+            )}
+
             {/* Region-Wise Comparative Summary Strip */}
             {regionPerformanceSummary.length > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -2923,6 +3124,7 @@ function DashboardPage() {
           return (
             <MeritGazetteView
               quizTitle={
+                gazetteSess?.quizTitleEn ||
                 gazetteSess?.quizTitleBn ||
                 "বিসিএস প্রিলিমিনারি ও প্রাতিষ্ঠানিক মডেল টেস্ট"
               }

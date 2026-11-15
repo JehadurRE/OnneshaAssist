@@ -30,6 +30,13 @@ import {
 } from "../scoring";
 import { purgeUnderThresholdExamsInStore } from "../exam-purge";
 import {
+  buildOriginalCompletionIndex,
+  computeSessionRetakeDiagnostics,
+  findCompletedMatchInIndex,
+  hasResultSubmittedAnswers,
+  mergeRetakeExamResults,
+} from "../retake-utils";
+import {
   CERTIFICATE_THEME_PRESETS,
   DEFAULT_BRANDING_SETTINGS,
   mergeBrandingSettings,
@@ -2373,5 +2380,295 @@ describe("server-session domain state transitions & safeguards", () => {
     const secondRun = purgeUnderThresholdExamsInStore(store, 50, liveSessions);
     expect(secondRun.changed).toBe(false);
     expect(secondRun.keptSessions).toBe(1);
+  });
+});
+
+describe("supplementary retake diagnostics, completion exclusion & result merging", () => {
+  const regions: Region[] = [
+    { id: "reg-dhaka", code: "DHK", nameEn: "Dhaka", nameBn: "ঢাকা", createdAt: "2026-01-01" },
+    { id: "reg-sylhet", code: "SYL", nameEn: "Sylhet", nameBn: "সিলেট", createdAt: "2026-01-01" },
+    { id: "reg-ctg", code: "CTG", nameEn: "Chattogram", nameBn: "চট্টগ্রাম", createdAt: "2026-01-01" },
+  ];
+
+  const roster: RosterStudent[] = [
+    {
+      id: "st-1",
+      rollNumber: "ONN-101",
+      name: "Completed Dhaka",
+      phone: "01711111111",
+      regionId: "reg-dhaka",
+      regionName: "Dhaka",
+    },
+    {
+      id: "st-2",
+      rollNumber: "ONN-102",
+      name: "Zero Attempt Sylhet",
+      phone: "01722222222",
+      regionId: "reg-sylhet",
+      regionName: "Sylhet",
+    },
+    {
+      id: "st-3",
+      rollNumber: "ONN-103",
+      name: "Missing Roster CTG",
+      phone: "01733333333",
+      regionId: "reg-ctg",
+      regionName: "Chattogram",
+    },
+  ];
+
+  const origSession: ExamSessionRecord = {
+    id: "es-exam2",
+    pin: "554433",
+    quizId: "quiz-2",
+    quizTitleEn: "Second Nationwide Model Exam",
+    quizTitleBn: "দ্বিতীয় মডেল পরীক্ষা",
+    hostId: "usr-super-admin",
+    allowedRegionId: "all",
+    allowedRegionName: "All Regions",
+    totalQuestions: 10,
+    participantCount: 2,
+    averageScore: 425,
+    highestScore: 850,
+    passThresholdPct: 50,
+    createdAt: "2026-11-15T10:00:00.000Z",
+  };
+
+  const completedDhakaResult: ExamResultRecord = {
+    id: "res-554433-ONN101",
+    sessionId: "es-exam2",
+    pin: "554433",
+    participantId: "p-1",
+    rollNumber: "ONN-101",
+    name: "Completed Dhaka",
+    phone: "01711111111",
+    regionId: "reg-dhaka",
+    regionName: "Dhaka",
+    score: 850,
+    rank: 1,
+    correctCount: 9,
+    incorrectCount: 1,
+    unattemptedCount: 0,
+    accuracyPct: 90,
+    passed: true,
+    answersJson: JSON.stringify({ q1: { timeTakenSec: 3.5 } }),
+    createdAt: "2026-11-15T10:20:00.000Z",
+  };
+
+  const zeroAttemptSylhetResult: ExamResultRecord = {
+    id: "res-554433-ONN102",
+    sessionId: "es-exam2",
+    pin: "554433",
+    participantId: "p-2",
+    rollNumber: "ONN-102",
+    name: "Zero Attempt Sylhet",
+    phone: "01722222222",
+    regionId: "reg-sylhet",
+    regionName: "Sylhet",
+    score: 0,
+    rank: 2,
+    correctCount: 0,
+    incorrectCount: 0,
+    unattemptedCount: 10,
+    accuracyPct: 0,
+    passed: false,
+    answersJson: "{}",
+    createdAt: "2026-11-15T10:20:05.000Z",
+  };
+
+  it("distinguishes submitted attempts from zero-attempt joins and indexes completed examinees", () => {
+    expect(hasResultSubmittedAnswers(completedDhakaResult)).toBe(true);
+    expect(hasResultSubmittedAnswers(zeroAttemptSylhetResult)).toBe(false);
+    expect(
+      hasResultSubmittedAnswers({
+        correctCount: 0,
+        incorrectCount: 0,
+        answersJson: JSON.stringify({ q1: { selected: 0 } }),
+      }),
+    ).toBe(true);
+
+    const index = buildOriginalCompletionIndex(
+      [completedDhakaResult, zeroAttemptSylhetResult],
+      origSession.id,
+      origSession.pin,
+    );
+    expect(index.completedCount).toBe(1);
+    expect(index.zeroAttemptCount).toBe(1);
+
+    expect(
+      findCompletedMatchInIndex(index, { rollNumber: "onn 101" })?.rollNumber,
+    ).toBe("ONN-101");
+    expect(
+      findCompletedMatchInIndex(index, { phone: "+8801711111111" })?.name,
+    ).toBe("Completed Dhaka");
+    expect(
+      findCompletedMatchInIndex(index, {
+        rollNumber: "ONN-102",
+        phone: "01722222222",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("computes per-region retake diagnostics separating completed, zero-attempt, and missing roster candidates", () => {
+    const diag = computeSessionRetakeDiagnostics({
+      session: origSession,
+      examResults: [completedDhakaResult, zeroAttemptSylhetResult],
+      roster,
+      regions,
+    });
+
+    expect(diag.completedCount).toBe(1);
+    expect(diag.zeroAttemptCount).toBe(1);
+    expect(diag.missingRosterCount).toBe(1);
+    expect(diag.totalEligibleRetakeCount).toBe(2);
+
+    // Region with zero-attempt issues sorts first
+    expect(diag.regionBreakdown[0]).toMatchObject({
+      regionId: "reg-sylhet",
+      completedCount: 0,
+      zeroAttemptCount: 1,
+      missingRosterCount: 0,
+      eligibleRetakeCount: 1,
+    });
+    const ctg = diag.regionBreakdown.find((r) => r.regionId === "reg-ctg");
+    expect(ctg).toMatchObject({
+      completedCount: 0,
+      zeroAttemptCount: 0,
+      missingRosterCount: 1,
+      eligibleRetakeCount: 1,
+    });
+    const dhk = diag.regionBreakdown.find((r) => r.regionId === "reg-dhaka");
+    expect(dhk).toMatchObject({
+      completedCount: 1,
+      zeroAttemptCount: 0,
+      missingRosterCount: 0,
+      eligibleRetakeCount: 0,
+    });
+  });
+
+  it("merges supplementary retake marks into original session while keeping Run 1 completed scores intact", () => {
+    const makeupSylhetResult: ExamResultRecord = {
+      id: "res-998877-ONN102",
+      sessionId: "es-makeup-1",
+      pin: "998877",
+      participantId: "pm-1",
+      rollNumber: "ONN-102",
+      name: "Zero Attempt Sylhet",
+      phone: "01722222222",
+      regionId: "reg-sylhet",
+      regionName: "Sylhet",
+      score: 920,
+      rank: 1,
+      correctCount: 9,
+      incorrectCount: 1,
+      unattemptedCount: 0,
+      accuracyPct: 90,
+      passed: true,
+      answersJson: JSON.stringify({ q1: { timeTakenSec: 2.1 } }),
+      createdAt: "2026-11-16T05:00:00.000Z",
+    };
+
+    const makeupMissingCtgResult: ExamResultRecord = {
+      id: "res-998877-ONN103",
+      sessionId: "es-makeup-1",
+      pin: "998877",
+      participantId: "pm-2",
+      rollNumber: "ONN-103",
+      name: "Missing Roster CTG",
+      phone: "01733333333",
+      regionId: "reg-ctg",
+      regionName: "Chattogram",
+      score: 850,
+      rank: 2,
+      correctCount: 9,
+      incorrectCount: 1,
+      unattemptedCount: 0,
+      accuracyPct: 90,
+      passed: true,
+      answersJson: JSON.stringify({ q1: { timeTakenSec: 2.0 } }), // faster tie-breaker vs 3.5s
+      createdAt: "2026-11-16T05:01:00.000Z",
+    };
+
+    const merged = mergeRetakeExamResults({
+      origSession,
+      existingResults: [completedDhakaResult, zeroAttemptSylhetResult],
+      makeupResults: [makeupSylhetResult, makeupMissingCtgResult],
+      nowIso: "2026-11-16T05:10:00.000Z",
+    });
+
+    expect(merged.updatedSession.id).toBe("es-exam2");
+    expect(merged.updatedSession.pin).toBe("554433");
+    expect(merged.updatedSession.participantCount).toBe(3);
+    expect(merged.updatedSession.highestScore).toBe(920);
+    expect(merged.updatedSession.averageScore).toBe(Math.round((920 + 850 + 850) / 3));
+    expect(merged.updatedSession.makeupRunsCount).toBe(1);
+    expect(merged.updatedSession.lastMakeupAt).toBe("2026-11-16T05:10:00.000Z");
+
+    // Zero-attempt row replaced, Run 1 completed ONN-101 preserved, unified ranks computed
+    expect(merged.mergedResults.map((r) => [r.rollNumber, r.score, r.rank, r.sessionId])).toEqual([
+      ["ONN-102", 920, 1, "es-exam2"],
+      ["ONN-103", 850, 2, "es-exam2"], // faster response time beats ONN-101 at equal 850 score
+      ["ONN-101", 850, 3, "es-exam2"],
+    ]);
+  });
+
+  it("excludes completed original examinees from retake join directory while keeping missed/0-attempt examinees", () => {
+    const retakeDirAll = buildJoinDirectoryForSession({
+      roster,
+      regions,
+      examResults: [completedDhakaResult, zeroAttemptSylhetResult],
+      session: {
+        phase: "lobby",
+        isSelfPractice: false,
+        settings: {
+          speedBonus: true,
+          negativeMarking: 0,
+          shuffleQuestions: false,
+          shuffleOptions: false,
+          soundEnabled: true,
+          musicEnabled: true,
+          isFormalAssessment: true,
+          requireRollNumber: true,
+          allowedRegionId: "all",
+          allowedRegionName: "All Regions",
+          retakeForSessionId: "es-exam2",
+          retakeOriginPin: "554433",
+          retakeSkipCompleted: true,
+        },
+        participants: {},
+      },
+    });
+
+    expect(retakeDirAll.success).toBe(true);
+    expect(retakeDirAll.candidates.map((c) => c.rollNumber)).toEqual(["ONN-102", "ONN-103"]);
+
+    const retakeDirSylhetOnly = buildJoinDirectoryForSession({
+      roster,
+      regions,
+      examResults: [completedDhakaResult, zeroAttemptSylhetResult],
+      session: {
+        phase: "lobby",
+        isSelfPractice: false,
+        settings: {
+          speedBonus: true,
+          negativeMarking: 0,
+          shuffleQuestions: false,
+          shuffleOptions: false,
+          soundEnabled: true,
+          musicEnabled: true,
+          isFormalAssessment: true,
+          requireRollNumber: true,
+          allowedRegionId: "reg-sylhet",
+          allowedRegionName: "Sylhet",
+          retakeForSessionId: "es-exam2",
+          retakeOriginPin: "554433",
+          retakeSkipCompleted: true,
+        },
+        participants: {},
+      },
+    });
+
+    expect(retakeDirSylhetOnly.success).toBe(true);
+    expect(retakeDirSylhetOnly.candidates.map((c) => c.rollNumber)).toEqual(["ONN-102"]);
   });
 });

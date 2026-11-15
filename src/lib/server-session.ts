@@ -21,6 +21,12 @@ import {
 import { DEFAULT_BRANDING_SETTINGS, mergeBrandingSettings } from "./branding";
 import { purgeUnderThresholdExamsInStore, type PurgeExamSummary } from "./exam-purge";
 import {
+  buildOriginalCompletionIndex,
+  findCompletedMatchInIndex,
+  mergeRetakeExamResults,
+  normalizeMatchRoll,
+} from "./retake-utils";
+import {
   DEFAULT_COURSES,
   DEFAULT_REGIONS,
   DEFAULT_USERS,
@@ -1147,16 +1153,23 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
   // exam sessions, score transcripts, or Ed25519 certificates.
   if (session.isSelfPractice) return;
   const store = getStore();
-  const sessionId = `exam-${session.pin}`;
   const createdAt = new Date().toISOString();
   const participantsList = Object.values(session.participants)
     .filter((p) => !p.isBot)
     .sort(compareParticipantsByMerit);
   const count = participantsList.length;
   if (count === 0) return;
-  const totalScore = participantsList.reduce((acc, p) => acc + p.score, 0);
-  const avgScore = count > 0 ? Math.round(totalScore / count) : 0;
-  const highestScore = participantsList[0]?.score ?? 0;
+
+  const retakeOrigSession = session.settings.retakeForSessionId
+    ? store.examSessions.find(
+        (s) =>
+          s.id === session.settings.retakeForSessionId ||
+          (!!session.settings.retakeOriginPin && s.pin === session.settings.retakeOriginPin),
+      )
+    : undefined;
+
+  const targetSessionId = retakeOrigSession ? retakeOrigSession.id : `exam-${session.pin}`;
+  const targetPin = retakeOrigSession ? retakeOrigSession.pin : session.pin;
 
   const quizObj =
     session.fullQuiz ||
@@ -1166,53 +1179,13 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
     ? store.courses.find((c) => c.id === quizObj.courseId)
     : undefined;
   const effectivePassThresholdPct = resolvePassThresholdPct({
-    sessionThreshold: session.settings?.passThresholdPct,
+    sessionThreshold: retakeOrigSession?.passThresholdPct ?? session.settings?.passThresholdPct,
     courseThreshold: matchedCourse?.passThresholdPct,
     brandingDefaultThreshold: store.branding?.defaultPassThresholdPct,
   });
-
-  const sessionRecord: ExamSessionRecord = {
-    id: sessionId,
-    pin: session.pin,
-    quizId: session.quizId,
-    quizTitleEn: session.quizTitleEn || "Onnesha Assessment",
-    quizTitleBn: session.quizTitleBn || "অন্বেষা মডেল টেস্ট",
-    hostId: session.hostId || "host",
-    allowedRegionId: session.settings.allowedRegionId || "all",
-    allowedRegionName: session.settings.allowedRegionName || "All Regions",
-    totalQuestions: session.totalQuestions,
-    participantCount: count,
-    averageScore: avgScore,
-    highestScore,
-    passThresholdPct: effectivePassThresholdPct,
-    createdAt,
-  };
-
-  store.examSessions = [
-    sessionRecord,
-    ...store.examSessions.filter((s) => s.id !== sessionId && s.pin !== session.pin),
-  ];
-
-  // Remove any previous results for this pin before writing final results
-  store.examResults = store.examResults.filter((r) => r.pin !== session.pin);
-
   const totalMarks = computeTotalQuizMarks(quizObj?.questions, session.totalQuestions);
-  const mintedCertNumbers: string[] = [];
-  const mintedCerts: CertificateData[] = [];
-  const mintedCertUpper = new Set<string>();
-  const dataDir = getStorePaths().dataDir;
 
-  // Locate current ledger tail once so sealing N certificates runs in O(N) instead of O(N^2)
-  let currentTailCert: CertificateData | undefined;
-  for (const c of store.certificates) {
-    if (typeof c.ledgerIndex === "number" && c.chainHash) {
-      if (!currentTailCert || (c.ledgerIndex || 0) > (currentTailCert.ledgerIndex || 0)) {
-        currentTailCert = c;
-      }
-    }
-  }
-
-  participantsList.forEach((p, idx) => {
+  const builtResults: ExamResultRecord[] = participantsList.map((p, idx) => {
     const answersList = Object.values(p.answers || {});
     const correctCount = answersList.filter((a) => a.isCorrect).length;
     const incorrectCount = answersList.filter(
@@ -1232,10 +1205,12 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
     const roll = p.rollNumber || `2026-${100 + idx + 1}`;
     const humanRank = idx + 1;
 
-    const resultRecord: ExamResultRecord = {
-      id: `res-${session.pin}-${p.id}`,
-      sessionId,
-      pin: session.pin,
+    return {
+      id: retakeOrigSession
+        ? `res-${targetPin}-${normalizeMatchRoll(roll) || p.id}`
+        : `res-${session.pin}-${p.id}`,
+      sessionId: targetSessionId,
+      pin: targetPin,
       participantId: p.id,
       rollNumber: roll,
       name: p.nickname || p.name || `Candidate ${humanRank}`,
@@ -1252,61 +1227,139 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
       answersJson: JSON.stringify(p.answers || {}),
       createdAt,
     };
-    store.examResults.push(resultRecord);
+  });
 
-    if (passed) {
-      const certNo = makeCertificateNumber(session.pin, roll, humanRank);
-      const isRevoked = (store.revokedCertificates || []).some(
-        (rc) => rc.toLowerCase() === certNo.toLowerCase(),
-      );
-      if (isRevoked) return;
+  let finalResultsForCerts: ExamResultRecord[];
+  let totalParticipantsForCerts: number;
 
-      const existingSealed = store.certificates.find(
-        (c) =>
-          c.certificateNumber.toLowerCase() === certNo.toLowerCase() &&
-          !!c.cryptoSignature &&
-          c.score === p.score &&
-          c.rank === humanRank &&
-          c.studentRoll === roll,
-      );
-      if (existingSealed) return;
+  if (retakeOrigSession) {
+    const { updatedSession, mergedResults } = mergeRetakeExamResults({
+      origSession: retakeOrigSession,
+      existingResults: store.examResults,
+      makeupResults: builtResults,
+      nowIso: createdAt,
+    });
+    store.examSessions = store.examSessions.map((s) =>
+      s.id === updatedSession.id ? updatedSession : s,
+    );
+    store.examResults = [
+      ...store.examResults.filter(
+        (r) =>
+          r.sessionId !== retakeOrigSession.id &&
+          !(!r.sessionId && r.pin === retakeOrigSession.pin),
+      ),
+      ...mergedResults,
+    ];
+    finalResultsForCerts = mergedResults;
+    totalParticipantsForCerts = mergedResults.length;
+  } else {
+    const totalScore = participantsList.reduce((acc, p) => acc + p.score, 0);
+    const avgScore = count > 0 ? Math.round(totalScore / count) : 0;
+    const highestScore = participantsList[0]?.score ?? 0;
 
-      const unsignedCert: CertificateData = {
-        id: `cert-${session.pin}-${p.id}`,
-        certificateNumber: certNo,
-        studentName: p.nickname || p.name || `Candidate ${humanRank}`,
-        studentRoll: roll,
-        regionName: p.regionName || "Dhaka Range",
-        quizTitle: session.quizTitleBn || session.quizTitleEn || "Institutional Assessment",
-        score: p.score,
-        marksObtained: p.score,
-        totalPoints: totalMarks,
-        totalMarks,
-        rank: humanRank,
-        totalParticipants: count,
-        accuracyPercent: accuracy,
-        scorePct: accuracy,
-        issueDate: createdAt.slice(0, 10),
-        organizationName: resolveOrgName(store.branding),
-        institutionName: store.branding?.institutionTitle || "Onnesha Assessment Arena",
-        instructorName: "Chief Assessment Officer",
-        verificationUrl: `/verify/${certNo}`,
-        verified: true,
-      };
+    const sessionRecord: ExamSessionRecord = {
+      id: targetSessionId,
+      pin: targetPin,
+      quizId: session.quizId,
+      quizTitleEn: session.quizTitleEn || "Onnesha Assessment",
+      quizTitleBn: session.quizTitleBn || "অন্বেষা মডেল টেস্ট",
+      hostId: session.hostId || "host",
+      allowedRegionId: session.settings.allowedRegionId || "all",
+      allowedRegionName: session.settings.allowedRegionName || "All Regions",
+      totalQuestions: session.totalQuestions,
+      participantCount: count,
+      averageScore: avgScore,
+      highestScore,
+      passThresholdPct: effectivePassThresholdPct,
+      createdAt,
+    };
 
-      const certRecord = sealCertificateWithLedger(
-        unsignedCert,
-        currentTailCert ? [currentTailCert] : [],
-        dataDir,
-      );
-      if (typeof certRecord.ledgerIndex === "number" && certRecord.chainHash) {
-        currentTailCert = certRecord;
+    store.examSessions = [
+      sessionRecord,
+      ...store.examSessions.filter((s) => s.id !== targetSessionId && s.pin !== targetPin),
+    ];
+
+    // Remove any previous results for this pin before writing final results
+    store.examResults = [
+      ...store.examResults.filter((r) => r.pin !== targetPin),
+      ...builtResults,
+    ];
+    finalResultsForCerts = builtResults;
+    totalParticipantsForCerts = count;
+  }
+
+  const mintedCertNumbers: string[] = [];
+  const mintedCerts: CertificateData[] = [];
+  const mintedCertUpper = new Set<string>();
+  const dataDir = getStorePaths().dataDir;
+
+  // Locate current ledger tail once so sealing N certificates runs in O(N) instead of O(N^2)
+  let currentTailCert: CertificateData | undefined;
+  for (const c of store.certificates) {
+    if (typeof c.ledgerIndex === "number" && c.chainHash) {
+      if (!currentTailCert || (c.ledgerIndex || 0) > (currentTailCert.ledgerIndex || 0)) {
+        currentTailCert = c;
       }
-
-      mintedCerts.unshift(certRecord);
-      mintedCertUpper.add(certNo.toUpperCase());
-      mintedCertNumbers.push(certNo);
     }
+  }
+
+  finalResultsForCerts.forEach((r, idx) => {
+    const passed = !!r.passed;
+    if (!passed) return;
+
+    const roll = r.rollNumber || `2026-${100 + idx + 1}`;
+    const humanRank = r.rank || idx + 1;
+    const certNo = makeCertificateNumber(targetPin, roll, humanRank);
+    const isRevoked = (store.revokedCertificates || []).some(
+      (rc) => rc.toLowerCase() === certNo.toLowerCase(),
+    );
+    if (isRevoked) return;
+
+    // Never re-sign or mutate an already-sealed certificate in the ledger (preserves Run 1 QR codes)
+    const existingSealed = store.certificates.find(
+      (c) =>
+        c.certificateNumber.toLowerCase() === certNo.toLowerCase() &&
+        !!c.cryptoSignature &&
+        (!!retakeOrigSession ||
+          (c.score === r.score && c.rank === humanRank && c.studentRoll === roll)),
+    );
+    if (existingSealed) return;
+
+    const unsignedCert: CertificateData = {
+      id: `cert-${targetPin}-${r.participantId || idx + 1}`,
+      certificateNumber: certNo,
+      studentName: r.name || `Candidate ${humanRank}`,
+      studentRoll: roll,
+      regionName: r.regionName || "Dhaka Range",
+      quizTitle: session.quizTitleBn || session.quizTitleEn || "Institutional Assessment",
+      score: r.score,
+      marksObtained: r.score,
+      totalPoints: totalMarks,
+      totalMarks,
+      rank: humanRank,
+      totalParticipants: totalParticipantsForCerts,
+      accuracyPercent: r.accuracyPct,
+      scorePct: r.accuracyPct,
+      issueDate: createdAt.slice(0, 10),
+      organizationName: resolveOrgName(store.branding),
+      institutionName: store.branding?.institutionTitle || "Onnesha Assessment Arena",
+      instructorName: "Chief Assessment Officer",
+      verificationUrl: `/verify/${certNo}`,
+      verified: true,
+    };
+
+    const certRecord = sealCertificateWithLedger(
+      unsignedCert,
+      currentTailCert ? [currentTailCert] : [],
+      dataDir,
+    );
+    if (typeof certRecord.ledgerIndex === "number" && certRecord.chainHash) {
+      currentTailCert = certRecord;
+    }
+
+    mintedCerts.unshift(certRecord);
+    mintedCertUpper.add(certNo.toUpperCase());
+    mintedCertNumbers.push(certNo);
   });
 
   if (mintedCerts.length > 0) {
@@ -3039,8 +3092,9 @@ export function buildJoinDirectoryForSession(params: {
   roster: RosterStudent[];
   regions: Region[];
   session?: Pick<ServerLiveSession, "phase" | "isSelfPractice" | "settings" | "participants"> | undefined;
+  examResults?: ExamResultRecord[] | undefined;
 }) {
-  const { roster, regions, session } = params;
+  const { roster, regions, session, examResults } = params;
   if (!session || session.phase === "podium" || session.phase === "finished") {
     return {
       success: false,
@@ -3080,12 +3134,34 @@ export function buildJoinDirectoryForSession(params: {
     if (p.candidateId) activeSeatCandidateIds.add(p.candidateId);
   });
 
+  const skipCompletedRetake =
+    !!session.settings?.retakeForSessionId &&
+    session.settings?.retakeSkipCompleted !== false &&
+    Array.isArray(examResults);
+  const compIdx = skipCompletedRetake
+    ? buildOriginalCompletionIndex(
+        examResults!,
+        session.settings.retakeForSessionId,
+        session.settings.retakeOriginPin,
+      )
+    : null;
+
   const scopedRoster =
     allowedRegionId && allowedRegionId !== "all"
       ? roster.filter((s) => (s.regionId || "reg-dhaka") === allowedRegionId)
       : roster;
 
-  const candidates = scopedRoster.map((s) => ({
+  const eligibleRoster = compIdx
+    ? scopedRoster.filter(
+        (s) =>
+          !findCompletedMatchInIndex(compIdx, {
+            rollNumber: s.rollNumber,
+            phone: s.phone || s.guardianPhone,
+          }),
+      )
+    : scopedRoster;
+
+  const candidates = eligibleRoster.map((s) => ({
     id: s.id,
     name: s.name,
     rollNumber: s.rollNumber,
@@ -3162,6 +3238,7 @@ export const serverGetJoinDirectory = createServerFn({ method: "GET" })
       roster: store.roster,
       regions: store.regions,
       session,
+      examResults: store.examResults,
     });
   });
 
@@ -3223,6 +3300,24 @@ export const serverLookupCandidateByNumber = createServerFn({ method: "GET" })
       };
     }
 
+    if (session?.settings?.retakeForSessionId && session.settings.retakeSkipCompleted !== false) {
+      const compIdx = buildOriginalCompletionIndex(
+        store.examResults,
+        session.settings.retakeForSessionId,
+        session.settings.retakeOriginPin,
+      );
+      const completedRes = findCompletedMatchInIndex(compIdx, {
+        rollNumber: matched.rollNumber,
+        phone: matched.phone || matched.guardianPhone,
+      });
+      if (completedRes) {
+        return {
+          success: false,
+          error: `Already Completed: ${matched.name} (${matched.rollNumber}) already answered ${(completedRes.correctCount || 0) + (completedRes.incorrectCount || 0)} question(s) in the original exam (PIN ${session.settings.retakeOriginPin || ""}, Score: ${completedRes.score}). No retake is needed — your existing score is preserved.`,
+        };
+      }
+    }
+
     const activeParticipant = session
       ? Object.values(session.participants).find(
           (p) =>
@@ -3264,6 +3359,8 @@ export const serverCreateSession = createServerFn({ method: "POST" })
       maxProctorViolations?: number | undefined;
       passThresholdPct?: number | undefined;
       isSelfPractice?: boolean | undefined;
+      retakeForSessionId?: string | undefined;
+      retakeSkipCompleted?: boolean | undefined;
     }) => data,
   )
   .handler(async ({ data }) => {
@@ -3272,9 +3369,30 @@ export const serverCreateSession = createServerFn({ method: "POST" })
     const actor = await getActorFromRequest();
     const isStaff = !!actor && (actor.role === "admin" || actor.role === "instructor");
 
+    const origSessionForRetake = data.retakeForSessionId
+      ? store.examSessions.find((s) => s.id === data.retakeForSessionId)
+      : undefined;
+    if (data.retakeForSessionId && !origSessionForRetake) {
+      return {
+        success: false,
+        error: "Original assessment session could not be found for supplementary retake.",
+        serverNow: Date.now(),
+        session: null,
+        hostToken: undefined,
+      };
+    }
+
     const authoritativeQuiz =
       store.customQuizzes.find((q) => q.id === data.quiz?.id || q.slug === data.quiz?.slug) ||
       READY_MADE_PACKS.find((q) => q.id === data.quiz?.id || q.slug === data.quiz?.slug) ||
+      (origSessionForRetake
+        ? store.customQuizzes.find(
+            (q) => q.id === origSessionForRetake.quizId || q.slug === origSessionForRetake.quizId,
+          ) ||
+          READY_MADE_PACKS.find(
+            (q) => q.id === origSessionForRetake.quizId || q.slug === origSessionForRetake.quizId,
+          )
+        : undefined) ||
       (isStaff ? data.quiz : undefined);
     const activeQuiz = isStaff
       ? data.quiz?.questions?.length
@@ -3363,11 +3481,17 @@ export const serverCreateSession = createServerFn({ method: "POST" })
     const matchedCourse = activeQuiz.courseId
       ? store.courses.find((c) => c.id === activeQuiz.courseId)
       : undefined;
-    const passThresholdPct = resolvePassThresholdPct({
-      sessionThreshold: data.passThresholdPct,
-      courseThreshold: matchedCourse?.passThresholdPct,
-      brandingDefaultThreshold: store.branding?.defaultPassThresholdPct,
-    });
+    const effectivePassThreshold = origSessionForRetake
+      ? resolvePassThresholdPct({
+          sessionThreshold: data.passThresholdPct ?? origSessionForRetake.passThresholdPct,
+          courseThreshold: matchedCourse?.passThresholdPct,
+          brandingDefaultThreshold: store.branding?.defaultPassThresholdPct,
+        })
+      : resolvePassThresholdPct({
+          sessionThreshold: data.passThresholdPct,
+          courseThreshold: matchedCourse?.passThresholdPct,
+          brandingDefaultThreshold: store.branding?.defaultPassThresholdPct,
+        });
 
     const newSession: ServerLiveSession = {
       pin,
@@ -3398,7 +3522,14 @@ export const serverCreateSession = createServerFn({ method: "POST" })
         enforceFullscreen: enforceFs,
         blockCopyPaste: blockCopy,
         maxProctorViolations: maxViol,
-        passThresholdPct,
+        passThresholdPct: effectivePassThreshold,
+        ...(origSessionForRetake
+          ? {
+              retakeForSessionId: origSessionForRetake.id,
+              retakeOriginPin: origSessionForRetake.pin,
+              retakeSkipCompleted: data.retakeSkipCompleted ?? true,
+            }
+          : {}),
       },
       participants: {},
       totalQuestions: activeQuiz.questions.length,
@@ -3696,6 +3827,30 @@ export const serverJoinSession = createServerFn({ method: "POST" })
         success: false,
         error: `Access Restricted: This examination room is exclusively for ${session.settings.allowedRegionName}.`,
       };
+    }
+
+    // 2b. Retake Guard: Skip examinees who already submitted >= 1 answer in the original exam
+    if (
+      session.settings.retakeForSessionId &&
+      session.settings.retakeSkipCompleted !== false
+    ) {
+      const compIdx = buildOriginalCompletionIndex(
+        store.examResults,
+        session.settings.retakeForSessionId,
+        session.settings.retakeOriginPin,
+      );
+      const completedMatch = findCompletedMatchInIndex(compIdx, {
+        rollNumber: incoming.rollNumber,
+        phone: incoming.phone || data.verificationNumber,
+      });
+      if (completedMatch) {
+        return {
+          success: false,
+          code: "ALREADY_COMPLETED_ORIGINAL",
+          error:
+            "You already completed and submitted answers in the original examination. Your original merit score and certificate remain valid; this supplementary room is only for examinees from affected centers or with zero submitted answers.",
+        };
+      }
     }
 
     // 3. Anti-Impersonation Single-Seat Lock Check

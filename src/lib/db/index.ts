@@ -22,12 +22,14 @@ import { sqliteEngine } from "./sqlite-engine";
 import { serverAdminMutateStore, serverGetBootstrapData } from "../server-session";
 import { isCoursePrivate, isQuizPrivate } from "../sanjibon-seed-data";
 import {
+  compareParticipantsByMerit,
   computeParticipantAccuracyPct,
   computeTotalQuizMarks,
   isPassingScore,
   resolveOrgName,
   resolvePassThresholdPct,
 } from "../scoring";
+import { mergeRetakeExamResults, normalizeMatchRoll } from "../retake-utils";
 import { DEFAULT_BRANDING_SETTINGS, mergeBrandingSettings } from "../branding";
 import { purgeUnderThresholdExamsInStore, type PurgeExamSummary } from "../exam-purge";
 
@@ -1163,17 +1165,22 @@ class OnneshaDatabase {
   // ---------------- EXAM SESSIONS & RESULTS REPOSITORY ----------------
   recordExamSession(session: GameSession, options?: { syncToServer?: boolean }): void {
     if (session.isSelfPractice) return;
-    const sessionId = `exam-${session.pin}`;
+    const retakeOrigSession = session.settings?.retakeForSessionId
+      ? this.getExamSessions().find(
+          (s) =>
+            s.id === session.settings.retakeForSessionId ||
+            (!!session.settings.retakeOriginPin && s.pin === session.settings.retakeOriginPin),
+        )
+      : undefined;
+
+    const targetSessionId = retakeOrigSession ? retakeOrigSession.id : `exam-${session.pin}`;
+    const targetPin = retakeOrigSession ? retakeOrigSession.pin : session.pin;
     const createdAt = new Date().toISOString();
     const participantsList = Object.values(session.participants)
       .filter((p) => !p.isBot)
-      .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.lastActive - b.lastActive));
+      .sort(compareParticipantsByMerit);
     const count = participantsList.length;
     if (count === 0) return;
-
-    const totalScore = participantsList.reduce((acc, p) => acc + p.score, 0);
-    const avgScore = count > 0 ? Math.round(totalScore / count) : 0;
-    const highestScore = participantsList[0]?.score ?? 0;
 
     // Hoist branding, pass threshold & quiz question lookup outside the participant loop
     const branding = this.getBranding();
@@ -1182,7 +1189,7 @@ class OnneshaDatabase {
       ? this.getCourses().find((c) => c.id === matchedQuiz.courseId)
       : undefined;
     const effectivePassThresholdPct = resolvePassThresholdPct({
-      sessionThreshold: session.settings?.passThresholdPct,
+      sessionThreshold: retakeOrigSession?.passThresholdPct ?? session.settings?.passThresholdPct,
       courseThreshold: matchedCourse?.passThresholdPct,
       brandingDefaultThreshold: branding.defaultPassThresholdPct,
     });
@@ -1199,84 +1206,157 @@ class OnneshaDatabase {
         : "https://arena.onnesha.courses";
     const shouldSyncCerts = options?.syncToServer ?? false;
 
+    const builtResults: ExamResultRecord[] = participantsList.map((p, idx) => {
+      const answersList = Object.values(p.answers || {});
+      const correctCount = answersList.filter((a) => a.isCorrect).length;
+      const incorrectCount = answersList.filter(
+        (a) => !a.isCorrect && (a.selectedOptionIds?.length > 0 || !!a.writtenAnswer),
+      ).length;
+      const unattemptedCount = Math.max(0, session.totalQuestions - answersList.length);
+      const accuracy = computeParticipantAccuracyPct({
+        answers: answersList,
+        correctCount,
+        totalQuestions: session.totalQuestions,
+        score: p.score,
+        totalMarks: computedTotalPoints,
+      });
+      const passed = isPassingScore(accuracy, effectivePassThresholdPct);
+      const roll = p.rollNumber || `2026-${100 + idx + 1}`;
+      const humanRank = idx + 1;
+
+      return {
+        id: retakeOrigSession
+          ? `res-${targetPin}-${normalizeMatchRoll(roll) || p.id}`
+          : `res-${session.pin}-${p.id}`,
+        sessionId: targetSessionId,
+        pin: targetPin,
+        participantId: p.id,
+        rollNumber: roll,
+        name: p.nickname || p.name || `Candidate ${humanRank}`,
+        phone: p.phone || "",
+        regionId: p.regionId || "reg-dhaka",
+        regionName: p.regionName || "Dhaka Range",
+        score: p.score,
+        rank: humanRank,
+        correctCount,
+        incorrectCount,
+        unattemptedCount,
+        accuracyPct: accuracy,
+        passed,
+        answersJson: JSON.stringify(p.answers || {}),
+        createdAt,
+      };
+    });
+
+    let finalSessionRecord: ExamSessionRecord;
+    let finalResults: ExamResultRecord[];
+
+    if (retakeOrigSession) {
+      const merged = mergeRetakeExamResults({
+        origSession: retakeOrigSession,
+        existingResults: this.getAllExamResults(),
+        makeupResults: builtResults,
+        nowIso: createdAt,
+      });
+      finalSessionRecord = merged.updatedSession;
+      finalResults = merged.mergedResults;
+    } else {
+      const totalScore = participantsList.reduce((acc, p) => acc + p.score, 0);
+      const avgScore = count > 0 ? Math.round(totalScore / count) : 0;
+      const highestScore = participantsList[0]?.score ?? 0;
+      finalSessionRecord = {
+        id: targetSessionId,
+        pin: targetPin,
+        quizId: session.quizId,
+        quizTitleEn: session.quizTitleEn || "Onnesha Assessment",
+        quizTitleBn: session.quizTitleBn || "অন্বেষা মডেল টেস্ট",
+        hostId: session.hostId || "host",
+        allowedRegionId: session.settings.allowedRegionId || "all",
+        allowedRegionName: session.settings.allowedRegionName || "All Regions",
+        totalQuestions: session.totalQuestions,
+        participantCount: count,
+        averageScore: avgScore,
+        highestScore,
+        passThresholdPct: effectivePassThresholdPct,
+        createdAt,
+      };
+      finalResults = builtResults;
+    }
+
+    const existingCertsUpper = new Set(
+      this.getCertificates().map((c) => c.certificateNumber.toUpperCase()),
+    );
+
     sqliteEngine.runBatch((run) => {
       run(
         "INSERT OR REPLACE INTO exam_sessions (id, pin, quizId, quizTitleEn, quizTitleBn, hostId, allowedRegionId, allowedRegionName, totalQuestions, participantCount, averageScore, highestScore, passThresholdPct, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
-          sessionId,
-          session.pin,
-          session.quizId,
-          session.quizTitleEn || "Onnesha Assessment",
-          session.quizTitleBn || "অন্বেষা মডেল টেস্ট",
-          session.hostId || "host",
-          session.settings.allowedRegionId || "all",
-          session.settings.allowedRegionName || "All Regions",
-          session.totalQuestions,
-          count,
-          avgScore,
-          highestScore,
+          finalSessionRecord.id,
+          finalSessionRecord.pin,
+          finalSessionRecord.quizId,
+          finalSessionRecord.quizTitleEn,
+          finalSessionRecord.quizTitleBn,
+          finalSessionRecord.hostId,
+          finalSessionRecord.allowedRegionId || "all",
+          finalSessionRecord.allowedRegionName || "All Regions",
+          finalSessionRecord.totalQuestions,
+          finalSessionRecord.participantCount,
+          finalSessionRecord.averageScore,
+          finalSessionRecord.highestScore,
           effectivePassThresholdPct,
-          createdAt,
+          finalSessionRecord.createdAt,
         ],
       );
 
-      participantsList.forEach((p, idx) => {
-        const answersList = Object.values(p.answers || {});
-        const correctCount = answersList.filter((a) => a.isCorrect).length;
-        const incorrectCount = answersList.filter(
-          (a) => !a.isCorrect && (a.selectedOptionIds?.length > 0 || !!a.writtenAnswer),
-        ).length;
-        const unattemptedCount = Math.max(0, session.totalQuestions - answersList.length);
-        const accuracy = computeParticipantAccuracyPct({
-          answers: answersList,
-          correctCount,
-          totalQuestions: session.totalQuestions,
-          score: p.score,
-          totalMarks: computedTotalPoints,
-        });
-        const passed = isPassingScore(accuracy, effectivePassThresholdPct);
-        const roll = p.rollNumber || `2026-${100 + idx + 1}`;
-        const humanRank = idx + 1;
+      if (retakeOrigSession) {
+        run("DELETE FROM exam_results WHERE sessionId = ? OR pin = ?", [
+          targetSessionId,
+          targetPin,
+        ]);
+      }
 
-        const resultId = `res-${session.pin}-${p.id}`;
+      finalResults.forEach((r) => {
         run(
           "INSERT OR REPLACE INTO exam_results (id, sessionId, pin, participantId, rollNumber, name, phone, regionId, regionName, score, rank, correctCount, incorrectCount, unattemptedCount, accuracyPct, passed, answersJson, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
           [
-            resultId,
-            sessionId,
-            session.pin,
-            p.id,
-            roll,
-            p.nickname || p.name || `Candidate ${humanRank}`,
-            p.phone || "",
-            p.regionId || "reg-dhaka",
-            p.regionName || "Dhaka Range",
-            p.score,
-            humanRank,
-            correctCount,
-            incorrectCount,
-            unattemptedCount,
-            accuracy,
-            passed ? 1 : 0,
-            JSON.stringify(p.answers || {}),
-            createdAt,
+            r.id,
+            r.sessionId,
+            r.pin,
+            r.participantId,
+            r.rollNumber,
+            r.name,
+            r.phone || "",
+            r.regionId || "reg-dhaka",
+            r.regionName || "Dhaka Range",
+            r.score,
+            r.rank,
+            r.correctCount,
+            r.incorrectCount,
+            r.unattemptedCount,
+            r.accuracyPct,
+            r.passed ? 1 : 0,
+            r.answersJson || "{}",
+            r.createdAt,
           ],
         );
 
-        if (passed) {
-          const certNo = formatDeterministicCertNumber(session.pin, roll, humanRank);
+        if (r.passed) {
+          const certNo = formatDeterministicCertNumber(targetPin, r.rollNumber, r.rank);
+          if (retakeOrigSession && existingCertsUpper.has(certNo.toUpperCase())) {
+            return;
+          }
           this.issueCertificate(
             {
               certificateNumber: certNo,
-              studentName: p.nickname || p.name || `Candidate ${humanRank}`,
-              studentRoll: roll,
-              regionName: p.regionName || "Dhaka Range",
+              studentName: r.name,
+              studentRoll: r.rollNumber,
+              regionName: r.regionName || "Dhaka Range",
               quizTitle: session.quizTitleBn || session.quizTitleEn || "Institutional Assessment",
-              score: p.score,
+              score: r.score,
               totalPoints: computedTotalPoints,
-              rank: humanRank,
-              totalParticipants: count,
-              accuracyPercent: accuracy,
+              rank: r.rank,
+              totalParticipants: finalResults.length,
+              accuracyPercent: r.accuracyPct,
               issueDate: createdAt.slice(0, 10),
               organizationName: orgName,
               institutionName: instTitle,

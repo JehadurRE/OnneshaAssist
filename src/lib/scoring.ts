@@ -432,6 +432,9 @@ export function mergeSessionSettingsPatch(
   if ("startCountdownSec" in patch) {
     next.startCountdownSec = resolveStartCountdownSec(patch.startCountdownSec);
   }
+  if ("retakeSkipCompleted" in patch && typeof patch.retakeSkipCompleted === "boolean") {
+    next.retakeSkipCompleted = patch.retakeSkipCompleted;
+  }
 
   return next;
 }

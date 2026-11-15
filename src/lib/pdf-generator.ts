@@ -1474,8 +1474,268 @@ export async function downloadOmrSheetPdf(params: {
   triggerBlobDownload(pdfBytes, `Onnesha-OMR-${candidateRoll}.pdf`);
 }
 
+const GAZETTE_SANS_FONT =
+  '"Noto Sans Bengali", "Hind Siliguri", "Kalpurush", "Segoe UI", system-ui, -apple-system, sans-serif';
+const GAZETTE_MONO_FONT =
+  '"JetBrains Mono", "Cascadia Mono", Consolas, "Courier New", monospace';
+
+function wrapCanvasLines(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  maxLines = 4,
+): string[] {
+  const clean = (text || "").trim().replace(/\s+/g, " ");
+  if (!clean) return [""];
+  const words = clean.split(" ");
+  const lines: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (ctx.measureText(candidate).width <= maxWidth || !current) {
+      current = candidate;
+    } else {
+      lines.push(current);
+      current = word;
+      if (lines.length === maxLines - 1) {
+        // Put remaining text on final line cleanly truncated if needed
+        continue;
+      }
+    }
+  }
+  if (current) lines.push(current);
+
+  if (lines.length > maxLines) {
+    const head = lines.slice(0, maxLines - 1);
+    const tailText = lines.slice(maxLines - 1).join(" ");
+    head.push(fitCellText(ctx, tailText, maxWidth));
+    return head;
+  }
+  return lines.map((line) =>
+    ctx.measureText(line).width > maxWidth ? fitCellText(ctx, line, maxWidth) : line,
+  );
+}
+
+function fitCellText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+): string {
+  const clean = (text || "").trim();
+  if (!clean || maxWidth <= 8) return "";
+  if (ctx.measureText(clean).width <= maxWidth) return clean;
+  let lo = 0;
+  let hi = clean.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (ctx.measureText(`${clean.slice(0, mid)}…`).width <= maxWidth) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return lo > 0 ? `${clean.slice(0, lo)}…` : "…";
+}
+
 /**
- * Generates and downloads an Official Merit Gazette PDF directly to the user's device.
+ * Draws the official Gazette banner header matching MeritGazetteView preview.
+ * Returns the Y coordinate directly below the horizontal divider rule.
+ */
+function drawGazetteHeader(params: {
+  ctx: CanvasRenderingContext2D;
+  W: number;
+  M: number;
+  quizTitle: string;
+  regionLabel: string;
+  branding?: BrandingSettings | undefined;
+  totalCandidates: number;
+  pageIdx: number;
+  totalPages: number;
+  onneshaLogo: HTMLImageElement | null;
+  partnerLogo: HTMLImageElement | null;
+}): number {
+  const {
+    ctx,
+    W,
+    M,
+    quizTitle,
+    regionLabel,
+    branding,
+    totalCandidates,
+    pageIdx,
+    totalPages,
+    onneshaLogo,
+    partnerLogo,
+  } = params;
+
+  const topY = 70;
+  const logoBoxW = 248;
+  const metaBoxW = 266;
+  const metaBoxX = W - M - metaBoxW;
+  const headerMinBottom = topY + 118;
+
+  // 1. Left Logos Zone (Onnesha + optional Partner Co-brand)
+  if (onneshaLogo && partnerLogo) {
+    drawContainedImage(ctx, onneshaLogo, M, topY + 12, 114, 84, "left");
+    drawContainedImage(ctx, partnerLogo, M + 124, topY + 12, 120, 84, "left");
+  } else if (onneshaLogo) {
+    drawContainedImage(ctx, onneshaLogo, M, topY + 10, 175, 88, "left");
+  } else if (partnerLogo) {
+    drawContainedImage(ctx, partnerLogo, M, topY + 10, 175, 88, "left");
+  } else {
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#047857";
+    ctx.font = `900 28px ${GAZETTE_SANS_FONT}`;
+    ctx.fillText("ONNESHA", M, topY + 54);
+  }
+
+  // 2. Right Bordered Metadata Card
+  ctx.save();
+  drawRoundedRect(ctx, metaBoxX, topY + 4, metaBoxW, 108, 8);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "#0f172a";
+  ctx.stroke();
+
+  const metaRows: ReadonlyArray<readonly [string, string]> = [
+    ["GAZETTE:", "ONN-2026-GZ"],
+    ["DATE:", new Date().toLocaleDateString()],
+    ["CANDIDATES:", String(totalCandidates)],
+    ["PAGE:", `${pageIdx + 1} / ${totalPages}`],
+  ];
+  ctx.textBaseline = "middle";
+  metaRows.forEach(([k, v], idx) => {
+    const ry = topY + 21 + idx * 23;
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#475569";
+    ctx.font = `bold 15px ${GAZETTE_MONO_FONT}`;
+    ctx.fillText(k, metaBoxX + 14, ry);
+
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#0f172a";
+    ctx.font = `900 15px ${GAZETTE_MONO_FONT}`;
+    ctx.fillText(v, metaBoxX + metaBoxW - 14, ry);
+  });
+  ctx.restore();
+
+  // 3. Center Title Block (bounded cleanly between logos and metadata box)
+  const centerLeft = M + logoBoxW + 18;
+  const centerRight = metaBoxX - 18;
+  const centerW = Math.max(400, centerRight - centerLeft);
+  const centerX = (centerLeft + centerRight) / 2;
+
+  const orgKicker =
+    branding?.showPartnerLogo && branding.partnerName
+      ? `${branding.partnerName.toUpperCase()} · ONNESHA ASSESSMENT`
+      : (branding?.institutionTitle || "ONNESHA ASSESSMENT ARENA").toUpperCase();
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "#4b5563";
+  fillTextAutoFit(ctx, orgKicker, centerX, topY + 24, centerW, 17, 13, "bold", GAZETTE_SANS_FONT);
+
+  ctx.fillStyle = "#000000";
+  fillTextAutoFit(
+    ctx,
+    pageIdx === 0 ? "EXAMINATION EVALUATION GAZETTE" : "EXAMINATION EVALUATION GAZETTE (CONT.)",
+    centerX,
+    topY + 64,
+    centerW,
+    34,
+    24,
+    "900",
+    GAZETTE_SANS_FONT,
+  );
+
+  ctx.fillStyle = "#1f2937";
+  ctx.font = `bold 18px ${GAZETTE_SANS_FONT}`;
+  const scopeSubtitle = `Examination: ${quizTitle} · Scope: ${regionLabel}`;
+  const subtitleLines = wrapCanvasLines(ctx, scopeSubtitle, centerW, 2);
+  let subY = topY + 95;
+  subtitleLines.forEach((line) => {
+    ctx.fillText(line, centerX, subY);
+    subY += 25;
+  });
+
+  const dividerY = Math.max(headerMinBottom, subY - 4) + 12;
+  ctx.strokeStyle = "#0f172a";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(M, dividerY);
+  ctx.lineTo(W - M, dividerY);
+  ctx.stroke();
+
+  return dividerY;
+}
+
+/**
+ * Draws the black-bordered Notice Declaration box on Page 1.
+ * Returns the Y coordinate directly below the box.
+ */
+function drawGazetteNoticeBox(params: {
+  ctx: CanvasRenderingContext2D;
+  M: number;
+  CW: number;
+  startY: number;
+  regionLabel: string;
+  thresholdDisplay: string;
+  thresholdLabel?: string | undefined;
+}): number {
+  const { ctx, M, CW, startY, regionLabel, thresholdDisplay, thresholdLabel } = params;
+  const padX = 22;
+  const padY = 18;
+  const innerW = CW - padX * 2;
+  const thresholdSuffix = thresholdLabel ? "" : " accuracy";
+  const body = `NOTICE FOR CANDIDATES (${regionLabel.toUpperCase()}): The following merit list contains verified final rankings based on raw marks, speed velocity, and applicable negative marking (-0.25 penalty). This gazette is officially certified for public notice boards and regional archives. Qualifying passing threshold: ${thresholdDisplay}${thresholdSuffix}.`;
+
+  ctx.font = `600 18px ${GAZETTE_SANS_FONT}`;
+  const lines = wrapCanvasLines(ctx, body, innerW, 4);
+  const lineH = 28;
+  const boxH = padY * 2 + lines.length * lineH;
+
+  ctx.save();
+  drawRoundedRect(ctx, M, startY, CW, boxH, 10);
+  ctx.fillStyle = "#f9fafb";
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "#0f172a";
+  ctx.stroke();
+
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  lines.forEach((line, i) => {
+    const ly = startY + padY + i * lineH + lineH / 2;
+    if (i === 0) {
+      const colonIdx = line.indexOf(":");
+      if (colonIdx > 0) {
+        const prefix = line.slice(0, colonIdx + 1);
+        const rest = line.slice(colonIdx + 1);
+        ctx.fillStyle = "#0f172a";
+        ctx.font = `900 18px ${GAZETTE_SANS_FONT}`;
+        ctx.fillText(prefix, M + padX, ly);
+        const prefixW = ctx.measureText(prefix).width;
+        ctx.fillStyle = "#1f2937";
+        ctx.font = `500 18px ${GAZETTE_SANS_FONT}`;
+        ctx.fillText(rest, M + padX + prefixW, ly);
+        return;
+      }
+    }
+    ctx.fillStyle = "#1f2937";
+    ctx.font = `500 18px ${GAZETTE_SANS_FONT}`;
+    ctx.fillText(line, M + padX, ly);
+  });
+  ctx.restore();
+
+  return startY + boxH;
+}
+
+/**
+ * Generates and downloads an Official Merit Gazette PDF directly to the user's device,
+ * closely mirroring the MeritGazetteView preview layout, typography, full grid borders,
+ * logos, notice box, and authority signature blocks.
  */
 export async function downloadMeritGazettePdf(params: {
   quizTitle: string;
@@ -1485,19 +1745,153 @@ export async function downloadMeritGazettePdf(params: {
   passThresholdPct?: number | undefined;
   thresholdLabel?: string | undefined;
 }): Promise<void> {
-  const { quizTitle, regionLabel, participants, branding, passThresholdPct, thresholdLabel } = params;
+  const { quizTitle, regionLabel, participants, branding, passThresholdPct, thresholdLabel } =
+    params;
   const effectiveThreshold = resolvePassThresholdPct({
     sessionThreshold: passThresholdPct,
     brandingDefaultThreshold: branding?.defaultPassThresholdPct,
   });
   const thresholdDisplay = thresholdLabel || `${effectiveThreshold}%`;
-  const rowsPerPage = 28;
-  const totalPages = Math.max(1, Math.ceil(participants.length / rowsPerPage));
+
+  const [onneshaLogo, partnerLogo] = await Promise.all([
+    loadImageSafe(branding?.leftLogoUrl || onnesha.url),
+    branding?.showPartnerLogo && branding.partnerLogoUrl
+      ? loadImageSafe(branding.partnerLogoUrl)
+      : Promise.resolve(null),
+  ]);
+
+  // Sort deterministically preserving rank tie-breaking
+  const ordered = [...participants].sort((a, b) =>
+    b.finalScore !== a.finalScore
+      ? b.finalScore - a.finalScore
+      : (a.rank || 999999) - (b.rank || 999999),
+  );
+
+  // A4 portrait at 200 DPI
+  const W = 1654;
+  const H = 2339;
+  const M = 84;
+  const CW = W - M * 2; // 1486px
+  const tableHeaderH = 54;
+  const rowH = 52;
+
+  // Measure Page 1 header & notice height on a scratch 2d context so row budget is exact
+  const scratchCanvas = document.createElement("canvas");
+  scratchCanvas.width = W;
+  scratchCanvas.height = H;
+  const scratchCtx = scratchCanvas.getContext("2d");
+  if (!scratchCtx) return;
+
+  const estDividerP1 = drawGazetteHeader({
+    ctx: scratchCtx,
+    W,
+    M,
+    quizTitle,
+    regionLabel,
+    branding,
+    totalCandidates: ordered.length,
+    pageIdx: 0,
+    totalPages: 1,
+    onneshaLogo,
+    partnerLogo,
+  });
+  const estNoticeBottom = drawGazetteNoticeBox({
+    ctx: scratchCtx,
+    M,
+    CW,
+    startY: estDividerP1 + 20,
+    regionLabel,
+    thresholdDisplay,
+    thresholdLabel,
+  });
+  const page1TableTop = estNoticeBottom + 24;
+
+  const estDividerP2 = drawGazetteHeader({
+    ctx: scratchCtx,
+    W,
+    M,
+    quizTitle,
+    regionLabel,
+    branding,
+    totalCandidates: ordered.length,
+    pageIdx: 1,
+    totalPages: 2,
+    onneshaLogo,
+    partnerLogo,
+  });
+  const contTableTop = estDividerP2 + 24;
+
+  const maxNonFinalTableBottom = H - 110;
+  const maxFinalTableBottom = H - 275; // leaves room for Authority Signatures + page footer
+
+  const p1FinalCap = Math.max(1, Math.floor((maxFinalTableBottom - page1TableTop - tableHeaderH) / rowH));
+  const p1NonFinalCap = Math.max(
+    1,
+    Math.floor((maxNonFinalTableBottom - page1TableTop - tableHeaderH) / rowH),
+  );
+  const contFinalCap = Math.max(
+    1,
+    Math.floor((maxFinalTableBottom - contTableTop - tableHeaderH) / rowH),
+  );
+  const contNonFinalCap = Math.max(
+    1,
+    Math.floor((maxNonFinalTableBottom - contTableTop - tableHeaderH) / rowH),
+  );
+
+  // Build balanced page slices so the final page ALWAYS leaves room for signatures & at least 1 row
+  const pageSlices: Array<{ items: MeritParticipant[]; startRank: number }> = [];
+  if (ordered.length === 0) {
+    pageSlices.push({ items: [], startRank: 1 });
+  } else {
+    let offset = 0;
+    while (offset < ordered.length) {
+      const isFirst = pageSlices.length === 0;
+      const finalCap = isFirst ? p1FinalCap : contFinalCap;
+      const nonFinalCap = isFirst ? p1NonFinalCap : contNonFinalCap;
+      const remaining = ordered.length - offset;
+
+      let take: number;
+      if (remaining <= finalCap) {
+        take = remaining;
+      } else {
+        // Leave >= 1 row for subsequent page so signatures never stand orphan on empty page
+        take = Math.max(1, Math.min(nonFinalCap, remaining - 1));
+      }
+      pageSlices.push({
+        items: ordered.slice(offset, offset + take),
+        startRank: offset + 1,
+      });
+      offset += take;
+    }
+  }
+
+  // Exact 9-column specification matching MeritGazetteView (sums to 1486px)
+  const columns: ReadonlyArray<{
+    key: string;
+    label: string;
+    width: number;
+    align: "left" | "center";
+  }> = [
+    { key: "rank", label: "Rank", width: 76, align: "center" },
+    { key: "roll", label: "Roll Number", width: 166, align: "left" },
+    { key: "name", label: "Candidate Name", width: 310, align: "left" },
+    { key: "region", label: "Region / Range", width: 230, align: "left" },
+    { key: "correct", label: "Correct", width: 96, align: "center" },
+    { key: "wrong", label: "Wrong", width: 96, align: "center" },
+    { key: "acc", label: "Accuracy", width: 114, align: "center" },
+    { key: "score", label: "Net Score", width: 144, align: "center" },
+    { key: "status", label: "Status", width: 254, align: "center" },
+  ];
+
+  const colEdges: number[] = [M];
+  columns.forEach((col) => colEdges.push(colEdges[colEdges.length - 1]! + col.width));
+
   const canvases: HTMLCanvasElement[] = [];
+  const totalPages = pageSlices.length;
 
   for (let pageIdx = 0; pageIdx < totalPages; pageIdx++) {
-    const W = 1700;
-    const H = 2400;
+    const sliceObj = pageSlices[pageIdx]!;
+    const isLastPage = pageIdx === totalPages - 1;
     const canvas = document.createElement("canvas");
     canvas.width = W;
     canvas.height = H;
@@ -1507,122 +1901,241 @@ export async function downloadMeritGazettePdf(params: {
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, W, H);
 
-    ctx.strokeStyle = "#0f172a";
-    ctx.lineWidth = 4;
-    ctx.strokeRect(80, 80, W - 160, H - 160);
-
     // Header
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#047857";
-    ctx.font = "bold 22px sans-serif";
-    ctx.fillText(
-      (branding?.institutionTitle || "ONNESHA ASSESSMENT & EXAMINATION ARENA").toUpperCase(),
-      W / 2,
-      145,
-    );
-
-    ctx.fillStyle = "#000000";
-    ctx.font = "900 40px sans-serif";
-    ctx.fillText("OFFICIAL EXAMINATION MERIT GAZETTE", W / 2, 198);
-
-    ctx.fillStyle = "#334155";
-    ctx.font = "bold 22px sans-serif";
-    ctx.fillText(
-      `${quizTitle}  •  Scope: ${regionLabel}  •  Pass Threshold: ${thresholdDisplay}`,
-      W / 2,
-      240,
-    );
-
-    // Table Header
-    const tableTop = 290;
-    const tableLeft = 120;
-    const tableW = W - 240;
-    const rowH = 60;
-
-    ctx.fillStyle = "#0f172a";
-    ctx.fillRect(tableLeft, tableTop, tableW, rowH);
-
-    const cols = [
-      { label: "RANK", x: tableLeft + 20, align: "left" as const },
-      { label: "ROLL NO", x: tableLeft + 115, align: "left" as const },
-      { label: "CANDIDATE NAME", x: tableLeft + 310, align: "left" as const },
-      { label: "DIVISION / RANGE", x: tableLeft + 625, align: "left" as const },
-      { label: "CORRECT", x: tableLeft + 920, align: "center" as const },
-      { label: "WRONG", x: tableLeft + 1045, align: "center" as const },
-      { label: "SCORE", x: tableLeft + 1175, align: "center" as const },
-      { label: "STATUS", x: tableLeft + tableW - 20, align: "right" as const },
-    ];
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 19px sans-serif";
-    cols.forEach((c) => {
-      ctx.textAlign = c.align;
-      ctx.fillText(c.label, c.x, tableTop + 38);
+    const dividerY = drawGazetteHeader({
+      ctx,
+      W,
+      M,
+      quizTitle,
+      regionLabel,
+      branding,
+      totalCandidates: ordered.length,
+      pageIdx,
+      totalPages,
+      onneshaLogo,
+      partnerLogo,
     });
 
-    const slice = participants.slice(pageIdx * rowsPerPage, (pageIdx + 1) * rowsPerPage);
-    slice.forEach((p, idx) => {
-      const globalRank = pageIdx * rowsPerPage + idx + 1;
-      const y = tableTop + (idx + 1) * rowH;
+    // Notice box only on Page 1
+    const tableTop =
+      pageIdx === 0
+        ? drawGazetteNoticeBox({
+            ctx,
+            M,
+            CW,
+            startY: dividerY + 20,
+            regionLabel,
+            thresholdDisplay,
+            thresholdLabel,
+          }) + 24
+        : dividerY + 24;
 
-      ctx.fillStyle = globalRank <= 3 ? "#fffbeb" : idx % 2 === 0 ? "#ffffff" : "#f8fafc";
-      ctx.fillRect(tableLeft, y, tableW, rowH);
+    // Table Header Row (#f3f4f6 light slate matching preview bg-gray-100)
+    ctx.fillStyle = "#f3f4f6";
+    ctx.fillRect(M, tableTop, CW, tableHeaderH);
 
-      ctx.strokeStyle = "#cbd5e1";
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(M, tableTop, CW, tableHeaderH);
+
+    ctx.textBaseline = "middle";
+    const hdrMidY = tableTop + tableHeaderH / 2;
+    columns.forEach((col, cIdx) => {
+      const xStart = colEdges[cIdx]!;
+      const xCenter = xStart + col.width / 2;
+      if (cIdx > 0) {
+        ctx.strokeStyle = "#0f172a";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(xStart, tableTop);
+        ctx.lineTo(xStart, tableTop + tableHeaderH);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#000000";
+      ctx.font = `bold 18px ${GAZETTE_SANS_FONT}`;
+      if (col.align === "center") {
+        ctx.textAlign = "center";
+        ctx.fillText(col.label, xCenter, hdrMidY);
+      } else {
+        ctx.textAlign = "left";
+        ctx.fillText(col.label, xStart + 14, hdrMidY);
+      }
+    });
+
+    // Table Body Rows
+    const bodyRows = sliceObj.items;
+    let currentY = tableTop + tableHeaderH;
+
+    if (bodyRows.length === 0) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(M, currentY, CW, 76);
+      ctx.strokeStyle = "#0f172a";
       ctx.lineWidth = 1.5;
-      ctx.strokeRect(tableLeft, y, tableW, rowH);
+      ctx.strokeRect(M, currentY, CW, 76);
+      ctx.fillStyle = "#64748b";
+      ctx.textAlign = "center";
+      ctx.font = `600 18px ${GAZETTE_SANS_FONT}`;
+      ctx.fillText("No examinee records available for the selected scope.", M + CW / 2, currentY + 38);
+      currentY += 76;
+    } else {
+      bodyRows.forEach((p, idx) => {
+        const globalRank = sliceObj.startRank + idx;
+        const y = tableTop + tableHeaderH + idx * rowH;
+        const midY = y + rowH / 2;
 
-      ctx.fillStyle = "#0f172a";
-      ctx.font = "bold 19px monospace";
-      ctx.textAlign = "left";
-      ctx.fillText(`#${globalRank}`, cols[0]!.x, y + 38);
-      ctx.fillText((p.rollNumber || `2026-${100 + globalRank}`).slice(0, 14), cols[1]!.x, y + 38);
+        // Top 3 amber highlight matching preview `bg-amber-50/60`
+        ctx.fillStyle = globalRank <= 3 ? "#fffbeb" : idx % 2 === 1 ? "#f8fafc" : "#ffffff";
+        ctx.fillRect(M, y, CW, rowH);
 
-      ctx.font = "bold 19px sans-serif";
-      ctx.fillText((p.nickname || "Candidate").slice(0, 22), cols[2]!.x, y + 38);
+        ctx.strokeStyle = "#0f172a";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(M, y, CW, rowH);
+        for (let cIdx = 1; cIdx < colEdges.length - 1; cIdx++) {
+          const seamX = colEdges[cIdx]!;
+          ctx.beginPath();
+          ctx.moveTo(seamX, y);
+          ctx.lineTo(seamX, y + rowH);
+          ctx.stroke();
+        }
 
-      ctx.font = "600 18px sans-serif";
-      ctx.fillStyle = "#334155";
-      ctx.fillText((p.regionName || "Dhaka Range").slice(0, 18), cols[3]!.x, y + 38);
+        const totalQ = (p.correctCount ?? 0) + (p.incorrectCount ?? 0) + (p.unansweredCount ?? 0);
+        const acc =
+          typeof p.accuracyPct === "number"
+            ? p.accuracyPct
+            : totalQ > 0
+              ? computeParticipantAccuracyPct({
+                  correctCount: p.correctCount,
+                  totalQuestions: totalQ,
+                  score: p.finalScore,
+                })
+              : 0;
+        const isPassed =
+          typeof p.passed === "boolean" ? p.passed : isPassingScore(acc, effectiveThreshold);
+
+        ctx.textBaseline = "middle";
+
+        // Col 0: Rank
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#0f172a";
+        ctx.font = `bold 17px ${GAZETTE_MONO_FONT}`;
+        ctx.fillText(`#${globalRank}`, colEdges[0]! + columns[0]!.width / 2, midY);
+
+        // Col 1: Roll Number
+        ctx.textAlign = "left";
+        ctx.fillStyle = "#0f172a";
+        ctx.font = `600 17px ${GAZETTE_MONO_FONT}`;
+        const rollStr = p.rollNumber || `2026-${100 + globalRank}`;
+        ctx.fillText(
+          fitCellText(ctx, rollStr, columns[1]!.width - 24),
+          colEdges[1]! + 14,
+          midY,
+        );
+
+        // Col 2: Candidate Name
+        ctx.fillStyle = "#000000";
+        ctx.font = `bold 17px ${GAZETTE_SANS_FONT}`;
+        ctx.fillText(
+          fitCellText(ctx, p.nickname || "Candidate", columns[2]!.width - 24),
+          colEdges[2]! + 14,
+          midY,
+        );
+
+        // Col 3: Region / Range
+        ctx.fillStyle = "#1f2937";
+        ctx.font = `600 16px ${GAZETTE_SANS_FONT}`;
+        ctx.fillText(
+          fitCellText(ctx, p.regionName || "Dhaka Range", columns[3]!.width - 24),
+          colEdges[3]! + 14,
+          midY,
+        );
+
+        // Col 4: Correct
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#047857";
+        ctx.font = `bold 17px ${GAZETTE_SANS_FONT}`;
+        ctx.fillText(String(p.correctCount ?? 0), colEdges[4]! + columns[4]!.width / 2, midY);
+
+        // Col 5: Wrong
+        ctx.fillStyle = "#b91c1c";
+        ctx.fillText(String(p.incorrectCount ?? 0), colEdges[5]! + columns[5]!.width / 2, midY);
+
+        // Col 6: Accuracy
+        ctx.fillStyle = "#0f172a";
+        ctx.font = `600 17px ${GAZETTE_MONO_FONT}`;
+        ctx.fillText(`${acc}%`, colEdges[6]! + columns[6]!.width / 2, midY);
+
+        // Col 7: Net Score
+        ctx.fillStyle = "#000000";
+        ctx.font = `900 18px ${GAZETTE_MONO_FONT}`;
+        ctx.fillText(String(p.finalScore ?? 0), colEdges[7]! + columns[7]!.width / 2, midY);
+
+        // Col 8: Status
+        ctx.font = `bold 17px ${GAZETTE_SANS_FONT}`;
+        ctx.fillStyle = isPassed ? "#047857" : "#b91c1c";
+        const statusText = isPassed ? "PASSED" : `FAILED (<${effectiveThreshold}%)`;
+        ctx.fillText(
+          fitCellText(ctx, statusText, columns[8]!.width - 20),
+          colEdges[8]! + columns[8]!.width / 2,
+          midY,
+        );
+
+        currentY = y + rowH;
+      });
+    }
+
+    // Crisp 2px outer border around entire table
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(M, tableTop, CW, currentY - tableTop);
+
+    // Authority Signatures block on the final page (matching preview lines 244-258)
+    if (isLastPage) {
+      const sigRuleY = Math.max(currentY + 34, H - 235);
+      ctx.strokeStyle = "#0f172a";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(M, sigRuleY);
+      ctx.lineTo(W - M, sigRuleY);
+      ctx.stroke();
+
+      const sigLineY = sigRuleY + 78;
+      // Left Signatory
+      ctx.beginPath();
+      ctx.moveTo(M + 20, sigLineY);
+      ctx.lineTo(M + 340, sigLineY);
+      ctx.stroke();
+
+      // Right Signatory
+      ctx.beginPath();
+      ctx.moveTo(W - M - 340, sigLineY);
+      ctx.lineTo(W - M - 20, sigLineY);
+      ctx.stroke();
 
       ctx.textAlign = "center";
-      ctx.fillStyle = "#047857";
-      ctx.font = "bold 19px monospace";
-      ctx.fillText(String(p.correctCount ?? 0), cols[4]!.x, y + 38);
+      ctx.textBaseline = "alphabetic";
+      ctx.fillStyle = "#000000";
+      ctx.font = `bold 19px ${GAZETTE_SANS_FONT}`;
+      ctx.fillText("Prepared by Examiner", M + 180, sigLineY + 26);
 
-      ctx.fillStyle = "#b91c1c";
-      ctx.fillText(String(p.incorrectCount ?? 0), cols[5]!.x, y + 38);
+      ctx.fillText("Controller of Examinations", W - M - 180, sigLineY + 26);
+      ctx.fillStyle = "#4b5563";
+      ctx.font = `600 15px ${GAZETTE_SANS_FONT}`;
+      const authorityLabel =
+        branding?.showPartnerLogo && branding.partnerName
+          ? `${branding.partnerName} / Onnesha`
+          : branding?.institutionTitle || "Onnesha Assessment Arena";
+      ctx.fillText(authorityLabel, W - M - 180, sigLineY + 49);
+    }
 
-      ctx.fillStyle = "#0f172a";
-      ctx.fillText(String(p.finalScore ?? 0), cols[6]!.x, y + 38);
-
-      ctx.textAlign = "right";
-      const totalQ = (p.correctCount ?? 0) + (p.incorrectCount ?? 0) + (p.unansweredCount ?? 0);
-      const acc =
-        typeof p.accuracyPct === "number"
-          ? p.accuracyPct
-          : totalQ > 0
-            ? computeParticipantAccuracyPct({
-                correctCount: p.correctCount,
-                totalQuestions: totalQ,
-                score: p.finalScore,
-              })
-            : 0;
-      const qualified =
-        typeof p.passed === "boolean" ? p.passed : isPassingScore(acc, effectiveThreshold);
-      ctx.fillStyle = qualified ? "#047857" : "#b91c1c";
-      ctx.font = "bold 18px sans-serif";
-      ctx.fillText(qualified ? `PASSED (${acc}%)` : `FAILED (${acc}%)`, cols[7]!.x, y + 38);
-    });
-
-    // Footer
+    // Footer Page Metadata Line
     ctx.textAlign = "center";
-    ctx.fillStyle = "#475569";
-    ctx.font = "bold 18px monospace";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = "#64748b";
+    ctx.font = `bold 15px ${GAZETTE_MONO_FONT}`;
     ctx.fillText(
-      `Page ${pageIdx + 1} of ${totalPages}  •  Generated on ${new Date().toLocaleDateString()}  •  Controller of Examinations, Onnesha`,
+      `Page ${pageIdx + 1} of ${totalPages}  •  Gazette ONN-2026-GZ  •  ${new Date().toLocaleDateString()}  •  ${regionLabel}`,
       W / 2,
-      H - 115,
+      H - 52,
     );
 
     canvases.push(canvas);

@@ -100,6 +100,38 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
     <div className="w-full max-w-5xl mx-auto space-y-6">
       {/* Top Banner with Giant PIN & Region Scope Control */}
       <div className="relative overflow-hidden rounded-3xl border border-border bg-card p-6 sm:p-10 text-center shadow-tactical">
+        {session.settings.retakeForSessionId && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-left text-xs">
+            <div className="space-y-0.5">
+              <div className="font-extrabold text-amber-800 dark:text-amber-300">
+                Supplementary / Affected Center Retake Session (Origin PIN:{" "}
+                {session.settings.retakeOriginPin || session.settings.retakeForSessionId})
+              </div>
+              <div className="text-[11px] text-amber-900/80 dark:text-amber-200/80">
+                Results from this room merge automatically into the original exam merit list without
+                asking completed examinees to sit again.
+              </div>
+            </div>
+            {onUpdateSettings && (
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateSettings({
+                    retakeSkipCompleted: !(session.settings.retakeSkipCompleted ?? true),
+                  })
+                }
+                className={`rounded-xl border px-3 py-1.5 text-[11px] font-extrabold transition cursor-pointer ${
+                  (session.settings.retakeSkipCompleted ?? true)
+                    ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                    : "border-border bg-background text-muted-foreground"
+                }`}
+              >
+                Skip Already Completed:{" "}
+                {(session.settings.retakeSkipCompleted ?? true) ? "ON" : "OFF"}
+              </button>
+            )}
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/60 pb-4">
           <div className="flex items-center gap-2">
             <span className="flex h-3 w-3 items-center justify-center">

@@ -19,11 +19,19 @@ import { Lock, RotateCcw, ShieldAlert } from "lucide-react";
 
 interface HostSearch {
   pin?: string | undefined;
+  retakeSessionId?: string | undefined;
+  regionId?: string | undefined;
+  skipCompleted?: string | undefined;
 }
 
 export const Route = createFileRoute("/host/$quizId")({
   validateSearch: (search: Record<string, unknown>): HostSearch => ({
     pin: typeof search["pin"] === "string" ? search["pin"] : undefined,
+    retakeSessionId:
+      typeof search["retakeSessionId"] === "string" ? search["retakeSessionId"] : undefined,
+    regionId: typeof search["regionId"] === "string" ? search["regionId"] : undefined,
+    skipCompleted:
+      typeof search["skipCompleted"] === "string" ? search["skipCompleted"] : undefined,
   }),
   head: () => ({
     meta: [
@@ -36,7 +44,12 @@ export const Route = createFileRoute("/host/$quizId")({
 
 function HostPage() {
   const { quizId } = Route.useParams();
-  const { pin: requestedPin } = Route.useSearch();
+  const {
+    pin: requestedPin,
+    retakeSessionId,
+    regionId: requestedRegionId,
+    skipCompleted: requestedSkipCompleted,
+  } = Route.useSearch();
   const navigate = useNavigate();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [session, setSession] = useState<GameSession | null>(null);
@@ -138,7 +151,29 @@ function HostPage() {
       }
 
       try {
-        const newSession = await gameEngine.createSessionAsync(quiz, true);
+        const regions = db.getRegions();
+        const regionScopeId =
+          requestedRegionId && requestedRegionId !== "all" ? requestedRegionId : "all";
+        const matchedReg =
+          regionScopeId !== "all" ? regions.find((r) => r.id === regionScopeId) : undefined;
+        const regionScopeName = matchedReg
+          ? `${matchedReg.nameEn} (${matchedReg.nameBn})`
+          : "All Regions (National)";
+        const skipCompletedFlag = requestedSkipCompleted === "0" ? false : true;
+
+        const newSession = await gameEngine.createSessionAsync(
+          quiz,
+          true,
+          regionScopeId,
+          regionScopeName,
+          false,
+          retakeSessionId
+            ? {
+                retakeForSessionId: retakeSessionId,
+                retakeSkipCompleted: skipCompletedFlag,
+              }
+            : undefined,
+        );
         if (!active) return;
         justCreatedPinRef.current = newSession.pin;
         suppressStopPinRef.current = newSession.pin;

@@ -176,6 +176,9 @@ export interface GameSettings {
   proctorMode?: boolean | undefined;
   maxProctorViolations?: number | undefined;
   passThresholdPct?: number | undefined;
+  retakeForSessionId?: string | undefined;
+  retakeSkipCompleted?: boolean | undefined;
+  retakeOriginPin?: string | undefined;
 }
 
 export interface GameSession {
@@ -361,6 +364,8 @@ export interface ExamSessionRecord {
   averageScore: number;
   highestScore: number;
   passThresholdPct?: number | undefined;
+  makeupRunsCount?: number | undefined;
+  lastMakeupAt?: string | undefined;
   createdAt: string;
 }
 

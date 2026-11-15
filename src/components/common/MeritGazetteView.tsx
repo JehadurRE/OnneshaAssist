@@ -43,7 +43,11 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
         : participants.filter(
             (p) => p.regionId === selectedRegionId || p.regionName === selectedRegionId
           );
-    return [...base].sort((a, b) => b.finalScore - a.finalScore);
+    return [...base].sort((a, b) =>
+      b.finalScore !== a.finalScore
+        ? b.finalScore - a.finalScore
+        : (a.rank || 999999) - (b.rank || 999999),
+    );
   }, [participants, selectedRegionId]);
 
   const activeRegionLabel =

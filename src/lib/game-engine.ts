@@ -508,7 +508,11 @@ class RealtimeGameEngine {
     quiz: Quiz,
     isFormal = true,
     allowedRegionId = 'all',
-    allowedRegionName = 'All Regions (National)'
+    allowedRegionName = 'All Regions (National)',
+    options?: {
+      retakeForSessionId?: string | undefined;
+      retakeSkipCompleted?: boolean | undefined;
+    },
   ): GameSession {
     const pin = Math.floor(100000 + Math.random() * 900000).toString();
     const now = Date.now();
@@ -524,6 +528,8 @@ class RealtimeGameEngine {
       questionEndTime: 0,
       settings: {
         speedBonus: true,
+        betweenQuestionSec: 0,
+        startCountdownSec: 3,
         negativeMarking: isFormal ? 0.25 : 0,
         shuffleQuestions: false,
         shuffleOptions: false,
@@ -534,6 +540,10 @@ class RealtimeGameEngine {
         requireRosterVerification: isFormal,
         allowedRegionId,
         allowedRegionName,
+        ...(options?.retakeForSessionId ? { retakeForSessionId: options.retakeForSessionId } : {}),
+        ...(typeof options?.retakeSkipCompleted === 'boolean'
+          ? { retakeSkipCompleted: options.retakeSkipCompleted }
+          : {}),
       },
       participants: {},
       totalQuestions: quiz.questions.length,
@@ -554,7 +564,11 @@ class RealtimeGameEngine {
     isFormal = true,
     allowedRegionId = 'all',
     allowedRegionName = 'All Regions (National)',
-    isSelfPractice = false
+    isSelfPractice = false,
+    options?: {
+      retakeForSessionId?: string | undefined;
+      retakeSkipCompleted?: boolean | undefined;
+    },
   ): Promise<GameSession> {
     const res = await serverCreateSession({
       data: {
@@ -563,6 +577,10 @@ class RealtimeGameEngine {
         allowedRegionId,
         allowedRegionName,
         isSelfPractice,
+        ...(options?.retakeForSessionId ? { retakeForSessionId: options.retakeForSessionId } : {}),
+        ...(typeof options?.retakeSkipCompleted === 'boolean'
+          ? { retakeSkipCompleted: options.retakeSkipCompleted }
+          : {}),
       },
     }).catch((err) => {
       console.warn('Server createSession notice:', err);
@@ -586,7 +604,7 @@ class RealtimeGameEngine {
       return res.session;
     }
 
-    return this.createSession(quiz, isFormal, allowedRegionId, allowedRegionName);
+    return this.createSession(quiz, isFormal, allowedRegionId, allowedRegionName, options);
   }
 
   public async resumeHostSessionAsync(pin: string): Promise<GameSession | null> {
