@@ -567,6 +567,71 @@ function normalizeCode(val?: string): string {
   return (val || "").trim().toLowerCase();
 }
 
+export function maskPhoneHint(phone?: string): string {
+  const cleanPhone = normalizeDigits(phone);
+  return cleanPhone.length >= 7
+    ? `${cleanPhone.slice(0, 3)}••••${cleanPhone.slice(-3)}`
+    : cleanPhone;
+}
+
+export function isCertificateRevoked(
+  store: { revokedCertificates?: string[] | undefined },
+  certNo: string,
+): boolean {
+  const target = (certNo || "").trim().toLowerCase();
+  if (!target) return false;
+  return (store.revokedCertificates || []).some((rc) => rc.trim().toLowerCase() === target);
+}
+
+/**
+ * Bidirectionally syncs every user's `assignedCourseIds` when a course's `instructorIds` changes,
+ * adding `course.id` for assigned instructors and removing it from unassigned instructors.
+ */
+export function syncCourseInstructorsInStore(
+  users: ManagedUser[],
+  course: Course,
+): ManagedUser[] {
+  if (!Array.isArray(course.instructorIds)) return users;
+  const assignedSet = new Set(course.instructorIds);
+  return users.map((u) => {
+    const curr = new Set(u.assignedCourseIds || []);
+    if (assignedSet.has(u.id)) {
+      curr.add(course.id);
+    } else {
+      curr.delete(course.id);
+    }
+    return { ...u, assignedCourseIds: Array.from(curr) };
+  });
+}
+
+/**
+ * Bidirectionally syncs every course's `instructorIds` & `instructorNames` when a user's
+ * `assignedCourseIds` is edited directly from User Management.
+ */
+export function syncUserCoursesInStore(
+  courses: Course[],
+  users: ManagedUser[],
+  user: ManagedUser,
+): Course[] {
+  const userCourses = new Set(user.assignedCourseIds || []);
+  return courses.map((course) => {
+    const hasUser = (course.instructorIds || []).includes(user.id);
+    const shouldHave = userCourses.has(course.id);
+    if (hasUser === shouldHave) return course;
+    const nextIds = shouldHave
+      ? Array.from(new Set([...(course.instructorIds || []), user.id]))
+      : (course.instructorIds || []).filter((id) => id !== user.id);
+    const nextNames = nextIds
+      .map((id) => (id === user.id ? user.name : users.find((u) => u.id === id)?.name))
+      .filter((n): n is string => Boolean(n));
+    return {
+      ...course,
+      instructorIds: nextIds,
+      instructorNames: nextNames,
+    };
+  });
+}
+
 function makeCertificateNumber(pin: string, rollNumber?: string, fallbackIdx = 1): string {
   const cleanRoll = (rollNumber || `${100 + fallbackIdx}`)
     .replace(/[^a-zA-Z0-9]/g, "")
@@ -1243,12 +1308,12 @@ export const serverVerifyPhoneOtp = createServerFn({ method: "POST" })
       found = {
         id,
         email: `${cleanPhone}@mobile.onnesha.app`,
-        name: `User (${cleanPhone})`,
-        role: "instructor",
+        name: `Candidate (${cleanPhone})`,
+        role: "candidate",
         phone: cleanPhone,
-        institutionName: "Mobile Quick Login",
+        institutionName: "Candidate Self-Sign-In",
         status: "active",
-        aiCredits: 50,
+        aiCredits: 0,
         createdAt: new Date().toISOString(),
       };
       store.users.push(found);
@@ -1315,6 +1380,11 @@ export const serverRecordTransaction = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const actor = await getActorFromRequest();
     const store = getStore();
+    const verifiedStatus =
+      actor?.role === "admin" &&
+      (data.status === "completed" || data.status === "pending" || data.status === "failed")
+        ? data.status
+        : "pending";
     const record: ServerTransactionRecord = {
       id: `trx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       planId: data.planId,
@@ -1322,7 +1392,7 @@ export const serverRecordTransaction = createServerFn({ method: "POST" })
       msisdn: (data.msisdn || "").trim(),
       trxId: (data.trxId || "").trim(),
       method: data.method || "bkash",
-      status: data.status || "completed",
+      status: verifiedStatus,
       userId: actor?.id,
       createdAt: new Date().toISOString(),
     };
@@ -1446,6 +1516,24 @@ export const serverGenerateQuizWithAi = createServerFn({ method: "POST" })
         error: "No AI generation credits remaining for this account.",
       };
     }
+    const creditReserved = userIdx >= 0 && !!store.users[userIdx];
+    const nextCredits = Math.max(0, currentCredits - 1);
+    if (creditReserved && store.users[userIdx]) {
+      store.users[userIdx] = {
+        ...store.users[userIdx],
+        aiCredits: nextCredits,
+      };
+      scheduleDiskPersist();
+    }
+    const refundReservedCredit = () => {
+      if (creditReserved && store.users[userIdx]) {
+        store.users[userIdx] = {
+          ...store.users[userIdx],
+          aiCredits: (store.users[userIdx]?.aiCredits ?? nextCredits) + 1,
+        };
+        scheduleDiskPersist();
+      }
+    };
 
     const count = Math.min(20, Math.max(3, data.questionCount || 5));
     const styleMode = data.questionStyleMode || "mixed_all_4";
@@ -1502,6 +1590,7 @@ Return ONLY a valid JSON object matching this exact schema:
       );
 
       if (!response.ok) {
+        refundReservedCredit();
         return { success: false, quiz: null, error: `Gemini API HTTP ${response.status}` };
       }
       const payload = (await response.json()) as {
@@ -1509,6 +1598,7 @@ Return ONLY a valid JSON object matching this exact schema:
       };
       const rawJsonText = payload.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!rawJsonText) {
+        refundReservedCredit();
         return { success: false, quiz: null, error: "Empty Gemini response" };
       }
 
@@ -1595,14 +1685,6 @@ Return ONLY a valid JSON object matching this exact schema:
         };
       });
 
-      if (userIdx >= 0 && store.users[userIdx]) {
-        store.users[userIdx] = {
-          ...store.users[userIdx],
-          aiCredits: Math.max(0, currentCredits - 1),
-        };
-        scheduleDiskPersist();
-      }
-
       const quiz: Quiz = {
         id,
         slug,
@@ -1629,9 +1711,10 @@ Return ONLY a valid JSON object matching this exact schema:
       return {
         success: true,
         quiz,
-        remainingCredits: Math.max(0, currentCredits - 1),
+        remainingCredits: nextCredits,
       };
     } catch {
+      refundReservedCredit();
       return { success: false, quiz: null, error: "Gemini synthesis error" };
     }
   });
@@ -1685,14 +1768,24 @@ export const serverVerifyCertificate = createServerFn({ method: "GET" })
       };
     };
 
+    const isRevoked = isCertificateRevoked(store, rawCert);
+
+    if (isRevoked) {
+      return {
+        success: false,
+        revoked: true,
+        certificate: null,
+        verification: null,
+        branding: mergeBrandingSettings(store.branding, DEFAULT_BRANDING),
+        didWeb,
+        publicKeyMultibase,
+      };
+    }
+
     const found = store.certificates.find((c) => c.certificateNumber.toLowerCase() === target);
     if (found) {
       return await resolveVerifiedEnvelope(found);
     }
-
-    const isRevoked = (store.revokedCertificates || []).some(
-      (rc) => rc.toLowerCase() === target,
-    );
 
     // Check if it matches a deterministic ONN-<PIN>-<ROLL> pattern backed by a passing exam result
     const match = rawCert.toUpperCase().match(/^ONN-([A-Z0-9]{4})-([A-Z0-9]{4,6})$/);
@@ -1843,9 +1936,11 @@ export const serverExportVerifiableCredential = createServerFn({ method: "GET" }
     const certKeys = getCertificateSigningKeys(dataDir);
     const rekorKeys = getRekorAnchorKeys(dataDir);
     const originUrl = (data.origin || "https://arena.onnesha.courses").replace(/\/+$/, "");
-    const raw = store.certificates.find(
-      (c) => c.certificateNumber.toLowerCase() === (data.certNo || "").trim().toLowerCase(),
-    );
+    const raw = isCertificateRevoked(store, data.certNo)
+      ? undefined
+      : store.certificates.find(
+          (c) => c.certificateNumber.toLowerCase() === (data.certNo || "").trim().toLowerCase(),
+        );
     if (!raw || !certKeys) {
       return { success: false, credential: null, didDocument: null, otsProofBase64: null };
     }
@@ -1901,6 +1996,9 @@ export async function handlePublicStandardEndpoint(request: Request): Promise<Re
   const vcMatch = path.match(/^\/api\/certificates\/([^/]+)\/vc\.json$/i);
   if (vcMatch && vcMatch[1]) {
     const certNo = decodeURIComponent(vcMatch[1]);
+    if (isCertificateRevoked(store, certNo)) {
+      return Response.json({ error: "Credential has been revoked" }, { status: 404 });
+    }
     const raw = store.certificates.find(
       (c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase(),
     );
@@ -1923,6 +2021,9 @@ export async function handlePublicStandardEndpoint(request: Request): Promise<Re
   const otsMatch = path.match(/^\/api\/certificates\/([^/]+)\/timestamp\.ots$/i);
   if (otsMatch && otsMatch[1]) {
     const certNo = decodeURIComponent(otsMatch[1]);
+    if (isCertificateRevoked(store, certNo)) {
+      return Response.json({ error: "Credential has been revoked" }, { status: 404 });
+    }
     const raw = store.certificates.find(
       (c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase(),
     );
@@ -2169,15 +2270,7 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
           } else {
             store.courses.unshift(data.course);
           }
-          if (data.course.instructorIds) {
-            store.users = store.users.map((u) => {
-              const curr = new Set(u.assignedCourseIds || []);
-              if (data.course!.instructorIds.includes(u.id)) {
-                curr.add(data.course!.id);
-              }
-              return { ...u, assignedCourseIds: Array.from(curr) };
-            });
-          }
+          store.users = syncCourseInstructorsInStore(store.users, data.course);
           scheduleDiskPersist();
         }
         break;
@@ -2185,6 +2278,13 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
       case "delete_course": {
         if (data.courseId) {
           store.courses = store.courses.filter((c) => c.id !== data.courseId);
+          store.users = store.users.map((u) => {
+            if (!(u.assignedCourseIds || []).includes(data.courseId!)) return u;
+            return {
+              ...u,
+              assignedCourseIds: (u.assignedCourseIds || []).filter((cid) => cid !== data.courseId),
+            };
+          });
           scheduleDiskPersist();
         }
         break;
@@ -2201,12 +2301,14 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
               ? hashPasswordScrypt(incomingPass)
               : incomingPass;
           const existing = idx >= 0 ? store.users[idx] : undefined;
+          let savedUser: ManagedUser;
           if (idx >= 0 && existing) {
-            store.users[idx] = {
+            savedUser = {
               ...existing,
               ...data.user,
               passwordHash: nextHash || existing.passwordHash,
             };
+            store.users[idx] = savedUser;
           } else {
             if (!nextHash) {
               return {
@@ -2220,11 +2322,13 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
                 branding: store.branding,
               };
             }
-            store.users.push({
+            savedUser = {
               ...data.user,
               passwordHash: nextHash,
-            });
+            };
+            store.users.push(savedUser);
           }
+          store.courses = syncUserCoursesInStore(store.courses, store.users, savedUser);
           scheduleDiskPersist();
         }
         break;
@@ -2459,49 +2563,134 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
 // 2. CANDIDATE DIRECTORY & NUMBER LOOKUP FOR JOIN TERMINAL
 // ============================================================================
 
+export function buildJoinDirectoryForSession(params: {
+  roster: RosterStudent[];
+  regions: Region[];
+  session?: Pick<ServerLiveSession, "phase" | "isSelfPractice" | "settings" | "participants"> | undefined;
+}) {
+  const { roster, regions, session } = params;
+  if (!session || session.phase === "podium" || session.phase === "finished") {
+    return {
+      success: false,
+      error: "No active examination room found for this PIN.",
+      regions: [] as Region[],
+      candidates: [] as Array<{
+        id: string;
+        name: string;
+        rollNumber: string;
+        regionId: string;
+        regionName: string;
+        batch: string;
+        maskedPhone: string;
+        isAlreadyJoined: boolean;
+      }>,
+      allowedRegionId: "all",
+      allowedRegionName: "All Regions",
+    };
+  }
+
+  const allowedRegionId = session.settings?.allowedRegionId || "all";
+  const allowedRegionName = session.settings?.allowedRegionName || "All Regions";
+  if (session.isSelfPractice) {
+    return {
+      success: true,
+      regions,
+      candidates: [],
+      allowedRegionId,
+      allowedRegionName,
+    };
+  }
+
+  const activeSeatRollSet = new Set<string>();
+  const activeSeatCandidateIds = new Set<string>();
+  Object.values(session.participants || {}).forEach((p) => {
+    if (p.rollNumber) activeSeatRollSet.add(normalizeCode(p.rollNumber));
+    if (p.candidateId) activeSeatCandidateIds.add(p.candidateId);
+  });
+
+  const scopedRoster =
+    allowedRegionId && allowedRegionId !== "all"
+      ? roster.filter((s) => (s.regionId || "reg-dhaka") === allowedRegionId)
+      : roster;
+
+  const candidates = scopedRoster.map((s) => ({
+    id: s.id,
+    name: s.name,
+    rollNumber: s.rollNumber,
+    regionId: s.regionId || "reg-dhaka",
+    regionName: s.regionName || "Dhaka Range",
+    batch: s.batch || "46th BCS & Cadet Batch",
+    maskedPhone: maskPhoneHint(s.phone || s.guardianPhone),
+    isAlreadyJoined:
+      activeSeatCandidateIds.has(s.id) || activeSeatRollSet.has(normalizeCode(s.rollNumber)),
+  }));
+
+  return {
+    success: true,
+    regions,
+    candidates,
+    allowedRegionId,
+    allowedRegionName,
+  };
+}
+
+export function sanitizeLookupCandidate(
+  matched: RosterStudent,
+  isSeatLocked: boolean,
+) {
+  return {
+    id: matched.id,
+    name: matched.name,
+    rollNumber: matched.rollNumber,
+    // Never leak full mobile/guardian numbers over unauthenticated lookup endpoints
+    phone: "",
+    maskedPhone: maskPhoneHint(matched.phone || matched.guardianPhone),
+    regionId: matched.regionId || "reg-dhaka",
+    regionName: matched.regionName || "Dhaka Range",
+    batch: matched.batch || "46th BCS & Cadet Batch",
+    isSeatLocked,
+  };
+}
+
+export function filterActiveRoomsFromSessions(
+  sessions: Record<string, ServerLiveSession>,
+  cutoffMs = Date.now() - 4 * 3600 * 1000,
+) {
+  return Object.values(sessions)
+    .filter(
+      (s) =>
+        s.updatedAt >= cutoffMs &&
+        s.phase !== "podium" &&
+        s.phase !== "finished" &&
+        !s.isSelfPractice,
+    )
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, 12)
+    .map((s) => ({
+      pin: s.pin,
+      quizId: s.quizId,
+      quizTitleEn: s.quizTitleEn,
+      quizTitleBn: s.quizTitleBn,
+      hostId: s.hostId,
+      phase: s.phase,
+      participantCount: s.participantCount ?? Object.keys(s.participants).length,
+      totalQuestions: s.totalQuestions,
+      allowedRegionName: s.settings.allowedRegionName || "All Regions",
+      createdAt: s.createdAt,
+    }));
+}
+
 export const serverGetJoinDirectory = createServerFn({ method: "GET" })
   .validator((data: { pin: string }) => data)
   .handler(async ({ data }) => {
     const store = getStore();
     const sessions = getLiveSessions();
     const session = sessions[data.pin];
-
-    const activeSeatRollSet = new Set<string>();
-    const activeSeatCandidateIds = new Set<string>();
-    if (session) {
-      Object.values(session.participants).forEach((p) => {
-        if (p.rollNumber) activeSeatRollSet.add(normalizeCode(p.rollNumber));
-        if (p.candidateId) activeSeatCandidateIds.add(p.candidateId);
-      });
-    }
-
-    const candidates = store.roster.map((s) => {
-      const cleanPhone = normalizeDigits(s.phone || s.guardianPhone);
-      const maskedPhone =
-        cleanPhone.length >= 7
-          ? `${cleanPhone.slice(0, 3)}••••${cleanPhone.slice(-3)}`
-          : cleanPhone;
-
-      return {
-        id: s.id,
-        name: s.name,
-        rollNumber: s.rollNumber,
-        regionId: s.regionId || "reg-dhaka",
-        regionName: s.regionName || "Dhaka Range",
-        batch: s.batch || "46th BCS & Cadet Batch",
-        maskedPhone,
-        isAlreadyJoined:
-          activeSeatCandidateIds.has(s.id) || activeSeatRollSet.has(normalizeCode(s.rollNumber)),
-      };
-    });
-
-    return {
-      success: true,
+    return buildJoinDirectoryForSession({
+      roster: store.roster,
       regions: store.regions,
-      candidates,
-      allowedRegionId: session?.settings?.allowedRegionId || "all",
-      allowedRegionName: session?.settings?.allowedRegionName || "All Regions",
-    };
+      session,
+    });
   });
 
 export const serverLookupCandidateByNumber = createServerFn({ method: "GET" })
@@ -2510,6 +2699,20 @@ export const serverLookupCandidateByNumber = createServerFn({ method: "GET" })
     const store = getStore();
     const sessions = getLiveSessions();
     const session = sessions[data.pin];
+
+    if (!session || session.phase === "podium" || session.phase === "finished") {
+      return {
+        success: false,
+        error: "No active examination room found for this PIN.",
+      };
+    }
+
+    if (session.isSelfPractice) {
+      return {
+        success: false,
+        error: "Roster lookup is disabled in Self-Practice mode. Please enter your details under New Entry.",
+      };
+    }
 
     const rawQuery = (data.query || "").trim();
     const regionScope =
@@ -2558,16 +2761,7 @@ export const serverLookupCandidateByNumber = createServerFn({ method: "GET" })
 
     return {
       success: true,
-      candidate: {
-        id: matched.id,
-        name: matched.name,
-        rollNumber: matched.rollNumber,
-        phone: matched.phone || matched.guardianPhone || "",
-        regionId: matched.regionId || "reg-dhaka",
-        regionName: matched.regionName || "Dhaka Range",
-        batch: matched.batch || "46th BCS & Cadet Batch",
-        isSeatLocked: !!activeParticipant,
-      },
+      candidate: sanitizeLookupCandidate(matched, !!activeParticipant),
     };
   });
 
@@ -2577,23 +2771,7 @@ export const serverLookupCandidateByNumber = createServerFn({ method: "GET" })
 
 export const serverGetActiveRooms = createServerFn({ method: "GET" }).handler(async () => {
   const sessions = getLiveSessions();
-  const cutoff = Date.now() - 4 * 3600 * 1000;
-  const activeRooms = Object.values(sessions)
-    .filter((s) => s.updatedAt >= cutoff && s.phase !== "podium" && !s.isSelfPractice)
-    .sort((a, b) => b.updatedAt - a.updatedAt)
-    .slice(0, 12)
-    .map((s) => ({
-      pin: s.pin,
-      quizId: s.quizId,
-      quizTitleEn: s.quizTitleEn,
-      quizTitleBn: s.quizTitleBn,
-      hostId: s.hostId,
-      phase: s.phase,
-      participantCount: s.participantCount ?? Object.keys(s.participants).length,
-      totalQuestions: s.totalQuestions,
-      allowedRegionName: s.settings.allowedRegionName || "All Regions",
-      createdAt: s.createdAt,
-    }));
+  const activeRooms = filterActiveRoomsFromSessions(sessions);
 
   return {
     success: true,
@@ -2782,6 +2960,17 @@ export const serverGetSession = createServerFn({ method: "GET" })
           session: null,
         };
       }
+    }
+
+    // Notify an examinee immediately when their seat was unlocked / removed by the host
+    if (data.role === "player" && data.participantId && !session.participants[data.participantId]) {
+      return {
+        success: false,
+        seatRemoved: true,
+        error: "Your exam seat was unlocked or removed by the host.",
+        serverNow: Date.now(),
+        session: null,
+      };
     }
 
     // Server-authoritative countdown auto-advance so disconnecting host never strands rooms

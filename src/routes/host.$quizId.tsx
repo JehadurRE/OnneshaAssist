@@ -295,6 +295,11 @@ function HostPage() {
     gameEngine.updateSessionSettings(session.pin, settings);
   };
 
+  const handleCloseRoom = async () => {
+    await gameEngine.closeRoomAsync(session.pin);
+    navigate({ to: "/dashboard" });
+  };
+
   const handleNextQuestion = () => {
     const nextIdx = session.currentQuestionIndex + 1;
     if (nextIdx >= session.totalQuestions) {
@@ -324,6 +329,7 @@ function HostPage() {
             onKickPlayer={handleKickPlayer}
             onToggleSound={() => audioEngine.toggleMute()}
             onUpdateSettings={handleUpdateSettings}
+            onCloseRoom={handleCloseRoom}
           />
         )}
 

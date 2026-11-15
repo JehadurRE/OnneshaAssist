@@ -201,6 +201,31 @@ function PlayPage() {
           }
         }
       }
+      if (
+        event.type === "SESSION_ENDED" &&
+        activePinRef.current &&
+        event.pin === activePinRef.current
+      ) {
+        proctorEngine.stop();
+        setParticipant(null);
+        setSelectedOptionIds([]);
+        setHasAnswered(false);
+        if (event.reason === "not_found") {
+          setSession(null);
+          setIsSelfPractice(false);
+          setErrorMsg(
+            lang === "bn"
+              ? "হোস্ট লাইভ পরীক্ষা রুমটি বন্ধ করেছেন।"
+              : "This live examination room was closed by the Host.",
+          );
+        } else {
+          setErrorMsg(
+            lang === "bn"
+              ? "হোস্ট আপনার আসনটি আনলক বা রিমুভ করেছেন। অনুগ্রহ করে নিচে পুনরায় যাচাই করে প্রবেশ করুন।"
+              : "Your exam seat was unlocked or removed by the Host. Please re-verify your details below to rejoin.",
+          );
+        }
+      }
     });
 
     return () => {
@@ -1060,6 +1085,12 @@ function PlayPage() {
         {/* STEP 2: Candidate Identity & Region Verification Terminal */}
         {session && !participant && (
           <div className="w-full max-w-xl space-y-3">
+            {errorMsg && (
+              <div className="flex items-start gap-2 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3.5 text-xs font-semibold text-amber-800 dark:text-amber-300">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{errorMsg}</span>
+              </div>
+            )}
             <div className="flex items-center justify-between px-1">
               <button
                 type="button"

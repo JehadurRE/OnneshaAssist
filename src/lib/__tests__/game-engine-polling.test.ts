@@ -305,4 +305,102 @@ describe("live engine timing, offline recovery & token security", () => {
     expect(engine.isPolling("654321")).toBe(false);
     expect(localStorage.getItem("onnesha_session_654321")).toBeNull();
   });
+
+  it("clears stale local room and never resurrects closed sessions on notFound", async () => {
+    const engine = await loadEngine();
+    localStorage.setItem(
+      "onnesha_session_777888",
+      JSON.stringify(makeSession("777888", 1_000, "lobby")),
+    );
+
+    serverGetSession.mockResolvedValueOnce({
+      success: false,
+      notFound: true,
+      error: "Session not found",
+    });
+    expect(await engine.getSessionAsync("777888", "player")).toBeNull();
+    expect(localStorage.getItem("onnesha_session_777888")).toBeNull();
+
+    // Same for host resume when room was purged on server
+    localStorage.setItem(
+      "onnesha_session_777889",
+      JSON.stringify(makeSession("777889", 1_000, "lobby")),
+    );
+    serverGetSession.mockResolvedValueOnce({
+      success: false,
+      notFound: true,
+      error: "Session not found",
+    });
+    expect(await engine.resumeHostSessionAsync("777889")).toBeNull();
+    expect(localStorage.getItem("onnesha_session_777889")).toBeNull();
+  });
+
+  it("clears ejected seat on seatRemoved and emits SESSION_ENDED during polling", async () => {
+    const engine = await loadEngine();
+    const events: any[] = [];
+    const unsub = engine.subscribe((e) => events.push(e));
+
+    localStorage.setItem("onnesha_seat_pid_334455", "kicked-pid");
+    localStorage.setItem("onnesha_seat_token_334455", "kicked-tok");
+    // 1) Initial getSessionAsync returns seatRemoved -> clears seat and re-fetches lobby cleanly
+    serverGetSession
+      .mockResolvedValueOnce({
+        success: false,
+        seatRemoved: true,
+        error: "Seat removed",
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        session: makeSession("334455", 2_000, "lobby"),
+      });
+
+    const recoveredLobby = await engine.getSessionAsync("334455", "player", "kicked-pid");
+    expect(recoveredLobby?.phase).toBe("lobby");
+    expect(localStorage.getItem("onnesha_seat_pid_334455")).toBeNull();
+    expect(localStorage.getItem("onnesha_seat_token_334455")).toBeNull();
+
+    // 2) Active polling later receives seatRemoved -> stops polling and emits SESSION_ENDED
+    localStorage.setItem("onnesha_seat_pid_334455", "new-pid");
+    localStorage.setItem("onnesha_seat_token_334455", "new-tok");
+    engine.startPolling("334455", "player", "new-pid");
+    serverGetSession.mockResolvedValueOnce({
+      success: false,
+      seatRemoved: true,
+      error: "Seat removed by host",
+    });
+    await vi.advanceTimersByTimeAsync(1_600);
+    await flush();
+
+    expect(engine.isPolling("334455")).toBe(false);
+    expect(localStorage.getItem("onnesha_seat_pid_334455")).toBeNull();
+    expect(localStorage.getItem("onnesha_seat_token_334455")).toBeNull();
+    expect(events).toContainEqual({
+      type: "SESSION_ENDED",
+      pin: "334455",
+      reason: "seat_removed",
+    });
+
+    // 3) Active polling receives notFound -> emits SESSION_ENDED(not_found) and clears session cache
+    localStorage.setItem(
+      "onnesha_session_334455",
+      JSON.stringify(makeSession("334455", 3_000, "lobby")),
+    );
+    engine.startPolling("334455", "player");
+    serverGetSession.mockResolvedValueOnce({
+      success: false,
+      notFound: true,
+      error: "Session ended",
+    });
+    await vi.advanceTimersByTimeAsync(1_600);
+    await flush();
+
+    expect(engine.isPolling("334455")).toBe(false);
+    expect(localStorage.getItem("onnesha_session_334455")).toBeNull();
+    expect(events).toContainEqual({
+      type: "SESSION_ENDED",
+      pin: "334455",
+      reason: "not_found",
+    });
+    unsub();
+  });
 });

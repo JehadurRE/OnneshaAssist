@@ -256,7 +256,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     localStorage.removeItem('onnesha_auth_user');
     localStorage.removeItem('onnesha_user_registry');
-    serverLogout().catch(() => {});
+    serverLogout()
+      .then(() => import('./db').then(({ db }) => db.syncFromServerStore()))
+      .catch(() => {});
   };
 
   const updateProfile = (data: Partial<User>) => {

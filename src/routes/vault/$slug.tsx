@@ -1,23 +1,36 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { useLanguage } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { READY_MADE_PACKS } from "@/lib/mock-data";
 import { db, isQuizPrivate } from "@/lib/db";
+import { sqliteEngine } from "@/lib/db/sqlite-engine";
+import { Quiz } from "@/lib/types";
 import { OmrSheetView } from "@/components/common/OmrSheetView";
 import { ArrowLeft, BookOpen, CheckCircle2, ChevronDown, ChevronUp, Download, Eye, EyeOff, FileText, Lock, Play, Printer, ShieldCheck } from "lucide-react";
 
 export const Route = createFileRoute("/vault/$slug")({
   head: ({ params }) => {
-    const pack = db.getQuizBySlug(params.slug) || READY_MADE_PACKS.find((p) => p.slug === params.slug) || READY_MADE_PACKS[0];
+    const publicPack = READY_MADE_PACKS.find((p) => p.slug === params.slug && !isQuizPrivate(p));
+    if (!publicPack) {
+      return {
+        meta: [
+          { title: "Verified Curriculum Assessment · Onnesha Arena" },
+          {
+            name: "description",
+            content: "Verified institutional assessment repository powered by Onnesha Arena.",
+          },
+        ],
+      };
+    }
     return {
       meta: [
-        { title: `${pack?.titleBn || pack?.titleEn || 'Curriculum'} — Verified Curriculum Assessment · Onnesha Arena` },
+        { title: `${publicPack.titleBn || publicPack.titleEn} — Verified Curriculum Assessment · Onnesha Arena` },
         {
           name: "description",
-          content: `${pack?.titleBn || 'Onnesha Curriculum'} - ${pack?.questions.length || 0} verified assessment items with pedagogical rationale.`,
+          content: `${publicPack.titleBn || publicPack.titleEn} - ${publicPack.questions.length} verified assessment items with pedagogical rationale.`,
         },
       ],
     };
@@ -31,12 +44,103 @@ function SingleCurriculumDetailPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [revealedAnswers, setRevealedAnswers] = useState<Record<string, boolean>>({});
   const [showOmrModal, setShowOmrModal] = useState(false);
+  const [pack, setPack] = useState<Quiz | undefined>(
+    () => db.getQuizBySlug(slug) || READY_MADE_PACKS.find((p) => p.slug === slug),
+  );
+  const [isSyncingPack, setIsSyncingPack] = useState<boolean>(!pack);
 
   const isStaff = isAuthenticated && (user?.role === "admin" || user?.role === "instructor");
-  const pack = db.getQuizBySlug(slug) || READY_MADE_PACKS.find((p) => p.slug === slug);
+
+  useEffect(() => {
+    let active = true;
+    const resolveLocal = () =>
+      db.getQuizBySlug(slug) || READY_MADE_PACKS.find((p) => p.slug === slug);
+
+    const unsub = db.subscribe(() => {
+      if (!active) return;
+      const updated = resolveLocal();
+      if (updated) {
+        setPack(updated);
+        setIsSyncingPack(false);
+      }
+    });
+
+    const loadAsync = async () => {
+      try {
+        await sqliteEngine.ready();
+        await db.syncFromServerStore();
+      } catch {
+        // Fallback cleanly to local seed / not found UI
+      } finally {
+        if (active) {
+          setPack(resolveLocal());
+          setIsSyncingPack(false);
+        }
+      }
+    };
+    void loadAsync();
+
+    return () => {
+      active = false;
+      unsub();
+    };
+  }, [slug, isStaff]);
+
+  if (!pack && (isSyncingPack || authLoading)) {
+    return (
+      <div className="min-h-screen bg-background text-foreground bg-grid flex flex-col">
+        <Navbar />
+        <main className="flex-1 flex items-center justify-center px-4 py-12">
+          <div className="flex items-center gap-3 font-display text-base font-bold text-foreground">
+            <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <span>{lang === "bn" ? "প্রশ্নপত্র লোড হচ্ছে..." : "Loading verified assessment..."}</span>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
 
   if (!pack) {
-    throw notFound();
+    return (
+      <div className="min-h-screen bg-background text-foreground bg-grid flex flex-col transition-colors">
+        <Navbar />
+        <main className="flex-1 flex items-center justify-center px-4 py-12">
+          <div className="w-full max-w-md rounded-3xl border border-amber-500/40 bg-card p-6 sm:p-8 shadow-tactical text-center space-y-4">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-500 border border-amber-500/30">
+              <Lock className="h-7 w-7" />
+            </div>
+            <h1 className="font-display text-xl font-black text-foreground">
+              {lang === "bn"
+                ? "প্রশ্নপত্রটি পাওয়া যায়নি বা সংরক্ষিত"
+                : "Assessment Not Found or Restricted"}
+            </h1>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {lang === "bn"
+                ? "এই মূল্যায়নটি অনুপলব্ধ অথবা একটি সংরক্ষিত কোর্স মডিউল। অনুগ্রহ করে ইন্সট্রাক্টর হিসেবে সাইন ইন করুন অথবা নলেজ ভল্টে ফিরুন।"
+                : "This assessment either does not exist or belongs to a private course repository requiring Instructor / Admin sign-in."}
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
+              <Link
+                to="/vault"
+                className="flex-1 rounded-2xl bg-primary py-3 text-xs font-extrabold text-primary-foreground shadow-sm hover:bg-primary/90 transition"
+              >
+                {lang === "bn" ? "নলেজ ভল্টে ফিরুন" : "Back to Knowledge Vault"}
+              </Link>
+              {!isAuthenticated && (
+                <Link
+                  to="/auth/login"
+                  className="flex-1 rounded-2xl border border-border bg-background py-3 text-xs font-bold text-foreground hover:bg-accent transition"
+                >
+                  {lang === "bn" ? "সাইন ইন করুন" : "Instructor Sign In"}
+                </Link>
+              )}
+            </div>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
   }
 
   const packIsPrivate = isQuizPrivate(pack, db.getCourses());
@@ -161,13 +265,15 @@ function SingleCurriculumDetailPage() {
                 </span>
               </Link>
 
-              <Link
-                to="/host/$quizId"
-                params={{ quizId: pack.slug }}
-                className="flex items-center justify-center gap-2 rounded-2xl border border-primary/40 bg-primary/10 px-5 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition"
-              >
-                <span>{lang === "bn" ? "লাইভ রুম হোস্ট করুন" : "Host Live Room"}</span>
-              </Link>
+              {isStaff && (
+                <Link
+                  to="/host/$quizId"
+                  params={{ quizId: pack.slug || pack.id }}
+                  className="flex items-center justify-center gap-2 rounded-2xl border border-primary/40 bg-primary/10 px-5 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition"
+                >
+                  <span>{lang === "bn" ? "লাইভ রুম হোস্ট করুন" : "Host Live Room"}</span>
+                </Link>
+              )}
 
               <button
                 type="button"

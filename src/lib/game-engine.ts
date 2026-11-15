@@ -20,6 +20,7 @@ import {
 
 export type GameEvent =
   | { type: 'SESSION_UPDATED'; session: GameSession }
+  | { type: 'SESSION_ENDED'; pin: string; reason: 'not_found' | 'seat_removed' }
   | { type: 'PLAYER_JOINED'; pin: string; participant: Participant }
   | { type: 'PLAYER_LEFT'; pin: string; participantId: string }
   | { type: 'ANSWER_SUBMITTED'; pin: string; participantId: string; answer: ParticipantAnswer }
@@ -242,6 +243,22 @@ class RealtimeGameEngine {
     return localStorage.getItem(`onnesha_seat_pid_${pin}`) || undefined;
   }
 
+  public clearStoredSeat(pin: string) {
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(`onnesha_seat_token_${pin}`);
+    localStorage.removeItem(`onnesha_seat_pid_${pin}`);
+  }
+
+  public clearStoredSession(pin: string) {
+    if (typeof window === 'undefined') return;
+    this.clearStoredSeat(pin);
+    localStorage.removeItem(`onnesha_session_${pin}`);
+    localStorage.removeItem(`onnesha_game_${pin}`);
+    sessionStorage.removeItem(`onnesha_host_token_${pin}`);
+    localStorage.removeItem(`onnesha_host_token_${pin}`);
+    delete this.lastKnownUpdatedAtByPin[pin];
+  }
+
   public getStoredHostToken(pin: string): string | undefined {
     if (typeof window === 'undefined') return undefined;
     return (
@@ -309,7 +326,7 @@ class RealtimeGameEngine {
   ): Promise<GameSession | null> {
     try {
       const effectivePid = participantId || this.getStoredParticipantId(pin);
-      const res = await serverGetSession({
+      let res = await serverGetSession({
         data: {
           pin,
           role,
@@ -318,6 +335,29 @@ class RealtimeGameEngine {
         },
       });
       this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
+
+      if ((res as { notFound?: boolean }).notFound) {
+        this.clearStoredSession(pin);
+        return null;
+      }
+
+      if ((res as { seatRemoved?: boolean }).seatRemoved && role === 'player') {
+        this.clearStoredSeat(pin);
+        res = await serverGetSession({
+          data: { pin, role: 'player' },
+        });
+        this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
+        if ((res as { notFound?: boolean }).notFound) {
+          this.clearStoredSession(pin);
+          return null;
+        }
+        if (res.success && res.session) {
+          this.cacheSessionLocally(res.session);
+          this.startPolling(pin, role);
+          return res.session;
+        }
+      }
+
       if (res.success && res.session) {
         this.cacheSessionLocally(res.session);
         this.startPolling(pin, role, effectivePid);
@@ -416,6 +456,20 @@ class RealtimeGameEngine {
 
       // Ignore late replies for a room we already left.
       if (this.activePollingPin !== pin) return;
+
+      if ((res as { notFound?: boolean }).notFound) {
+        this.stopPolling();
+        this.clearStoredSession(pin);
+        this.broadcast({ type: 'SESSION_ENDED', pin, reason: 'not_found' });
+        return;
+      }
+
+      if ((res as { seatRemoved?: boolean }).seatRemoved) {
+        this.stopPolling();
+        this.clearStoredSeat(pin);
+        this.broadcast({ type: 'SESSION_ENDED', pin, reason: 'seat_removed' });
+        return;
+      }
 
       if (res.success && !res.unchanged && res.session) {
         this.cacheSessionLocally(res.session);
@@ -535,6 +589,13 @@ class RealtimeGameEngine {
         data: { pin: cleanPin, role: 'host', hostToken: this.getStoredHostToken(cleanPin) },
       });
       this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
+      if ((res as { notFound?: boolean }).notFound) {
+        this.clearStoredSession(cleanPin);
+        return null;
+      }
+      if (!res.success && (res as { error?: string }).error?.startsWith('Unauthorized')) {
+        return null;
+      }
       if (res.success && res.session) {
         this.cacheSessionLocally(res.session);
         this.startPolling(res.session.pin, 'host');
@@ -565,10 +626,7 @@ class RealtimeGameEngine {
       if (this.activePollingPin === pin) {
         this.stopPolling();
       }
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem(`onnesha_session_${pin}`);
-        localStorage.removeItem(`onnesha_game_${pin}`);
-      }
+      this.clearStoredSession(pin);
       return !!res.success;
     } catch {
       return false;

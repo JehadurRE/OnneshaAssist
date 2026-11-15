@@ -59,7 +59,16 @@ import {
   normalizeBdPhone,
   normalizeRollToken,
 } from "../sanjibon-seed-data";
-import { findRosterCandidate, mergeSeededStoreData } from "../server-session";
+import {
+  buildJoinDirectoryForSession,
+  filterActiveRoomsFromSessions,
+  findRosterCandidate,
+  isCertificateRevoked,
+  mergeSeededStoreData,
+  sanitizeLookupCandidate,
+  syncCourseInstructorsInStore,
+  syncUserCoursesInStore,
+} from "../server-session";
 import { sqliteEngine } from "../db/sqlite-engine";
 import { db } from "../db";
 
@@ -1498,5 +1507,221 @@ describe("proctorEngine sustained window_blur grace period", () => {
       if (origDocument === undefined) delete g["document"];
       else g["document"] = origDocument;
     }
+  });
+});
+
+describe("course-instructor bidirectional sync & certificate revocation", () => {
+  const mkUser = (id: string, name: string, assignedCourseIds: string[] = []): ManagedUser => ({
+    id,
+    email: `${id}@onnesha.edu`,
+    name,
+    role: "instructor",
+    assignedCourseIds,
+    createdAt: "2026-01-01T00:00:00Z",
+  });
+
+  const mkCourse = (
+    id: string,
+    instructorIds: string[],
+    instructorNames: string[],
+  ): Course => ({
+    id,
+    code: id.toUpperCase(),
+    titleEn: `Course ${id}`,
+    titleBn: `Course ${id}`,
+    descriptionEn: "Desc",
+    descriptionBn: "Desc",
+    icon: "award",
+    instructorIds,
+    instructorNames,
+    createdAt: "2026-01-01T00:00:00Z",
+  });
+
+  it("adds and removes assignedCourseIds across users when course instructors change", () => {
+    const users = [
+      mkUser("u1", "Dr. A", ["c-old", "c-1"]),
+      mkUser("u2", "Prof. B", []),
+    ];
+    const course = mkCourse("c-1", ["u2"], ["Prof. B"]);
+
+    const updatedUsers = syncCourseInstructorsInStore(users, course);
+    expect(updatedUsers.find((u) => u.id === "u1")?.assignedCourseIds).toEqual(["c-old"]);
+    expect(updatedUsers.find((u) => u.id === "u2")?.assignedCourseIds).toEqual(["c-1"]);
+  });
+
+  it("syncs course instructorIds and instructorNames when user assignments change", () => {
+    const users = [
+      mkUser("u1", "Dr. A", []),
+      mkUser("u2", "Prof. B Updated", ["c-1", "c-2"]),
+    ];
+    const courses = [
+      mkCourse("c-1", ["u1", "u2"], ["Dr. A", "Prof. B"]),
+      mkCourse("c-2", [], []),
+    ];
+
+    const updatedCourses = syncUserCoursesInStore(courses, users, users[1]!);
+    // u2 already on c-1 -> unchanged; u2 added to c-2 -> appended
+    expect(updatedCourses[0]?.instructorIds).toEqual(["u1", "u2"]);
+    expect(updatedCourses[1]?.instructorIds).toEqual(["u2"]);
+    expect(updatedCourses[1]?.instructorNames).toEqual(["Prof. B Updated"]);
+
+    // Removing c-1 from u2 strips u2 from c-1
+    const afterRemove = syncUserCoursesInStore(
+      updatedCourses,
+      users,
+      mkUser("u2", "Prof. B Updated", ["c-2"]),
+    );
+    expect(afterRemove[0]?.instructorIds).toEqual(["u1"]);
+    expect(afterRemove[0]?.instructorNames).toEqual(["Dr. A"]);
+  });
+
+  it("detects revoked certificate numbers case-insensitively", () => {
+    const store = { revokedCertificates: ["  ONN-1234-ABCD  ", "ONN-9999-WXYZ"] };
+    expect(isCertificateRevoked(store, "onn-1234-abcd")).toBe(true);
+    expect(isCertificateRevoked(store, "ONN-9999-WXYZ")).toBe(true);
+    expect(isCertificateRevoked(store, "ONN-0000-SAFE")).toBe(false);
+    expect(isCertificateRevoked(store, "")).toBe(false);
+  });
+});
+
+describe("public join directory scoping, phone masking & active rooms filter", () => {
+  const baseSettings = {
+    speedBonus: true,
+    negativeMarking: 0,
+    shuffleQuestions: false,
+    shuffleOptions: false,
+    soundEnabled: true,
+    musicEnabled: true,
+    isFormalAssessment: true,
+    requireRollNumber: true,
+  };
+  const regions: Region[] = [
+    { id: "reg-dhk", code: "DHK", nameEn: "Dhaka", nameBn: "ঢাকা", createdAt: "2026-01-01" },
+    { id: "reg-ctg", code: "CTG", nameEn: "Chattogram", nameBn: "চট্টগ্রাম", createdAt: "2026-01-01" },
+  ];
+  const roster: RosterStudent[] = [
+    {
+      id: "s1",
+      rollNumber: "101",
+      name: "Candidate One",
+      phone: "01711223344",
+      regionId: "reg-dhk",
+      regionName: "Dhaka",
+    },
+    {
+      id: "s2",
+      rollNumber: "102",
+      name: "Candidate Two",
+      guardianPhone: "01855667788",
+      regionId: "reg-ctg",
+      regionName: "Chattogram",
+    },
+  ];
+
+  it("rejects finished/podium/missing rooms and hides roster on self-practice", () => {
+    expect(buildJoinDirectoryForSession({ roster, regions, session: undefined }).success).toBe(false);
+    expect(
+      buildJoinDirectoryForSession({
+        roster,
+        regions,
+        session: { phase: "finished", settings: baseSettings, participants: {} },
+      }).success,
+    ).toBe(false);
+
+    const selfPracticeDir = buildJoinDirectoryForSession({
+      roster,
+      regions,
+      session: {
+        phase: "lobby",
+        isSelfPractice: true,
+        settings: { ...baseSettings, allowedRegionId: "all", allowedRegionName: "All Regions" },
+        participants: {},
+      },
+    });
+    expect(selfPracticeDir.success).toBe(true);
+    expect(selfPracticeDir.candidates).toEqual([]);
+  });
+
+  it("scopes candidates by allowedRegionId and never exposes raw phone numbers", () => {
+    const dir = buildJoinDirectoryForSession({
+      roster,
+      regions,
+      session: {
+        phase: "lobby",
+        isSelfPractice: false,
+        settings: { ...baseSettings, allowedRegionId: "reg-dhk", allowedRegionName: "Dhaka" },
+        participants: {
+          p1: {
+            id: "p1",
+            candidateId: "s1",
+            name: "Candidate One",
+            nickname: "One",
+            avatarEmoji: "🎯",
+            avatarBg: "#000",
+            rollNumber: "101",
+            score: 0,
+            streak: 0,
+            rank: 1,
+            answers: {},
+            connected: true,
+            lastActive: 1000,
+          },
+        },
+      },
+    });
+    expect(dir.success).toBe(true);
+    expect(dir.candidates).toHaveLength(1);
+    expect(dir.candidates[0]?.id).toBe("s1");
+    expect(dir.candidates[0]?.isAlreadyJoined).toBe(true);
+    expect((dir.candidates[0] as Record<string, unknown>)["phone"]).toBeUndefined();
+    expect(dir.candidates[0]?.maskedPhone).not.toContain("01711223344");
+    expect(dir.candidates[0]?.maskedPhone.endsWith("44")).toBe(true);
+
+    const lookupSanitized = sanitizeLookupCandidate(roster[1]!, false);
+    expect(lookupSanitized.phone).toBe("");
+    expect(lookupSanitized.maskedPhone).not.toContain("01855667788");
+    expect(lookupSanitized.maskedPhone.endsWith("88")).toBe(true);
+    expect(lookupSanitized.isSeatLocked).toBe(false);
+  });
+
+  it("excludes finished, podium, self-practice, and stale sessions from active rooms list", () => {
+    const now = 10_000_000;
+    const cutoff = now - 4 * 3600 * 1000;
+    const mkLive = (
+      pin: string,
+      phase: "lobby" | "question" | "podium" | "finished",
+      updatedAt: number,
+      isSelfPractice = false,
+    ) => ({
+      pin,
+      quizId: "q1",
+      quizTitleEn: `Exam ${pin}`,
+      quizTitleBn: `Exam ${pin}`,
+      hostId: "host-1",
+      phase,
+      currentQuestionIndex: 0,
+      questionStartTime: 0,
+      questionEndTime: 0,
+      settings: baseSettings,
+      participants: {},
+      createdAt: now,
+      updatedAt,
+      totalQuestions: 10,
+      questions: [],
+      isSelfPractice,
+    });
+
+    const active = filterActiveRoomsFromSessions(
+      {
+        "100001": mkLive("100001", "lobby", now),
+        "100002": mkLive("100002", "question", now - 100),
+        "100003": mkLive("100003", "podium", now),
+        "100004": mkLive("100004", "finished", now),
+        "100005": mkLive("100005", "lobby", now, true),
+        "100006": mkLive("100006", "lobby", cutoff - 1),
+      },
+      cutoff,
+    );
+    expect(active.map((r) => r.pin)).toEqual(["100001", "100002"]);
   });
 });

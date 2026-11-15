@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { audioEngine } from "@/lib/audio-engine";
+import { clampPassThresholdPct, resolvePassThresholdPct } from "@/lib/scoring";
 
 interface HostLobbyProps {
   session: GameSession;
@@ -25,6 +26,7 @@ interface HostLobbyProps {
   onKickPlayer: (participantId: string) => void;
   onToggleSound: () => void;
   onUpdateSettings?: (settings: Partial<GameSession["settings"]>) => void;
+  onCloseRoom?: () => void;
 }
 
 export const HostLobby: React.FC<HostLobbyProps> = ({
@@ -34,6 +36,7 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
   onKickPlayer,
   onToggleSound,
   onUpdateSettings,
+  onCloseRoom,
 }) => {
   const { lang, t } = useLanguage();
   const [showQr, setShowQr] = useState(false);
@@ -142,6 +145,37 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
               </div>
             )}
 
+            {/* Certificate Pass Threshold Selector */}
+            {onUpdateSettings && (
+              <div
+                className="flex items-center gap-1 rounded-xl border border-border bg-background px-2.5 py-1 text-xs"
+                title="Minimum percentage score required to pass and unlock a certificate"
+              >
+                <span className="font-bold text-muted-foreground hidden sm:inline">Pass:</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={resolvePassThresholdPct({
+                    sessionThreshold: session.settings.passThresholdPct,
+                    brandingDefaultThreshold: db.getBranding().defaultPassThresholdPct,
+                  })}
+                  onChange={(e) =>
+                    onUpdateSettings({
+                      passThresholdPct: clampPassThresholdPct(
+                        parseInt(e.target.value, 10),
+                        resolvePassThresholdPct({
+                          brandingDefaultThreshold: db.getBranding().defaultPassThresholdPct,
+                        }),
+                      ),
+                    })
+                  }
+                  className="w-11 bg-transparent font-mono font-bold text-foreground text-right outline-none"
+                />
+                <span className="font-mono font-bold text-muted-foreground">%</span>
+              </div>
+            )}
+
             {/* Anti-Impersonation Roster Verification Toggle */}
             {onUpdateSettings && (
               <button
@@ -234,6 +268,18 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
               <QrCode className="h-4 w-4 text-primary" />
               <span>QR Pass</span>
             </button>
+
+            {onCloseRoom && (
+              <button
+                type="button"
+                onClick={onCloseRoom}
+                title="Close this live examination room and release all seats"
+                className="flex items-center gap-1 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs font-bold text-destructive hover:bg-destructive/20 transition"
+              >
+                <X className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Close Room</span>
+              </button>
+            )}
           </div>
         </div>
 

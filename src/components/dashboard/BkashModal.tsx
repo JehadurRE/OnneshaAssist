@@ -3,7 +3,16 @@ import { PricingTier } from '@/lib/types';
 import { useLanguage } from '@/lib/i18n';
 import { db } from '@/lib/db';
 import { serverRecordTransaction } from '@/lib/server-session';
-import { CheckCircle2, Download, Lock, Receipt, ShieldCheck, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Download,
+  Lock,
+  Receipt,
+  ShieldCheck,
+  X,
+} from 'lucide-react';
 
 interface BkashModalProps {
   tier: PricingTier | null;
@@ -27,6 +36,7 @@ export const BkashModal: React.FC<BkashModalProps> = ({
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [isProcessing, setIsProcessing] = useState(false);
   const [trxId, setTrxId] = useState('');
+  const [recordedStatus, setRecordedStatus] = useState<'completed' | 'pending' | 'failed'>('pending');
 
   if (!isOpen || !tier) return null;
 
@@ -43,45 +53,63 @@ export const BkashModal: React.FC<BkashModalProps> = ({
     }, 800);
   };
 
-  const handleConfirmPay = (e: React.FormEvent) => {
+  const handleConfirmPay = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pin || pin.length < 4) return;
+    if (!pin || pin.length < 4 || isProcessing) return;
     setIsProcessing(true);
 
     const generatedTrxId = `9K${Math.floor(10000000 + Math.random() * 90000000)}P`;
-    
-    setTimeout(() => {
-      // Record transaction into persistent DB
-      db.recordTransaction({
-        planId: tier.id,
-        amount: price,
-        msisdn: phone,
-        trxId: generatedTrxId,
-        method: 'bkash',
-        status: 'completed',
-      });
-      serverRecordTransaction({
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      const res = await serverRecordTransaction({
         data: {
           planId: tier.id,
           amount: price,
           msisdn: phone,
           trxId: generatedTrxId,
           method: 'bkash',
-          status: 'completed',
+          status: 'pending',
         },
-      }).catch(() => {});
+      }).catch(() => null);
 
+      const rawStatus = res?.transaction?.status;
+      const verifiedStatus: 'completed' | 'pending' | 'failed' =
+        rawStatus === 'completed' || rawStatus === 'failed' || rawStatus === 'pending'
+          ? rawStatus
+          : 'pending';
+
+      // Mirror server-determined status into local DB instead of hardcoding completed
+      db.recordTransaction({
+        planId: tier.id,
+        amount: price,
+        msisdn: phone,
+        trxId: generatedTrxId,
+        method: 'bkash',
+        status: verifiedStatus,
+      });
+
+      setRecordedStatus(verifiedStatus);
       setTrxId(generatedTrxId);
-      setIsProcessing(false);
       setStep(3);
-    }, 1200);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleFinish = () => {
     onSuccess(trxId);
     onClose();
     setStep(1);
+    setRecordedStatus('pending');
   };
+
+  const statusLabel =
+    recordedStatus === 'completed'
+      ? 'COMPLETED'
+      : recordedStatus === 'failed'
+        ? 'FAILED'
+        : 'PENDING VERIFICATION';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in">
@@ -187,14 +215,42 @@ export const BkashModal: React.FC<BkashModalProps> = ({
 
           {step === 3 && (
             <div className="text-center py-4 space-y-3 animate-in zoom-in-95">
-              <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto" />
+              {recordedStatus === 'completed' ? (
+                <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto" />
+              ) : recordedStatus === 'failed' ? (
+                <AlertTriangle className="h-12 w-12 text-red-500 mx-auto" />
+              ) : (
+                <Clock className="h-12 w-12 text-amber-500 mx-auto" />
+              )}
               <h3 className="font-display text-lg font-bold text-foreground">
-                Payment Verified &amp; Active!
+                {recordedStatus === 'completed'
+                  ? 'Payment Verified & Active!'
+                  : recordedStatus === 'failed'
+                    ? 'Transaction Failed'
+                    : 'Payment Submitted — Pending Verification'}
               </h3>
+              {recordedStatus === 'pending' && (
+                <p className="text-xs text-muted-foreground">
+                  Your transaction reference has been recorded on the server and is awaiting administrator verification.
+                </p>
+              )}
               <div className="rounded-2xl border border-border bg-muted/30 p-3 text-xs font-mono space-y-1">
                 <div>TRX ID: <strong className="text-[#e2136e]">{trxId}</strong></div>
                 <div>Amount: <strong>৳{price.toLocaleString()} BDT</strong></div>
-                <div>Status: <span className="text-emerald-600 font-bold">COMPLETED</span></div>
+                <div>
+                  Status:{' '}
+                  <span
+                    className={`font-bold ${
+                      recordedStatus === 'completed'
+                        ? 'text-emerald-600'
+                        : recordedStatus === 'failed'
+                          ? 'text-red-600'
+                          : 'text-amber-600'
+                    }`}
+                  >
+                    {statusLabel}
+                  </span>
+                </div>
               </div>
 
               <div className="pt-2 flex gap-2">
@@ -208,7 +264,7 @@ export const BkashModal: React.FC<BkashModalProps> = ({
                       `Transaction ID: ${trxId}`,
                       `MSISDN: ${phone}`,
                       `Date: ${new Date().toISOString()}`,
-                      'Status: COMPLETED',
+                      `Status: ${statusLabel}`,
                     ].join('\n');
                     const blob = new Blob([receiptText], { type: 'text/plain;charset=utf-8' });
                     const url = URL.createObjectURL(blob);

@@ -3,14 +3,21 @@ import { Quiz } from "@/lib/types";
 import { db, formatDeterministicCertNumber } from "@/lib/db";
 import { useBranding } from "@/hooks/use-branding";
 import { downloadOmrSheetPdf } from "@/lib/pdf-generator";
-import { gradeOmrSubmission, OmrGradingResult } from "@/lib/scoring";
 import {
+  gradeOmrSubmission,
+  isPassingScore,
+  OmrGradingResult,
+  resolvePassThresholdPct,
+} from "@/lib/scoring";
+import {
+  AlertTriangle,
   Award,
   Camera,
   CheckCircle2,
   Download,
   FileImage,
   Loader2,
+  Lock,
   RotateCcw,
   Shield,
   Sparkles,
@@ -26,6 +33,13 @@ interface OmrSheetViewProps {
 export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => {
   const roster = db.getRoster();
   const branding = useBranding();
+  const matchedCourse = quiz.courseId
+    ? db.getCourses().find((c) => c.id === quiz.courseId)
+    : undefined;
+  const passThresholdPct = resolvePassThresholdPct({
+    courseThreshold: matchedCourse?.passThresholdPct,
+    brandingDefaultThreshold: branding.defaultPassThresholdPct,
+  });
   const [selectedStudentId, setSelectedStudentId] = useState<string>(roster[0]?.id || "");
   const [candidateName, setCandidateName] = useState<string>(
     roster[0]?.name || "Registered Candidate",
@@ -46,6 +60,9 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
   const [omrNegativeRate, setOmrNegativeRate] = useState<number>(defaultPenaltyFromQuiz);
   const [filledBubbles, setFilledBubbles] = useState<Record<number, string>>({});
   const [gradingResult, setGradingResult] = useState<OmrGradingResult | null>(null);
+  const didPass = gradingResult
+    ? isPassingScore(gradingResult.accuracyPct, passThresholdPct)
+    : false;
 
   const totalQuestions = Math.max(quiz.questions.length, 50);
   const questionRows = Array.from({ length: totalQuestions }, (_, i) => i + 1);
@@ -77,6 +94,7 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
 
   const handleSaveToOfficialMerit = () => {
     if (!gradingResult) return;
+    if (!isPassingScore(gradingResult.accuracyPct, passThresholdPct)) return;
     const certNo = formatDeterministicCertNumber("OMR8", candidateRoll, 1);
     db.issueCertificate({
       certificateNumber: certNo,
@@ -299,15 +317,38 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
 
           {/* Auto-Grade Result Banner */}
           {gradingResult && (
-            <div className="rounded-2xl border-2 border-emerald-500 bg-emerald-50 p-4 text-xs animate-in fade-in space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2 font-bold text-emerald-950 text-sm">
+            <div
+              className={`rounded-2xl border-2 p-4 text-xs animate-in fade-in space-y-2 ${
+                didPass ? "border-emerald-500 bg-emerald-50" : "border-amber-500 bg-amber-50"
+              }`}
+            >
+              <div
+                className={`flex flex-wrap items-center justify-between gap-2 font-bold text-sm ${
+                  didPass ? "text-emerald-950" : "text-amber-950"
+                }`}
+              >
                 <span className="flex items-center gap-1.5">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  {didPass ? (
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  )}
                   <span>OMR Optical Scoring Completed for {candidateName}</span>
                 </span>
-                <span className="font-mono text-base font-black">
-                  Net Marks: {gradingResult.netScore.toFixed(2)} ({gradingResult.accuracyPct}%)
-                </span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`rounded-lg px-2 py-0.5 text-[11px] font-black uppercase ${
+                      didPass
+                        ? "bg-emerald-700 text-white"
+                        : "bg-red-600 text-white"
+                    }`}
+                  >
+                    {didPass ? `PASS (≥${passThresholdPct}%)` : `FAIL (<${passThresholdPct}%)`}
+                  </span>
+                  <span className="font-mono text-base font-black">
+                    Net Marks: {gradingResult.netScore.toFixed(2)} ({gradingResult.accuracyPct}%)
+                  </span>
+                </div>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 font-mono text-[11px] text-gray-800">
                 <div>
@@ -332,7 +373,11 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-emerald-200 flex flex-wrap items-center justify-between gap-2">
+              <div
+                className={`pt-2 border-t flex flex-wrap items-center justify-between gap-2 ${
+                  didPass ? "border-emerald-200" : "border-amber-200"
+                }`}
+              >
                 {savedCertNumber ? (
                   <div className="flex items-center gap-2 text-emerald-800 font-bold">
                     <Award className="h-4 w-4 text-emerald-600" />
@@ -343,7 +388,7 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
                       </code>
                     </span>
                   </div>
-                ) : (
+                ) : didPass ? (
                   <button
                     type="button"
                     onClick={handleSaveToOfficialMerit}
@@ -352,6 +397,14 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
                     <Award className="h-3.5 w-3.5" />
                     <span>Commit OMR Result &amp; Issue Official Certificate</span>
                   </button>
+                ) : (
+                  <div className="flex items-center gap-2 text-amber-900 font-semibold">
+                    <Lock className="h-3.5 w-3.5 text-amber-700 shrink-0" />
+                    <span>
+                      Certificate locked: accuracy ({gradingResult.accuracyPct}%) is below the{" "}
+                      {passThresholdPct}% pass threshold.
+                    </span>
+                  </div>
                 )}
               </div>
             </div>

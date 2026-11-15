@@ -193,13 +193,15 @@ function KnowledgeVaultCatalogPage() {
                     {lang === "bn" ? "পরীক্ষা দিন" : "Practice Now"}
                   </Link>
 
-                  <Link
-                    to="/host/$quizId"
-                    params={{ quizId: pack.slug || pack.id }}
-                    className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-bold text-foreground hover:bg-accent transition"
-                  >
-                    {lang === "bn" ? "হোস্ট" : "Host"}
-                  </Link>
+                  {isStaff && (
+                    <Link
+                      to="/host/$quizId"
+                      params={{ quizId: pack.slug || pack.id }}
+                      className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-bold text-foreground hover:bg-accent transition"
+                    >
+                      {lang === "bn" ? "হোস্ট" : "Host"}
+                    </Link>
+                  )}
                 </div>
               </div>
             </div>

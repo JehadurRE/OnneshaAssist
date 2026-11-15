@@ -202,6 +202,7 @@ class OnneshaDatabase {
 
       sqliteEngine.runBatch((run) => {
         if (res.regions?.length) {
+          run("DELETE FROM regions");
           res.regions.forEach((reg) => {
             run(
               "INSERT OR REPLACE INTO regions (id, code, nameEn, nameBn, centerName, createdAt) VALUES (?, ?, ?, ?, ?, ?)",
@@ -210,7 +211,8 @@ class OnneshaDatabase {
           });
         }
 
-        if (res.roster?.length) {
+        if (Array.isArray(res.roster)) {
+          run("DELETE FROM roster_students");
           res.roster.forEach((s) => {
             run(
               "INSERT OR REPLACE INTO roster_students (id, rollNumber, name, phone, regionId, regionName, section, batch, guardianPhone, email, passcode, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -233,6 +235,7 @@ class OnneshaDatabase {
         }
 
         if (res.courses?.length) {
+          run("DELETE FROM courses");
           res.courses.forEach((c) => {
             const privFlag =
               typeof c.isPrivate === "boolean"
@@ -270,7 +273,8 @@ class OnneshaDatabase {
           });
         }
 
-        if (res.users?.length) {
+        if (Array.isArray(res.users)) {
+          run("DELETE FROM users");
           res.users.forEach((u) => {
             run(
               "INSERT OR REPLACE INTO users (id, email, name, role, institution, designation, phone, passwordHash, plan, assignedCourseIdsJson, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -292,7 +296,8 @@ class OnneshaDatabase {
           });
         }
 
-        if (res.customQuizzes?.length) {
+        if (Array.isArray(res.customQuizzes)) {
+          run("DELETE FROM quizzes WHERE isTemplate = 0");
           res.customQuizzes.forEach((quiz) => {
             const quizPrivFlag =
               typeof quiz.isPrivate === "boolean"
@@ -356,7 +361,8 @@ class OnneshaDatabase {
           });
         }
 
-        if (res.examResults?.length) {
+        if (Array.isArray(res.examResults)) {
+          run("DELETE FROM exam_results");
           res.examResults.forEach((er) => {
             const passedVal = typeof er.passed === "boolean" ? (er.passed ? 1 : 0) : null;
             run(
@@ -730,6 +736,25 @@ class OnneshaDatabase {
     else courses.unshift(normalizedCourse);
     this.setStorage("courses", courses);
 
+    if (Array.isArray(normalizedCourse.instructorIds)) {
+      const assignedSet = new Set(normalizedCourse.instructorIds);
+      const updatedUsers = this.getUsers().map((u) => {
+        const curr = new Set(u.assignedCourseIds || []);
+        if (assignedSet.has(u.id)) curr.add(normalizedCourse.id);
+        else curr.delete(normalizedCourse.id);
+        return { ...u, assignedCourseIds: Array.from(curr) };
+      });
+      sqliteEngine.runBatch((run) => {
+        updatedUsers.forEach((u) => {
+          run("UPDATE users SET assignedCourseIdsJson = ? WHERE id = ?", [
+            JSON.stringify(u.assignedCourseIds || []),
+            u.id,
+          ]);
+        });
+      });
+      this.setStorage("users", updatedUsers);
+    }
+
     serverAdminMutateStore({ data: { action: "save_course", course: normalizedCourse } }).catch((err) =>
       console.warn("Course server sync notice:", err),
     );
@@ -741,6 +766,20 @@ class OnneshaDatabase {
     sqliteEngine.run("DELETE FROM courses WHERE id = ?", [id]);
     const courses = this.getCourses().filter((c) => c.id !== id);
     this.setStorage("courses", courses);
+
+    const updatedUsers = this.getUsers().map((u) => ({
+      ...u,
+      assignedCourseIds: (u.assignedCourseIds || []).filter((cid) => cid !== id),
+    }));
+    sqliteEngine.runBatch((run) => {
+      updatedUsers.forEach((u) => {
+        run("UPDATE users SET assignedCourseIdsJson = ? WHERE id = ?", [
+          JSON.stringify(u.assignedCourseIds || []),
+          u.id,
+        ]);
+      });
+    });
+    this.setStorage("users", updatedUsers);
 
     serverAdminMutateStore({ data: { action: "delete_course", courseId: id } }).catch((err) =>
       console.warn("Course delete sync notice:", err),

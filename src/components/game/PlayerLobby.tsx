@@ -59,7 +59,9 @@ export const PlayerLobby: React.FC<PlayerLobbyProps> = ({
   const [isLoadingDirectory, setIsLoadingDirectory] = useState(true);
 
   // Entry Mode: 'number_search' | 'region_select' | 'new_candidate'
-  const [entryMode, setEntryMode] = useState<'number_search' | 'region_select' | 'new_candidate'>('number_search');
+  const [entryMode, setEntryMode] = useState<'number_search' | 'region_select' | 'new_candidate'>(
+    requireRosterVerification ? 'number_search' : 'new_candidate',
+  );
 
   useEffect(() => {
     if (requireRosterVerification && entryMode === 'new_candidate') {
