@@ -36,6 +36,7 @@ interface PlayerLobbyProps {
   requireRoll?: boolean | undefined;
   allowedRegionId?: string | undefined;
   allowedRegionName?: string | undefined;
+  requireRosterVerification?: boolean | undefined;
 }
 
 const CADET_CRESTS = ['🦅', '⚡', '🛡️', '🎯', '🚀', '⭐', '🔥', '🐯'];
@@ -46,6 +47,7 @@ export const PlayerLobby: React.FC<PlayerLobbyProps> = ({
   onJoinVerified,
   allowedRegionId = 'all',
   allowedRegionName = 'All Regions',
+  requireRosterVerification = true,
 }) => {
   const { lang } = useLanguage();
 
@@ -58,6 +60,12 @@ export const PlayerLobby: React.FC<PlayerLobbyProps> = ({
 
   // Entry Mode: 'number_search' | 'region_select' | 'new_candidate'
   const [entryMode, setEntryMode] = useState<'number_search' | 'region_select' | 'new_candidate'>('number_search');
+
+  useEffect(() => {
+    if (requireRosterVerification && entryMode === 'new_candidate') {
+      setEntryMode('number_search');
+    }
+  }, [requireRosterVerification, entryMode]);
 
   // Mode 1: Fast Number Search & Auto-Fill
   const [searchNumber, setSearchNumber] = useState('');
@@ -311,7 +319,9 @@ export const PlayerLobby: React.FC<PlayerLobbyProps> = ({
       </div>
 
       {/* Mode Switcher Tabs */}
-      <div className="mt-5 grid grid-cols-3 gap-1.5 rounded-2xl bg-muted/60 p-1.5 border border-border/60">
+      <div
+        className={`mt-5 grid ${requireRosterVerification ? 'grid-cols-2' : 'grid-cols-3'} gap-1.5 rounded-2xl bg-muted/60 p-1.5 border border-border/60`}
+      >
         <button
           type="button"
           onClick={() => {
@@ -344,21 +354,23 @@ export const PlayerLobby: React.FC<PlayerLobbyProps> = ({
           <span className="truncate">{lang === 'bn' ? 'রেঞ্জ ও নাম নির্বাচন' : 'Region & Name'}</span>
         </button>
 
-        <button
-          type="button"
-          onClick={() => {
-            setEntryMode('new_candidate');
-            setSubmitError(null);
-          }}
-          className={`flex items-center justify-center gap-1.5 rounded-xl py-2.5 px-2 text-xs font-bold transition-all ${
-            entryMode === 'new_candidate'
-              ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <UserPlus className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">{lang === 'bn' ? 'নতুন নিবন্ধন' : 'New Entry'}</span>
-        </button>
+        {!requireRosterVerification && (
+          <button
+            type="button"
+            onClick={() => {
+              setEntryMode('new_candidate');
+              setSubmitError(null);
+            }}
+            className={`flex items-center justify-center gap-1.5 rounded-xl py-2.5 px-2 text-xs font-bold transition-all ${
+              entryMode === 'new_candidate'
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <UserPlus className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{lang === 'bn' ? 'নতুন নিবন্ধন' : 'New Entry'}</span>
+          </button>
+        )}
       </div>
 
       <form onSubmit={handleJoinSubmit} className="mt-5 space-y-5">
@@ -394,30 +406,39 @@ export const PlayerLobby: React.FC<PlayerLobbyProps> = ({
             </div>
 
             {/* Quick Sample Hint Pills for Instant Testing */}
-            {candidates.length > 0 && !matchedCandidate && (
-              <div className="rounded-2xl border border-border/70 bg-muted/30 p-3 space-y-2">
-                <div className="text-[11px] font-bold text-muted-foreground flex items-center justify-between">
-                  <span>
-                    {lang === 'bn'
-                      ? 'দ্রুত টেস্ট করতে নিচের যেকোনো নিবন্ধিত নম্বর ট্যাপ করুন:'
-                      : 'Tap a registered candidate number to test instant auto-fill:'}
-                  </span>
-                  <span className="font-mono text-[10px] text-primary">{candidates.length} Enrolled</span>
+            {(() => {
+              const scopedHintCandidates =
+                sessionAllowedRegionId && sessionAllowedRegionId !== 'all'
+                  ? candidates.filter((c) => c.regionId === sessionAllowedRegionId)
+                  : candidates;
+              if (scopedHintCandidates.length === 0 || matchedCandidate) return null;
+              return (
+                <div className="rounded-2xl border border-border/70 bg-muted/30 p-3 space-y-2">
+                  <div className="text-[11px] font-bold text-muted-foreground flex items-center justify-between">
+                    <span>
+                      {lang === 'bn'
+                        ? 'দ্রুত টেস্ট করতে নিচের যেকোনো নিবন্ধিত নম্বর ট্যাপ করুন:'
+                        : 'Tap a registered candidate number to test instant auto-fill:'}
+                    </span>
+                    <span className="font-mono text-[10px] text-primary">
+                      {scopedHintCandidates.length} Enrolled
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {scopedHintCandidates.slice(0, 4).map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setSearchNumber(c.rollNumber)}
+                        className="rounded-xl border border-border bg-card px-2.5 py-1 text-[11px] font-mono font-semibold text-foreground hover:border-primary hover:text-primary transition"
+                      >
+                        {c.rollNumber} · {c.name.split(' ')[0]} ({c.regionName.replace(' Range', '')})
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {candidates.slice(0, 4).map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => setSearchNumber(c.rollNumber)}
-                      className="rounded-xl border border-border bg-card px-2.5 py-1 text-[11px] font-mono font-semibold text-foreground hover:border-primary hover:text-primary transition"
-                    >
-                      {c.rollNumber} · {c.name.split(' ')[0]} ({c.regionName.replace(' Range', '')})
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Auto-Filled Verified Candidate Identity Card */}
             {matchedCandidate && (

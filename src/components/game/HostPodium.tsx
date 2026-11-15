@@ -24,7 +24,11 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
   const { lang, t } = useLanguage();
   const [selectedCert, setSelectedCert] = useState<CertificateData | null>(null);
 
-  const sorted = Object.values(session.participants).sort((a, b) => b.score - a.score);
+  const allParticipants = Object.values(session.participants);
+  const humanParticipants = allParticipants.filter((p) => !p.isBot);
+  const sorted = (humanParticipants.length > 0 ? humanParticipants : allParticipants).sort((a, b) =>
+    b.score !== a.score ? b.score - a.score : a.lastActive - b.lastActive
+  );
   const p1 = sorted[0];
   const p2 = sorted[1];
   const p3 = sorted[2];
@@ -70,6 +74,11 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
     const { accuracyPct, passed } = getPlayerEval(player);
     if (!passed) return;
     const certNo = formatDeterministicCertNumber(session.pin, player.rollNumber, rank);
+    const existingSealed = db.getCertificateById(certNo);
+    if (existingSealed) {
+      setSelectedCert(existingSealed);
+      return;
+    }
     const cert: CertificateData = {
       id: `cert-${certNo.toLowerCase()}`,
       certificateNumber: certNo,
@@ -100,6 +109,8 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
 
   const handleExportCsv = () => {
     const headers = ['Rank', 'Name', 'Roll Number', 'Score', 'Accuracy %', `Status (>=${passThresholdPct}%)`];
+    const escapeCell = (value: string | number) =>
+      `"${String(value ?? '').replace(/"/g, '""')}"`;
     const rows = sorted.map((p, idx) => {
       const { accuracyPct, passed } = getPlayerEval(p);
       return [
@@ -111,16 +122,19 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
         passed ? 'PASSED' : 'FAILED',
       ];
     });
-    const csvContent =
-      'data:text/csv;charset=utf-8,' +
-      [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csvBody = [
+      headers.map(escapeCell).join(','),
+      ...rows.map((r) => r.map(escapeCell).join(',')),
+    ].join('\r\n');
+    const blob = new Blob(['\uFEFF' + csvBody], { type: 'text/csv;charset=utf-8;' });
+    const objectUrl = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.setAttribute('href', objectUrl);
     link.setAttribute('download', `Merit_List_${session.pin}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
   };
 
   return (

@@ -34,6 +34,7 @@ class ProctorEngine {
   private blurStartTime: number | null = null;
   private lastIncidentAt = 0;
   private wakeLockSentinel: any = null;
+  private pendingBlurTimer: ReturnType<typeof setTimeout> | null = null;
 
   start(
     candidateId: string,
@@ -73,6 +74,10 @@ class ProctorEngine {
   stop() {
     if (typeof window === 'undefined') return;
     this.active = false;
+    if (this.pendingBlurTimer) {
+      clearTimeout(this.pendingBlurTimer);
+      this.pendingBlurTimer = null;
+    }
     document.removeEventListener('visibilitychange', this.handleVisibilityChange);
     window.removeEventListener('blur', this.handleWindowBlur);
     window.removeEventListener('focus', this.handleWindowFocus);
@@ -139,25 +144,42 @@ class ProctorEngine {
     }
   }
 
+  private clearPendingBlur() {
+    if (this.pendingBlurTimer) {
+      clearTimeout(this.pendingBlurTimer);
+      this.pendingBlurTimer = null;
+    }
+  }
+
   private handleVisibilityChange = () => {
     if (!this.active) return;
     if (document.hidden) {
+      this.clearPendingBlur();
       this.blurStartTime = Date.now();
       this.triggerIncident('tab_switch');
-    } else if (this.blurStartTime) {
-      this.blurStartTime = null;
-      this.acquireWakeLock();
+    } else {
+      this.clearPendingBlur();
+      if (this.blurStartTime) {
+        this.blurStartTime = null;
+        this.acquireWakeLock();
+      }
     }
   };
 
   private handleWindowBlur = () => {
-    if (!this.active) return;
-    // Note: if document.hidden is already true, visibilitychange handles it;
-    // the 1800ms debounce in triggerIncident also guarantees single-counting.
-    this.triggerIncident('window_blur');
+    if (!this.active || document.hidden || this.pendingBlurTimer) return;
+    // Grace window avoids false suspensions from transient mobile keyboards,
+    // OS notification shades, or permission/fullscreen confirmation dialogs.
+    this.pendingBlurTimer = setTimeout(() => {
+      this.pendingBlurTimer = null;
+      if (this.active && !document.hidden && !document.hasFocus()) {
+        this.triggerIncident('window_blur');
+      }
+    }, 1500);
   };
 
   private handleWindowFocus = () => {
+    this.clearPendingBlur();
     this.acquireWakeLock();
   };
 

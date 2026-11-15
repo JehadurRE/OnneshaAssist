@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { GameSession, Question } from '@/lib/types';
 import { useLanguage } from '@/lib/i18n';
 import { CheckCircle2, Eye, FastForward, Pause, Play, ShieldAlert, Users, X } from 'lucide-react';
 import { audioEngine } from '@/lib/audio-engine';
+import { gameEngine } from '@/lib/game-engine';
 
 interface HostProjectorProps {
   session: GameSession;
@@ -29,12 +30,44 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
   onEndExam,
 }) => {
   const { lang, t } = useLanguage();
-  const [timeLeft, setTimeLeft] = useState(question.timeLimitSec);
+  const computeInitialRemaining = () => {
+    if (session.questionEndTime && session.questionEndTime > 0) {
+      return Math.max(
+        0,
+        Math.min(
+          question.timeLimitSec,
+          Math.ceil((session.questionEndTime - gameEngine.getServerNow()) / 1000),
+        ),
+      );
+    }
+    return question.timeLimitSec;
+  };
+  const [timeLeft, setTimeLeft] = useState(computeInitialRemaining);
   const [isPaused, setIsPaused] = useState(false);
   const [showProctorModal, setShowProctorModal] = useState(false);
 
+  const onSkipTimerRef = useRef(onSkipTimer);
+  useEffect(() => {
+    onSkipTimerRef.current = onSkipTimer;
+  }, [onSkipTimer]);
+
+  const skippedQuestionIdRef = useRef<string | null>(null);
+  const lastAudioSecRef = useRef<number>(timeLeft);
+  const deadlineMsRef = useRef<number>(
+    session.questionEndTime && session.questionEndTime > 0
+      ? session.questionEndTime
+      : gameEngine.getServerNow() + question.timeLimitSec * 1000,
+  );
+  const pausedRemainingMsRef = useRef<number>(question.timeLimitSec * 1000);
+
+  const triggerSkipOnce = () => {
+    if (skippedQuestionIdRef.current === question.id) return;
+    skippedQuestionIdRef.current = question.id;
+    onSkipTimerRef.current();
+  };
+
   const participants = Object.values(session.participants);
-  const totalPlayers = participants.length;
+  const totalPlayers = session.participantCount ?? participants.length;
   const answeredCount =
     session.answeredCount ?? participants.filter((p) => p.answers[question.id]).length;
 
@@ -47,42 +80,73 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
   const incidents = session.proctorIncidents || [];
 
   useEffect(() => {
-    setTimeLeft(question.timeLimitSec);
-  }, [question.id]);
+    skippedQuestionIdRef.current = null;
+    setIsPaused(false);
+    const initialSec =
+      session.questionEndTime && session.questionEndTime > 0
+        ? Math.max(
+            0,
+            Math.min(
+              question.timeLimitSec,
+              Math.ceil((session.questionEndTime - gameEngine.getServerNow()) / 1000),
+            ),
+          )
+        : question.timeLimitSec;
+    deadlineMsRef.current =
+      session.questionEndTime && session.questionEndTime > 0
+        ? session.questionEndTime
+        : gameEngine.getServerNow() + question.timeLimitSec * 1000;
+    pausedRemainingMsRef.current = Math.max(0, deadlineMsRef.current - gameEngine.getServerNow());
+    lastAudioSecRef.current = initialSec;
+    setTimeLeft(initialSec);
+  }, [question.id, question.timeLimitSec, session.questionEndTime]);
 
   // Auto-advance to response chart 1.2s after 100% of connected examinees have submitted their answers
   useEffect(() => {
     if (isPaused || totalPlayers === 0) return;
     if (answeredCount >= totalPlayers) {
       const autoTimer = setTimeout(() => {
-        onSkipTimer();
+        triggerSkipOnce();
       }, 1200);
       return () => clearTimeout(autoTimer);
     }
     return undefined;
-  }, [answeredCount, totalPlayers, isPaused, onSkipTimer]);
+  }, [answeredCount, totalPlayers, isPaused, question.id]);
 
   useEffect(() => {
-    if (isPaused) return;
+    if (isPaused) {
+      pausedRemainingMsRef.current = Math.max(0, deadlineMsRef.current - gameEngine.getServerNow());
+      return;
+    }
+
+    deadlineMsRef.current = gameEngine.getServerNow() + pausedRemainingMsRef.current;
 
     const interval = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          onSkipTimer();
-          return 0;
-        }
-        if (prev <= 5) {
+      const remainingMs = deadlineMsRef.current - gameEngine.getServerNow();
+      const nextSec = Math.max(0, Math.ceil(remainingMs / 1000));
+      pausedRemainingMsRef.current = Math.max(0, remainingMs);
+
+      if (nextSec <= 0) {
+        clearInterval(interval);
+        setTimeLeft(0);
+        triggerSkipOnce();
+        return;
+      }
+
+      if (nextSec !== lastAudioSecRef.current) {
+        lastAudioSecRef.current = nextSec;
+        if (nextSec <= 5) {
           audioEngine.playUrgentTick();
         } else {
           audioEngine.playTick();
         }
-        return prev - 1;
-      });
-    }, 1000);
+      }
+
+      setTimeLeft(nextSec);
+    }, 250);
 
     return () => clearInterval(interval);
-  }, [isPaused, onSkipTimer]);
+  }, [isPaused, question.id]);
 
   const pct = (timeLeft / question.timeLimitSec) * 100;
   const isUrgent = timeLeft <= 5;

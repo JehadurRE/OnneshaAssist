@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   canActorMutateStoreAction,
   getCertificateSigningKeys,
@@ -1110,6 +1110,393 @@ describe("minimum passing threshold & certificate issuance gating", () => {
       } else {
         (globalThis as Record<string, unknown>)["localStorage"] = origLocalStorage;
       }
+    }
+  });
+
+  it("isolates bots from saved human rank, skips self-practice persistence, preserves ledger proofs, and resolves passing PIN prefix collisions", async () => {
+    const storageMap = new Map<string, string>();
+    const origWindow = (globalThis as Record<string, unknown>)["window"];
+    const origLocalStorage = (globalThis as Record<string, unknown>)["localStorage"];
+
+    const mockLocalStorage = {
+      getItem: (k: string) => storageMap.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        storageMap.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        storageMap.delete(k);
+      },
+      clear: () => {
+        storageMap.clear();
+      },
+      key: (idx: number) => Array.from(storageMap.keys())[idx] ?? null,
+      get length() {
+        return storageMap.size;
+      },
+    };
+
+    try {
+      (globalThis as Record<string, unknown>)["window"] = globalThis;
+      (globalThis as Record<string, unknown>)["localStorage"] = mockLocalStorage;
+
+      await sqliteEngine.init();
+
+      const makeAnswers = (correct: number, total: number) =>
+        Object.fromEntries(
+          Array.from({ length: total }, (_, idx) => [
+            `q-${idx}`,
+            {
+              questionId: `q-${idx}`,
+              selectedOptionIds: ["o1"],
+              isCorrect: idx < correct,
+              timeTakenSec: 4,
+              pointsAwarded: idx < correct ? 1000 : 0,
+              streakCount: 1,
+              answeredAt: 1000,
+            },
+          ]),
+        );
+
+      // Bot has rank 1 and higher score than human; human's saved rank in official results MUST be 1
+      db.recordExamSession(
+        {
+          pin: "778811",
+          quizId: "quiz-bot-isolation",
+          quizTitleEn: "Bot Isolation Exam",
+          quizTitleBn: "Bot Isolation Exam",
+          hostId: "usr-instructor-1",
+          phase: "podium",
+          currentQuestionIndex: 4,
+          questionStartTime: 1000,
+          questionEndTime: 2000,
+          settings: {
+            speedBonus: true,
+            negativeMarking: 0,
+            shuffleQuestions: false,
+            shuffleOptions: false,
+            soundEnabled: true,
+            musicEnabled: true,
+            isFormalAssessment: true,
+            requireRollNumber: true,
+            allowedRegionId: "all",
+            allowedRegionName: "All Regions",
+            passThresholdPct: 50,
+          },
+          participants: {
+            "bot-1": {
+              id: "bot-1",
+              name: "Cadet Bot",
+              nickname: "Cadet Bot",
+              avatarEmoji: "🤖",
+              avatarBg: "#000000",
+              rollNumber: "BOT-01",
+              score: 5000,
+              streak: 5,
+              rank: 1,
+              isBot: true,
+              answers: makeAnswers(5, 5),
+              connected: true,
+              lastActive: 1000,
+            },
+            "hum-1": {
+              id: "hum-1",
+              name: "Rashedul Islam",
+              nickname: "Rashedul Islam",
+              avatarEmoji: "🎯",
+              avatarBg: "#10b981",
+              rollNumber: "HUM-01",
+              score: 4000,
+              streak: 4,
+              rank: 2, // Skewed live by bot ahead of human
+              isBot: false,
+              answers: makeAnswers(4, 5),
+              connected: true,
+              lastActive: 1200,
+            },
+          },
+          totalQuestions: 5,
+          createdAt: 1000,
+          updatedAt: 2000,
+        },
+        { syncToServer: false },
+      );
+
+      const savedHumanResult = db.getExamResults("778811").find((r) => r.rollNumber === "HUM-01");
+      expect(savedHumanResult?.rank).toBe(1);
+      expect(db.getExamSessions().find((s) => s.pin === "778811")?.participantCount).toBe(1);
+
+      // Re-issuing / caching an unsigned update for an already signed certificate preserves ledger proofs
+      db.issueCertificate(
+        {
+          certificateNumber: "ONN-7788-HUM01",
+          studentName: "Rashedul Islam",
+          studentRoll: "HUM-01",
+          quizTitle: "Bot Isolation Exam",
+          score: 4000,
+          totalPoints: 5000,
+          rank: 1,
+          totalParticipants: 1,
+          accuracyPercent: 80,
+          issueDate: "2026-11-15",
+          verified: true,
+          ledgerIndex: 42,
+          chainHash: "chain-abc-42",
+          cryptoSignature: "sig-ed25519-xyz",
+          signerKeyId: "ed-key-1",
+          rekorStatus: "anchored",
+          rekorEntryUuid: "rekor-uuid-42",
+        },
+        { syncToServer: false },
+      );
+      db.issueCertificate(
+        {
+          certificateNumber: "ONN-7788-HUM01",
+          studentName: "Rashedul Islam",
+          studentRoll: "HUM-01",
+          quizTitle: "Bot Isolation Exam",
+          score: 4000,
+          totalPoints: 5000,
+          rank: 1,
+          totalParticipants: 1,
+          accuracyPercent: 80,
+          issueDate: "2026-11-15",
+          verified: true,
+        },
+        { syncToServer: false },
+      );
+      const preservedCert = db.getCertificateById("ONN-7788-HUM01");
+      expect(preservedCert?.cryptoSignature).toBe("sig-ed25519-xyz");
+      expect(preservedCert?.chainHash).toBe("chain-abc-42");
+      expect(preservedCert?.ledgerIndex).toBe(42);
+      expect(preservedCert?.rekorEntryUuid).toBe("rekor-uuid-42");
+
+      // Self-practice session must NOT create official exam sessions, results, or certificates
+      db.recordExamSession(
+        {
+          pin: "665544",
+          quizId: "quiz-practice",
+          quizTitleEn: "Practice Quiz",
+          quizTitleBn: "Practice Quiz",
+          hostId: "guest",
+          isSelfPractice: true,
+          phase: "podium",
+          currentQuestionIndex: 4,
+          questionStartTime: 1000,
+          questionEndTime: 2000,
+          settings: {
+            speedBonus: true,
+            negativeMarking: 0,
+            shuffleQuestions: false,
+            shuffleOptions: false,
+            soundEnabled: true,
+            musicEnabled: true,
+            isFormalAssessment: false,
+            requireRollNumber: false,
+            allowedRegionId: "all",
+            allowedRegionName: "All Regions",
+          },
+          participants: {
+            "prac-1": {
+              id: "prac-1",
+              name: "Practice Learner",
+              nickname: "Practice Learner",
+              avatarEmoji: "📚",
+              avatarBg: "#0284c7",
+              rollNumber: "PRAC-99",
+              score: 5000,
+              streak: 5,
+              rank: 1,
+              isBot: false,
+              answers: makeAnswers(5, 5),
+              connected: true,
+              lastActive: 1000,
+            },
+          },
+          totalQuestions: 5,
+          createdAt: 1000,
+          updatedAt: 2000,
+        },
+        { syncToServer: false },
+      );
+      expect(db.getExamSessions().some((s) => s.pin === "665544")).toBe(false);
+      expect(db.getCertificateById("ONN-6655-PRAC99")).toBeUndefined();
+
+      // 4-digit PIN prefix collision: failed attempt must not hide passing session with same 4-digit prefix
+      db.recordExamSession(
+        {
+          pin: "881101",
+          quizId: "quiz-prefix-1",
+          quizTitleEn: "Attempt 1",
+          quizTitleBn: "Attempt 1",
+          hostId: "usr-instructor-1",
+          phase: "podium",
+          currentQuestionIndex: 4,
+          questionStartTime: 1000,
+          questionEndTime: 2000,
+          settings: {
+            speedBonus: true,
+            negativeMarking: 0,
+            shuffleQuestions: false,
+            shuffleOptions: false,
+            soundEnabled: true,
+            musicEnabled: true,
+            isFormalAssessment: true,
+            requireRollNumber: true,
+            allowedRegionId: "all",
+            allowedRegionName: "All Regions",
+            passThresholdPct: 60,
+          },
+          participants: {
+            "stu-fail": {
+              id: "stu-fail",
+              name: "Same Student",
+              nickname: "Same Student",
+              avatarEmoji: "🎯",
+              avatarBg: "#000000",
+              rollNumber: "COLL-09",
+              score: 1000,
+              streak: 1,
+              rank: 1,
+              isBot: false,
+              answers: makeAnswers(1, 5),
+              connected: true,
+              lastActive: 1000,
+            },
+          },
+          totalQuestions: 5,
+          createdAt: 1000,
+          updatedAt: 2000,
+        },
+        { syncToServer: false },
+      );
+      db.recordExamSession(
+        {
+          pin: "881199",
+          quizId: "quiz-prefix-2",
+          quizTitleEn: "Attempt 2",
+          quizTitleBn: "Attempt 2",
+          hostId: "usr-instructor-1",
+          phase: "podium",
+          currentQuestionIndex: 4,
+          questionStartTime: 1000,
+          questionEndTime: 2000,
+          settings: {
+            speedBonus: true,
+            negativeMarking: 0,
+            shuffleQuestions: false,
+            shuffleOptions: false,
+            soundEnabled: true,
+            musicEnabled: true,
+            isFormalAssessment: true,
+            requireRollNumber: true,
+            allowedRegionId: "all",
+            allowedRegionName: "All Regions",
+            passThresholdPct: 60,
+          },
+          participants: {
+            "stu-pass": {
+              id: "stu-pass",
+              name: "Same Student",
+              nickname: "Same Student",
+              avatarEmoji: "🎯",
+              avatarBg: "#000000",
+              rollNumber: "COLL-09",
+              score: 4000,
+              streak: 4,
+              rank: 1,
+              isBot: false,
+              answers: makeAnswers(4, 5),
+              connected: true,
+              lastActive: 1000,
+            },
+          },
+          totalQuestions: 5,
+          createdAt: 1000,
+          updatedAt: 2000,
+        },
+        { syncToServer: false },
+      );
+      // Clear certificates table to verify deterministic PIN-prefix fallback resolves the PASSING attempt
+      sqliteEngine.run("DELETE FROM certificates WHERE LOWER(certificateNumber) = LOWER(?)", [
+        "ONN-8811-COLL09",
+      ]);
+      const resolvedPrefixCert = db.getCertificateById("ONN-8811-COLL09");
+      expect(resolvedPrefixCert?.score).toBe(4000);
+    } finally {
+      if (origWindow === undefined) {
+        delete (globalThis as Record<string, unknown>)["window"];
+      } else {
+        (globalThis as Record<string, unknown>)["window"] = origWindow;
+      }
+      if (origLocalStorage === undefined) {
+        delete (globalThis as Record<string, unknown>)["localStorage"];
+      } else {
+        (globalThis as Record<string, unknown>)["localStorage"] = origLocalStorage;
+      }
+    }
+  });
+});
+
+describe("proctorEngine sustained window_blur grace period", () => {
+  it("ignores transient <1500ms focus blips and triggers only on sustained focus loss", async () => {
+    vi.useFakeTimers();
+    const g = globalThis as Record<string, unknown>;
+    const origWindow = g["window"];
+    const origDocument = g["document"];
+    const windowHandlers: Record<string, EventListenerOrEventListenerObject> = {};
+    const docHandlers: Record<string, EventListenerOrEventListenerObject> = {};
+    let focused = false;
+
+    try {
+      g["window"] = {
+        addEventListener: (ev: string, fn: EventListenerOrEventListenerObject) => {
+          windowHandlers[ev] = fn;
+        },
+        removeEventListener: (ev: string) => {
+          delete windowHandlers[ev];
+        },
+      };
+      g["document"] = {
+        hidden: false,
+        fullscreenEnabled: false,
+        fullscreenElement: null,
+        addEventListener: (ev: string, fn: EventListenerOrEventListenerObject) => {
+          docHandlers[ev] = fn;
+        },
+        removeEventListener: (ev: string) => {
+          delete docHandlers[ev];
+        },
+        hasFocus: () => focused,
+      };
+
+      const { proctorEngine } = await import("../proctor-engine");
+      const incidents: string[] = [];
+      proctorEngine.start("cand-1", "Test Candidate", (inc) => {
+        incidents.push(inc.type);
+      });
+
+      // Transient 500ms blur (e.g. mobile notification / keyboard) followed by refocus
+      focused = false;
+      (windowHandlers["blur"] as () => void)?.();
+      await vi.advanceTimersByTimeAsync(500);
+      focused = true;
+      (windowHandlers["focus"] as () => void)?.();
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(incidents).toHaveLength(0);
+
+      // Sustained blur >1500ms must record one window_blur violation
+      focused = false;
+      (windowHandlers["blur"] as () => void)?.();
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(incidents).toEqual(["window_blur"]);
+
+      proctorEngine.stop();
+    } finally {
+      vi.useRealTimers();
+      if (origWindow === undefined) delete g["window"];
+      else g["window"] = origWindow;
+      if (origDocument === undefined) delete g["document"];
+      else g["document"] = origDocument;
     }
   });
 });

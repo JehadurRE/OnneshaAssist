@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { HostLobby } from "@/components/game/HostLobby";
@@ -12,6 +12,7 @@ import { gameEngine } from "@/lib/game-engine";
 import { audioEngine } from "@/lib/audio-engine";
 import { useAuth } from "@/lib/auth-context";
 import { db } from "@/lib/db";
+import { sqliteEngine } from "@/lib/db/sqlite-engine";
 import { GameSession } from "@/lib/types";
 import { Lock, RotateCcw, ShieldAlert } from "lucide-react";
 
@@ -39,8 +40,18 @@ function HostPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [session, setSession] = useState<GameSession | null>(null);
   const [roomError, setRoomError] = useState<string | null>(null);
+  const sessionRef = useRef<GameSession | null>(null);
+  const justCreatedPinRef = useRef<string | null>(null);
+  const suppressStopPinRef = useRef<string | null>(null);
+  const attachedPinRef = useRef<string | null>(null);
 
   const isStaff = isAuthenticated && (user?.role === "admin" || user?.role === "instructor");
+
+  useEffect(() => {
+    return () => {
+      gameEngine.stopPolling();
+    };
+  }, []);
 
   useEffect(() => {
     if (authLoading || !isStaff) return undefined;
@@ -49,36 +60,80 @@ function HostPage() {
     let unsubscribe: (() => void) | null = null;
     setRoomError(null);
 
-    const quiz =
-      db.getQuizBySlug(quizId) ||
-      db.getQuizzes().find((p) => p.id === quizId || p.slug === quizId) ||
-      READY_MADE_PACKS.find((p) => p.id === quizId || p.slug === quizId) ||
-      READY_MADE_PACKS[0];
-
     const attachSession = (activeSession: GameSession) => {
       if (!active) return;
+      attachedPinRef.current = activeSession.pin;
+      sessionRef.current = activeSession;
       setSession(activeSession);
       unsubscribe = gameEngine.subscribe((event) => {
+        if (!active) return;
         if (event.type === "SESSION_UPDATED" && event.session.pin === activeSession.pin) {
+          sessionRef.current = event.session;
           setSession({ ...event.session });
         }
       });
     };
 
-    if (requestedPin && requestedPin.trim().length >= 4) {
-      gameEngine.resumeHostSessionAsync(requestedPin.trim()).then((existingSession) => {
+    const trimmedPin = requestedPin?.trim();
+    if (
+      trimmedPin &&
+      justCreatedPinRef.current === trimmedPin &&
+      sessionRef.current?.pin === trimmedPin &&
+      gameEngine.isPolling(trimmedPin)
+    ) {
+      justCreatedPinRef.current = null;
+      suppressStopPinRef.current = null;
+      attachSession(sessionRef.current);
+      return () => {
+        active = false;
+        if (unsubscribe) unsubscribe();
+      };
+    }
+
+    const bootstrapHostRoom = async () => {
+      if (trimmedPin && trimmedPin.length >= 4) {
+        const existingSession = await gameEngine.resumeHostSessionAsync(trimmedPin);
         if (!active) return;
         if (existingSession) {
           attachSession(existingSession);
         } else {
           setRoomError(
-            `Live room PIN ${requestedPin.trim()} has expired or been closed. You can start a fresh examination room below.`
+            `Live room PIN ${trimmedPin} has expired or been closed. You can start a fresh examination room below.`
           );
         }
-      });
-    } else if (quiz) {
-      gameEngine.createSessionAsync(quiz, true).then((newSession) => {
+        return;
+      }
+
+      try {
+        await sqliteEngine.ready();
+      } catch {}
+
+      let quiz =
+        db.getQuizBySlug(quizId) ||
+        db.getQuizzes().find((p) => p.id === quizId || p.slug === quizId) ||
+        READY_MADE_PACKS.find((p) => p.id === quizId || p.slug === quizId);
+
+      if (!quiz) {
+        try {
+          await db.syncFromServerStore();
+          quiz =
+            db.getQuizBySlug(quizId) ||
+            db.getQuizzes().find((p) => p.id === quizId || p.slug === quizId) ||
+            READY_MADE_PACKS.find((p) => p.id === quizId || p.slug === quizId);
+        } catch {}
+      }
+
+      if (!active) return;
+      if (!quiz) {
+        setRoomError("Requested assessment pack could not be found. Return to the dashboard and launch an active quiz.");
+        return;
+      }
+
+      try {
+        const newSession = await gameEngine.createSessionAsync(quiz, true);
         if (!active) return;
+        justCreatedPinRef.current = newSession.pin;
+        suppressStopPinRef.current = newSession.pin;
         attachSession(newSession);
         navigate({
           to: "/host/$quizId",
@@ -86,15 +141,39 @@ function HostPage() {
           search: { pin: newSession.pin },
           replace: true,
         });
-      });
-    }
+      } catch (err) {
+        if (!active) return;
+        setRoomError(
+          err instanceof Error ? err.message : "Could not initialize live examination room."
+        );
+      }
+    };
+
+    void bootstrapHostRoom();
 
     return () => {
       active = false;
       if (unsubscribe) unsubscribe();
-      gameEngine.stopPolling();
+      if (!suppressStopPinRef.current || suppressStopPinRef.current !== attachedPinRef.current) {
+        gameEngine.stopPolling();
+      }
     };
   }, [quizId, requestedPin, authLoading, isStaff, navigate]);
+
+  const handleSkipTimer = useCallback(() => {
+    const pin = sessionRef.current?.pin;
+    if (pin) gameEngine.showChart(pin);
+  }, []);
+
+  const handleNextFromChart = useCallback(() => {
+    const pin = sessionRef.current?.pin;
+    if (pin) gameEngine.showLeaderboard(pin);
+  }, []);
+
+  const handleEndExamEarly = useCallback(() => {
+    const pin = sessionRef.current?.pin;
+    if (pin) gameEngine.endGame(pin);
+  }, []);
 
   if (authLoading) {
     return (
@@ -216,18 +295,6 @@ function HostPage() {
     gameEngine.updateSessionSettings(session.pin, settings);
   };
 
-  const handleSkipTimer = () => {
-    gameEngine.showChart(session.pin);
-  };
-
-  const handleNextFromChart = () => {
-    gameEngine.showLeaderboard(session.pin);
-  };
-
-  const handleEndExamEarly = () => {
-    gameEngine.endGame(session.pin);
-  };
-
   const handleNextQuestion = () => {
     const nextIdx = session.currentQuestionIndex + 1;
     if (nextIdx >= session.totalQuestions) {
@@ -293,6 +360,30 @@ function HostPage() {
           />
         )}
 
+        {(session.phase === "question" || session.phase === "chart") && !session.currentQuestion && (
+          <div className="mx-auto max-w-xl rounded-3xl border border-border bg-card p-8 text-center shadow-tactical space-y-4">
+            <p className="font-display text-lg font-extrabold text-foreground">
+              Synchronizing Question Slide...
+            </p>
+            <div className="flex flex-wrap justify-center gap-3">
+              <button
+                type="button"
+                onClick={handleNextQuestion}
+                className="rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-primary-foreground"
+              >
+                Advance Question →
+              </button>
+              <button
+                type="button"
+                onClick={handleEndExamEarly}
+                className="rounded-xl border border-border bg-background px-4 py-2 text-xs font-bold text-foreground"
+              >
+                Conclude Exam
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* PHASE 5: Leaderboard */}
         {session.phase === "leaderboard" && (
           <HostLeaderboard
@@ -303,7 +394,7 @@ function HostPage() {
         )}
 
         {/* PHASE 6: Podium & Grand Finale */}
-        {session.phase === "podium" && (
+        {(session.phase === "podium" || session.phase === "finished") && (
           <HostPodium session={session} onPlayAgain={handlePlayAgain} />
         )}
       </main>

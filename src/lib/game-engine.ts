@@ -81,6 +81,26 @@ class RealtimeGameEngine {
   private pollInFlightSince = 0;
   private pollRequestSeq = 0;
   private pollTickCount = 0;
+  private serverClockOffsetMs = 0;
+  private flushInFlight: Promise<void> | null = null;
+  private startCountdownTimer: ReturnType<typeof setTimeout> | null = null;
+
+  public updateServerClockOffset(serverNow?: number) {
+    if (typeof serverNow === 'number' && Number.isFinite(serverNow)) {
+      this.serverClockOffsetMs = serverNow - Date.now();
+    }
+  }
+
+  public getServerNow(): number {
+    return Date.now() + this.serverClockOffsetMs;
+  }
+
+  private clearStartCountdownTimer() {
+    if (this.startCountdownTimer) {
+      clearTimeout(this.startCountdownTimer);
+      this.startCountdownTimer = null;
+    }
+  }
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -147,21 +167,45 @@ class RealtimeGameEngine {
   }
 
   public async flushOfflineOutbox(): Promise<void> {
+    if (this.flushInFlight) return this.flushInFlight;
     const queue = this.getOfflineOutbox();
     if (queue.length === 0) return;
 
-    const remaining: QueuedAnswerPayload[] = [];
-    for (const item of queue) {
+    const PERMANENT_REJECTION_CODES = new Set([
+      'SESSION_NOT_FOUND',
+      'PARTICIPANT_NOT_FOUND',
+      'INVALID_SEAT',
+      'SUSPENDED',
+      'SESSION_NOT_ACCEPTING_ANSWERS',
+      'QUESTION_NOT_FOUND',
+    ]);
+
+    this.flushInFlight = (async () => {
       try {
-        const res = await serverSubmitAnswer({ data: item });
-        if (res.success && res.session) {
-          this.cacheSessionLocally(res.session);
+        const remaining: QueuedAnswerPayload[] = [];
+        for (const item of this.getOfflineOutbox()) {
+          try {
+            const res = await serverSubmitAnswer({ data: item });
+            this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
+            if (res.success && res.session) {
+              this.cacheSessionLocally(res.session);
+            } else if (!res.success) {
+              const errCode = (res as { code?: string }).code;
+              if (!errCode || !PERMANENT_REJECTION_CODES.has(errCode)) {
+                remaining.push(item);
+              }
+            }
+          } catch {
+            remaining.push(item);
+          }
         }
-      } catch {
-        remaining.push(item);
+        this.saveOfflineOutbox(remaining);
+      } finally {
+        this.flushInFlight = null;
       }
-    }
-    this.saveOfflineOutbox(remaining);
+    })();
+
+    return this.flushInFlight;
   }
 
   public subscribe(cb: (event: GameEvent) => void) {
@@ -270,8 +314,10 @@ class RealtimeGameEngine {
           pin,
           role,
           ...(effectivePid ? { participantId: effectivePid } : {}),
+          ...(role === 'host' ? { hostToken: this.getStoredHostToken(pin) } : {}),
         },
       });
+      this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
       if (res.success && res.session) {
         this.cacheSessionLocally(res.session);
         this.startPolling(pin, role, effectivePid);
@@ -356,14 +402,17 @@ class RealtimeGameEngine {
       }
       const effectivePid = this.pollingParticipantId || this.getStoredParticipantId(pin);
       const since = this.lastKnownUpdatedAtByPin[pin] || 0;
+      const role = this.pollingRole;
       const res = await serverGetSession({
         data: {
           pin,
-          role: this.pollingRole,
+          role,
           ...(effectivePid ? { participantId: effectivePid } : {}),
+          ...(role === 'host' ? { hostToken: this.getStoredHostToken(pin) } : {}),
           ...(!forceFull && since ? { sinceUpdatedAt: since } : {}),
         },
       });
+      this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
 
       // Ignore late replies for a room we already left.
       if (this.activePollingPin !== pin) return;
@@ -390,6 +439,7 @@ class RealtimeGameEngine {
     }
     this.activePollingPin = null;
     this.pollInFlightSince = 0;
+    this.clearStartCountdownTimer();
   }
 
   // Create Session (Host)
@@ -420,7 +470,7 @@ class RealtimeGameEngine {
         musicEnabled: true,
         isFormalAssessment: isFormal,
         requireRollNumber: isFormal,
-        requireRosterVerification: true,
+        requireRosterVerification: isFormal,
         allowedRegionId,
         allowedRegionName,
       },
@@ -458,6 +508,10 @@ class RealtimeGameEngine {
       return null;
     });
 
+    if (res) {
+      this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
+    }
+
     if (res && !res.success && res.error) {
       throw new Error(res.error);
     }
@@ -475,10 +529,12 @@ class RealtimeGameEngine {
   }
 
   public async resumeHostSessionAsync(pin: string): Promise<GameSession | null> {
+    const cleanPin = pin.trim();
     try {
       const res = await serverGetSession({
-        data: { pin: pin.trim(), role: 'host' },
+        data: { pin: cleanPin, role: 'host', hostToken: this.getStoredHostToken(cleanPin) },
       });
+      this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
       if (res.success && res.session) {
         this.cacheSessionLocally(res.session);
         this.startPolling(res.session.pin, 'host');
@@ -487,7 +543,7 @@ class RealtimeGameEngine {
     } catch (err) {
       console.warn('Host session resume error:', err);
     }
-    const local = this.getSession(pin.trim());
+    const local = this.getSession(cleanPin);
     if (local) {
       this.startPolling(local.pin, 'host');
       return local;
@@ -496,6 +552,7 @@ class RealtimeGameEngine {
   }
 
   public async closeRoomAsync(pin: string): Promise<boolean> {
+    this.clearStartCountdownTimer();
     try {
       const res = await serverHostControl({
         data: {
@@ -504,10 +561,12 @@ class RealtimeGameEngine {
           action: 'close_room',
         },
       });
+      this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
       if (this.activePollingPin === pin) {
         this.stopPolling();
       }
       if (typeof window !== 'undefined') {
+        localStorage.removeItem(`onnesha_session_${pin}`);
         localStorage.removeItem(`onnesha_game_${pin}`);
       }
       return !!res.success;
@@ -520,7 +579,7 @@ class RealtimeGameEngine {
     const session = this.getSession(pin);
     if (session) {
       session.settings = { ...session.settings, ...settings };
-      this.cacheSessionLocally(session);
+      this.cacheSessionLocally(session, { fromServer: false });
     }
     serverHostControl({
       data: {
@@ -531,6 +590,7 @@ class RealtimeGameEngine {
       },
     })
       .then((res) => {
+        this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
         if (res.success && res.session) this.cacheSessionLocally(res.session);
       })
       .catch(() => {});
@@ -547,6 +607,7 @@ class RealtimeGameEngine {
       },
     })
       .then((res) => {
+        this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
         if (res.success && res.session) {
           this.cacheSessionLocally(res.session);
         }
@@ -618,6 +679,7 @@ class RealtimeGameEngine {
           seatToken: existingSeatToken,
         },
       });
+      this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
 
       if (!res.success || !res.participant) {
         return {
@@ -696,7 +758,7 @@ class RealtimeGameEngine {
     };
 
     session.participants[participantId] = participant;
-    this.cacheSessionLocally(session);
+    this.cacheSessionLocally(session, { fromServer: false });
     this.broadcast({ type: 'PLAYER_JOINED', pin, participant });
 
     serverJoinSession({ data: { pin, participant } }).catch(() => {});
@@ -705,10 +767,11 @@ class RealtimeGameEngine {
 
   // Host starts game
   public startGame(pin: string) {
+    this.clearStartCountdownTimer();
     const session = this.getSession(pin);
     if (session) {
       session.phase = 'countdown';
-      this.cacheSessionLocally(session);
+      this.cacheSessionLocally(session, { fromServer: false });
     }
 
     serverHostControl({
@@ -719,17 +782,22 @@ class RealtimeGameEngine {
       },
     })
       .then((res) => {
+        this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
         if (res.success && res.session) this.cacheSessionLocally(res.session);
       })
       .catch(() => {});
 
-    setTimeout(() => {
+    this.startCountdownTimer = setTimeout(() => {
+      this.startCountdownTimer = null;
+      const latest = this.getSession(pin);
+      if (latest && latest.phase !== 'countdown') return;
       this.nextQuestion(pin, 0);
     }, 3000);
   }
 
   // Host advances to question index
   public nextQuestion(pin: string, index: number) {
+    this.clearStartCountdownTimer();
     serverHostControl({
       data: {
         pin,
@@ -739,9 +807,10 @@ class RealtimeGameEngine {
       },
     })
       .then((res) => {
+        this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
         if (res.success && res.session) {
           this.cacheSessionLocally(res.session);
-          if (res.session.phase === 'podium') {
+          if (res.session.phase === 'podium' || res.session.phase === 'finished') {
             this.stopPolling();
             try {
               db.recordExamSession(res.session, { syncToServer: false });
@@ -755,8 +824,8 @@ class RealtimeGameEngine {
         if (!session) return;
         const quiz =
           db.getQuizBySlug(session.quizId) ||
-          db.getQuizzes().find((q) => q.id === session.quizId) ||
-          READY_MADE_PACKS[0];
+          db.getQuizzes().find((q) => q.id === session.quizId || q.slug === session.quizId) ||
+          READY_MADE_PACKS.find((q) => q.id === session.quizId || q.slug === session.quizId);
         const question = quiz?.questions[index];
         if (!quiz || !question || index >= quiz.questions.length) {
           this.endGame(pin);
@@ -800,6 +869,7 @@ class RealtimeGameEngine {
       data: payload,
     })
       .then((res) => {
+        this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
         if (res.success && res.session) {
           this.cacheSessionLocally(res.session);
           if (res.answer) {
@@ -809,6 +879,18 @@ class RealtimeGameEngine {
               participantId,
               answer: res.answer,
             });
+          }
+        } else if (!res.success) {
+          const errCode = (res as { code?: string }).code;
+          const permanent =
+            errCode === 'SUSPENDED' ||
+            errCode === 'SESSION_NOT_FOUND' ||
+            errCode === 'PARTICIPANT_NOT_FOUND' ||
+            errCode === 'INVALID_SEAT' ||
+            errCode === 'SESSION_NOT_ACCEPTING_ANSWERS' ||
+            errCode === 'QUESTION_NOT_FOUND';
+          if (!permanent) {
+            this.enqueueOfflineAnswer(payload);
           }
         }
       })
@@ -824,7 +906,12 @@ class RealtimeGameEngine {
     type: 'tab_switch' | 'window_blur' | 'fullscreen_exit' | 'copy_attempt' | 'devtools_attempt'
   ) {
     return serverReportProctorIncident({
-      data: { pin, participantId, type },
+      data: {
+        pin,
+        participantId,
+        seatToken: this.getStoredSeatToken(pin),
+        type,
+      },
     });
   }
 
@@ -832,7 +919,7 @@ class RealtimeGameEngine {
     const session = this.getSession(pin);
     if (session && session.participants[participantId]) {
       delete session.participants[participantId];
-      this.cacheSessionLocally(session);
+      this.cacheSessionLocally(session, { fromServer: false });
     }
     serverHostControl({
       data: {
@@ -843,6 +930,7 @@ class RealtimeGameEngine {
       },
     })
       .then((res) => {
+        this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
         if (res.success && res.session) this.cacheSessionLocally(res.session);
       })
       .catch(() => {});
@@ -858,6 +946,7 @@ class RealtimeGameEngine {
       },
     })
       .then((res) => {
+        this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
         if (res.success && res.session) this.cacheSessionLocally(res.session);
       })
       .catch(() => {});
@@ -870,10 +959,12 @@ class RealtimeGameEngine {
 
   public showChart(pin: string) {
     this.clearBotTimers();
+    this.clearStartCountdownTimer();
     serverHostControl({
       data: { pin, hostToken: this.getStoredHostToken(pin), action: 'show_chart' },
     })
       .then((res) => {
+        this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
         if (res.success && res.session) this.cacheSessionLocally(res.session);
       })
       .catch(() => {
@@ -889,6 +980,7 @@ class RealtimeGameEngine {
       data: { pin, hostToken: this.getStoredHostToken(pin), action: 'show_leaderboard' },
     })
       .then((res) => {
+        this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
         if (res.success && res.session) this.cacheSessionLocally(res.session);
       })
       .catch(() => {
@@ -902,10 +994,12 @@ class RealtimeGameEngine {
 
   public endGame(pin: string) {
     this.clearBotTimers();
+    this.clearStartCountdownTimer();
     serverHostControl({
       data: { pin, hostToken: this.getStoredHostToken(pin), action: 'end_game' },
     })
       .then((res) => {
+        this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
         if (res.success && res.session) {
           this.cacheSessionLocally(res.session);
           this.stopPolling();
@@ -929,7 +1023,9 @@ class RealtimeGameEngine {
   }
 
   private recalculateRanks(session: GameSession) {
-    const sorted = Object.values(session.participants).sort((a, b) => b.score - a.score);
+    const sorted = Object.values(session.participants).sort((a, b) =>
+      b.score !== a.score ? b.score - a.score : a.lastActive - b.lastActive
+    );
     sorted.forEach((p, idx) => {
       const target = session.participants[p.id];
       if (target) target.rank = idx + 1;

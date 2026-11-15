@@ -541,9 +541,22 @@ function toHostSessionView(session: ServerLiveSession): GameSession {
     hostToken: _t,
     cachedTop5: _top5,
     cachedSanitizedQuestion: _sq,
+    participants,
     ...hostView
   } = session;
-  return hostView;
+  const sanitizedParticipants: Record<string, Participant> = {};
+  for (const [id, p] of Object.entries(participants)) {
+    const { seatToken: _s, ...safeP } = p;
+    sanitizedParticipants[id] = safeP;
+  }
+  return {
+    ...hostView,
+    participants: sanitizedParticipants,
+    completedQuestions:
+      session.phase === "podium" || session.phase === "finished"
+        ? session.fullQuiz?.questions
+        : hostView.completedQuestions,
+  };
 }
 
 function normalizeDigits(val?: string): string {
@@ -636,6 +649,7 @@ function buildPlayerSessionProjection(
     quizTitleEn: session.quizTitleEn,
     quizTitleBn: session.quizTitleBn,
     hostId: session.hostId,
+    isSelfPractice: !!session.isSelfPractice,
     phase: session.phase,
     currentQuestionIndex: session.currentQuestionIndex,
     currentQuestion:
@@ -650,7 +664,10 @@ function buildPlayerSessionProjection(
     updatedAt: session.updatedAt,
     participantCount: session.participantCount ?? Object.keys(session.participants).length,
     answeredCount: session.answeredCount ?? 0,
-    completedQuestions: session.phase === "podium" ? session.fullQuiz?.questions : undefined,
+    completedQuestions:
+      session.phase === "podium" || session.phase === "finished"
+        ? session.fullQuiz?.questions
+        : undefined,
   };
 }
 
@@ -768,12 +785,15 @@ function triggerBackgroundExternalAnchoring(certNumbers: string[]): void {
 }
 
 function persistCompletedExamToStore(session: ServerLiveSession) {
+  // Public / solo self-practice sessions must never create official institutional
+  // exam sessions, score transcripts, or Ed25519 certificates.
+  if (session.isSelfPractice) return;
   const store = getStore();
   const sessionId = `exam-${session.pin}`;
   const createdAt = new Date().toISOString();
   const participantsList = Object.values(session.participants)
     .filter((p) => !p.isBot)
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.lastActive - b.lastActive));
   const count = participantsList.length;
   if (count === 0) return;
   const totalScore = participantsList.reduce((acc, p) => acc + p.score, 0);
@@ -839,6 +859,7 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
     });
     const passed = isPassingScore(accuracy, effectivePassThresholdPct);
     const roll = p.rollNumber || `2026-${100 + idx + 1}`;
+    const humanRank = idx + 1;
 
     const resultRecord: ExamResultRecord = {
       id: `res-${session.pin}-${p.id}`,
@@ -846,12 +867,12 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
       pin: session.pin,
       participantId: p.id,
       rollNumber: roll,
-      name: p.nickname || p.name || `Candidate ${idx + 1}`,
+      name: p.nickname || p.name || `Candidate ${humanRank}`,
       phone: p.phone || "",
       regionId: p.regionId || "reg-dhaka",
       regionName: p.regionName || "Dhaka Range",
       score: p.score,
-      rank: p.rank || idx + 1,
+      rank: humanRank,
       correctCount,
       incorrectCount,
       unattemptedCount,
@@ -863,11 +884,26 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
     store.examResults.push(resultRecord);
 
     if (passed) {
-      const certNo = makeCertificateNumber(session.pin, roll, idx + 1);
+      const certNo = makeCertificateNumber(session.pin, roll, humanRank);
+      const isRevoked = (store.revokedCertificates || []).some(
+        (rc) => rc.toLowerCase() === certNo.toLowerCase(),
+      );
+      if (isRevoked) return;
+
+      const existingSealed = store.certificates.find(
+        (c) =>
+          c.certificateNumber.toLowerCase() === certNo.toLowerCase() &&
+          !!c.cryptoSignature &&
+          c.score === p.score &&
+          c.rank === humanRank &&
+          c.studentRoll === roll,
+      );
+      if (existingSealed) return;
+
       const unsignedCert: CertificateData = {
         id: `cert-${session.pin}-${p.id}`,
         certificateNumber: certNo,
-        studentName: p.nickname || p.name || `Candidate ${idx + 1}`,
+        studentName: p.nickname || p.name || `Candidate ${humanRank}`,
         studentRoll: roll,
         regionName: p.regionName || "Dhaka Range",
         quizTitle: session.quizTitleBn || session.quizTitleEn || "Institutional Assessment",
@@ -875,7 +911,7 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
         marksObtained: p.score,
         totalPoints: totalMarks,
         totalMarks,
-        rank: p.rank || idx + 1,
+        rank: humanRank,
         totalParticipants: count,
         accuracyPercent: accuracy,
         scorePct: accuracy,
@@ -916,8 +952,7 @@ function resolveSessionQuiz(
   if (session.fullQuiz) return session.fullQuiz;
   const found =
     store.customQuizzes.find((q) => q.id === session.quizId || q.slug === session.quizId) ||
-    READY_MADE_PACKS.find((q) => q.id === session.quizId || q.slug === session.quizId) ||
-    READY_MADE_PACKS[0];
+    READY_MADE_PACKS.find((q) => q.id === session.quizId || q.slug === session.quizId);
   if (found) session.fullQuiz = found;
   return found;
 }
@@ -1664,7 +1699,7 @@ export const serverVerifyCertificate = createServerFn({ method: "GET" })
     if (!isRevoked && match && match[1] && match[2]) {
       const pinPrefix = match[1];
       const rollSuffix = match[2];
-      const matchedResult = store.examResults.find((r) => {
+      const matchingResults = store.examResults.filter((r) => {
         const cleanRoll = (r.rollNumber || "")
           .replace(/[^a-zA-Z0-9]/g, "")
           .toUpperCase()
@@ -1672,6 +1707,13 @@ export const serverVerifyCertificate = createServerFn({ method: "GET" })
           .padStart(4, "0");
         return r.pin.startsWith(pinPrefix) && cleanRoll === rollSuffix;
       });
+      matchingResults.sort((a, b) => {
+        const aPass = a.passed ? 1 : 0;
+        const bPass = b.passed ? 1 : 0;
+        if (bPass !== aPass) return bPass - aPass;
+        return b.createdAt.localeCompare(a.createdAt);
+      });
+      const matchedResult = matchingResults[0];
 
       if (matchedResult) {
         const matchedSession = store.examSessions.find(
@@ -2583,15 +2625,33 @@ export const serverCreateSession = createServerFn({ method: "POST" })
     const authoritativeQuiz =
       store.customQuizzes.find((q) => q.id === data.quiz?.id || q.slug === data.quiz?.slug) ||
       READY_MADE_PACKS.find((q) => q.id === data.quiz?.id || q.slug === data.quiz?.slug) ||
-      data.quiz;
+      (isStaff ? data.quiz : undefined);
+    const activeQuiz = isStaff
+      ? data.quiz?.questions?.length
+        ? data.quiz
+        : authoritativeQuiz
+      : authoritativeQuiz;
+
     const quizIsPrivate =
-      isQuizPrivate(authoritativeQuiz, store.courses) || isQuizPrivate(data.quiz, store.courses);
+      isQuizPrivate(activeQuiz || data.quiz, store.courses) ||
+      isQuizPrivate(data.quiz, store.courses);
 
     if (!isStaff && (quizIsPrivate || !data.isSelfPractice)) {
       return {
         success: false,
         error:
           "Private course examinations can only be started by an authenticated Admin or Instructor.",
+        serverNow: Date.now(),
+        session: null,
+        hostToken: undefined,
+      };
+    }
+
+    if (!activeQuiz || !activeQuiz.questions || activeQuiz.questions.length === 0) {
+      return {
+        success: false,
+        error: "Quiz not found or has no questions.",
+        serverNow: Date.now(),
         session: null,
         hostToken: undefined,
       };
@@ -2607,10 +2667,10 @@ export const serverCreateSession = createServerFn({ method: "POST" })
     }
 
     // Only authenticated staff persist new quizzes into server customQuizzes
-    if (isStaff && data.quiz && !READY_MADE_PACKS.some((p) => p.id === data.quiz.id)) {
-      const idx = store.customQuizzes.findIndex((q) => q.id === data.quiz.id);
-      if (idx >= 0) store.customQuizzes[idx] = data.quiz;
-      else store.customQuizzes.unshift(data.quiz);
+    if (isStaff && activeQuiz && !READY_MADE_PACKS.some((p) => p.id === activeQuiz.id)) {
+      const idx = store.customQuizzes.findIndex((q) => q.id === activeQuiz.id);
+      if (idx >= 0) store.customQuizzes[idx] = activeQuiz;
+      else store.customQuizzes.unshift(activeQuiz);
       scheduleDiskPersist();
     }
 
@@ -2637,8 +2697,8 @@ export const serverCreateSession = createServerFn({ method: "POST" })
       store.branding.defaultMaxProctorViolations ??
       store.branding.maxProctorViolationsDefault ??
       3;
-    const matchedCourse = data.quiz.courseId
-      ? store.courses.find((c) => c.id === data.quiz.courseId)
+    const matchedCourse = activeQuiz.courseId
+      ? store.courses.find((c) => c.id === activeQuiz.courseId)
       : undefined;
     const passThresholdPct = resolvePassThresholdPct({
       sessionThreshold: data.passThresholdPct,
@@ -2648,9 +2708,9 @@ export const serverCreateSession = createServerFn({ method: "POST" })
 
     const newSession: ServerLiveSession = {
       pin,
-      quizId: data.quiz.id,
-      quizTitleEn: data.quiz.titleEn,
-      quizTitleBn: data.quiz.titleBn,
+      quizId: activeQuiz.id,
+      quizTitleEn: activeQuiz.titleEn,
+      quizTitleBn: activeQuiz.titleBn,
       hostId: actor?.id || `host-${now}`,
       hostToken,
       isSelfPractice: !!data.isSelfPractice,
@@ -2667,7 +2727,7 @@ export const serverCreateSession = createServerFn({ method: "POST" })
         musicEnabled: true,
         isFormalAssessment: isFormal,
         requireRollNumber: isFormal,
-        requireRosterVerification: true,
+        requireRosterVerification: isFormal && !data.isSelfPractice,
         allowedRegionId: data.allowedRegionId || "all",
         allowedRegionName: data.allowedRegionName || "All Regions (National)",
         enforceFullscreen: enforceFs,
@@ -2676,18 +2736,18 @@ export const serverCreateSession = createServerFn({ method: "POST" })
         passThresholdPct,
       },
       participants: {},
-      totalQuestions: data.quiz.questions.length,
+      totalQuestions: activeQuiz.questions.length,
       createdAt: now,
       updatedAt: now,
       participantCount: 0,
       answeredCount: 0,
       proctorIncidents: [],
-      fullQuiz: data.quiz,
+      fullQuiz: activeQuiz,
     };
 
     sessions[pin] = newSession;
     scheduleLiveSessionsPersist();
-    return { success: true, session: toHostSessionView(newSession), hostToken };
+    return { success: true, serverNow: Date.now(), session: toHostSessionView(newSession), hostToken };
   });
 
 export const serverGetSession = createServerFn({ method: "GET" })
@@ -2697,6 +2757,7 @@ export const serverGetSession = createServerFn({ method: "GET" })
       role?: "host" | "player" | undefined;
       participantId?: string | undefined;
       sinceUpdatedAt?: number | undefined;
+      hostToken?: string | undefined;
     }) => data,
   )
   .handler(async ({ data }) => {
@@ -2704,7 +2765,23 @@ export const serverGetSession = createServerFn({ method: "GET" })
     const store = getStore();
     const session = sessions[data.pin];
     if (!session) {
-      return { success: false, notFound: true, session: null };
+      return { success: false, notFound: true, serverNow: Date.now(), session: null };
+    }
+
+    if (data.role !== "player") {
+      const actor = await getActorFromRequest();
+      const isAuthorizedHost =
+        (!!session.hostToken && data.hostToken === session.hostToken) ||
+        actor?.role === "admin" ||
+        (!!actor && actor.id === session.hostId);
+      if (!isAuthorizedHost) {
+        return {
+          success: false,
+          error: "Unauthorized: host authentication required.",
+          serverNow: Date.now(),
+          session: null,
+        };
+      }
     }
 
     // Server-authoritative countdown auto-advance so disconnecting host never strands rooms
@@ -2722,6 +2799,7 @@ export const serverGetSession = createServerFn({ method: "GET" })
         success: true,
         unchanged: true,
         updatedAt: session.updatedAt,
+        serverNow: Date.now(),
         session: null,
       };
     }
@@ -2731,6 +2809,7 @@ export const serverGetSession = createServerFn({ method: "GET" })
         success: true,
         unchanged: false,
         updatedAt: session.updatedAt,
+        serverNow: Date.now(),
         session: buildPlayerSessionProjection(session, data.participantId),
       };
     }
@@ -2739,6 +2818,7 @@ export const serverGetSession = createServerFn({ method: "GET" })
       success: true,
       unchanged: false,
       updatedAt: session.updatedAt,
+      serverNow: Date.now(),
       session: toHostSessionView(session),
     };
   });
@@ -2750,8 +2830,16 @@ export const serverSyncSession = createServerFn({ method: "POST" })
     if (!data?.session?.pin) {
       return { success: false, error: "Invalid session payload" };
     }
+    const actor = await getActorFromRequest();
     const existing = sessions[data.session.pin];
     if (!existing) {
+      const canCreate =
+        actor?.role === "admin" ||
+        actor?.role === "instructor" ||
+        !!data.session.isSelfPractice;
+      if (!canCreate) {
+        return { success: false, error: "Host authorization required." };
+      }
       const hostToken = data.hostToken || generateHostToken();
       sessions[data.session.pin] = {
         ...data.session,
@@ -2759,10 +2847,14 @@ export const serverSyncSession = createServerFn({ method: "POST" })
         updatedAt: Date.now(),
       };
       scheduleLiveSessionsPersist();
-      return { success: true, session: toHostSessionView(sessions[data.session.pin]!), hostToken };
+      return {
+        success: true,
+        serverNow: Date.now(),
+        session: toHostSessionView(sessions[data.session.pin]!),
+        hostToken,
+      };
     }
 
-    const actor = await getActorFromRequest();
     const isAuthorized =
       (existing.hostToken && data.hostToken === existing.hostToken) ||
       actor?.role === "admin" ||
@@ -2875,8 +2967,19 @@ export const serverJoinSession = createServerFn({ method: "POST" })
       incoming.regionId = rosterMatch.regionId || incoming.regionId || "reg-dhaka";
       incoming.regionName = rosterMatch.regionName || incoming.regionName || "Dhaka Range";
       incoming.batch = rosterMatch.batch;
-    } else if (incoming.rollNumber && incoming.name) {
-      // Auto-enroll new verified candidate into the Region roster so Admin has their record
+    } else if (
+      !session.isSelfPractice &&
+      session.settings.requireRosterVerification !== false &&
+      session.settings.isFormalAssessment !== false
+    ) {
+      return {
+        success: false,
+        code: "ROSTER_VERIFICATION_REQUIRED",
+        error:
+          "Roster Verification Required: Your Roll Number or Mobile Number does not match an enrolled candidate in the Trainee Roster. Please check your Roll/Mobile or ask the Host to open walk-in entry.",
+      };
+    } else if (!session.isSelfPractice && incoming.rollNumber && incoming.name) {
+      // Auto-enroll new verified candidate into the Region roster when host allows open registration
       const newStd: RosterStudent = {
         id: `std-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
         rollNumber: incoming.rollNumber,
@@ -2913,10 +3016,13 @@ export const serverJoinSession = createServerFn({ method: "POST" })
         existingSeat.connected = true;
         existingSeat.lastActive = Date.now();
         recalculateSessionMetrics(session);
+        scheduleLiveSessionsPersist();
+        const { seatToken: _s, ...safeSeat } = existingSeat;
         return {
           success: true,
           reconnected: true,
-          participant: existingSeat,
+          serverNow: Date.now(),
+          participant: safeSeat,
           seatToken: existingSeat.seatToken,
           session: buildPlayerSessionProjection(session, existingSeat.id),
         };
@@ -2926,6 +3032,14 @@ export const serverJoinSession = createServerFn({ method: "POST" })
         success: false,
         code: "SEAT_LOCKED",
         error: `Anti-Impersonation Lock: ${existingSeat.nickname} (Roll: ${existingSeat.rollNumber || "N/A"}) is already active in this exam room on another device. Nobody else can appear in their exam. If you switched phones, ask the Host to click "Unlock Seat".`,
+      };
+    }
+
+    if (session.phase === "podium" || session.phase === "finished") {
+      return {
+        success: false,
+        code: "EXAM_ENDED",
+        error: "This examination has already concluded and is closed to new participants.",
       };
     }
 
@@ -2944,11 +3058,14 @@ export const serverJoinSession = createServerFn({ method: "POST" })
 
     session.participants[participantRecord.id] = participantRecord;
     recalculateSessionMetrics(session);
+    scheduleLiveSessionsPersist();
 
+    const { seatToken: _s, ...safeParticipant } = participantRecord;
     return {
       success: true,
       reconnected: false,
-      participant: participantRecord,
+      serverNow: Date.now(),
+      participant: safeParticipant,
       seatToken: clientSeatToken,
       session: buildPlayerSessionProjection(session, participantRecord.id),
     };
@@ -2971,36 +3088,68 @@ export const serverSubmitAnswer = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const sessions = getLiveSessions();
+    const store = getStore();
     const session = sessions[data.pin];
     if (!session) {
-      return { success: false, error: "Session not found on server" };
+      return { success: false, code: "SESSION_NOT_FOUND", error: "Session not found on server" };
     }
 
     const p = session.participants[data.participantId];
     if (!p) {
-      return { success: false, error: "Participant not found in session" };
+      return {
+        success: false,
+        code: "PARTICIPANT_NOT_FOUND",
+        error: "Participant not found in session",
+      };
+    }
+
+    if (p.seatToken && data.seatToken !== p.seatToken) {
+      return {
+        success: false,
+        code: "INVALID_SEAT",
+        error: "Seat verification token mismatch. Please refresh and rejoin your seat.",
+      };
     }
 
     if (p.isSuspended) {
-      return { success: false, error: "Exam suspended by Proctor due to focus violations." };
+      return {
+        success: false,
+        code: "SUSPENDED",
+        error: "Exam suspended by Proctor due to focus violations.",
+      };
     }
 
     // Prevent duplicate answer submission for the same question
     if (p.answers[data.questionId]) {
+      const { seatToken: _s, ...safeParticipant } = p;
       return {
         success: true,
         alreadyAnswered: true,
+        serverNow: Date.now(),
         answer: p.answers[data.questionId],
-        participant: p,
+        participant: safeParticipant,
         session: buildPlayerSessionProjection(session, p.id),
       };
     }
 
-    // Authoritative server-side grading using fullQuiz
+    if (
+      session.phase === "lobby" ||
+      session.phase === "countdown" ||
+      session.phase === "podium" ||
+      session.phase === "finished"
+    ) {
+      return {
+        success: false,
+        code: "SESSION_NOT_ACCEPTING_ANSWERS",
+        error: "This examination is not currently accepting answers.",
+      };
+    }
+
+    // Authoritative server-side grading using fullQuiz (strictly matching data.questionId)
+    const resolvedQuiz = resolveSessionQuiz(session, store);
     const fullQuestion =
-      session.fullQuiz?.questions.find((q) => q.id === data.questionId) ||
-      READY_MADE_PACKS.flatMap((pack) => pack.questions).find((q) => q.id === data.questionId) ||
-      session.currentQuestion;
+      resolvedQuiz?.questions.find((q) => q.id === data.questionId) ||
+      (session.currentQuestion?.id === data.questionId ? session.currentQuestion : undefined);
 
     const selectedIds = data.selectedOptionIds || data.answer?.selectedOptionIds || [];
     const written = (data.writtenAnswer ?? data.answer?.writtenAnswer ?? "").trim();
@@ -3044,22 +3193,29 @@ export const serverSubmitAnswer = createServerFn({ method: "POST" })
       p.score = Math.max(0, p.score + graded.pointsAwarded);
       p.streak = graded.newStreak;
       p.lastActive = Date.now();
-    } else if (data.answer) {
+    } else if (data.answer && data.answer.questionId === data.questionId) {
       answerRecord = data.answer;
       p.answers[data.questionId] = answerRecord;
       p.score = Math.max(0, p.score + (data.scoreDelta ?? data.answer.pointsAwarded ?? 0));
       p.streak = data.answer.isCorrect ? p.streak + 1 : 0;
       p.lastActive = Date.now();
     } else {
-      return { success: false, error: "Unable to grade question" };
+      return {
+        success: false,
+        code: "QUESTION_NOT_FOUND",
+        error: "Unable to locate question for grading",
+      };
     }
 
     recalculateSessionMetrics(session);
+    scheduleLiveSessionsPersist();
 
+    const { seatToken: _s, ...safeParticipant } = p;
     return {
       success: true,
+      serverNow: Date.now(),
       answer: answerRecord,
-      participant: p,
+      participant: safeParticipant,
       session: buildPlayerSessionProjection(session, p.id),
     };
   });
@@ -3069,6 +3225,7 @@ export const serverReportProctorIncident = createServerFn({ method: "POST" })
     (data: {
       pin: string;
       participantId: string;
+      seatToken?: string | undefined;
       type: "tab_switch" | "window_blur" | "fullscreen_exit" | "copy_attempt" | "devtools_attempt";
     }) => data,
   )
@@ -3077,8 +3234,22 @@ export const serverReportProctorIncident = createServerFn({ method: "POST" })
     const session = sessions[data.pin];
     if (!session) return { success: false };
 
+    if (session.phase === "podium" || session.phase === "finished") {
+      return { success: false, ignored: true };
+    }
+
     const p = session.participants[data.participantId];
     if (!p) return { success: false };
+    if (p.seatToken && data.seatToken !== p.seatToken) {
+      return { success: false };
+    }
+    if (p.isSuspended) {
+      return {
+        success: true,
+        proctorFlags: p.proctorFlags || 0,
+        isSuspended: true,
+      };
+    }
 
     const maxViolations = session.settings.maxProctorViolations || 3;
     p.proctorFlags = (p.proctorFlags || 0) + 1;
@@ -3103,6 +3274,7 @@ export const serverReportProctorIncident = createServerFn({ method: "POST" })
     }
 
     session.updatedAt = Date.now();
+    scheduleLiveSessionsPersist();
     return {
       success: true,
       proctorFlags: p.proctorFlags,
@@ -3154,16 +3326,18 @@ export const serverHostControl = createServerFn({ method: "POST" })
 
     switch (data.action) {
       case "start_game": {
-        session.phase = "countdown";
-        session.countdownStartedAt = Date.now();
-        session.updatedAt = session.countdownStartedAt;
+        if (session.phase === "lobby") {
+          session.phase = "countdown";
+          session.countdownStartedAt = Date.now();
+          session.updatedAt = session.countdownStartedAt;
+        }
         break;
       }
       case "next_question": {
         if (
+          typeof data.questionIndex === "number" &&
           data.questionIndex === 0 &&
-          session.phase === "question" &&
-          session.currentQuestionIndex === 0
+          session.currentQuestionIndex >= 0
         ) {
           break;
         }
@@ -3181,9 +3355,12 @@ export const serverHostControl = createServerFn({ method: "POST" })
         break;
       }
       case "end_game": {
+        const alreadyEnded = session.phase === "podium" || session.phase === "finished";
         session.phase = "podium";
         recalculateSessionMetrics(session);
-        persistCompletedExamToStore(session);
+        if (!alreadyEnded) {
+          persistCompletedExamToStore(session);
+        }
         break;
       }
       case "kick_player": {
@@ -3260,6 +3437,7 @@ export const serverHostControl = createServerFn({ method: "POST" })
     scheduleLiveSessionsPersist();
     return {
       success: true,
+      serverNow: Date.now(),
       session: toHostSessionView(session),
     };
   });

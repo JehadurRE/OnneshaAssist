@@ -1060,11 +1060,12 @@ class OnneshaDatabase {
 
   // ---------------- EXAM SESSIONS & RESULTS REPOSITORY ----------------
   recordExamSession(session: GameSession, options?: { syncToServer?: boolean }): void {
+    if (session.isSelfPractice) return;
     const sessionId = `exam-${session.pin}`;
     const createdAt = new Date().toISOString();
     const participantsList = Object.values(session.participants)
       .filter((p) => !p.isBot)
-      .sort((a, b) => b.score - a.score);
+      .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.lastActive - b.lastActive));
     const count = participantsList.length;
     if (count === 0) return;
 
@@ -1133,6 +1134,7 @@ class OnneshaDatabase {
         });
         const passed = isPassingScore(accuracy, effectivePassThresholdPct);
         const roll = p.rollNumber || `2026-${100 + idx + 1}`;
+        const humanRank = idx + 1;
 
         const resultId = `res-${session.pin}-${p.id}`;
         run(
@@ -1143,12 +1145,12 @@ class OnneshaDatabase {
             session.pin,
             p.id,
             roll,
-            p.nickname || p.name || `Candidate ${idx + 1}`,
+            p.nickname || p.name || `Candidate ${humanRank}`,
             p.phone || "",
             p.regionId || "reg-dhaka",
             p.regionName || "Dhaka Range",
             p.score,
-            p.rank || idx + 1,
+            humanRank,
             correctCount,
             incorrectCount,
             unattemptedCount,
@@ -1160,17 +1162,17 @@ class OnneshaDatabase {
         );
 
         if (passed) {
-          const certNo = formatDeterministicCertNumber(session.pin, roll, idx + 1);
+          const certNo = formatDeterministicCertNumber(session.pin, roll, humanRank);
           this.issueCertificate(
             {
               certificateNumber: certNo,
-              studentName: p.nickname || p.name || `Candidate ${idx + 1}`,
+              studentName: p.nickname || p.name || `Candidate ${humanRank}`,
               studentRoll: roll,
               regionName: p.regionName || "Dhaka Range",
               quizTitle: session.quizTitleBn || session.quizTitleEn || "Institutional Assessment",
               score: p.score,
               totalPoints: computedTotalPoints,
-              rank: p.rank || idx + 1,
+              rank: humanRank,
               totalParticipants: count,
               accuracyPercent: accuracy,
               issueDate: createdAt.slice(0, 10),
@@ -1277,7 +1279,7 @@ class OnneshaDatabase {
       const pinPrefix = match[1];
       const rollSuffix = match[2];
       const results = this.getAllExamResults();
-      const matchedResult = results.find((r) => {
+      const matchingResults = results.filter((r) => {
         const cleanRoll = (r.rollNumber || "")
           .replace(/[^a-zA-Z0-9]/g, "")
           .toUpperCase()
@@ -1285,6 +1287,13 @@ class OnneshaDatabase {
           .padStart(4, "0");
         return r.pin.startsWith(pinPrefix) && cleanRoll === rollSuffix;
       });
+      matchingResults.sort((a, b) => {
+        const aPass = a.passed ? 1 : 0;
+        const bPass = b.passed ? 1 : 0;
+        if (bPass !== aPass) return bPass - aPass;
+        return b.createdAt.localeCompare(a.createdAt);
+      });
+      const matchedResult = matchingResults[0];
 
       if (matchedResult) {
         const matchedSession = this.getExamSessions().find(
@@ -1351,35 +1360,55 @@ class OnneshaDatabase {
     cert: Omit<CertificateData, "id">,
     options?: { syncToServer?: boolean; skipStorageRefresh?: boolean },
   ): CertificateData {
-    const id = `cert-${cert.certificateNumber.toLowerCase()}`;
+    const existingRow = sqliteEngine.queryOne<any>(
+      "SELECT * FROM certificates WHERE LOWER(certificateNumber) = LOWER(?)",
+      [cert.certificateNumber],
+    );
+    const existing: CertificateData | undefined = existingRow
+      ? { ...existingRow, verified: !!existingRow.verified }
+      : this.getStorage<CertificateData[]>("certificates", []).find(
+          (c) => c.certificateNumber.toLowerCase() === cert.certificateNumber.toLowerCase(),
+        );
+    const preserveProofs =
+      existing &&
+      existing.certificateNumber.toLowerCase() === cert.certificateNumber.toLowerCase() &&
+      existing.score === cert.score &&
+      (existing.studentRoll || "") === (cert.studentRoll || "");
+
+    const id = (preserveProofs && existing?.id) || `cert-${cert.certificateNumber.toLowerCase()}`;
     const newCert: CertificateData = {
+      ...(preserveProofs ? existing : {}),
       ...cert,
       id,
+      ...(preserveProofs
+        ? {
+            payloadHash: cert.payloadHash || existing?.payloadHash,
+            prevBlockHash: cert.prevBlockHash || existing?.prevBlockHash,
+            ledgerIndex: cert.ledgerIndex ?? existing?.ledgerIndex,
+            chainHash: cert.chainHash || existing?.chainHash,
+            cryptoSignature: cert.cryptoSignature || existing?.cryptoSignature,
+            signerKeyId: cert.signerKeyId || existing?.signerKeyId,
+            signedAt: cert.signedAt || existing?.signedAt,
+            rekorEntryUuid: cert.rekorEntryUuid || existing?.rekorEntryUuid,
+            rekorLogIndex: cert.rekorLogIndex ?? existing?.rekorLogIndex,
+            rekorIntegratedTime: cert.rekorIntegratedTime ?? existing?.rekorIntegratedTime,
+            rekorLogId: cert.rekorLogId || existing?.rekorLogId,
+            rekorStatus: cert.rekorStatus || existing?.rekorStatus,
+            rekorReceiptDigest: cert.rekorReceiptDigest || existing?.rekorReceiptDigest,
+            rekorPublicKeyId: cert.rekorPublicKeyId || existing?.rekorPublicKeyId,
+            rekorExplorerUrl: cert.rekorExplorerUrl || existing?.rekorExplorerUrl,
+            otsStatus: cert.otsStatus || existing?.otsStatus,
+            otsProofBase64: cert.otsProofBase64 || existing?.otsProofBase64,
+            otsChainHash: cert.otsChainHash || existing?.otsChainHash,
+            otsLedgerIndex: cert.otsLedgerIndex ?? existing?.otsLedgerIndex,
+            otsCalendarUrl: cert.otsCalendarUrl || existing?.otsCalendarUrl,
+            otsSubmittedAt: cert.otsSubmittedAt || existing?.otsSubmittedAt,
+            otsBitcoinBlockHeight: cert.otsBitcoinBlockHeight ?? existing?.otsBitcoinBlockHeight,
+          }
+        : {}),
     };
 
-    sqliteEngine.run(
-      "INSERT OR REPLACE INTO certificates (id, certificateNumber, studentName, studentRoll, regionName, quizTitle, score, totalPoints, rank, totalParticipants, accuracyPercent, issueDate, organizationName, institutionName, instructorName, verificationUrl, signatureUrl, verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [
-        id,
-        cert.certificateNumber,
-        cert.studentName,
-        cert.studentRoll || "",
-        cert.regionName || "Dhaka Range",
-        cert.quizTitle,
-        cert.score || cert.marksObtained || 0,
-        cert.totalPoints || cert.totalMarks || 100,
-        cert.rank,
-        cert.totalParticipants,
-        cert.accuracyPercent || cert.scorePct || 0,
-        cert.issueDate,
-        cert.organizationName || "Onnesha Assessment",
-        cert.institutionName || "Onnesha Assessment Arena",
-        cert.instructorName || "Chief Assessment Officer",
-        cert.verificationUrl || "",
-        cert.signatureUrl || "",
-        cert.verified ? 1 : 0,
-      ],
-    );
+    this.upsertSingleCertificateLocal(newCert);
 
     if (!options?.skipStorageRefresh) {
       const certs = this.getCertificates();

@@ -120,7 +120,7 @@ function PlayPage() {
   const maxViolations = session?.settings?.maxProctorViolations || 3;
   const currentViolations = participant?.proctorFlags ?? incidents.length;
 
-  // Load courses, quizzes, and active live rooms when in the Student Hub (!session)
+  // Load courses & quizzes initially
   useEffect(() => {
     setCourses(db.getCourses());
     setQuizzes(db.getQuizzes());
@@ -129,6 +129,15 @@ function PlayPage() {
       setCourses(db.getCourses());
       setQuizzes(db.getQuizzes());
     });
+
+    return () => {
+      unsubDb();
+    };
+  }, []);
+
+  // Only poll active open rooms while waiting in Student Hub (!session)
+  useEffect(() => {
+    if (session) return undefined;
 
     let active = true;
     const fetchRooms = () => {
@@ -146,9 +155,8 @@ function PlayPage() {
     return () => {
       active = false;
       clearInterval(roomTimer);
-      unsubDb();
     };
-  }, []);
+  }, [session === null]);
 
   // Latest room/seat identity for the long-lived engine subscription below.
   const activePinRef = useRef<string | null>(null);
@@ -305,10 +313,9 @@ function PlayPage() {
     session?.settings?.blockCopyPaste,
   ]);
 
-  // Timer countdown per question synchronized to server questionEndTime
+  // Sync already-submitted answer state even if it arrives right after phase transition
   useEffect(() => {
-    if (!session || session.phase !== "question" || !session.currentQuestion) return;
-
+    if (!session || !session.currentQuestion) return;
     const currentQId = session.currentQuestion.id;
     const alreadySubmitted = participant?.answers?.[currentQId];
     if (alreadySubmitted) {
@@ -318,34 +325,68 @@ function PlayPage() {
       setSelectedOptionIds([]);
       setHasAnswered(false);
     }
+  }, [
+    session?.currentQuestion?.id,
+    session?.phase,
+    participant?.id,
+    !!participant?.answers?.[session?.currentQuestion?.id || ""],
+  ]);
 
-    const computeRemaining = () => {
-      if (session.questionEndTime && session.questionEndTime > Date.now()) {
-        return Math.max(0, Math.ceil((session.questionEndTime - Date.now()) / 1000));
+  // Timer countdown per question synchronized to server questionEndTime via server clock offset
+  useEffect(() => {
+    if (!session || session.phase !== "question" || !session.currentQuestion) return;
+
+    const timeLimit = session.currentQuestion.timeLimitSec || 20;
+    const nowServer = gameEngine.getServerNow();
+    const deadlineMs =
+      session.questionEndTime && session.questionEndTime > 0
+        ? session.questionEndTime
+        : nowServer + timeLimit * 1000;
+
+    let selfChartTimer: ReturnType<typeof setTimeout> | null = null;
+    let expiredFired = false;
+
+    const updateRemaining = () => {
+      const remMs = deadlineMs - gameEngine.getServerNow();
+      const remSec = Math.max(0, Math.ceil(remMs / 1000));
+      setTimeRemainingSec(remSec);
+      if (remSec <= 0 && !expiredFired) {
+        expiredFired = true;
+        if (isSelfPractice || session.isSelfPractice) {
+          selfChartTimer = setTimeout(() => {
+            gameEngine.showChart(session.pin);
+          }, 300);
+        }
+        return true;
       }
-      return session.currentQuestion?.timeLimitSec || 20;
+      return false;
     };
 
-    setTimeRemainingSec(computeRemaining());
+    if (updateRemaining()) {
+      return () => {
+        if (selfChartTimer) clearTimeout(selfChartTimer);
+      };
+    }
 
     const interval = setInterval(() => {
-      setTimeRemainingSec((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          // In self-practice mode, automatically show the feedback screen when time runs out
-          if (isSelfPractice || session.isSelfPractice) {
-            setTimeout(() => {
-              gameEngine.showChart(session.pin);
-            }, 300);
-          }
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+      if (updateRemaining()) {
+        clearInterval(interval);
+      }
+    }, 250);
 
-    return () => clearInterval(interval);
-  }, [session?.currentQuestionIndex, session?.phase, isSelfPractice]);
+    return () => {
+      clearInterval(interval);
+      if (selfChartTimer) clearTimeout(selfChartTimer);
+    };
+  }, [
+    session?.pin,
+    session?.currentQuestionIndex,
+    session?.currentQuestion?.id,
+    session?.questionEndTime,
+    session?.phase,
+    isSelfPractice,
+    session?.isSelfPractice,
+  ]);
 
   const handleCheckPin = async (pinToCheck: string) => {
     setErrorMsg("");
@@ -543,15 +584,19 @@ function PlayPage() {
     return certQuiz?.questions || [];
   }, [session, certQuiz]);
 
-  // Deterministic certificate number matching Dashboard & Verification Portal
+  const isPracticeSession = !!(isSelfPractice || session?.isSelfPractice);
+
+  // Deterministic certificate number matching Dashboard & Verification Portal (official exams only)
   const certNumber =
-    participant && session
+    participant && session && !isPracticeSession
       ? formatDeterministicCertNumber(session.pin, participant.rollNumber, participant.rank)
       : "";
 
+  const sealedServerCert = certNumber ? db.getCertificateById(certNumber) : undefined;
+
   const certificateData: CertificateData | null =
-    participant && session && studentStats.isPassed
-      ? {
+    participant && session && studentStats.isPassed && !isPracticeSession
+      ? sealedServerCert || {
           id: `cert-${certNumber.toLowerCase()}`,
           certificateNumber: certNumber,
           studentName: participant.nickname,
@@ -579,13 +624,16 @@ function PlayPage() {
       : null;
 
   useEffect(() => {
-    if (session?.phase === "podium") {
+    if (session?.phase === "podium" || session?.phase === "finished") {
       gameEngine.stopPolling();
-      if (certificateData) {
-        db.issueCertificate(certificateData, { syncToServer: false });
+      if (!isPracticeSession) {
+        if (certificateData && !sealedServerCert) {
+          db.issueCertificate(certificateData, { syncToServer: false });
+        }
+        void db.syncFromServerStore();
       }
     }
-  }, [session?.phase, studentStats.isPassed]);
+  }, [session?.phase, studentStats.isPassed, isPracticeSession]);
 
   const questionTimeLimit = session?.currentQuestion?.timeLimitSec || 20;
   const timerProgressPct = Math.max(
@@ -1036,6 +1084,10 @@ function PlayPage() {
               requireRoll={session.settings.requireRollNumber}
               allowedRegionId={session.settings.allowedRegionId}
               allowedRegionName={session.settings.allowedRegionName}
+              requireRosterVerification={
+                !(isSelfPractice || session.isSelfPractice) &&
+                (session.settings.requireRosterVerification ?? true)
+              }
             />
           </div>
         )}
@@ -1260,6 +1312,15 @@ function PlayPage() {
               question={session.currentQuestion}
               hasAnswered={hasAnswered}
               selectedOptionIds={selectedOptionIds}
+              submittedWrittenAnswer={
+                participant.answers?.[session.currentQuestion.id]?.writtenAnswer
+              }
+              disabled={
+                hasAnswered ||
+                isExamSuspended ||
+                (!!session.settings?.enforceFullscreen && !isFullscreen && !fullscreenDismissed) ||
+                timeRemainingSec <= 0
+              }
               onSubmitAnswer={handleSubmitAnswer}
               timeRemainingSec={timeRemainingSec}
             />
@@ -1281,6 +1342,24 @@ function PlayPage() {
           </div>
         )}
 
+        {/* Fallback when question/chart/leaderboard phase arrives before question payload */}
+        {session &&
+          participant &&
+          (session.phase === "question" ||
+            session.phase === "chart" ||
+            session.phase === "leaderboard") &&
+          !session.currentQuestion && (
+            <div className="w-full max-w-md rounded-3xl border border-border bg-card p-6 sm:p-8 shadow-tactical text-center space-y-3">
+              <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              <p className="font-display text-base font-extrabold text-foreground">
+                {lang === "bn" ? "পরবর্তী প্রশ্ন সিঙ্ক হচ্ছে..." : "Synchronizing Examination Feed..."}
+              </p>
+              <p className="font-mono text-xs text-muted-foreground">
+                Current Rank #{participant.rank} · {participant.score} {t("pts")}
+              </p>
+            </div>
+          )}
+
         {/* STEP 6: Chart / Leaderboard Phase (Shows Student's Answer, Official Key & Rationale) */}
         {session &&
           participant &&
@@ -1298,7 +1377,7 @@ function PlayPage() {
           )}
 
         {/* STEP 7: Podium, Final Scorecard & Complete Answer Script Review */}
-        {session && participant && session.phase === "podium" && (
+        {session && participant && (session.phase === "podium" || session.phase === "finished") && (
           <div className="w-full max-w-3xl space-y-6 animate-in zoom-in-95">
             <Confetti active={participant.rank <= 3} />
 

@@ -7,6 +7,8 @@ interface PlayerKeypadProps {
   question: Question;
   hasAnswered: boolean;
   selectedOptionIds: string[];
+  submittedWrittenAnswer?: string | undefined;
+  disabled?: boolean | undefined;
   onSubmitAnswer: (selectedIds: string[], writtenAnswer?: string) => void;
   timeRemainingSec: number;
 }
@@ -55,23 +57,41 @@ export const PlayerKeypad: React.FC<PlayerKeypadProps> = ({
   question,
   hasAnswered,
   selectedOptionIds,
+  submittedWrittenAnswer,
+  disabled = false,
   onSubmitAnswer,
 }) => {
   const { lang, t } = useLanguage();
   const [multiSelected, setMultiSelected] = useState<string[]>(selectedOptionIds);
-  const [writtenText, setWrittenText] = useState('');
+  const [writtenText, setWrittenText] = useState(submittedWrittenAnswer || '');
 
   useEffect(() => {
     setMultiSelected(selectedOptionIds);
-    setWrittenText('');
-  }, [question.id]);
+    setWrittenText(submittedWrittenAnswer || '');
+  }, [question.id, submittedWrittenAnswer]);
 
   useEffect(() => {
-    if (hasAnswered || question.type === 'written' || question.type === 'fill_blank') return;
+    if (hasAnswered) {
+      setMultiSelected(selectedOptionIds);
+    }
+  }, [hasAnswered, selectedOptionIds]);
+
+  useEffect(() => {
+    if (disabled || hasAnswered || question.type === 'written' || question.type === 'fill_blank') return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (disabled) return;
       const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable ||
+          target.closest('[role="dialog"], [aria-modal="true"]'))
+      ) {
+        return;
+      }
+      if (document.querySelector('[role="dialog"], [aria-modal="true"]')) return;
       if (['1', '2', '3', '4'].includes(e.key)) {
         const index = parseInt(e.key, 10) - 1;
         if (question.options[index]) {
@@ -82,10 +102,10 @@ export const PlayerKeypad: React.FC<PlayerKeypadProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [hasAnswered, question, multiSelected]);
+  }, [disabled, hasAnswered, question, multiSelected]);
 
   const handleOptionClick = (optId: string) => {
-    if (hasAnswered) return;
+    if (disabled || hasAnswered) return;
 
     if (question.type === 'multi_mcq') {
       const next = multiSelected.includes(optId)
@@ -98,14 +118,14 @@ export const PlayerKeypad: React.FC<PlayerKeypadProps> = ({
   };
 
   const handleMultiSubmit = () => {
-    if (multiSelected.length > 0 && !hasAnswered) {
+    if (multiSelected.length > 0 && !disabled && !hasAnswered) {
       onSubmitAnswer(multiSelected);
     }
   };
 
   const handleWrittenSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (writtenText.trim() && !hasAnswered) {
+    if (writtenText.trim() && !disabled && !hasAnswered) {
       onSubmitAnswer([], writtenText.trim());
     }
   };
@@ -121,8 +141,8 @@ export const PlayerKeypad: React.FC<PlayerKeypadProps> = ({
           </label>
           <input
             type="text"
-            autoFocus
-            disabled={hasAnswered}
+            autoFocus={!disabled && !hasAnswered}
+            disabled={disabled || hasAnswered}
             value={writtenText}
             onChange={(e) => setWrittenText(e.target.value)}
             placeholder={lang === 'bn' ? 'এখানে উত্তর লিখুন (যেমন: ১৯৭১ বা 1971)...' : 'Type your exact answer here...'}
@@ -131,7 +151,7 @@ export const PlayerKeypad: React.FC<PlayerKeypadProps> = ({
           {!hasAnswered ? (
             <button
               type="submit"
-              disabled={!writtenText.trim() || hasAnswered}
+              disabled={!writtenText.trim() || disabled || hasAnswered}
               className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 text-sm font-extrabold text-primary-foreground shadow-md transition hover:bg-primary/90 disabled:opacity-40"
             >
               <Send className="h-4 w-4" />
@@ -162,7 +182,8 @@ export const PlayerKeypad: React.FC<PlayerKeypadProps> = ({
           return (
             <button
               key={opt.id}
-              disabled={hasAnswered}
+              type="button"
+              disabled={disabled || hasAnswered}
               onClick={() => handleOptionClick(opt.id)}
               className={`flex h-32 sm:h-40 flex-col items-center justify-center gap-2 rounded-2xl border-2 p-4 transition-all duration-200 active:scale-95 disabled:opacity-50 ${
                 isTrue
@@ -214,12 +235,12 @@ export const PlayerKeypad: React.FC<PlayerKeypadProps> = ({
             <button
               key={opt.id}
               type="button"
-              disabled={hasAnswered}
+              disabled={disabled || hasAnswered}
               onClick={() => handleOptionClick(opt.id)}
               className={`group relative flex min-h-[64px] sm:min-h-[88px] items-center gap-3.5 rounded-2xl border-2 px-4 py-3 sm:p-5 text-left transition-all duration-150 active:scale-[0.98] disabled:cursor-not-allowed ${
                 style.bg
               } ${isSelected ? style.selectedBg + ' ' + style.glow : style.border} ${
-                hasAnswered ? 'opacity-70' : 'hover:-translate-y-0.5'
+                disabled || hasAnswered ? 'opacity-70' : 'hover:-translate-y-0.5'
               }`}
             >
               <div
@@ -248,8 +269,9 @@ export const PlayerKeypad: React.FC<PlayerKeypadProps> = ({
 
       {question.type === 'multi_mcq' && !hasAnswered && (
         <button
+          type="button"
           onClick={handleMultiSubmit}
-          disabled={multiSelected.length === 0}
+          disabled={disabled || hasAnswered || multiSelected.length === 0}
           className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 text-sm font-extrabold text-primary-foreground shadow-md transition hover:bg-primary/90 disabled:opacity-40"
         >
           <CheckCircle2 className="h-4 w-4" />

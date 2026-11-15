@@ -68,7 +68,7 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
               {t('question')} {session.currentQuestionIndex + 1}: Psychometric Response Matrix
             </div>
             <div className="text-[11px] font-mono text-muted-foreground">
-              Item Facility ($P$-Value): <span className="font-bold text-primary">{itemDifficultyPValue}</span> · {totalPlayers} Examinees
+              Item Facility (P-Value): <span className="font-bold text-primary">{itemDifficultyPValue}</span> · {totalPlayers} Examinees
             </div>
           </div>
         </div>

@@ -29,7 +29,7 @@ export const HostLeaderboard: React.FC<HostLeaderboardProps> = ({
   }, []);
 
   const allSorted = useMemo(
-    () => Object.values(session.participants).sort((a, b) => b.score - a.score),
+    () => Object.values(session.participants).sort((a, b) => (b.score !== a.score ? b.score - a.score : a.lastActive - b.lastActive)),
     [session.participants]
   );
 

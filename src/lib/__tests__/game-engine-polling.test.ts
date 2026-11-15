@@ -5,15 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // the polling loop survives across exams, slow networks and client clock skew.
 
 const serverGetSession = vi.fn();
+const serverHostControl = vi.fn(async (..._args: any[]): Promise<any> => ({ success: false }));
+const serverSubmitAnswer = vi.fn();
 const serverSyncSession = vi.fn(async () => ({ success: true }));
 
 vi.mock("../server-session", () => ({
   serverCreateSession: vi.fn(),
   serverGetSession: (...args: unknown[]) => serverGetSession(...args),
-  serverHostControl: vi.fn(async () => ({ success: false })),
+  serverHostControl: (...args: unknown[]) => serverHostControl(...(args as [])),
   serverJoinSession: vi.fn(),
   serverReportProctorIncident: vi.fn(),
-  serverSubmitAnswer: vi.fn(),
+  serverSubmitAnswer: (...args: unknown[]) => serverSubmitAnswer(...(args as [])),
   serverSyncSession: (...args: unknown[]) => serverSyncSession(...(args as [])),
 }));
 
@@ -182,5 +184,125 @@ describe("player delta polling resilience", () => {
     engine.stopPolling();
     expect(engine.isPolling()).toBe(false);
     await flush();
+  });
+});
+
+describe("live engine timing, offline recovery & token security", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    serverGetSession.mockReset();
+    serverHostControl.mockReset();
+    serverHostControl.mockResolvedValue({ success: false });
+    serverSubmitAnswer.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("passes hostToken for host session fetches and polling ticks", async () => {
+    const engine = await loadEngine();
+    engine.saveStoredHostToken("888888", "host-secret-888");
+    serverGetSession.mockResolvedValueOnce({
+      success: true,
+      serverNow: Date.now() + 12_000,
+      session: makeSession("888888", 2_000, "lobby"),
+    });
+
+    await engine.resumeHostSessionAsync("888888");
+    expect(serverGetSession.mock.calls[0]?.[0]?.data?.hostToken).toBe("host-secret-888");
+
+    // Server clock offset is synchronized from serverNow
+    expect(engine.getServerNow() - Date.now()).toBeGreaterThanOrEqual(11_000);
+
+    serverGetSession.mockResolvedValueOnce({
+      success: true,
+      unchanged: true,
+      serverNow: Date.now() + 12_000,
+      session: null,
+    });
+    await vi.advanceTimersByTimeAsync(900);
+    expect(serverGetSession.mock.calls.at(-1)?.[0]?.data?.hostToken).toBe("host-secret-888");
+    engine.stopPolling();
+  });
+
+  it("cancels pending startGame 3s countdown timer when host advances or stops early", async () => {
+    const engine = await loadEngine();
+    localStorage.setItem(
+      "onnesha_session_909090",
+      JSON.stringify(makeSession("909090", 1_000, "lobby")),
+    );
+    serverHostControl.mockResolvedValue({
+      success: true,
+      session: makeSession("909090", 2_000, "countdown"),
+    });
+
+    engine.startGame("909090");
+    await flush();
+    expect(serverHostControl).toHaveBeenCalledWith({
+      data: expect.objectContaining({ pin: "909090", action: "start_game" }),
+    });
+
+    serverHostControl.mockClear();
+    serverHostControl.mockResolvedValue({
+      success: true,
+      session: makeSession("909090", 3_000, "podium"),
+    });
+
+    engine.endGame("909090");
+    await flush();
+
+    await vi.advanceTimersByTimeAsync(3_500);
+    // Delayed startGame next_question(0) must NOT fire after endGame/stopPolling
+    expect(serverHostControl).toHaveBeenCalledTimes(1);
+    expect(serverHostControl.mock.calls[0]?.[0]?.data?.action).toBe("end_game");
+  });
+
+  it("queues transient { success: false } answer failures and drops permanent rejections", async () => {
+    const engine = await loadEngine();
+
+    // Transient server error without permanent rejection code must remain queued for retry
+    serverSubmitAnswer.mockResolvedValueOnce({ success: false, error: "Temporary busy" });
+    engine.submitAnswer("123456", "p1", "q1", ["o1"]);
+    await flush();
+    expect(JSON.parse(localStorage.getItem("onnesha_offline_outbox") || "[]")).toHaveLength(1);
+
+    // Next flush succeeds and clears queue
+    serverSubmitAnswer.mockResolvedValueOnce({
+      success: true,
+      session: makeSession("123456", 5_000, "question"),
+    });
+    await engine.flushOfflineOutbox();
+    expect(JSON.parse(localStorage.getItem("onnesha_offline_outbox") || "[]")).toHaveLength(0);
+
+    // Permanent rejection (e.g., SUSPENDED) must NOT remain stuck in infinite retry loop
+    serverSubmitAnswer.mockResolvedValueOnce({
+      success: false,
+      code: "SUSPENDED",
+      error: "Exam suspended",
+    });
+    engine.submitAnswer("123456", "p1", "q2", ["o2"]);
+    await flush();
+    expect(JSON.parse(localStorage.getItem("onnesha_offline_outbox") || "[]")).toHaveLength(0);
+  });
+
+  it("closeRoomAsync removes onnesha_session_<pin> and stops polling", async () => {
+    const engine = await loadEngine();
+    localStorage.setItem(
+      "onnesha_session_654321",
+      JSON.stringify(makeSession("654321", 1_000, "lobby")),
+    );
+    serverGetSession.mockResolvedValueOnce({
+      success: true,
+      session: makeSession("654321", 1_000, "lobby"),
+    });
+    await engine.getSessionAsync("654321", "host");
+    expect(engine.isPolling("654321")).toBe(true);
+
+    serverHostControl.mockResolvedValueOnce({ success: true, closed: true, session: null });
+    const ok = await engine.closeRoomAsync("654321");
+    expect(ok).toBe(true);
+    expect(engine.isPolling("654321")).toBe(false);
+    expect(localStorage.getItem("onnesha_session_654321")).toBeNull();
   });
 });
