@@ -1,24 +1,48 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { GameSession } from '@/lib/types';
 import { useLanguage } from '@/lib/i18n';
 import { db } from '@/lib/db';
-import { ChevronRight, Flame, MapPin, Trophy } from 'lucide-react';
+import { compareParticipantsByMerit, computeParticipantTotalTimeSec } from '@/lib/scoring';
+import { ChevronRight, Clock, Flame, MapPin, Pause, Play, Trophy } from 'lucide-react';
 import { audioEngine } from '@/lib/audio-engine';
 
 interface HostLeaderboardProps {
   session: GameSession;
   onNextQuestion: () => void;
   isLastQuestion: boolean;
+  autoAdvanceSec?: number | undefined;
 }
 
 export const HostLeaderboard: React.FC<HostLeaderboardProps> = ({
   session,
   onNextQuestion,
   isLastQuestion,
+  autoAdvanceSec,
 }) => {
   const { lang, t } = useLanguage();
   const [selectedRegionId, setSelectedRegionId] = useState<string>('all');
+  const [autoPaused, setAutoPaused] = useState(false);
+  const [autoLeft, setAutoLeft] = useState<number>(
+    autoAdvanceSec && autoAdvanceSec > 0 ? autoAdvanceSec : 0,
+  );
+  const onNextRef = useRef(onNextQuestion);
+  onNextRef.current = onNextQuestion;
   const regions = db.getRegions();
+
+  useEffect(() => {
+    setAutoPaused(false);
+    setAutoLeft(autoAdvanceSec && autoAdvanceSec > 0 ? autoAdvanceSec : 0);
+  }, [session.currentQuestionIndex, autoAdvanceSec]);
+
+  useEffect(() => {
+    if (!autoAdvanceSec || autoAdvanceSec <= 0 || autoPaused) return;
+    if (autoLeft <= 0) {
+      onNextRef.current();
+      return;
+    }
+    const timer = setTimeout(() => setAutoLeft((prev) => prev - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [autoAdvanceSec, autoPaused, autoLeft]);
 
   useEffect(() => {
     audioEngine.playDrumroll();
@@ -29,7 +53,7 @@ export const HostLeaderboard: React.FC<HostLeaderboardProps> = ({
   }, []);
 
   const allSorted = useMemo(
-    () => Object.values(session.participants).sort((a, b) => (b.score !== a.score ? b.score - a.score : a.lastActive - b.lastActive)),
+    () => Object.values(session.participants).sort(compareParticipantsByMerit),
     [session.participants]
   );
 
@@ -72,13 +96,30 @@ export const HostLeaderboard: React.FC<HostLeaderboardProps> = ({
           </div>
         </div>
 
-        <button
-          onClick={onNextQuestion}
-          className="flex items-center gap-2 rounded-2xl bg-primary px-6 py-2.5 text-xs font-bold text-primary-foreground shadow-md transition-all hover:bg-primary/90"
-        >
-          <span>{isLastQuestion ? t('end_game') : t('next_question')}</span>
-          <ChevronRight className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          {autoAdvanceSec && autoAdvanceSec > 0 && (
+            <button
+              type="button"
+              onClick={() => setAutoPaused((p) => !p)}
+              className="flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-mono font-bold text-foreground hover:bg-accent"
+              title={autoPaused ? 'Resume auto-advance' : 'Pause auto-advance'}
+            >
+              {autoPaused ? (
+                <Play className="h-3.5 w-3.5 text-emerald-500" />
+              ) : (
+                <Pause className="h-3.5 w-3.5 text-amber-500" />
+              )}
+              <span>{autoPaused ? 'Paused' : `Next in ${autoLeft}s`}</span>
+            </button>
+          )}
+          <button
+            onClick={onNextQuestion}
+            className="flex items-center gap-2 rounded-2xl bg-primary px-6 py-2.5 text-xs font-bold text-primary-foreground shadow-md transition-all hover:bg-primary/90"
+          >
+            <span>{isLastQuestion ? t('end_game') : t('next_question')}</span>
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {/* Main Leaderboard Cards */}
@@ -92,6 +133,7 @@ export const HostLeaderboard: React.FC<HostLeaderboardProps> = ({
             const rank = idx + 1;
             const isTop1 = rank === 1;
             const isTop3 = rank <= 3;
+            const totalTimeSec = computeParticipantTotalTimeSec(player);
 
             return (
               <div
@@ -145,6 +187,15 @@ export const HostLeaderboard: React.FC<HostLeaderboardProps> = ({
                     {player.regionName && (
                       <span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
                         {player.regionName}
+                      </span>
+                    )}
+                    {totalTimeSec > 0 && (
+                      <span
+                        className="inline-flex items-center gap-1 rounded bg-muted px-2 py-0.5 text-[10px] font-bold text-foreground"
+                        title="Cumulative response time across answered questions"
+                      >
+                        <Clock className="h-2.5 w-2.5 text-primary" />
+                        <span>{totalTimeSec.toFixed(1)}s</span>
                       </span>
                     )}
                   </div>

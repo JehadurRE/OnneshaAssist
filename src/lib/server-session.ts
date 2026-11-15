@@ -19,6 +19,7 @@ import {
   RosterStudent,
 } from "./types";
 import { DEFAULT_BRANDING_SETTINGS, mergeBrandingSettings } from "./branding";
+import { purgeUnderThresholdExamsInStore, type PurgeExamSummary } from "./exam-purge";
 import {
   DEFAULT_COURSES,
   DEFAULT_REGIONS,
@@ -47,12 +48,17 @@ import {
   verifySessionToken,
 } from "./server-security";
 import {
+  compareParticipantsByMerit,
   computeParticipantAccuracyPct,
+  computeParticipantTotalTimeSec,
   computeTotalQuizMarks,
   evaluateQuestionAnswer,
   isPassingScore,
+  mergeSessionSettingsPatch,
   resolveOrgName,
   resolvePassThresholdPct,
+  resolveQuestionTimeLimitSec,
+  resolveStartCountdownSec,
 } from "./scoring";
 import {
   anchorCertificateToRekor,
@@ -121,6 +127,7 @@ interface PersistentStoreData {
   revokedCertificates?: string[] | undefined;
   revokedCertificateArchive?: Record<string, CertificateData> | undefined;
   purgedSampleData?: boolean | undefined;
+  purgedUnder50Initial?: boolean | undefined;
   ledgerCheckpoints: LedgerOtsCheckpoint[];
   transactions: ServerTransactionRecord[];
   smsLogs: ServerSmsLogRecord[];
@@ -451,6 +458,7 @@ function loadInitialStore(): PersistentStoreData {
             revokedCertificates: parsed.revokedCertificates || [],
             revokedCertificateArchive: parsed.revokedCertificateArchive || {},
             purgedSampleData: purged,
+            purgedUnder50Initial: !!parsed.purgedUnder50Initial,
             ledgerCheckpoints: parsed.ledgerCheckpoints || [],
             transactions: parsed.transactions || [],
             smsLogs: parsed.smsLogs || [],
@@ -483,6 +491,7 @@ function loadInitialStore(): PersistentStoreData {
     revokedCertificates: [],
     revokedCertificateArchive: {},
     purgedSampleData: false,
+    purgedUnder50Initial: true,
     ledgerCheckpoints: [],
     transactions: [],
     smsLogs: [],
@@ -494,7 +503,20 @@ function loadInitialStore(): PersistentStoreData {
 
 function getStore(): PersistentStoreData {
   if (!globalStore.__onneshaStore) {
-    globalStore.__onneshaStore = loadInitialStore();
+    const loaded = loadInitialStore();
+    globalStore.__onneshaStore = loaded;
+    if (!loaded.purgedUnder50Initial) {
+      const liveSessions = getLiveSessions();
+      const summary = purgeUnderThresholdExamsInStore(loaded, 50, liveSessions);
+      loaded.purgedUnder50Initial = true;
+      scheduleDiskPersist();
+      if (summary.removedLiveSessions > 0) {
+        scheduleLiveSessionsPersist();
+      }
+      console.info(
+        `[OnneshaServerStore] Initial <50 examinee purge completed: sessions=${summary.removedSessions}, results=${summary.removedResults}, certs=${summary.removedCertificates}, revoked=${summary.removedRevokedCerts}, sms=${summary.removedSmsLogs}, live=${summary.removedLiveSessions}, keptSessions=${summary.keptSessions}`,
+      );
+    }
   }
   return globalStore.__onneshaStore;
 }
@@ -517,6 +539,9 @@ function getLiveSessions(): Record<string, ServerLiveSession> {
       }
     } catch {
       // ignore corrupted live session snapshot
+    }
+    if (!globalStore.__onneshaStore) {
+      void getStore();
     }
   }
   return globalStore.__onneshaLiveSessions;
@@ -900,11 +925,10 @@ function makeCertificateNumber(pin: string, rollNumber?: string, fallbackIdx = 1
 
 function recalculateSessionMetrics(session: ServerLiveSession) {
   const all = Object.values(session.participants);
-  const sortParticipants = (arr: Participant[]) =>
-    arr.sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return a.lastActive - b.lastActive;
-    });
+  all.forEach((p) => {
+    p.totalResponseTimeSec = computeParticipantTotalTimeSec(p);
+  });
+  const sortParticipants = (arr: Participant[]) => arr.sort(compareParticipantsByMerit);
 
   const isEnded = session.phase === "podium" || session.phase === "finished";
   const humans = all.filter((p) => !p.isBot);
@@ -987,6 +1011,9 @@ function buildPlayerSessionProjection(
       sanitizeQuestionForPlayer(session.currentQuestion, session.phase),
     questionStartTime: session.questionStartTime,
     questionEndTime: session.questionEndTime,
+    ...(typeof session.countdownStartedAt === "number"
+      ? { countdownStartedAt: session.countdownStartedAt }
+      : {}),
     ...(typeof session.pausedAt === "number" ? { pausedAt: session.pausedAt } : {}),
     settings: session.settings,
     participants: compactParticipants,
@@ -1124,7 +1151,7 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
   const createdAt = new Date().toISOString();
   const participantsList = Object.values(session.participants)
     .filter((p) => !p.isBot)
-    .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.lastActive - b.lastActive));
+    .sort(compareParticipantsByMerit);
   const count = participantsList.length;
   if (count === 0) return;
   const totalScore = participantsList.reduce((acc, p) => acc + p.score, 0);
@@ -1322,59 +1349,65 @@ function advanceSessionToQuestion(
     return;
   }
 
+  const effectiveLimit = resolveQuestionTimeLimitSec(question, session.settings);
+  const effectiveQuestion: Question = {
+    ...question,
+    timeLimitSec: effectiveLimit,
+  };
+  const now = Date.now();
   session.phase = "question";
   session.currentQuestionIndex = idx;
-  session.currentQuestion = question;
-  session.questionStartTime = Date.now();
-  session.questionEndTime = Date.now() + question.timeLimitSec * 1000;
+  session.currentQuestion = effectiveQuestion;
+  session.pausedAt = undefined;
+  session.questionStartTime = now;
+  session.questionEndTime = now + effectiveLimit * 1000;
   recalculateSessionMetrics(session);
 
   // Simulate bot answers if any bots exist in the session
   Object.values(session.participants).forEach((p) => {
     if (!p.isBot) return;
     const isBotCorrect = Math.random() > 0.3;
-    const isWrittenStyle = question.type === "written" || question.type === "fill_blank";
+    const isWrittenStyle =
+      effectiveQuestion.type === "written" || effectiveQuestion.type === "fill_blank";
     const chosen = isWrittenStyle
       ? []
       : isBotCorrect
-        ? [...question.correctOptionIds]
+        ? [...effectiveQuestion.correctOptionIds]
         : [
-            question.options.find((o) => !question.correctOptionIds.includes(o.id))?.id ||
-              question.options[0]?.id ||
+            effectiveQuestion.options.find(
+              (o) => !effectiveQuestion.correctOptionIds.includes(o.id),
+            )?.id ||
+              effectiveQuestion.options[0]?.id ||
               "opt-none",
           ].filter(Boolean);
     const botWritten = isWrittenStyle
       ? isBotCorrect
-        ? question.acceptedAnswers?.[0] || "1971"
+        ? effectiveQuestion.acceptedAnswers?.[0] || "1971"
         : "0000"
       : undefined;
-    const timeLimit = question.timeLimitSec || 20;
-    const timeTakenSec = Math.round(2 + Math.random() * Math.max(3, timeLimit * 0.6));
-    let pointsAwarded = 0;
-    let newStreak = p.streak;
-    if (isBotCorrect) {
-      newStreak += 1;
-      const mult = newStreak >= 3 ? 1.5 : newStreak >= 2 ? 1.2 : 1.0;
-      const speed = Math.max(0.5, 1 - (timeTakenSec / timeLimit) * 0.5);
-      pointsAwarded = Math.round((question.points || 1000) * speed * mult);
-    } else {
-      newStreak = 0;
-      if (session.settings.negativeMarking > 0) {
-        pointsAwarded = -Math.round((question.points || 1000) * session.settings.negativeMarking);
-      }
-    }
-    p.answers[question.id] = {
-      questionId: question.id,
+    const rawTimeTaken = 1.5 + Math.random() * Math.max(2, effectiveLimit * 0.65);
+    const timeTakenSec = Math.round(Math.min(effectiveLimit, rawTimeTaken) * 100) / 100;
+    const graded = evaluateQuestionAnswer({
+      question: effectiveQuestion,
+      selectedOptionIds: chosen,
+      writtenAnswer: botWritten || "",
+      currentStreak: p.streak,
+      timeTakenSec,
+      speedBonus: session.settings.speedBonus ?? true,
+      negativeMarking: session.settings.negativeMarking || 0,
+    });
+    p.answers[effectiveQuestion.id] = {
+      questionId: effectiveQuestion.id,
       selectedOptionIds: chosen,
       writtenAnswer: botWritten,
-      isCorrect: isBotCorrect,
+      isCorrect: graded.isCorrect,
       timeTakenSec,
-      pointsAwarded,
-      streakCount: newStreak,
-      answeredAt: Date.now(),
+      pointsAwarded: graded.pointsAwarded,
+      streakCount: graded.newStreak,
+      answeredAt: now,
     };
-    p.score = Math.max(0, p.score + pointsAwarded);
-    p.streak = newStreak;
+    p.score = Math.max(0, p.score + graded.pointsAwarded);
+    p.streak = graded.newStreak;
   });
   recalculateSessionMetrics(session);
 }
@@ -2508,7 +2541,9 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
         | "update_sales_lead"
         | "update_transaction"
         | "import_store_backup"
-        | "purge_dummy_data";
+        | "purge_dummy_data"
+        | "purge_under_50_sessions";
+      minExaminees?: number | undefined;
       region?: Region | undefined;
       regionId?: string | undefined;
       student?: RosterStudent | undefined;
@@ -2534,6 +2569,7 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
     const store = getStore();
     const actor = await getActorFromRequest();
     let issuedCertificate: CertificateData | undefined;
+    let purgeSummary: PurgeExamSummary | undefined;
 
     const targetCustomQuiz =
       data.action === "delete_quiz" && data.quizId
@@ -2959,6 +2995,25 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
         scheduleDiskPersist();
         break;
       }
+      case "purge_under_50_sessions": {
+        const threshold =
+          typeof data.minExaminees === "number" &&
+          Number.isFinite(data.minExaminees) &&
+          data.minExaminees >= 1
+            ? Math.floor(data.minExaminees)
+            : 50;
+        const liveSessions = getLiveSessions();
+        purgeSummary = purgeUnderThresholdExamsInStore(store, threshold, liveSessions);
+        store.purgedUnder50Initial = true;
+        scheduleDiskPersist();
+        if (purgeSummary.removedLiveSessions > 0) {
+          scheduleLiveSessionsPersist();
+        }
+        console.info(
+          `[OnneshaServerStore] Admin <${threshold} examinee purge: sessions=${purgeSummary.removedSessions}, results=${purgeSummary.removedResults}, certs=${purgeSummary.removedCertificates}, revoked=${purgeSummary.removedRevokedCerts}, sms=${purgeSummary.removedSmsLogs}, live=${purgeSummary.removedLiveSessions}, kept=${purgeSummary.keptSessions}`,
+        );
+        break;
+      }
     }
 
     return {
@@ -2972,6 +3027,7 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
       salesLeads: actor?.role === "admin" ? store.salesLeads : [],
       transactions: actor?.role === "admin" ? store.transactions : [],
       ...(issuedCertificate ? { certificate: issuedCertificate } : {}),
+      ...(purgeSummary ? { purgeSummary } : {}),
     };
   });
 
@@ -3327,6 +3383,8 @@ export const serverCreateSession = createServerFn({ method: "POST" })
       questionEndTime: 0,
       settings: {
         speedBonus: true,
+        betweenQuestionSec: 0,
+        startCountdownSec: 3,
         negativeMarking: data.negativeMarking ?? (isFormal ? 0.25 : 0),
         shuffleQuestions: false,
         shuffleOptions: false,
@@ -3405,7 +3463,8 @@ export const serverGetSession = createServerFn({ method: "GET" })
     // Server-authoritative countdown auto-advance so disconnecting host never strands rooms
     if (session.phase === "countdown") {
       const started = session.countdownStartedAt || session.updatedAt;
-      if (Date.now() - started >= 2800) {
+      const countdownMs = resolveStartCountdownSec(session.settings.startCountdownSec) * 1000;
+      if (Date.now() - started >= Math.max(0, countdownMs - 200)) {
         advanceSessionToQuestion(session, store, 0);
         scheduleLiveSessionsPersist();
       }
@@ -3816,10 +3875,12 @@ export const serverSubmitAnswer = createServerFn({ method: "POST" })
       };
     }
 
+    const effectiveLimit = resolveQuestionTimeLimitSec(fullQuestion, session.settings);
+    const gradedQuestion: Question = { ...fullQuestion, timeLimitSec: effectiveLimit };
     const selectedIds = data.selectedOptionIds || data.answer?.selectedOptionIds || [];
     const written = (data.writtenAnswer ?? data.answer?.writtenAnswer ?? "").trim();
 
-    // Support offline-queued answers with fair timestamp clamping
+    // Support offline-queued answers with fair timestamp clamping & sub-second speed precision
     const effectiveTimestamp = data.clientAnsweredAt
       ? Math.max(
           session.questionStartTime || Date.now(),
@@ -3828,15 +3889,16 @@ export const serverSubmitAnswer = createServerFn({ method: "POST" })
       : Date.now();
     const elapsedSec =
       (effectiveTimestamp - (session.questionStartTime || effectiveTimestamp)) / 1000;
-    const timeTakenSec = Math.max(1, Math.min(fullQuestion.timeLimitSec || 20, elapsedSec));
+    const clampedElapsed = Math.max(0.1, Math.min(effectiveLimit, elapsedSec));
+    const timeTakenSec = Math.round(clampedElapsed * 100) / 100;
 
     const graded = evaluateQuestionAnswer({
-      question: fullQuestion,
+      question: gradedQuestion,
       selectedOptionIds: selectedIds,
       writtenAnswer: written,
       currentStreak: p.streak,
       timeTakenSec,
-      speedBonus: !!session.settings.speedBonus,
+      speedBonus: session.settings.speedBonus ?? true,
       negativeMarking: session.settings.negativeMarking || 0,
     });
 
@@ -3978,10 +4040,16 @@ export const serverHostControl = createServerFn({ method: "POST" })
     switch (data.action) {
       case "start_game": {
         if (session.phase === "lobby") {
-          session.phase = "countdown";
-          session.countdownStartedAt = Date.now();
+          const countdownSec = resolveStartCountdownSec(session.settings.startCountdownSec);
+          const now = Date.now();
           session.pausedAt = undefined;
-          session.updatedAt = session.countdownStartedAt;
+          if (countdownSec === 0) {
+            advanceSessionToQuestion(session, store, 0);
+          } else {
+            session.phase = "countdown";
+            session.countdownStartedAt = now;
+            session.updatedAt = now;
+          }
         }
         break;
       }
@@ -4045,29 +4113,7 @@ export const serverHostControl = createServerFn({ method: "POST" })
       }
       case "update_settings": {
         if (data.settings) {
-          const sanitizedSettings: Partial<GameSettings> = { ...data.settings };
-          if (typeof sanitizedSettings.passThresholdPct === "number" && Number.isFinite(sanitizedSettings.passThresholdPct)) {
-            sanitizedSettings.passThresholdPct = Math.max(
-              0,
-              Math.min(100, Math.round(sanitizedSettings.passThresholdPct)),
-            );
-          }
-          if (typeof sanitizedSettings.negativeMarking === "number" && Number.isFinite(sanitizedSettings.negativeMarking)) {
-            sanitizedSettings.negativeMarking = Math.max(
-              0,
-              Math.min(1000, Math.round(sanitizedSettings.negativeMarking)),
-            );
-          }
-          if (
-            typeof sanitizedSettings.maxProctorViolations === "number" &&
-            Number.isFinite(sanitizedSettings.maxProctorViolations)
-          ) {
-            sanitizedSettings.maxProctorViolations = Math.max(
-              1,
-              Math.min(20, Math.round(sanitizedSettings.maxProctorViolations)),
-            );
-          }
-          session.settings = { ...session.settings, ...sanitizedSettings };
+          session.settings = mergeSessionSettingsPatch(session.settings, data.settings);
           session.updatedAt = Date.now();
         }
         break;

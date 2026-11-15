@@ -215,6 +215,7 @@ const ADMIN_ONLY_MUTATIONS = new Set<string>([
   "update_branding",
   "import_store_backup",
   "purge_dummy_data",
+  "purge_under_50_sessions",
   "update_sales_lead",
   "update_transaction",
 ]);

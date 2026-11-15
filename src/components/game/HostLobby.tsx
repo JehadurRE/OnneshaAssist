@@ -4,6 +4,8 @@ import { useLanguage } from "@/lib/i18n";
 import { db } from "@/lib/db";
 import {
   Bot,
+  Clock,
+  FastForward,
   LockOpen,
   MapPin,
   Maximize2,
@@ -11,10 +13,12 @@ import {
   QrCode,
   ShieldAlert,
   ShieldCheck,
+  Timer,
   Users,
   Volume2,
   VolumeX,
   X,
+  Zap,
 } from "lucide-react";
 import { audioEngine } from "@/lib/audio-engine";
 import { clampPassThresholdPct, resolvePassThresholdPct } from "@/lib/scoring";
@@ -283,6 +287,116 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
           </div>
         </div>
 
+        {/* Speed Marking & Per-Question / Inter-Question Time Controls */}
+        {onUpdateSettings && (
+          <div className="mt-4 flex flex-wrap items-center justify-center sm:justify-between gap-2.5 rounded-2xl border border-border/70 bg-background/70 px-3.5 py-2.5 text-xs">
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateSettings({ speedBonus: !(session.settings.speedBonus ?? true) })
+                }
+                className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition ${
+                  (session.settings.speedBonus ?? true)
+                    ? "border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                    : "border-border bg-background text-muted-foreground hover:bg-accent"
+                }`}
+                title="When ON, faster accurate responses earn up to 100% marks (down to 50% at timer end) and speed breaks all rank ties"
+              >
+                <Zap className="h-3.5 w-3.5" />
+                <span>
+                  {lang === "bn" ? "দ্রুততা মার্কিং:" : "Speed Marks:"}{" "}
+                  {(session.settings.speedBonus ?? true) ? "ON" : "OFF"}
+                </span>
+              </button>
+
+              <div
+                className="flex items-center gap-1.5 rounded-xl border border-border bg-background px-2.5 py-1.5"
+                title="Override answer time limit for every question in this live quiz"
+              >
+                <Clock className="h-3.5 w-3.5 text-primary" />
+                <span className="font-bold text-muted-foreground">
+                  {lang === "bn" ? "প্রতি প্রশ্ন:" : "Time / Q:"}
+                </span>
+                <select
+                  aria-label="Time per question"
+                  value={String(session.settings.timePerQuestion || 0)}
+                  onChange={(e) =>
+                    onUpdateSettings({ timePerQuestion: Number(e.target.value) || 0 })
+                  }
+                  className="bg-transparent font-mono font-bold text-foreground outline-none cursor-pointer"
+                >
+                  <option value="0">{lang === "bn" ? "ডিফল্ট (প্রশ্নভিত্তিক)" : "Quiz Default"}</option>
+                  <option value="10">10s</option>
+                  <option value="15">15s</option>
+                  <option value="20">20s</option>
+                  <option value="30">30s</option>
+                  <option value="45">45s</option>
+                  <option value="60">60s</option>
+                  <option value="90">90s</option>
+                  <option value="120">120s</option>
+                  <option value="180">180s</option>
+                </select>
+              </div>
+
+              <div
+                className="flex items-center gap-1.5 rounded-xl border border-border bg-background px-2.5 py-1.5"
+                title="Wait duration between questions before auto-advancing to the next question"
+              >
+                <FastForward className="h-3.5 w-3.5 text-emerald-500" />
+                <span className="font-bold text-muted-foreground">
+                  {lang === "bn" ? "বিরতি/গতি:" : "Between Qs:"}
+                </span>
+                <select
+                  aria-label="Between question delay"
+                  value={String(session.settings.betweenQuestionSec || 0)}
+                  onChange={(e) =>
+                    onUpdateSettings({ betweenQuestionSec: Number(e.target.value) || 0 })
+                  }
+                  className="bg-transparent font-mono font-bold text-foreground outline-none cursor-pointer"
+                >
+                  <option value="0">{lang === "bn" ? "ম্যানুয়াল" : "Manual"}</option>
+                  <option value="4">4s Auto</option>
+                  <option value="6">6s Auto</option>
+                  <option value="10">10s Auto</option>
+                  <option value="15">15s Auto</option>
+                  <option value="20">20s Auto</option>
+                  <option value="30">30s Auto</option>
+                </select>
+              </div>
+
+              <div
+                className="flex items-center gap-1.5 rounded-xl border border-border bg-background px-2.5 py-1.5"
+                title="Ready countdown duration right when clicking Initiate Live Examination"
+              >
+                <Timer className="h-3.5 w-3.5 text-indigo-500" />
+                <span className="font-bold text-muted-foreground">
+                  {lang === "bn" ? "শুরুর কাউন্টডাউন:" : "Start Delay:"}
+                </span>
+                <select
+                  aria-label="Start countdown seconds"
+                  value={String(session.settings.startCountdownSec ?? 3)}
+                  onChange={(e) =>
+                    onUpdateSettings({ startCountdownSec: Number(e.target.value) })
+                  }
+                  className="bg-transparent font-mono font-bold text-foreground outline-none cursor-pointer"
+                >
+                  <option value="0">Instant (0s)</option>
+                  <option value="3">3s</option>
+                  <option value="5">5s</option>
+                  <option value="10">10s</option>
+                </select>
+              </div>
+            </div>
+
+            <span className="text-[11px] font-medium text-muted-foreground hidden lg:inline">
+              {(session.settings.speedBonus ?? true)
+                ? "⚡ Faster correct = higher marks"
+                : "Accuracy marks only · Speed tiebreak"}
+            </span>
+          </div>
+        )}
+
         {/* Join Prompt & Giant PIN */}
         <div className="my-6">
           <p className="text-xs sm:text-sm font-semibold uppercase tracking-widest text-muted-foreground">
@@ -297,7 +411,19 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
             {t("questions_count")} · Scope:{" "}
             <strong className="text-primary">
               {session.settings.allowedRegionName || "All Regions"}
-            </strong>
+            </strong>{" "}
+            ·{" "}
+            <span>
+              {session.settings.timePerQuestion
+                ? `${session.settings.timePerQuestion}s/Q`
+                : "Per-Q Time"}
+            </span>{" "}
+            ·{" "}
+            <span>
+              {session.settings.betweenQuestionSec
+                ? `${session.settings.betweenQuestionSec}s Between Qs`
+                : "Manual Next"}
+            </span>
           </p>
         </div>
 

@@ -178,7 +178,8 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
             {t('question')} {session.currentQuestionIndex + 1} / {session.totalQuestions}
           </span>
           <span className="text-xs font-semibold text-muted-foreground hidden md:inline">
-            {question.category || 'National Assessment Standard'} · {question.points} Max Marks
+            {question.category || 'National Assessment Standard'} · {question.points} Max Marks ·{' '}
+            {(session.settings.speedBonus ?? true) ? '⚡ Speed Marks ON' : 'Accuracy Marks'}
           </span>
         </div>
 

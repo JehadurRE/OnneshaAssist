@@ -6,6 +6,7 @@ import { CertificateView } from '@/components/common/CertificateView';
 import { db, formatDeterministicCertNumber } from '@/lib/db';
 import { serverVerifyCertificate } from '@/lib/server-session';
 import {
+  compareParticipantsByMerit,
   computeParticipantAccuracyPct,
   computeTotalQuizMarks,
   isPassingScore,
@@ -27,8 +28,8 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
 
   const allParticipants = Object.values(session.participants);
   const humanParticipants = allParticipants.filter((p) => !p.isBot);
-  const sorted = (humanParticipants.length > 0 ? humanParticipants : allParticipants).sort((a, b) =>
-    b.score !== a.score ? b.score - a.score : a.lastActive - b.lastActive
+  const sorted = (humanParticipants.length > 0 ? humanParticipants : allParticipants).sort(
+    compareParticipantsByMerit,
   );
   const p1 = sorted[0];
   const p2 = sorted[1];

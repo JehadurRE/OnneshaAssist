@@ -13,14 +13,22 @@ import {
 } from "../server-security";
 import {
   clampPassThresholdPct,
+  compareParticipantsByMerit,
   computeParticipantAccuracyPct,
+  computeParticipantTotalTimeSec,
+  computeSpeedBonusPct,
   computeTotalQuizMarks,
   evaluateQuestionAnswer,
   gradeOmrSubmission,
   isPassingScore,
+  mergeSessionSettingsPatch,
   resolveOrgName,
   resolvePassThresholdPct,
+  resolveQuestionTimeLimitSec,
+  resolveStartCountdownSec,
+  splitBetweenQuestionDelays,
 } from "../scoring";
+import { purgeUnderThresholdExamsInStore } from "../exam-purge";
 import {
   CERTIFICATE_THEME_PRESETS,
   DEFAULT_BRANDING_SETTINGS,
@@ -42,6 +50,8 @@ import {
 import {
   CertificateData,
   Course,
+  ExamResultRecord,
+  ExamSessionRecord,
   GameSession,
   ManagedUser,
   Question,
@@ -1945,5 +1955,423 @@ describe("server-session domain state transitions & safeguards", () => {
     expect(session.questionStartTime).toBe(17_500);
     expect(session.questionEndTime).toBe(37_500);
     expect(session.updatedAt).toBe(22_500);
+  });
+
+  it("scores sub-second response speed, breaks merit ties by speed, and merges timing settings cleanly", () => {
+    const timedQ: Question = {
+      id: "q-speed-1",
+      textEn: "Speed test question",
+      textBn: "গতি পরীক্ষার প্রশ্ন",
+      type: "single_mcq",
+      timeLimitSec: 20,
+      points: 1000,
+      options: [
+        { id: "a", textEn: "Right", textBn: "সঠিক", isCorrect: true },
+        { id: "b", textEn: "Wrong", textBn: "ভুল", isCorrect: false },
+      ],
+      correctOptionIds: ["a"],
+    };
+
+    const ultraFast = evaluateQuestionAnswer({
+      question: timedQ,
+      selectedOptionIds: ["a"],
+      currentStreak: 0,
+      timeTakenSec: 0.4,
+      speedBonus: true,
+      negativeMarking: 0.25,
+    });
+    const oneSec = evaluateQuestionAnswer({
+      question: timedQ,
+      selectedOptionIds: ["a"],
+      currentStreak: 0,
+      timeTakenSec: 1.0,
+      speedBonus: true,
+      negativeMarking: 0.25,
+    });
+    const slow = evaluateQuestionAnswer({
+      question: timedQ,
+      selectedOptionIds: ["a"],
+      currentStreak: 0,
+      timeTakenSec: 10.0,
+      speedBonus: true,
+      negativeMarking: 0.25,
+    });
+
+    expect(ultraFast.pointsAwarded).toBe(990);
+    expect(oneSec.pointsAwarded).toBe(975);
+    expect(slow.pointsAwarded).toBe(750);
+    expect(ultraFast.pointsAwarded).toBeGreaterThan(oneSec.pointsAwarded);
+    expect(oneSec.pointsAwarded).toBeGreaterThan(slow.pointsAwarded);
+
+    const noSpeedA = evaluateQuestionAnswer({
+      question: timedQ,
+      selectedOptionIds: ["a"],
+      currentStreak: 0,
+      timeTakenSec: 0.4,
+      speedBonus: false,
+      negativeMarking: 0,
+    });
+    const noSpeedB = evaluateQuestionAnswer({
+      question: timedQ,
+      selectedOptionIds: ["a"],
+      currentStreak: 0,
+      timeTakenSec: 18,
+      speedBonus: false,
+      negativeMarking: 0,
+    });
+    expect(noSpeedA.pointsAwarded).toBe(1000);
+    expect(noSpeedB.pointsAwarded).toBe(1000);
+
+    expect(computeSpeedBonusPct(0.4, 20, true)).toBe(99);
+    expect(computeSpeedBonusPct(20, 20, true)).toBe(50);
+    expect(computeSpeedBonusPct(15, 20, false)).toBe(100);
+
+    // Merit tie-breaking: equal score & accuracy prefers faster cumulative response time
+    const slowerSameScore = {
+      id: "p-slow",
+      score: 1800,
+      lastActive: 1000,
+      answers: {
+        q1: {
+          questionId: "q1",
+          selectedOptionIds: ["a"],
+          isCorrect: true,
+          timeTakenSec: 9.2,
+          pointsAwarded: 900,
+          streakCount: 1,
+        },
+        q2: {
+          questionId: "q2",
+          selectedOptionIds: ["a"],
+          isCorrect: true,
+          timeTakenSec: 8.8,
+          pointsAwarded: 900,
+          streakCount: 2,
+        },
+      },
+    };
+    const fasterSameScore = {
+      id: "p-fast",
+      score: 1800,
+      lastActive: 5000,
+      answers: {
+        q1: {
+          questionId: "q1",
+          selectedOptionIds: ["a"],
+          isCorrect: true,
+          timeTakenSec: 2.1,
+          pointsAwarded: 900,
+          streakCount: 1,
+        },
+        q2: {
+          questionId: "q2",
+          selectedOptionIds: ["a"],
+          isCorrect: true,
+          timeTakenSec: 3.4,
+          pointsAwarded: 900,
+          streakCount: 2,
+        },
+      },
+    };
+    expect(computeParticipantTotalTimeSec(fasterSameScore)).toBe(5.5);
+    expect(computeParticipantTotalTimeSec(slowerSameScore)).toBe(18);
+    const ranked = [slowerSameScore, fasterSameScore].sort(compareParticipantsByMerit);
+    expect(ranked.map((p) => p.id)).toEqual(["p-fast", "p-slow"]);
+
+    // Timing overrides & settings merge
+    expect(resolveQuestionTimeLimitSec(timedQ, { timePerQuestion: 45 })).toBe(45);
+    expect(resolveQuestionTimeLimitSec(timedQ, { timePerQuestion: 0 })).toBe(20);
+    expect(resolveStartCountdownSec(undefined)).toBe(3);
+    expect(resolveStartCountdownSec(0)).toBe(0);
+    expect(resolveStartCountdownSec(12)).toBe(12);
+    expect(splitBetweenQuestionDelays(0)).toEqual({
+      enabled: false,
+      totalSec: 0,
+      chartSec: 0,
+      leaderboardSec: 0,
+    });
+    expect(splitBetweenQuestionDelays(7)).toEqual({
+      enabled: true,
+      totalSec: 7,
+      chartSec: 4,
+      leaderboardSec: 3,
+    });
+
+    const patched = mergeSessionSettingsPatch(
+      {
+        timePerQuestion: 30,
+        speedBonus: true,
+        negativeMarking: 0,
+        shuffleQuestions: false,
+        shuffleOptions: false,
+        soundEnabled: true,
+        musicEnabled: true,
+        isFormalAssessment: true,
+        requireRollNumber: true,
+      },
+      {
+        negativeMarking: 0.25,
+        timePerQuestion: 0,
+        betweenQuestionSec: 8,
+        startCountdownSec: 5,
+        speedBonus: false,
+      },
+    );
+    expect(patched.negativeMarking).toBe(0.25);
+    expect(patched.timePerQuestion).toBeUndefined();
+    expect(patched.betweenQuestionSec).toBe(8);
+    expect(patched.startCountdownSec).toBe(5);
+    expect(patched.speedBonus).toBe(false);
+  });
+
+  it("purges taken exam sessions with < 50 examinees and all related records while preserving >= 50 sessions and curriculum", () => {
+    expect(canActorMutateStoreAction({ id: "usr-super-admin", role: "admin" }, "purge_under_50_sessions").allowed).toBe(true);
+    expect(canActorMutateStoreAction({ id: "usr-instructor-1", role: "instructor" }, "purge_under_50_sessions").allowed).toBe(false);
+    expect(canActorMutateStoreAction(null, "purge_under_50_sessions").allowed).toBe(false);
+
+    const makeResult = (
+      idx: number,
+      sessionId: string,
+      pin: string,
+      prefix = "std",
+    ): ExamResultRecord => ({
+      id: `res-${sessionId}-${idx}`,
+      sessionId,
+      pin,
+      participantId: `${prefix}-${idx}`,
+      rollNumber: `${prefix.toUpperCase()}-${100 + idx}`,
+      name: `Candidate ${idx}`,
+      phone: `0171000${String(idx).padStart(4, "0")}`,
+      regionId: "reg-dhaka",
+      regionName: "Dhaka",
+      score: 900,
+      rank: idx,
+      correctCount: 9,
+      incorrectCount: 1,
+      unattemptedCount: 0,
+      accuracyPct: 90,
+      passed: true,
+      answersJson: "{}",
+      createdAt: "2026-11-15T10:00:00.000Z",
+    });
+
+    const keptSession: ExamSessionRecord = {
+      id: "es-large-1",
+      pin: "900111",
+      quizId: "quiz-sanjibon-1",
+      quizTitleEn: "Sanjibon Mega Exam",
+      quizTitleBn: "সঞ্জীবন মেগা পরীক্ষা",
+      hostId: "usr-super-admin",
+      allowedRegionId: "all",
+      allowedRegionName: "All Regions",
+      totalQuestions: 10,
+      participantCount: 52,
+      averageScore: 820,
+      highestScore: 980,
+      passThresholdPct: 50,
+      createdAt: "2026-11-15T09:00:00.000Z",
+    };
+
+    const smallRealSession: ExamSessionRecord = {
+      id: "es-small-1",
+      pin: "445511",
+      quizId: "quiz-sanjibon-2",
+      quizTitleEn: "Small Trial Quiz",
+      quizTitleBn: "ছোট ট্রায়াল",
+      hostId: "usr-super-admin",
+      allowedRegionId: "all",
+      allowedRegionName: "All Regions",
+      totalQuestions: 10,
+      participantCount: 52, // inflated by bots
+      averageScore: 700,
+      highestScore: 900,
+      passThresholdPct: 50,
+      createdAt: "2026-11-15T11:00:00.000Z",
+    };
+
+    const legacySmallMetadataOnly: ExamSessionRecord = {
+      id: "es-small-legacy",
+      pin: "332211",
+      quizId: "quiz-sanjibon-3",
+      quizTitleEn: "Legacy Tiny Session",
+      quizTitleBn: "পুরাতন সেশন",
+      hostId: "usr-super-admin",
+      allowedRegionId: "all",
+      allowedRegionName: "All Regions",
+      totalQuestions: 5,
+      participantCount: 14,
+      averageScore: 400,
+      highestScore: 500,
+      createdAt: "2026-11-10T10:00:00.000Z",
+    };
+
+    const largeResults = Array.from({ length: 52 }, (_, i) =>
+      makeResult(i + 1, "es-large-1", "900111", "big"),
+    );
+    const smallRealResults = Array.from({ length: 12 }, (_, i) =>
+      makeResult(i + 1, "es-small-1", "445511", "sml"),
+    );
+    const smallBotResults = Array.from({ length: 40 }, (_, i) =>
+      makeResult(i + 100, "es-small-1", "445511", "bot"),
+    );
+    const orphanSmallResults = [
+      makeResult(1, "es-orphan-pin", "778899", "orp"),
+      makeResult(2, "es-orphan-pin", "778899", "orp"),
+    ];
+
+    const keptCert: CertificateData = {
+      id: "cert-kept",
+      certificateNumber: "ONN-9001-BIG101",
+      studentName: "Candidate 1",
+      studentRoll: "BIG-101",
+      quizTitle: "Sanjibon Mega Exam",
+      score: 900,
+      totalPoints: 1000,
+      rank: 1,
+      totalParticipants: 52,
+      accuracyPercent: 90,
+      issueDate: "2026-11-15",
+      verified: true,
+    };
+    const smallCert: CertificateData = {
+      id: "cert-small",
+      certificateNumber: "ONN-4455-SML101",
+      studentName: "Candidate 1",
+      studentRoll: "SML-101",
+      quizTitle: "Small Trial Quiz",
+      score: 900,
+      totalPoints: 1000,
+      rank: 1,
+      totalParticipants: 12,
+      accuracyPercent: 90,
+      issueDate: "2026-11-15",
+      verified: true,
+    };
+    const smallRevokedCert: CertificateData = {
+      id: "cert-small-revoked",
+      certificateNumber: "ONN-4455-SML102",
+      studentName: "Candidate 2",
+      studentRoll: "SML-102",
+      quizTitle: "Small Trial Quiz",
+      score: 850,
+      totalPoints: 1000,
+      rank: 2,
+      totalParticipants: 12,
+      accuracyPercent: 85,
+      issueDate: "2026-11-15",
+      verified: true,
+    };
+    const unrelatedManualCert: CertificateData = {
+      id: "cert-manual-standalone",
+      certificateNumber: "ONN-2026-MANUAL01",
+      studentName: "Manual Awardee",
+      studentRoll: "EXT-001",
+      quizTitle: "Special Annual Olympiad",
+      score: 100,
+      totalPoints: 100,
+      rank: 1,
+      totalParticipants: 1,
+      accuracyPercent: 100,
+      issueDate: "2026-11-01",
+      verified: true,
+    };
+
+    const store = {
+      examSessions: [keptSession, smallRealSession, legacySmallMetadataOnly],
+      examResults: [...largeResults, ...smallRealResults, ...smallBotResults, ...orphanSmallResults],
+      certificates: [keptCert, smallCert, unrelatedManualCert],
+      revokedCertificates: ["ONN-4455-SML102", "ONN-2026-KEPTREV"],
+      revokedCertificateArchive: {
+        "ONN-4455-SML102": smallRevokedCert,
+      } as Record<string, CertificateData>,
+      smsLogs: [
+        {
+          id: "sms-kept",
+          recipientPhone: "01710000001",
+          studentName: "Candidate 1",
+          rollNumber: "BIG-101",
+          quizTitle: "Sanjibon Mega Exam",
+          score: 900,
+          rank: 1,
+          messageText: "Congrats",
+          status: "delivered",
+          createdAt: "2026-11-15T10:05:00.000Z",
+        },
+        {
+          id: "sms-small-1",
+          recipientPhone: "01710000001",
+          studentName: "Candidate 1",
+          rollNumber: "SML-101",
+          quizTitle: "Small Trial Quiz",
+          score: 900,
+          rank: 1,
+          messageText: "Result",
+          status: "delivered",
+          createdAt: "2026-11-15T11:05:00.000Z",
+        },
+        {
+          id: "sms-legacy-small",
+          recipientPhone: "01799999999",
+          studentName: "Old Student",
+          rollNumber: "OLD-01",
+          quizTitle: "Legacy Tiny Session",
+          score: 400,
+          rank: 1,
+          messageText: "Result",
+          status: "delivered",
+          createdAt: "2026-11-10T10:05:00.000Z",
+        },
+      ],
+    };
+
+    const liveSessions: Record<
+      string,
+      Pick<GameSession, "pin" | "phase" | "participants"> & { id?: string }
+    > = {
+      "445511": {
+        id: "es-small-1",
+        pin: "445511",
+        phase: "podium",
+        participants: {
+          "sml-1": { id: "sml-1" } as GameSession["participants"][string],
+        },
+      },
+      "888777": {
+        id: "live-active-lobby",
+        pin: "888777",
+        phase: "lobby",
+        participants: {
+          "p-1": { id: "p-1" } as GameSession["participants"][string],
+        },
+      },
+    };
+
+    const summary = purgeUnderThresholdExamsInStore(store, 50, liveSessions);
+
+    expect(summary).toEqual({
+      minExaminees: 50,
+      removedSessions: 2,
+      removedResults: 54,
+      removedCertificates: 1,
+      removedRevokedCerts: 1,
+      removedSmsLogs: 2,
+      removedLiveSessions: 1,
+      keptSessions: 1,
+      changed: true,
+    });
+    expect(store.examSessions.map((s) => s.id)).toEqual(["es-large-1"]);
+    expect(store.examResults).toHaveLength(52);
+    expect(store.examResults.every((r) => r.sessionId === "es-large-1")).toBe(true);
+    expect(store.certificates.map((c) => c.id)).toEqual(["cert-kept", "cert-manual-standalone"]);
+    expect(store.revokedCertificates).toEqual(["ONN-2026-KEPTREV"]);
+    expect(Object.keys(store.revokedCertificateArchive)).toEqual([]);
+    expect(store.smsLogs.map((s) => s.id)).toEqual(["sms-kept"]);
+    expect(liveSessions["445511"]).toBeUndefined();
+    expect(liveSessions["888777"]).toBeDefined();
+
+    // Idempotent second run changes nothing
+    const secondRun = purgeUnderThresholdExamsInStore(store, 50, liveSessions);
+    expect(secondRun.changed).toBe(false);
+    expect(secondRun.keptSessions).toBe(1);
   });
 });

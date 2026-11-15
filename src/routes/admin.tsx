@@ -166,6 +166,8 @@ function SuperAdminPage() {
   const [previewCert, setPreviewCert] = useState<CertificateData | null>(null);
   const [downloadingCertNo, setDownloadingCertNo] = useState<string | null>(null);
   const [confirmRevokeCertNo, setConfirmRevokeCertNo] = useState<string | null>(null);
+  const [confirmPurgeUnder50, setConfirmPurgeUnder50] = useState(false);
+  const [isPurgingUnder50, setIsPurgingUnder50] = useState(false);
 
   // Quick Sequential Quiz Under Course Modal State
   const [addingQuizForCourse, setAddingQuizForCourse] = useState<Course | null>(null);
@@ -2250,6 +2252,58 @@ function SuperAdminPage() {
                     <Trash2 className="h-4 w-4" />
                     <span>Purge Residual Dummy / Test Seed Data</span>
                   </button>
+
+                  {!confirmPurgeUnder50 ? (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmPurgeUnder50(true)}
+                      className="flex w-full items-center justify-center gap-2 rounded-2xl border border-amber-500/40 bg-amber-500/10 py-3 text-xs font-bold text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 transition cursor-pointer"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span>Purge Quizzes &amp; Records (&lt; 50 Examinees)</span>
+                    </button>
+                  ) : (
+                    <div className="rounded-2xl border border-destructive/50 bg-destructive/10 p-3 space-y-2">
+                      <p className="text-[11px] font-bold text-destructive">
+                        Permanently remove all taken quizzes/sessions with fewer than 50 examinees
+                        along with their results, certificates, and SMS logs?
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={isPurgingUnder50}
+                          onClick={async () => {
+                            setIsPurgingUnder50(true);
+                            try {
+                              const summary = await db.purgeUnderMinExaminees(50);
+                              refreshAll();
+                              setConfirmPurgeUnder50(false);
+                              if (summary.error) {
+                                showNotice(`Purge failed: ${summary.error}`);
+                              } else {
+                                showNotice(
+                                  `Purged ${summary.removedSessions} session(s) < 50 examinees (${summary.removedResults} results, ${summary.removedCertificates} certs, ${summary.removedRevokedCerts} revoked, ${summary.removedSmsLogs} SMS logs; kept ${summary.keptSessions} sessions >= 50).`,
+                                );
+                              }
+                            } finally {
+                              setIsPurgingUnder50(false);
+                            }
+                          }}
+                          className="flex-1 rounded-xl bg-destructive py-2 text-xs font-extrabold text-destructive-foreground hover:bg-destructive/90 transition disabled:opacity-50 cursor-pointer"
+                        >
+                          {isPurgingUnder50 ? "Purging..." : "Confirm Purge (< 50)"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isPurgingUnder50}
+                          onClick={() => setConfirmPurgeUnder50(false)}
+                          className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold text-foreground hover:bg-accent transition cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

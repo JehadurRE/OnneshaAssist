@@ -1,13 +1,14 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { GameSession, Question } from '@/lib/types';
 import { useLanguage } from '@/lib/i18n';
-import { Check, CheckCircle2, ChevronRight, PieChart, ShieldCheck } from 'lucide-react';
+import { Check, CheckCircle2, ChevronRight, Clock, Pause, PieChart, Play } from 'lucide-react';
 import { audioEngine } from '@/lib/audio-engine';
 
 interface HostBarChartProps {
   session: GameSession;
   question: Question;
   onNext: () => void;
+  autoAdvanceSec?: number | undefined;
 }
 
 const BAR_STYLES = [
@@ -21,8 +22,30 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
   session,
   question,
   onNext,
+  autoAdvanceSec,
 }) => {
   const { lang, t } = useLanguage();
+  const [autoPaused, setAutoPaused] = useState(false);
+  const [autoLeft, setAutoLeft] = useState<number>(
+    autoAdvanceSec && autoAdvanceSec > 0 ? autoAdvanceSec : 0,
+  );
+  const onNextRef = useRef(onNext);
+  onNextRef.current = onNext;
+
+  useEffect(() => {
+    setAutoPaused(false);
+    setAutoLeft(autoAdvanceSec && autoAdvanceSec > 0 ? autoAdvanceSec : 0);
+  }, [question.id, autoAdvanceSec]);
+
+  useEffect(() => {
+    if (!autoAdvanceSec || autoAdvanceSec <= 0 || autoPaused) return;
+    if (autoLeft <= 0) {
+      onNextRef.current();
+      return;
+    }
+    const timer = setTimeout(() => setAutoLeft((prev) => prev - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [autoAdvanceSec, autoPaused, autoLeft]);
 
   useEffect(() => {
     audioEngine.playCorrect();
@@ -73,13 +96,26 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
           </div>
         </div>
 
-        <button
-          onClick={onNext}
-          className="flex items-center gap-1.5 rounded-2xl bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground shadow-md transition hover:bg-primary/90"
-        >
-          <span>{t('show_leaderboard')}</span>
-          <ChevronRight className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          {autoAdvanceSec && autoAdvanceSec > 0 && (
+            <button
+              type="button"
+              onClick={() => setAutoPaused((p) => !p)}
+              className="flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-mono font-bold text-foreground hover:bg-accent"
+              title={autoPaused ? 'Resume auto-advance' : 'Pause auto-advance'}
+            >
+              {autoPaused ? <Play className="h-3.5 w-3.5 text-emerald-500" /> : <Pause className="h-3.5 w-3.5 text-amber-500" />}
+              <span>{autoPaused ? 'Paused' : `Auto ${autoLeft}s`}</span>
+            </button>
+          )}
+          <button
+            onClick={onNext}
+            className="flex items-center gap-1.5 rounded-2xl bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground shadow-md transition hover:bg-primary/90"
+          >
+            <span>{t('show_leaderboard')}</span>
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {/* Main Bar Chart Container */}

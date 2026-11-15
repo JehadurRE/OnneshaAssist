@@ -1,13 +1,15 @@
 import React from 'react';
 import { ParticipantAnswer, Question } from '@/lib/types';
 import { useLanguage } from '@/lib/i18n';
-import { CheckCircle2, ChevronRight, Clock, Flame, Trophy, XCircle } from 'lucide-react';
+import { computeSpeedBonusPct } from '@/lib/scoring';
+import { CheckCircle2, ChevronRight, Clock, Flame, Trophy, XCircle, Zap } from 'lucide-react';
 
 interface PlayerFeedbackProps {
   answer?: ParticipantAnswer | undefined;
   question: Question;
   currentRank: number;
   totalScore: number;
+  speedBonus?: boolean;
   isSelfPractice?: boolean;
   isLastQuestion?: boolean;
   onNextQuestion?: () => void;
@@ -18,6 +20,7 @@ export const PlayerFeedback: React.FC<PlayerFeedbackProps> = ({
   question,
   currentRank,
   totalScore,
+  speedBonus = true,
   isSelfPractice = false,
   isLastQuestion = false,
   onNextQuestion,
@@ -108,6 +111,19 @@ export const PlayerFeedback: React.FC<PlayerFeedbackProps> = ({
         {answer?.timeTakenSec !== undefined && (
           <span className="rounded-xl border border-border bg-background px-3 py-1 font-mono text-xs font-bold text-muted-foreground">
             ⏱ {answer.timeTakenSec.toFixed(1)}s
+          </span>
+        )}
+
+        {isCorrect && speedBonus && answer?.timeTakenSec !== undefined && (
+          <span
+            className="inline-flex items-center gap-1 rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-1 font-mono text-xs font-bold text-sky-600 dark:text-sky-400"
+            title="Faster accurate answers earn a higher speed factor"
+          >
+            <Zap className="h-3.5 w-3.5" />
+            <span>
+              {lang === 'bn' ? 'স্পিড ফ্যাক্টর' : 'Speed'}:{' '}
+              {computeSpeedBonusPct(answer.timeTakenSec, question.timeLimitSec || 20, true)}%
+            </span>
           </span>
         )}
 

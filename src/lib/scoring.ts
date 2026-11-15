@@ -1,4 +1,4 @@
-import { BrandingSettings, Question } from "./types";
+import { BrandingSettings, GameSettings, Participant, Question } from "./types";
 
 export function computeTotalQuizMarks(
   questions?: Pick<Question, "points">[] | null,
@@ -158,9 +158,10 @@ export function evaluateQuestionAnswer(input: EvaluateAnswerInput): EvaluateAnsw
   if (isCorrect) {
     newStreak = currentStreak + 1;
     const streakMultiplier = newStreak >= 3 ? 1.5 : newStreak >= 2 ? 1.2 : 1.0;
-    const clampedTime = Math.max(1, Math.min(question.timeLimitSec || 20, timeTakenSec));
+    const limit = Math.max(1, question.timeLimitSec || 20);
+    const clampedTime = Math.max(0.1, Math.min(limit, timeTakenSec));
     const speedFactor = speedBonus
-      ? Math.max(0.5, 1 - (clampedTime / (question.timeLimitSec || 20)) * 0.5)
+      ? Math.max(0.5, 1 - (clampedTime / limit) * 0.5)
       : 1;
     pointsAwarded = Math.round((question.points || 1000) * speedFactor * streakMultiplier);
   } else {
@@ -274,4 +275,163 @@ export function gradeOmrSubmission(
     maxPossibleScore: maxPossibleScore || questions.length,
     accuracyPct,
   };
+}
+
+export const DEFAULT_START_COUNTDOWN_SEC = 3;
+
+export function resolveQuestionTimeLimitSec(
+  question?: Pick<Question, "timeLimitSec"> | null,
+  settings?: Pick<GameSettings, "timePerQuestion"> | null,
+): number {
+  const override = settings?.timePerQuestion;
+  if (typeof override === "number" && Number.isFinite(override) && override >= 5) {
+    return Math.max(5, Math.min(600, Math.round(override)));
+  }
+  const qLimit = question?.timeLimitSec;
+  if (typeof qLimit === "number" && Number.isFinite(qLimit) && qLimit >= 5) {
+    return Math.max(5, Math.min(600, Math.round(qLimit)));
+  }
+  return 20;
+}
+
+export function resolveStartCountdownSec(startCountdownSec?: number | null): number {
+  if (typeof startCountdownSec === "number" && Number.isFinite(startCountdownSec)) {
+    return Math.max(0, Math.min(30, Math.round(startCountdownSec)));
+  }
+  return DEFAULT_START_COUNTDOWN_SEC;
+}
+
+export function splitBetweenQuestionDelays(betweenQuestionSec?: number | null): {
+  enabled: boolean;
+  totalSec: number;
+  chartSec: number;
+  leaderboardSec: number;
+} {
+  if (
+    typeof betweenQuestionSec !== "number" ||
+    !Number.isFinite(betweenQuestionSec) ||
+    betweenQuestionSec <= 0
+  ) {
+    return { enabled: false, totalSec: 0, chartSec: 0, leaderboardSec: 0 };
+  }
+  const totalSec = Math.max(2, Math.min(120, Math.round(betweenQuestionSec)));
+  const chartSec = Math.max(1, Math.ceil(totalSec / 2));
+  const leaderboardSec = Math.max(1, totalSec - chartSec);
+  return { enabled: true, totalSec, chartSec, leaderboardSec };
+}
+
+export function computeSpeedBonusPct(
+  timeTakenSec: number,
+  timeLimitSec: number,
+  speedBonus: boolean,
+): number {
+  if (!speedBonus) return 100;
+  const limit = Math.max(1, timeLimitSec || 20);
+  const clamped = Math.max(0.1, Math.min(limit, timeTakenSec || limit));
+  const factor = Math.max(0.5, 1 - (clamped / limit) * 0.5);
+  return Math.round(factor * 100);
+}
+
+export function computeParticipantTotalTimeSec(
+  participant: Pick<Participant, "answers" | "totalResponseTimeSec">,
+): number {
+  const answersList = Object.values(participant.answers || {});
+  if (answersList.length > 0) {
+    const sum = answersList.reduce(
+      (acc, ans) =>
+        acc + (typeof ans?.timeTakenSec === "number" && Number.isFinite(ans.timeTakenSec) ? Math.max(0, ans.timeTakenSec) : 0),
+      0,
+    );
+    return Math.round(sum * 100) / 100;
+  }
+  if (
+    typeof participant.totalResponseTimeSec === "number" &&
+    Number.isFinite(participant.totalResponseTimeSec) &&
+    participant.totalResponseTimeSec >= 0
+  ) {
+    return Math.round(participant.totalResponseTimeSec * 100) / 100;
+  }
+  return 0;
+}
+
+/**
+ * Ranks examinees deterministically by total marks first, then accuracy count,
+ * then faster cumulative response time (speed tie-breaker), then earliest activity.
+ */
+export function compareParticipantsByMerit(
+  a: Pick<Participant, "score" | "answers" | "totalResponseTimeSec" | "lastActive">,
+  b: Pick<Participant, "score" | "answers" | "totalResponseTimeSec" | "lastActive">,
+): number {
+  if (b.score !== a.score) return b.score - a.score;
+
+  const ansA = Object.values(a.answers || {});
+  const ansB = Object.values(b.answers || {});
+  if (ansA.length > 0 || ansB.length > 0) {
+    const correctA = ansA.filter((ans) => ans?.isCorrect).length;
+    const correctB = ansB.filter((ans) => ans?.isCorrect).length;
+    if (correctB !== correctA) return correctB - correctA;
+  }
+
+  const timeA = computeParticipantTotalTimeSec(a);
+  const timeB = computeParticipantTotalTimeSec(b);
+  const hasTimedA = timeA > 0;
+  const hasTimedB = timeB > 0;
+  if (hasTimedA && hasTimedB && Math.abs(timeA - timeB) > 0.005) {
+    return timeA - timeB;
+  }
+  if (hasTimedA !== hasTimedB) {
+    return hasTimedA ? -1 : 1;
+  }
+
+  return a.lastActive - b.lastActive;
+}
+
+export function mergeSessionSettingsPatch(
+  current: GameSettings,
+  patch: Partial<GameSettings>,
+): GameSettings {
+  const next: GameSettings = { ...current, ...patch };
+
+  if (typeof patch.passThresholdPct === "number" && Number.isFinite(patch.passThresholdPct)) {
+    next.passThresholdPct = clampPassThresholdPct(patch.passThresholdPct);
+  }
+  if (typeof patch.negativeMarking === "number" && Number.isFinite(patch.negativeMarking)) {
+    next.negativeMarking = Math.max(0, Math.min(10, Math.round(patch.negativeMarking * 100) / 100));
+  }
+  if (
+    typeof patch.maxProctorViolations === "number" &&
+    Number.isFinite(patch.maxProctorViolations)
+  ) {
+    next.maxProctorViolations = Math.max(1, Math.min(20, Math.round(patch.maxProctorViolations)));
+  }
+  if ("speedBonus" in patch && typeof patch.speedBonus === "boolean") {
+    next.speedBonus = patch.speedBonus;
+  }
+  if ("timePerQuestion" in patch) {
+    if (
+      typeof patch.timePerQuestion === "number" &&
+      Number.isFinite(patch.timePerQuestion) &&
+      patch.timePerQuestion > 0
+    ) {
+      next.timePerQuestion = Math.max(5, Math.min(600, Math.round(patch.timePerQuestion)));
+    } else {
+      delete next.timePerQuestion;
+    }
+  }
+  if ("betweenQuestionSec" in patch) {
+    if (
+      typeof patch.betweenQuestionSec === "number" &&
+      Number.isFinite(patch.betweenQuestionSec) &&
+      patch.betweenQuestionSec > 0
+    ) {
+      next.betweenQuestionSec = Math.max(2, Math.min(120, Math.round(patch.betweenQuestionSec)));
+    } else {
+      next.betweenQuestionSec = 0;
+    }
+  }
+  if ("startCountdownSec" in patch) {
+    next.startCountdownSec = resolveStartCountdownSec(patch.startCountdownSec);
+  }
+
+  return next;
 }

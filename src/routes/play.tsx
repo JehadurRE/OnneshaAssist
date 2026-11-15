@@ -20,6 +20,7 @@ import {
   isPassingScore,
   resolveOrgName,
   resolvePassThresholdPct,
+  resolveStartCountdownSec,
 } from "@/lib/scoring";
 import { serverGetActiveRooms, serverVerifyCertificate } from "@/lib/server-session";
 import { READY_MADE_PACKS } from "@/lib/mock-data";
@@ -45,6 +46,7 @@ import {
   Users,
   WifiOff,
   XCircle,
+  Zap,
 } from "lucide-react";
 
 interface PlaySearch {
@@ -94,6 +96,7 @@ function PlayPage() {
   const [selectedOptionIds, setSelectedOptionIds] = useState<string[]>([]);
   const [hasAnswered, setHasAnswered] = useState(false);
   const [timeRemainingSec, setTimeRemainingSec] = useState(20);
+  const [, setCountdownTick] = useState(0);
   const [showCertificate, setShowCertificate] = useState(false);
   const [showAnswerScript, setShowAnswerScript] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
@@ -356,6 +359,12 @@ function PlayPage() {
     participant?.id,
     !!participant?.answers?.[session?.currentQuestion?.id || ""],
   ]);
+
+  useEffect(() => {
+    if (session?.phase !== "countdown") return;
+    const id = setInterval(() => setCountdownTick((t) => t + 1), 250);
+    return () => clearInterval(id);
+  }, [session?.phase]);
 
   // Timer countdown per question synchronized to server questionEndTime via server clock offset
   useEffect(() => {
@@ -1239,9 +1248,26 @@ function PlayPage() {
             <div className="font-display text-2xl sm:text-3xl font-extrabold text-foreground">
               {t("get_ready")}
             </div>
-            <div className="font-mono text-6xl sm:text-7xl font-black text-primary animate-pulse">
-              3 · 2 · 1
+            <div className="font-mono text-6xl sm:text-7xl font-black text-primary animate-pulse tabular-nums">
+              {(() => {
+                const startSec = resolveStartCountdownSec(session.settings.startCountdownSec);
+                const started = session.countdownStartedAt || session.updatedAt || Date.now();
+                const rem = Math.max(
+                  0,
+                  Math.ceil((started + startSec * 1000 - gameEngine.getServerNow()) / 1000),
+                );
+                return rem > 0 ? rem : "GO!";
+              })()}
             </div>
+            <p className="text-xs font-semibold text-muted-foreground">
+              {(session.settings.speedBonus ?? true)
+                ? lang === "bn"
+                  ? "⚡ দ্রুত ও সঠিক উত্তরে অতিরিক্ত স্পিড মার্কস পাবেন"
+                  : "⚡ Speed Marking Active — Faster accurate responses earn higher marks"
+                : lang === "bn"
+                  ? "নির্ভুলতা ভিত্তিক মার্কিং (সমান নম্বরে গতি প্রাধান্য পাবে)"
+                  : "Accuracy Scoring Active (Speed breaks ranking ties)"}
+            </p>
           </div>
         )}
 
@@ -1270,6 +1296,15 @@ function PlayPage() {
                   <span className="rounded-lg bg-primary/10 px-2.5 py-0.5 font-mono text-xs font-black text-primary">
                     Q{session.currentQuestionIndex + 1}/{session.totalQuestions}
                   </span>
+                  {(session.settings.speedBonus ?? true) && (
+                    <span
+                      className="hidden sm:inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400"
+                      title="Speed Marks Enabled: faster accurate responses earn higher points"
+                    >
+                      <Zap className="h-2.5 w-2.5" />
+                      <span>Speed</span>
+                    </span>
+                  )}
                   {participant.regionName && (
                     <span className="hidden sm:inline-block rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
                       {participant.regionName}
@@ -1438,6 +1473,7 @@ function PlayPage() {
               question={session.currentQuestion}
               currentRank={participant.rank}
               totalScore={participant.score}
+              speedBonus={session.settings.speedBonus ?? true}
               isSelfPractice={isSelfPractice || !!session.isSelfPractice}
               isLastQuestion={session.currentQuestionIndex + 1 >= session.totalQuestions}
               onNextQuestion={handleSelfPracticeNextQuestion}

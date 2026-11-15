@@ -14,6 +14,7 @@ import { useAuth } from "@/lib/auth-context";
 import { db } from "@/lib/db";
 import { sqliteEngine } from "@/lib/db/sqlite-engine";
 import { GameSession } from "@/lib/types";
+import { resolveStartCountdownSec, splitBetweenQuestionDelays } from "@/lib/scoring";
 import { Lock, RotateCcw, ShieldAlert } from "lucide-react";
 
 interface HostSearch {
@@ -40,7 +41,14 @@ function HostPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [session, setSession] = useState<GameSession | null>(null);
   const [roomError, setRoomError] = useState<string | null>(null);
+  const [, setCountdownTick] = useState(0);
   const sessionRef = useRef<GameSession | null>(null);
+
+  useEffect(() => {
+    if (session?.phase !== "countdown") return;
+    const id = setInterval(() => setCountdownTick((t) => t + 1), 250);
+    return () => clearInterval(id);
+  }, [session?.phase]);
   const justCreatedPinRef = useRef<string | null>(null);
   const suppressStopPinRef = useRef<string | null>(null);
   const attachedPinRef = useRef<string | null>(null);
@@ -314,6 +322,18 @@ function HostPage() {
   };
 
   const isLastQuestion = session.currentQuestionIndex + 1 >= session.totalQuestions;
+  const betweenDelays = splitBetweenQuestionDelays(session.settings.betweenQuestionSec);
+  const startCountdownTotalSec = resolveStartCountdownSec(session.settings.startCountdownSec);
+  const countdownStarted = session.countdownStartedAt || session.updatedAt || Date.now();
+  const countdownLeftSec =
+    session.phase === "countdown"
+      ? Math.max(
+          0,
+          Math.ceil(
+            (countdownStarted + startCountdownTotalSec * 1000 - gameEngine.getServerNow()) / 1000,
+          ),
+        )
+      : 0;
 
   return (
     <div className="min-h-screen bg-background text-foreground bg-grid flex flex-col transition-colors">
@@ -339,9 +359,14 @@ function HostPage() {
             <h2 className="font-display text-3xl font-extrabold text-foreground">
               Starting Question 1...
             </h2>
-            <div className="font-mono text-7xl sm:text-8xl font-black text-primary animate-pulse">
-              3 · 2 · 1
+            <div className="font-mono text-7xl sm:text-8xl font-black text-primary animate-pulse tabular-nums">
+              {countdownLeftSec > 0 ? countdownLeftSec : "GO!"}
             </div>
+            <p className="text-xs font-semibold text-muted-foreground">
+              {(session.settings.speedBonus ?? true)
+                ? "⚡ Speed Marking Active · Faster correct responses score higher"
+                : "Accuracy Scoring Mode · Speed breaks ranking ties"}
+            </p>
           </div>
         )}
 
@@ -363,6 +388,7 @@ function HostPage() {
             session={session}
             question={session.currentQuestion}
             onNext={handleNextFromChart}
+            autoAdvanceSec={betweenDelays.enabled ? betweenDelays.chartSec : undefined}
           />
         )}
 
@@ -396,6 +422,7 @@ function HostPage() {
             session={session}
             onNextQuestion={handleNextQuestion}
             isLastQuestion={isLastQuestion}
+            autoAdvanceSec={betweenDelays.enabled ? betweenDelays.leaderboardSec : undefined}
           />
         )}
 

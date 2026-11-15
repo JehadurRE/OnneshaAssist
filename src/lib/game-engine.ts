@@ -9,6 +9,12 @@ import {
 import { DEFAULT_REGIONS, READY_MADE_PACKS } from './mock-data';
 import { db } from './db';
 import {
+  compareParticipantsByMerit,
+  mergeSessionSettingsPatch,
+  resolveQuestionTimeLimitSec,
+  resolveStartCountdownSec,
+} from './scoring';
+import {
   serverCreateSession,
   serverGetSession,
   serverHostControl,
@@ -637,7 +643,7 @@ class RealtimeGameEngine {
   public updateSessionSettings(pin: string, settings: Partial<GameSettings>) {
     const session = this.getSession(pin);
     if (session) {
-      session.settings = { ...session.settings, ...settings };
+      session.settings = mergeSessionSettingsPatch(session.settings, settings);
       this.cacheSessionLocally(session, { fromServer: false });
     }
     serverHostControl({
@@ -828,8 +834,14 @@ class RealtimeGameEngine {
   public startGame(pin: string) {
     this.clearStartCountdownTimer();
     const session = this.getSession(pin);
+    const countdownSec = resolveStartCountdownSec(session?.settings?.startCountdownSec);
     if (session) {
+      if (countdownSec === 0) {
+        this.nextQuestion(pin, 0);
+        return;
+      }
       session.phase = 'countdown';
+      session.countdownStartedAt = Date.now();
       this.cacheSessionLocally(session, { fromServer: false });
     }
 
@@ -851,7 +863,7 @@ class RealtimeGameEngine {
       const latest = this.getSession(pin);
       if (latest && latest.phase !== 'countdown') return;
       this.nextQuestion(pin, 0);
-    }, 3000);
+    }, countdownSec * 1000);
   }
 
   // Host advances to question index
@@ -890,11 +902,13 @@ class RealtimeGameEngine {
           this.endGame(pin);
           return;
         }
+        const effectiveLimit = resolveQuestionTimeLimitSec(question, session.settings);
         session.phase = 'question';
         session.currentQuestionIndex = index;
-        session.currentQuestion = question;
+        session.currentQuestion = { ...question, timeLimitSec: effectiveLimit };
+        session.pausedAt = undefined;
         session.questionStartTime = Date.now();
-        session.questionEndTime = Date.now() + question.timeLimitSec * 1000;
+        session.questionEndTime = Date.now() + effectiveLimit * 1000;
         this.saveSession(session);
       });
   }
@@ -1122,9 +1136,7 @@ class RealtimeGameEngine {
   }
 
   private recalculateRanks(session: GameSession) {
-    const sorted = Object.values(session.participants).sort((a, b) =>
-      b.score !== a.score ? b.score - a.score : a.lastActive - b.lastActive
-    );
+    const sorted = Object.values(session.participants).sort(compareParticipantsByMerit);
     sorted.forEach((p, idx) => {
       const target = session.participants[p.id];
       if (target) target.rank = idx + 1;

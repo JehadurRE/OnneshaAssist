@@ -29,6 +29,7 @@ import {
   resolvePassThresholdPct,
 } from "../scoring";
 import { DEFAULT_BRANDING_SETTINGS, mergeBrandingSettings } from "../branding";
+import { purgeUnderThresholdExamsInStore, type PurgeExamSummary } from "../exam-purge";
 
 export { isCoursePrivate, isQuizPrivate };
 
@@ -1731,6 +1732,73 @@ class OnneshaDatabase {
       await this.syncFromServerStore();
     } catch {}
     this.notifyListeners();
+  }
+
+  async purgeUnderMinExaminees(
+    minExaminees = 50,
+  ): Promise<PurgeExamSummary & { error?: string | undefined }> {
+    const localStore = {
+      examSessions: this.getExamSessions(),
+      examResults: this.getAllExamResults(),
+      certificates: this.getCertificates(),
+      revokedCertificates: this.getStorage<string[]>("revoked_certificates", []),
+      smsLogs: this.getSmsLogs(),
+    };
+    const beforeSessionIds = new Set(localStore.examSessions.map((s) => s.id));
+    const beforeResultIds = new Set(localStore.examResults.map((r) => r.id));
+    const beforeCertIds = new Set(localStore.certificates.map((c) => c.id));
+    const beforeSmsIds = new Set(localStore.smsLogs.map((s) => s.id));
+
+    const localSummary = purgeUnderThresholdExamsInStore(localStore, minExaminees);
+
+    const keptSessionIds = new Set(localStore.examSessions.map((s) => s.id));
+    const keptResultIds = new Set(localStore.examResults.map((r) => r.id));
+    const keptCertIds = new Set(localStore.certificates.map((c) => c.id));
+    const keptSmsIds = new Set(localStore.smsLogs.map((s) => s.id));
+
+    sqliteEngine.runBatch((run) => {
+      for (const id of beforeSessionIds) {
+        if (!keptSessionIds.has(id)) run("DELETE FROM exam_sessions WHERE id = ?", [id]);
+      }
+      for (const id of beforeResultIds) {
+        if (!keptResultIds.has(id)) run("DELETE FROM exam_results WHERE id = ?", [id]);
+      }
+      for (const id of beforeCertIds) {
+        if (!keptCertIds.has(id)) run("DELETE FROM certificates WHERE id = ?", [id]);
+      }
+      for (const id of beforeSmsIds) {
+        if (!keptSmsIds.has(id)) run("DELETE FROM sms_logs WHERE id = ?", [id]);
+      }
+    });
+
+    this.setStorage("exam_sessions", localStore.examSessions);
+    this.setStorage("exam_results", localStore.examResults);
+    this.setStorage("certificates", localStore.certificates);
+    this.setStorage("revoked_certificates", localStore.revokedCertificates);
+    this.setStorage("sms_logs", localStore.smsLogs);
+
+    let serverSummary: PurgeExamSummary | undefined;
+    let serverError: string | undefined;
+    try {
+      const res = (await serverAdminMutateStore({
+        data: { action: "purge_under_50_sessions", minExaminees },
+      })) as {
+        success: boolean;
+        error?: string | undefined;
+        purgeSummary?: PurgeExamSummary | undefined;
+      };
+      if (res.success) {
+        serverSummary = res.purgeSummary;
+      } else {
+        serverError = res.error || "Permission denied";
+      }
+      await this.syncFromServerStore();
+    } catch {}
+
+    this.notifyListeners();
+    return serverError
+      ? { ...(serverSummary || localSummary), error: serverError }
+      : serverSummary || localSummary;
   }
 
   // ---------------- TRANSACTIONS ----------------

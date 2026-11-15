@@ -153,10 +153,13 @@ export interface Participant {
   lastActive: number;
   proctorFlags?: number | undefined;
   isSuspended?: boolean | undefined;
+  totalResponseTimeSec?: number | undefined;
 }
 
 export interface GameSettings {
   timePerQuestion?: number | undefined;
+  betweenQuestionSec?: number | undefined;
+  startCountdownSec?: number | undefined;
   speedBonus: boolean;
   negativeMarking: number; // 0, 0.25, 0.5, 1.0
   shuffleQuestions: boolean;
@@ -186,6 +189,7 @@ export interface GameSession {
   currentQuestion?: Question | undefined;
   questionStartTime: number;
   questionEndTime: number;
+  countdownStartedAt?: number | undefined;
   pausedAt?: number | undefined;
   settings: GameSettings;
   participants: Record<string, Participant>;
