@@ -200,8 +200,35 @@ class OnneshaDatabase {
           }))
         : [];
 
+      const rawSmsLogs = (res as { smsLogs?: Array<{
+        id: string;
+        recipientPhone: string;
+        studentName: string;
+        rollNumber: string;
+        quizTitle: string;
+        score: number;
+        rank: number;
+        messageText: string;
+        status: "delivered" | "queued" | "failed";
+        createdAt: string;
+      }> }).smsLogs;
+      const mappedSmsLogs: DbSmsLog[] | undefined = Array.isArray(rawSmsLogs)
+        ? rawSmsLogs.map((s) => ({
+            id: s.id,
+            recipientPhone: s.recipientPhone,
+            studentName: s.studentName,
+            rollNumber: s.rollNumber,
+            quizTitle: s.quizTitle,
+            score: s.score,
+            rank: s.rank,
+            messageText: s.messageText,
+            status: s.status || "delivered",
+            timestamp: s.createdAt,
+          }))
+        : undefined;
+
       sqliteEngine.runBatch((run) => {
-        if (res.regions?.length) {
+        if (Array.isArray(res.regions)) {
           run("DELETE FROM regions");
           res.regions.forEach((reg) => {
             run(
@@ -234,7 +261,7 @@ class OnneshaDatabase {
           });
         }
 
-        if (res.courses?.length) {
+        if (Array.isArray(res.courses)) {
           run("DELETE FROM courses");
           res.courses.forEach((c) => {
             const privFlag =
@@ -333,7 +360,8 @@ class OnneshaDatabase {
           });
         }
 
-        if (res.examSessions?.length) {
+        if (Array.isArray(res.examSessions)) {
+          run("DELETE FROM exam_sessions");
           res.examSessions.forEach((es) => {
             const thresholdVal =
               typeof es.passThresholdPct === "number" && Number.isFinite(es.passThresholdPct)
@@ -405,7 +433,8 @@ class OnneshaDatabase {
           );
         }
 
-        if (mappedTrx.length) {
+        if (Array.isArray(res.transactions)) {
+          run("DELETE FROM transactions");
           mappedTrx.forEach((t) => {
             run(
               "INSERT OR REPLACE INTO transactions (id, planId, amount, msisdn, trxId, method, date, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -414,7 +443,8 @@ class OnneshaDatabase {
           });
         }
 
-        if (mappedLeads.length) {
+        if (Array.isArray(res.salesLeads)) {
+          run("DELETE FROM sales_leads");
           mappedLeads.forEach((l) => {
             run(
               "INSERT OR REPLACE INTO sales_leads (id, name, organization, email, phone, studentCount, message, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -432,18 +462,40 @@ class OnneshaDatabase {
             );
           });
         }
+
+        if (mappedSmsLogs) {
+          run("DELETE FROM sms_logs");
+          mappedSmsLogs.forEach((s) => {
+            run(
+              "INSERT OR REPLACE INTO sms_logs (id, recipientPhone, studentName, rollNumber, quizTitle, score, rank, messageText, status, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              [
+                s.id,
+                s.recipientPhone,
+                s.studentName,
+                s.rollNumber,
+                s.quizTitle,
+                s.score,
+                s.rank,
+                s.messageText,
+                s.status,
+                s.timestamp,
+              ],
+            );
+          });
+        }
       });
 
-      if (res.regions?.length) this.setStorage("regions", res.regions);
-      if (res.roster?.length) this.setStorage("roster_students", res.roster);
-      if (res.courses?.length) this.setStorage("courses", res.courses);
-      if (res.users?.length) this.setStorage("users", res.users);
-      if (res.customQuizzes?.length) this.setStorage("custom_quizzes", res.customQuizzes);
-      if (res.examSessions?.length) this.setStorage("exam_sessions", res.examSessions);
-      if (res.examResults?.length) this.setStorage("exam_results", res.examResults);
-      if (res.certificates?.length) this.setStorage("certificates", res.certificates);
-      if (mappedTrx.length) this.setStorage("transactions", mappedTrx);
-      if (mappedLeads.length) this.setStorage("sales_leads", mappedLeads);
+      if (Array.isArray(res.regions)) this.setStorage("regions", res.regions);
+      if (Array.isArray(res.roster)) this.setStorage("roster_students", res.roster);
+      if (Array.isArray(res.courses)) this.setStorage("courses", res.courses);
+      if (Array.isArray(res.users)) this.setStorage("users", res.users);
+      if (Array.isArray(res.customQuizzes)) this.setStorage("custom_quizzes", res.customQuizzes);
+      if (Array.isArray(res.examSessions)) this.setStorage("exam_sessions", res.examSessions);
+      if (Array.isArray(res.examResults)) this.setStorage("exam_results", res.examResults);
+      if (Array.isArray(res.certificates)) this.setStorage("certificates", res.certificates);
+      if (Array.isArray(res.transactions)) this.setStorage("transactions", mappedTrx);
+      if (Array.isArray(res.salesLeads)) this.setStorage("sales_leads", mappedLeads);
+      if (mappedSmsLogs) this.setStorage("sms_logs", mappedSmsLogs);
 
       if (res.branding) {
         const mergedBranding = mergeBrandingSettings(res.branding, DEFAULT_BRANDING_SETTINGS);
@@ -795,7 +847,7 @@ class OnneshaDatabase {
         id: r.id,
         name: r.name,
         email: r.email,
-        passwordHash: r.passwordHash || "instructor123",
+        passwordHash: r.passwordHash || "",
         role: (r.role as "admin" | "instructor") || "instructor",
         institution: r.institution || "Onnesha Academic Wing",
         designation: r.designation || "Faculty Instructor",
@@ -806,10 +858,15 @@ class OnneshaDatabase {
         createdAt: r.createdAt || new Date().toISOString(),
       }));
     }
-    return this.getStorage<ManagedUser[]>("users", DEFAULT_USERS);
+    return this.getStorage<ManagedUser[]>("users", DEFAULT_USERS).map((u) => ({
+      ...u,
+      passwordHash: "",
+    }));
   }
 
   saveUser(user: ManagedUser): ManagedUser {
+    const cleanPass =
+      user.passwordHash && user.passwordHash !== "instructor123" ? user.passwordHash : "";
     sqliteEngine.run(
       "INSERT OR REPLACE INTO users (id, email, name, role, institution, designation, phone, passwordHash, plan, assignedCourseIdsJson, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
@@ -820,7 +877,7 @@ class OnneshaDatabase {
         user.institution || "",
         user.designation || "",
         user.phone || "",
-        user.passwordHash || "instructor123",
+        cleanPass,
         user.plan || "institution_max",
         JSON.stringify(user.assignedCourseIds || []),
         user.status || "active",
@@ -828,19 +885,24 @@ class OnneshaDatabase {
       ],
     );
 
+    const safeLocalUser: ManagedUser = { ...user, passwordHash: cleanPass };
     const users = this.getStorage<ManagedUser[]>("users", [...DEFAULT_USERS]);
     const idx = users.findIndex(
       (u) => u.id === user.id || u.email.toLowerCase() === user.email.toLowerCase(),
     );
-    if (idx >= 0) users[idx] = user;
-    else users.push(user);
+    if (idx >= 0) users[idx] = safeLocalUser;
+    else users.push(safeLocalUser);
     this.setStorage("users", users);
 
-    serverAdminMutateStore({ data: { action: "save_user", user } }).catch((err) =>
+    const { passwordHash: _ph, ...userWithoutPass } = user;
+    const serverPayload: ManagedUser = cleanPass
+      ? { ...userWithoutPass, passwordHash: cleanPass }
+      : { ...userWithoutPass, passwordHash: "" };
+    serverAdminMutateStore({ data: { action: "save_user", user: serverPayload } }).catch((err) =>
       console.warn("User server sync notice:", err),
     );
     this.notifyListeners();
-    return user;
+    return safeLocalUser;
   }
 
   deleteUser(id: string): void {
@@ -1395,9 +1457,9 @@ class OnneshaDatabase {
     return undefined;
   }
 
-  issueCertificate(
+  private prepareCertificateLocal(
     cert: Omit<CertificateData, "id">,
-    options?: { syncToServer?: boolean; skipStorageRefresh?: boolean },
+    options?: { skipStorageRefresh?: boolean },
   ): CertificateData {
     const existingRow = sqliteEngine.queryOne<any>(
       "SELECT * FROM certificates WHERE LOWER(certificateNumber) = LOWER(?)",
@@ -1454,6 +1516,15 @@ class OnneshaDatabase {
       this.setStorage("certificates", certs);
     }
 
+    return newCert;
+  }
+
+  issueCertificate(
+    cert: Omit<CertificateData, "id">,
+    options?: { syncToServer?: boolean; skipStorageRefresh?: boolean },
+  ): CertificateData {
+    const newCert = this.prepareCertificateLocal(cert, options);
+
     const syncToServer = options?.syncToServer ?? true;
     if (syncToServer) {
       serverAdminMutateStore({ data: { action: "issue_certificate", certificate: newCert } })
@@ -1469,6 +1540,38 @@ class OnneshaDatabase {
         .catch(() => {});
     }
     return newCert;
+  }
+
+  async issueCertificateAsync(
+    cert: Omit<CertificateData, "id">,
+    options?: { syncToServer?: boolean; skipStorageRefresh?: boolean },
+  ): Promise<{ success: boolean; certificate?: CertificateData; error?: string }> {
+    const newCert = this.prepareCertificateLocal(cert, options);
+    const syncToServer = options?.syncToServer ?? true;
+    if (!syncToServer) {
+      return { success: true, certificate: newCert };
+    }
+    try {
+      const res = await serverAdminMutateStore({
+        data: { action: "issue_certificate", certificate: newCert },
+      });
+      if (res.success && (res as { certificate?: CertificateData }).certificate) {
+        const sealed = (res as { certificate: CertificateData }).certificate;
+        this.upsertSingleCertificateLocal(sealed);
+        this.setStorage("certificates", this.getCertificates());
+        this.notifyListeners();
+        return { success: true, certificate: sealed };
+      }
+      if (!res.success) {
+        return { success: false, error: res.error || "Server rejected certificate issuance." };
+      }
+      return { success: true, certificate: newCert };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : "Network error while sealing certificate on server.",
+      };
+    }
   }
 
   deleteCertificate(certificateNumber: string, options?: { syncToServer?: boolean }): void {
@@ -1497,6 +1600,30 @@ class OnneshaDatabase {
     }
 
     this.notifyListeners();
+  }
+
+  getRevokedCertificates(): string[] {
+    return this.getStorage<string[]>("revoked_certificates", []).map((c) => c.trim().toUpperCase());
+  }
+
+  async restoreCertificate(certificateNumber: string): Promise<boolean> {
+    const normalized = certificateNumber.trim().toUpperCase();
+    if (!normalized) return false;
+    try {
+      const res = await serverAdminMutateStore({
+        data: { action: "restore_certificate", certificateNumber: normalized },
+      });
+      if (!res.success) return false;
+      const nextRevoked = this.getStorage<string[]>("revoked_certificates", []).filter(
+        (c) => c.trim().toUpperCase() !== normalized,
+      );
+      this.setStorage("revoked_certificates", nextRevoked);
+      await this.syncFromServerStore();
+      return true;
+    } catch (err) {
+      console.warn("Certificate restore notice:", err);
+      return false;
+    }
   }
 
   // ---------------- BRANDING & JOINT PARTNER LOGO ----------------
@@ -1532,11 +1659,12 @@ class OnneshaDatabase {
       regions: this.getRegions(),
       roster: this.getRoster(),
       courses: this.getCourses(),
-      users: this.getUsers(),
+      users: this.getUsers().map(({ passwordHash: _ph, ...u }) => u),
       customQuizzes: this.getStorage<Quiz[]>("custom_quizzes", []),
       examSessions: this.getExamSessions(),
       examResults: this.getAllExamResults(),
       certificates: this.getCertificates(),
+      revokedCertificates: this.getStorage<string[]>("revoked_certificates", []),
       branding: this.getBranding(),
     };
     return JSON.stringify(payload, null, 2);
@@ -1545,12 +1673,13 @@ class OnneshaDatabase {
   async importFullBackup(jsonString: string): Promise<boolean> {
     try {
       const parsed = JSON.parse(jsonString);
-      await serverAdminMutateStore({
+      const res = await serverAdminMutateStore({
         data: {
           action: "import_store_backup",
           backup: parsed,
         },
       });
+      if (!res.success) return false;
       await this.syncFromServerStore();
       return true;
     } catch (err) {
@@ -1560,7 +1689,9 @@ class OnneshaDatabase {
   }
 
   async purgeDummyData(): Promise<void> {
-    sqliteEngine.run("DELETE FROM roster_students WHERE email LIKE '%@academy.edu.bd'");
+    sqliteEngine.run(
+      "DELETE FROM roster_students WHERE id IN ('st-1','st-2','st-3','st-4','st-5','st-6','st-7','st-8','st-9','st-10') AND email LIKE '%@academy.edu.bd'",
+    );
     sqliteEngine.run("DELETE FROM exam_results WHERE participantId LIKE 'bot-%'");
     sqliteEngine.run(
       "DELETE FROM courses WHERE id IN ('course-field-safety', 'course-science-stem')",
@@ -1568,6 +1699,32 @@ class OnneshaDatabase {
     sqliteEngine.run("DELETE FROM users WHERE id IN ('usr-instructor-2', 'usr-instructor-3')");
     sqliteEngine.run(
       "DELETE FROM certificates WHERE UPPER(certificateNumber) IN ('ONN-4821-9982', 'ONN-4634-026104')",
+    );
+    this.setStorage(
+      "roster_students",
+      this.getRoster().filter(
+        (s) => !(/^st-([1-9]|10)$/.test(s.id) && s.email?.endsWith("@academy.edu.bd")),
+      ),
+    );
+    this.setStorage(
+      "exam_results",
+      this.getAllExamResults().filter((r) => !(r.participantId || "").startsWith("bot-")),
+    );
+    this.setStorage(
+      "courses",
+      this.getCourses().filter(
+        (c) => !["course-field-safety", "course-science-stem"].includes(c.id),
+      ),
+    );
+    this.setStorage(
+      "users",
+      this.getUsers().filter((u) => !["usr-instructor-2", "usr-instructor-3"].includes(u.id)),
+    );
+    this.setStorage(
+      "certificates",
+      this.getCertificates().filter(
+        (c) => !["ONN-4821-9982", "ONN-4634-026104"].includes(c.certificateNumber.toUpperCase()),
+      ),
     );
     try {
       await serverAdminMutateStore({ data: { action: "purge_dummy_data" } });
@@ -1617,7 +1774,14 @@ class OnneshaDatabase {
     this.notifyListeners();
     serverAdminMutateStore({
       data: { action: "update_transaction", trxId, trxStatus: status },
-    }).catch(() => {});
+    })
+      .then((res) => {
+        if (res.success) {
+          return this.syncFromServerStore();
+        }
+        return undefined;
+      })
+      .catch(() => {});
   }
 
   // ---------------- SMS LOGS ----------------

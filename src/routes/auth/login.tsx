@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useLanguage } from "@/lib/i18n";
+import { normalizeBdPhone } from "@/lib/sanjibon-seed-data";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import onnesha from "@/assets/onnesha.jpg.asset.json";
@@ -41,6 +42,7 @@ function LoginPage() {
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
+  const [devOtpHint, setDevOtpHint] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -67,17 +69,22 @@ function LoginPage() {
 
   const handleSendOtp = async () => {
     setErrorMessage(null);
-    if (phone.replace(/\D/g, "").length < 11) {
-      setErrorMessage("Please enter a valid 11-digit Bangladeshi mobile number.");
+    setDevOtpHint(null);
+    const normalized = normalizeBdPhone(phone);
+    if (!/^01[3-9]\d{8}$/.test(normalized)) {
+      setErrorMessage("Please enter a valid 11-digit Bangladeshi mobile number (01XXXXXXXXX).");
       return;
     }
 
     setIsLoading(true);
-    const result = await requestPhoneOtp(phone);
+    const result = await requestPhoneOtp(normalized);
     setIsLoading(false);
 
     if (result.success) {
       setOtpSent(true);
+      if (result.devOtp) {
+        setDevOtpHint(result.devOtp);
+      }
     } else {
       setErrorMessage(result.error || "Failed to dispatch verification code.");
     }
@@ -86,12 +93,18 @@ function LoginPage() {
   const handlePhoneOtpLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    const normalized = normalizeBdPhone(phone);
+    if (!/^01[3-9]\d{8}$/.test(normalized)) {
+      setErrorMessage("Please enter a valid 11-digit Bangladeshi mobile number (01XXXXXXXXX).");
+      return;
+    }
     setIsLoading(true);
 
-    const result = await loginWithPhoneOtp(phone, otp);
+    const result = await loginWithPhoneOtp(normalized, otp);
     setIsLoading(false);
 
     if (result.success) {
+      setDevOtpHint(null);
       if (result.role === "admin") {
         navigate({ to: "/admin" });
       } else if (result.role === "candidate") {
@@ -324,6 +337,11 @@ function LoginPage() {
                       Security OTP has been dispatched to {phone}. Please check your phone.
                     </span>
                   </div>
+                  {import.meta.env.DEV && devOtpHint && (
+                    <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] font-mono text-amber-700 dark:text-amber-300">
+                      Dev Sandbox OTP: <strong className="tracking-widest">{devOtpHint}</strong>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -340,9 +358,9 @@ function LoginPage() {
 
           {/* Footer Signup Link */}
           <div className="mt-6 text-center text-xs text-muted-foreground border-t border-border/80 pt-4">
-            Need a new instructor account?{" "}
+            New examinee or candidate?{" "}
             <Link to="/auth/signup" className="font-bold text-primary hover:underline">
-              Register Faculty Account
+              Create Candidate Account
             </Link>
           </div>
         </div>

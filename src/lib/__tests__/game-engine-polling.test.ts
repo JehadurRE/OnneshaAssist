@@ -404,3 +404,86 @@ describe("live engine timing, offline recovery & token security", () => {
     unsub();
   });
 });
+
+describe("host pause/resume & QUESTION_CLOSED outbox handling", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    serverHostControl.mockReset();
+    serverSubmitAnswer.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("syncs pause/resume via serverHostControl and falls back cleanly offline", async () => {
+    const engine = await loadEngine();
+    vi.setSystemTime(100_000);
+
+    const pausedSession = makeSession("991122", 100_000, "question", {
+      questionStartTime: 90_000,
+      questionEndTime: 120_000,
+      pausedAt: 100_000,
+    });
+    serverHostControl.mockResolvedValueOnce({
+      success: true,
+      serverNow: 100_000,
+      session: pausedSession,
+    });
+
+    engine.pauseGame("991122");
+    await flush();
+
+    expect(serverHostControl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ pin: "991122", action: "pause_game" }),
+      }),
+    );
+    expect(engine.getSession("991122")?.pausedAt).toBe(100_000);
+
+    // Offline fallback on pauseGame & resumeGame shifts deadline cleanly
+    vi.setSystemTime(105_000);
+    serverHostControl.mockRejectedValueOnce(new Error("offline"));
+    engine.resumeGame("991122");
+    await flush();
+
+    const resumedLocal = engine.getSession("991122");
+    expect(resumedLocal?.pausedAt).toBeUndefined();
+    expect(resumedLocal?.questionStartTime).toBe(95_000);
+    expect(resumedLocal?.questionEndTime).toBe(125_000);
+
+    serverHostControl.mockRejectedValueOnce(new Error("offline"));
+    engine.pauseGame("991122");
+    await flush();
+    expect(engine.getSession("991122")?.pausedAt).toBe(105_000);
+  });
+
+  it("drops QUESTION_CLOSED rejections instead of keeping them in the offline outbox", async () => {
+    const engine = await loadEngine();
+
+    // 1. Live submitAnswer with QUESTION_CLOSED must not enqueue into outbox
+    serverSubmitAnswer.mockResolvedValueOnce({
+      success: false,
+      code: "QUESTION_CLOSED",
+      error: "Answer window has closed for this question.",
+    });
+
+    engine.submitAnswer("556677", "p-1", "q-1", ["opt-a"]);
+    await flush();
+    expect(engine.getOfflineOutbox()).toHaveLength(0);
+
+    // 2. Previously queued answer hitting QUESTION_CLOSED during flush must be discarded
+    serverSubmitAnswer.mockRejectedValueOnce(new Error("temporary drop"));
+    engine.submitAnswer("556677", "p-1", "q-2", ["opt-b"]);
+    await flush();
+    expect(engine.getOfflineOutbox()).toHaveLength(1);
+
+    serverSubmitAnswer.mockResolvedValueOnce({
+      success: false,
+      code: "QUESTION_CLOSED",
+      error: "Closed",
+    });
+    await engine.flushOfflineOutbox();
+    expect(engine.getOfflineOutbox()).toHaveLength(0);
+  });
+});

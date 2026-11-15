@@ -21,6 +21,8 @@ export const Route = createFileRoute("/contact-sales")({
 function ContactSalesPage() {
   const { lang } = useLanguage();
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     org: "",
@@ -30,27 +32,43 @@ function ContactSalesPage() {
     message: "",
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    db.recordSalesLead({
-      name: formData.name,
-      organization: formData.org,
-      email: formData.email,
-      phone: formData.phone,
-      studentCount: formData.students,
-      message: formData.message,
-    });
-    serverSubmitSalesLead({
-      data: {
+    if (isSubmitting) return;
+    setSubmitError(null);
+    setIsSubmitting(true);
+    try {
+      const res = await serverSubmitSalesLead({
+        data: {
+          name: formData.name,
+          organization: formData.org,
+          email: formData.email,
+          phone: formData.phone,
+          studentCount: formData.students,
+          message: formData.message,
+        },
+      });
+      if (!res?.success) {
+        setSubmitError(
+          (res as { error?: string } | undefined)?.error ||
+            "Could not deliver inquiry to server. Please check all fields and retry.",
+        );
+        return;
+      }
+      db.recordSalesLead({
         name: formData.name,
         organization: formData.org,
         email: formData.email,
         phone: formData.phone,
         studentCount: formData.students,
         message: formData.message,
-      },
-    }).catch(() => {});
-    setSubmitted(true);
+      });
+      setSubmitted(true);
+    } catch {
+      setSubmitError("Unable to reach server. Please check your internet connection and retry.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -182,12 +200,27 @@ function ContactSalesPage() {
                 />
               </div>
 
+              {submitError && (
+                <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs font-semibold text-destructive">
+                  {submitError}
+                </div>
+              )}
+
               <button
                 type="submit"
-                className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 text-sm font-bold text-primary-foreground shadow-md transition hover:bg-primary/90"
+                disabled={isSubmitting}
+                className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 text-sm font-bold text-primary-foreground shadow-md transition hover:bg-primary/90 disabled:opacity-50"
               >
                 <Send className="h-4 w-4" />
-                <span>{lang === "bn" ? "ইনকোয়ারি পাঠান" : "Submit Inquiry"}</span>
+                <span>
+                  {isSubmitting
+                    ? lang === "bn"
+                      ? "পাঠানো হচ্ছে..."
+                      : "Sending..."
+                    : lang === "bn"
+                      ? "ইনকোয়ারি পাঠান"
+                      : "Submit Inquiry"}
+                </span>
               </button>
             </form>
           )}

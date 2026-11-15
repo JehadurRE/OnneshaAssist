@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useLanguage } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth-context";
 import { useBranding } from "@/hooks/use-branding";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
@@ -51,6 +52,8 @@ export const Route = createFileRoute("/")({
 
 function HomePage() {
   const { lang, t } = useLanguage();
+  const { user, isAuthenticated } = useAuth();
+  const isStaff = isAuthenticated && (user?.role === "admin" || user?.role === "instructor");
   const branding = useBranding();
   const navigate = useNavigate();
   const [pin, setPin] = useState("");
@@ -62,7 +65,7 @@ function HomePage() {
   const [sampleAnswered, setSampleAnswered] = useState(false);
   const [sampleScore, setSampleScore] = useState<number>(0);
 
-  // Interactive Candidate Lookup Preview backed by live database roster
+  // Interactive Candidate Lookup Preview backed by live database roster ONLY for authenticated staff
   const [demoQuery, setDemoQuery] = useState("");
   const [realResults, setRealResults] = useState<ExamResultRecord[]>([]);
   const [realRoster, setRealRoster] = useState<RosterStudent[]>([]);
@@ -72,14 +75,14 @@ function HomePage() {
 
   useEffect(() => {
     const sync = () => {
-      setRealResults(db.getAllExamResults());
-      setRealRoster(db.getRoster());
+      setRealResults(isStaff ? db.getAllExamResults() : []);
+      setRealRoster(isStaff ? db.getRoster() : []);
       const allCourses = db.getCourses();
       setAvailablePacks(db.getQuizzes().filter((q) => !isQuizPrivate(q, allCourses)));
     };
     sync();
     return db.subscribe(sync);
-  }, []);
+  }, [isStaff]);
 
   const sampleQuestion = {
     code: "BCS-46 · CONST-39",
@@ -107,13 +110,35 @@ function HomePage() {
     score: String(r.score),
   }));
 
+const DEMO_PREVIEW_CANDIDATES = [
+  {
+    id: "demo-1",
+    name: "Sample Candidate (Dhaka)",
+    rollNumber: "DEMO-101",
+    phone: "01700000101",
+    regionId: "reg-dhaka",
+    regionName: "Dhaka Range",
+    batch: "Demo Batch",
+  },
+  {
+    id: "demo-2",
+    name: "Sample Candidate (Chattogram)",
+    rollNumber: "DEMO-102",
+    phone: "01700000102",
+    regionId: "reg-chattogram",
+    regionName: "Chattogram Range",
+    batch: "Demo Batch",
+  },
+];
+
+  const demoPool = isStaff ? realRoster : DEMO_PREVIEW_CANDIDATES;
   const matchedDemoCandidate = demoQuery.trim()
-    ? realRoster.find(
+    ? demoPool.find(
         (c) =>
           (c.phone || "").includes(demoQuery.trim()) ||
           c.rollNumber.toLowerCase() === demoQuery.trim().toLowerCase()
       )
-    : realRoster[0];
+    : demoPool[0];
 
   const handleSampleOptionClick = (index: number) => {
     if (sampleAnswered) return;
@@ -576,7 +601,7 @@ function HomePage() {
                       </div>
                     </div>
                     <span className="rounded-md bg-primary/15 px-2.5 py-1 font-mono text-[10px] font-bold text-primary">
-                      AUTO-FILLED
+                      {isStaff ? "AUTO-FILLED" : "DEMO PREVIEW"}
                     </span>
                   </div>
                 ) : (

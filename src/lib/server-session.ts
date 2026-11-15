@@ -36,6 +36,7 @@ import {
   canActorMutateStoreAction,
   generateHostToken,
   getCertificateSigningKeys,
+  getNodeCrypto,
   getServerSessionSecret,
   hashPasswordScrypt,
   sanitizeUserForClient,
@@ -118,6 +119,8 @@ interface PersistentStoreData {
   examResults: ExamResultRecord[];
   certificates: CertificateData[];
   revokedCertificates?: string[] | undefined;
+  revokedCertificateArchive?: Record<string, CertificateData> | undefined;
+  purgedSampleData?: boolean | undefined;
   ledgerCheckpoints: LedgerOtsCheckpoint[];
   transactions: ServerTransactionRecord[];
   smsLogs: ServerSmsLogRecord[];
@@ -140,6 +143,7 @@ interface PendingPhoneOtp {
   code: string;
   expiresAt: number;
   attempts: number;
+  lastSentAt: number;
 }
 
 function getNodeFs(): typeof import("node:fs") | null {
@@ -170,8 +174,15 @@ const globalStore = globalThis as unknown as {
   __onneshaStore?: PersistentStoreData;
   __onneshaLiveSessions?: Record<string, ServerLiveSession>;
   __onneshaSaveTimer?: ReturnType<typeof setTimeout> | null;
+  __onneshaSaveBusy?: boolean;
+  __onneshaSaveDirty?: boolean;
   __onneshaLiveSaveTimer?: ReturnType<typeof setTimeout> | null;
+  __onneshaLiveSaveBusy?: boolean;
+  __onneshaLiveSaveDirty?: boolean;
+  __onneshaTmpSeq?: number;
+  __onneshaShutdownHooked?: boolean;
   __onneshaPhoneOtps?: Record<string, PendingPhoneOtp>;
+  __onneshaAnchorCooldowns?: Record<string, number>;
 };
 
 const AUTH_COOKIE_NAME = "onnesha_sid";
@@ -269,6 +280,7 @@ export function mergeSeededStoreData<
     regions: Region[];
     courses: Course[];
     roster: RosterStudent[];
+    purgedSampleData?: boolean | undefined;
   },
 >(current: T): T {
   const regions = [...current.regions];
@@ -283,6 +295,13 @@ export function mergeSeededStoreData<
       // Upgrade generic Sylhet/Barishal placeholder names to official Training Centres
       regions[idx] = { ...regions[idx]!, ...defReg };
     }
+  }
+
+  if (current.purgedSampleData) {
+    return {
+      ...current,
+      regions,
+    };
   }
 
   const courses = [...current.courses];
@@ -411,30 +430,41 @@ function loadInitialStore(): PersistentStoreData {
       }
       if (fs.existsSync(storeFile)) {
         const raw = fs.readFileSync(storeFile, "utf-8");
-        const parsed = JSON.parse(raw) as Partial<PersistentStoreData>;
-        const cleanedRoster = (parsed.roster || []).filter(
-          (s) => !(/^st-([1-9]|10)$/.test(s.id) && s.email?.endsWith("@academy.edu.bd")),
-        );
-        const cleanedResults = (parsed.examResults || []).filter(
-          (r) => !(r.participantId || "").startsWith("bot-"),
-        );
-        return mergeSeededStoreData({
-          regions: parsed.regions?.length ? parsed.regions : [...DEFAULT_REGIONS],
-          roster: cleanedRoster,
-          courses: parsed.courses?.length ? parsed.courses : [...DEFAULT_COURSES],
-          users: ensureDefaultUsers(parsed.users),
-          customQuizzes: parsed.customQuizzes || [],
-          examSessions: parsed.examSessions || [],
-          examResults: cleanedResults,
-          certificates: parsed.certificates || [],
-          revokedCertificates: parsed.revokedCertificates || [],
-          ledgerCheckpoints: parsed.ledgerCheckpoints || [],
-          transactions: parsed.transactions || [],
-          smsLogs: parsed.smsLogs || [],
-          salesLeads: parsed.salesLeads || [],
-          branding: mergeBrandingSettings(parsed.branding, DEFAULT_BRANDING),
-          updatedAt: parsed.updatedAt || Date.now(),
-        });
+        try {
+          const parsed = JSON.parse(raw) as Partial<PersistentStoreData>;
+          const cleanedRoster = (parsed.roster || []).filter(
+            (s) => !(/^st-([1-9]|10)$/.test(s.id) && s.email?.endsWith("@academy.edu.bd")),
+          );
+          const cleanedResults = (parsed.examResults || []).filter(
+            (r) => !(r.participantId || "").startsWith("bot-"),
+          );
+          const purged = !!parsed.purgedSampleData;
+          return mergeSeededStoreData({
+            regions: parsed.regions?.length ? parsed.regions : [...DEFAULT_REGIONS],
+            roster: cleanedRoster,
+            courses: purged ? parsed.courses || [] : parsed.courses?.length ? parsed.courses : [...DEFAULT_COURSES],
+            users: ensureDefaultUsers(parsed.users),
+            customQuizzes: parsed.customQuizzes || [],
+            examSessions: parsed.examSessions || [],
+            examResults: cleanedResults,
+            certificates: parsed.certificates || [],
+            revokedCertificates: parsed.revokedCertificates || [],
+            revokedCertificateArchive: parsed.revokedCertificateArchive || {},
+            purgedSampleData: purged,
+            ledgerCheckpoints: parsed.ledgerCheckpoints || [],
+            transactions: parsed.transactions || [],
+            smsLogs: parsed.smsLogs || [],
+            salesLeads: parsed.salesLeads || [],
+            branding: mergeBrandingSettings(parsed.branding, DEFAULT_BRANDING),
+            updatedAt: parsed.updatedAt || Date.now(),
+          });
+        } catch (parseErr) {
+          // Preserve corrupted snapshot instead of silently overwriting it on next save
+          try {
+            fs.copyFileSync(storeFile, `${storeFile}.corrupt-${Date.now()}`);
+          } catch {}
+          console.warn("[OnneshaServerStore] Store JSON corrupted; backed up copy:", parseErr);
+        }
       }
     }
   } catch (err) {
@@ -451,6 +481,8 @@ function loadInitialStore(): PersistentStoreData {
     examResults: [],
     certificates: [],
     revokedCertificates: [],
+    revokedCertificateArchive: {},
+    purgedSampleData: false,
     ledgerCheckpoints: [],
     transactions: [],
     smsLogs: [],
@@ -490,48 +522,126 @@ function getLiveSessions(): Record<string, ServerLiveSession> {
   return globalStore.__onneshaLiveSessions;
 }
 
-function scheduleLiveSessionsPersist() {
-  if (globalStore.__onneshaLiveSaveTimer) return;
-  globalStore.__onneshaLiveSaveTimer = setTimeout(async () => {
-    globalStore.__onneshaLiveSaveTimer = null;
-    try {
+function nextTmpSuffix(): string {
+  globalStore.__onneshaTmpSeq = ((globalStore.__onneshaTmpSeq || 0) + 1) % 1_000_000;
+  const pid = typeof process !== "undefined" ? process.pid : 0;
+  return `${pid}.${globalStore.__onneshaTmpSeq}.tmp`;
+}
+
+function flushAllPendingDiskSync() {
+  try {
+    const fs = getNodeFs();
+    if (!fs) return;
+    const { dataDir, storeFile, liveFile } = getStorePaths();
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    if (globalStore.__onneshaSaveTimer && globalStore.__onneshaStore) {
+      clearTimeout(globalStore.__onneshaSaveTimer);
+      globalStore.__onneshaSaveTimer = null;
+      const tmp = `${storeFile}.${nextTmpSuffix()}`;
+      fs.writeFileSync(tmp, JSON.stringify(globalStore.__onneshaStore), "utf-8");
+      fs.renameSync(tmp, storeFile);
+    }
+    if (globalStore.__onneshaLiveSaveTimer && globalStore.__onneshaLiveSessions) {
+      clearTimeout(globalStore.__onneshaLiveSaveTimer);
+      globalStore.__onneshaLiveSaveTimer = null;
+      const tmpLive = `${liveFile}.${nextTmpSuffix()}`;
+      fs.writeFileSync(tmpLive, JSON.stringify(globalStore.__onneshaLiveSessions), "utf-8");
+      fs.renameSync(tmpLive, liveFile);
+    }
+  } catch {
+    // best-effort shutdown flush
+  }
+}
+
+function ensureShutdownHooks() {
+  if (globalStore.__onneshaShutdownHooked || typeof process === "undefined" || !process.once) return;
+  globalStore.__onneshaShutdownHooked = true;
+  process.once("SIGINT", flushAllPendingDiskSync);
+  process.once("SIGTERM", flushAllPendingDiskSync);
+  process.once("beforeExit", flushAllPendingDiskSync);
+}
+
+async function flushLiveSessionsToDisk() {
+  if (globalStore.__onneshaLiveSaveBusy) {
+    globalStore.__onneshaLiveSaveDirty = true;
+    return;
+  }
+  globalStore.__onneshaLiveSaveBusy = true;
+  try {
+    do {
+      globalStore.__onneshaLiveSaveDirty = false;
       const fs = getNodeFs();
-      if (!fs) return;
+      if (!fs) break;
       const { dataDir, liveFile } = getStorePaths();
       if (!fs.existsSync(dataDir)) {
         await fs.promises.mkdir(dataDir, { recursive: true });
       }
       const sessions = getLiveSessions();
-      const tmp = `${liveFile}.tmp`;
+      const tmp = `${liveFile}.${nextTmpSuffix()}`;
       await fs.promises.writeFile(tmp, JSON.stringify(sessions), "utf-8");
       await fs.promises.rename(tmp, liveFile);
-    } catch {
-      // silent background save guard
-    }
+    } while (globalStore.__onneshaLiveSaveDirty);
+  } catch (err) {
+    console.warn("[OnneshaLiveSessions] Disk persist warning:", err);
+  } finally {
+    globalStore.__onneshaLiveSaveBusy = false;
+  }
+}
+
+function scheduleLiveSessionsPersist() {
+  ensureShutdownHooks();
+  if (globalStore.__onneshaLiveSaveBusy) {
+    globalStore.__onneshaLiveSaveDirty = true;
+  }
+  if (globalStore.__onneshaLiveSaveTimer) return;
+  globalStore.__onneshaLiveSaveTimer = setTimeout(() => {
+    globalStore.__onneshaLiveSaveTimer = null;
+    void flushLiveSessionsToDisk();
   }, 600);
 }
 
-// Debounced non-blocking atomic disk write (handles 500+ req/sec without I/O contention)
-function scheduleDiskPersist() {
-  const store = getStore();
-  store.updatedAt = Date.now();
-  if (globalStore.__onneshaSaveTimer) return;
-
-  globalStore.__onneshaSaveTimer = setTimeout(async () => {
-    globalStore.__onneshaSaveTimer = null;
-    try {
+async function flushStoreToDisk() {
+  if (globalStore.__onneshaSaveBusy) {
+    globalStore.__onneshaSaveDirty = true;
+    return;
+  }
+  globalStore.__onneshaSaveBusy = true;
+  try {
+    do {
+      globalStore.__onneshaSaveDirty = false;
       const fs = getNodeFs();
-      if (!fs) return;
+      if (!fs) break;
       const { dataDir, storeFile } = getStorePaths();
       if (!fs.existsSync(dataDir)) {
         await fs.promises.mkdir(dataDir, { recursive: true });
       }
-      const tmpFile = `${storeFile}.tmp`;
+      const store = getStore();
+      const tmpFile = `${storeFile}.${nextTmpSuffix()}`;
       await fs.promises.writeFile(tmpFile, JSON.stringify(store), "utf-8");
       await fs.promises.rename(tmpFile, storeFile);
-    } catch (err) {
-      console.warn("[OnneshaServerStore] Disk persist warning:", err);
-    }
+    } while (globalStore.__onneshaSaveDirty);
+  } catch (err) {
+    console.warn("[OnneshaServerStore] Disk persist warning:", err);
+  } finally {
+    globalStore.__onneshaSaveBusy = false;
+  }
+}
+
+// Debounced non-blocking atomic disk write (handles 500+ req/sec without I/O contention)
+function scheduleDiskPersist() {
+  ensureShutdownHooks();
+  const store = getStore();
+  store.updatedAt = Date.now();
+  if (globalStore.__onneshaSaveBusy) {
+    globalStore.__onneshaSaveDirty = true;
+  }
+  if (globalStore.__onneshaSaveTimer) return;
+
+  globalStore.__onneshaSaveTimer = setTimeout(() => {
+    globalStore.__onneshaSaveTimer = null;
+    void flushStoreToDisk();
   }, 350);
 }
 
@@ -632,6 +742,153 @@ export function syncUserCoursesInStore(
   });
 }
 
+export function resolveSignupRoleForActor(
+  actor: { role: ManagedUser["role"] } | null,
+  requestedRole: ManagedUser["role"],
+): { allowed: boolean; role: ManagedUser["role"]; error?: string } {
+  if ((requestedRole === "admin" || requestedRole === "instructor") && actor?.role !== "admin") {
+    return {
+      allowed: false,
+      role: "candidate",
+      error:
+        "Instructor and Admin accounts must be provisioned by your Institution Super Admin in the Admin Panel.",
+    };
+  }
+  return {
+    allowed: true,
+    role: actor?.role === "admin" && requestedRole === "instructor" ? "instructor" : "candidate",
+  };
+}
+
+export function upsertManagedUserInStore(
+  users: ManagedUser[],
+  incomingUser: ManagedUser,
+): { success: boolean; users: ManagedUser[]; savedUser?: ManagedUser; error?: string } {
+  const nextUsers = [...users];
+  const idx = nextUsers.findIndex(
+    (u) => u.id === incomingUser.id || u.email.toLowerCase() === incomingUser.email.toLowerCase(),
+  );
+  const rawIncomingPass = incomingUser.passwordHash?.trim();
+  const incomingPass =
+    idx >= 0 && rawIncomingPass === "instructor123" ? undefined : rawIncomingPass;
+  const nextHash =
+    incomingPass && !incomingPass.startsWith("scrypt:")
+      ? hashPasswordScrypt(incomingPass)
+      : incomingPass;
+  const existing = idx >= 0 ? nextUsers[idx] : undefined;
+  if (idx >= 0 && existing) {
+    const savedUser: ManagedUser = {
+      ...existing,
+      ...incomingUser,
+      passwordHash: nextHash || existing.passwordHash,
+    };
+    nextUsers[idx] = savedUser;
+    return { success: true, users: nextUsers, savedUser };
+  }
+  if (!nextHash) {
+    return {
+      success: false,
+      users: nextUsers,
+      error: "A password is required when creating a new user account.",
+    };
+  }
+  const savedUser: ManagedUser = {
+    ...incomingUser,
+    passwordHash: nextHash,
+  };
+  nextUsers.push(savedUser);
+  return { success: true, users: nextUsers, savedUser };
+}
+
+export function deleteCertificateInStore(
+  store: {
+    certificates: CertificateData[];
+    revokedCertificates?: string[] | undefined;
+    revokedCertificateArchive?: Record<string, CertificateData> | undefined;
+  },
+  certificateNumber: string,
+): boolean {
+  const targetCertNo = (certificateNumber || "").trim().toUpperCase();
+  if (!targetCertNo) return false;
+  const removedCert = store.certificates.find(
+    (c) => c.certificateNumber.trim().toUpperCase() === targetCertNo,
+  );
+  if (removedCert) {
+    store.revokedCertificateArchive = {
+      ...(store.revokedCertificateArchive || {}),
+      [targetCertNo]: removedCert,
+    };
+  }
+  store.certificates = store.certificates.filter(
+    (c) => c.certificateNumber.trim().toUpperCase() !== targetCertNo,
+  );
+  const revoked = new Set(
+    (store.revokedCertificates || []).map((c) => c.trim().toUpperCase()),
+  );
+  revoked.add(targetCertNo);
+  store.revokedCertificates = [...revoked];
+  return true;
+}
+
+export function restoreCertificateInStore(
+  store: {
+    certificates: CertificateData[];
+    revokedCertificates?: string[] | undefined;
+    revokedCertificateArchive?: Record<string, CertificateData> | undefined;
+  },
+  certificateNumber: string,
+): boolean {
+  const targetCertNo = (certificateNumber || "").trim().toUpperCase();
+  if (!targetCertNo) return false;
+  store.revokedCertificates = (store.revokedCertificates || []).filter(
+    (c) => c.trim().toUpperCase() !== targetCertNo,
+  );
+  const archived = store.revokedCertificateArchive?.[targetCertNo];
+  if (archived) {
+    const exists = store.certificates.some(
+      (c) => c.certificateNumber.trim().toUpperCase() === targetCertNo,
+    );
+    if (!exists) {
+      store.certificates.unshift(archived);
+    }
+    const nextArchive = { ...(store.revokedCertificateArchive || {}) };
+    delete nextArchive[targetCertNo];
+    store.revokedCertificateArchive = nextArchive;
+  }
+  return true;
+}
+
+export function isQuestionSubmissionClosed(
+  session: Pick<GameSession, "phase" | "currentQuestion">,
+  questionId: string,
+): boolean {
+  return (
+    (session.phase === "chart" || session.phase === "leaderboard") &&
+    session.currentQuestion?.id === questionId
+  );
+}
+
+export function applyPauseGameToSession(session: ServerLiveSession, now = Date.now()): boolean {
+  if (session.pausedAt || session.phase !== "question") return false;
+  session.pausedAt = now;
+  session.updatedAt = now;
+  return true;
+}
+
+export function applyResumeGameToSession(session: ServerLiveSession, now = Date.now()): boolean {
+  if (!session.pausedAt) return false;
+  const pausedMs = Math.max(0, now - session.pausedAt);
+  if (typeof session.questionStartTime === "number") {
+    session.questionStartTime += pausedMs;
+  }
+  if (typeof session.questionEndTime === "number") {
+    session.questionEndTime += pausedMs;
+  }
+  session.pausedAt = undefined;
+  session.updatedAt = now;
+  return true;
+}
+
 function makeCertificateNumber(pin: string, rollNumber?: string, fallbackIdx = 1): string {
   const cleanRoll = (rollNumber || `${100 + fallbackIdx}`)
     .replace(/[^a-zA-Z0-9]/g, "")
@@ -642,20 +899,27 @@ function makeCertificateNumber(pin: string, rollNumber?: string, fallbackIdx = 1
 }
 
 function recalculateSessionMetrics(session: ServerLiveSession) {
-  const list = Object.values(session.participants);
-  list.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    return a.lastActive - b.lastActive;
-  });
-  list.forEach((p, idx) => {
+  const all = Object.values(session.participants);
+  const sortParticipants = (arr: Participant[]) =>
+    arr.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.lastActive - b.lastActive;
+    });
+
+  const isEnded = session.phase === "podium" || session.phase === "finished";
+  const humans = all.filter((p) => !p.isBot);
+  const rankSource = isEnded && humans.length > 0 ? sortParticipants([...humans]) : sortParticipants([...all]);
+
+  rankSource.forEach((p, idx) => {
     const entry = session.participants[p.id];
     if (entry) entry.rank = idx + 1;
   });
-  session.participantCount = list.length;
+
+  session.participantCount = rankSource.length;
   const currentQId = session.currentQuestion?.id;
-  session.answeredCount = currentQId ? list.filter((p) => !!p.answers[currentQId]).length : 0;
-  session.cachedTop5 = list.slice(0, 5).map((p) => {
-    const { seatToken: _s, answers: _a, ...rest } = p;
+  session.answeredCount = currentQId ? rankSource.filter((p) => !!p.answers[currentQId]).length : 0;
+  session.cachedTop5 = rankSource.slice(0, 5).map((p) => {
+    const { seatToken: _s, answers: _a, phone: _ph, ...rest } = p;
     return {
       ...rest,
       answers: {},
@@ -694,17 +958,18 @@ function buildPlayerSessionProjection(
   session: ServerLiveSession,
   participantId?: string,
 ): GameSession {
-  // O(1) constant-time projection for 500+ concurrent examinees
+  // O(1) constant-time projection for 500+ concurrent examinees (phone redacted)
   const compactParticipants: Record<string, Participant> = {};
   if (participantId && session.participants[participantId]) {
-    const { seatToken: _s, ...meSafe } = session.participants[participantId];
+    const { seatToken: _s, phone: _ph, ...meSafe } = session.participants[participantId];
     compactParticipants[participantId] = meSafe;
   }
 
   const top5 = session.cachedTop5 || [];
   for (const p of top5) {
     if (!compactParticipants[p.id]) {
-      compactParticipants[p.id] = p;
+      const { seatToken: _s, phone: _ph, ...safeTop } = p;
+      compactParticipants[p.id] = safeTop;
     }
   }
 
@@ -722,6 +987,7 @@ function buildPlayerSessionProjection(
       sanitizeQuestionForPlayer(session.currentQuestion, session.phase),
     questionStartTime: session.questionStartTime,
     questionEndTime: session.questionEndTime,
+    ...(typeof session.pausedAt === "number" ? { pausedAt: session.pausedAt } : {}),
     settings: session.settings,
     participants: compactParticipants,
     totalQuestions: session.totalQuestions,
@@ -905,6 +1171,19 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
 
   const totalMarks = computeTotalQuizMarks(quizObj?.questions, session.totalQuestions);
   const mintedCertNumbers: string[] = [];
+  const mintedCerts: CertificateData[] = [];
+  const mintedCertUpper = new Set<string>();
+  const dataDir = getStorePaths().dataDir;
+
+  // Locate current ledger tail once so sealing N certificates runs in O(N) instead of O(N^2)
+  let currentTailCert: CertificateData | undefined;
+  for (const c of store.certificates) {
+    if (typeof c.ledgerIndex === "number" && c.chainHash) {
+      if (!currentTailCert || (c.ledgerIndex || 0) > (currentTailCert.ledgerIndex || 0)) {
+        currentTailCert = c;
+      }
+    }
+  }
 
   participantsList.forEach((p, idx) => {
     const answersList = Object.values(p.answers || {});
@@ -990,19 +1269,25 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
 
       const certRecord = sealCertificateWithLedger(
         unsignedCert,
-        store.certificates,
-        getStorePaths().dataDir,
+        currentTailCert ? [currentTailCert] : [],
+        dataDir,
       );
+      if (typeof certRecord.ledgerIndex === "number" && certRecord.chainHash) {
+        currentTailCert = certRecord;
+      }
 
-      store.certificates = [
-        certRecord,
-        ...store.certificates.filter(
-          (c) => c.certificateNumber.toLowerCase() !== certNo.toLowerCase(),
-        ),
-      ];
+      mintedCerts.unshift(certRecord);
+      mintedCertUpper.add(certNo.toUpperCase());
       mintedCertNumbers.push(certNo);
     }
   });
+
+  if (mintedCerts.length > 0) {
+    store.certificates = [
+      ...mintedCerts,
+      ...store.certificates.filter((c) => !mintedCertUpper.has(c.certificateNumber.toUpperCase())),
+    ];
+  }
 
   scheduleDiskPersist();
   if (mintedCertNumbers.length > 0) {
@@ -1120,15 +1405,15 @@ export const serverGetBootstrapData = createServerFn({ method: "GET" }).handler(
     success: true,
     regions: store.regions,
     roster: isStaff ? store.roster : [],
-    courses: store.courses,
+    courses: isStaff ? store.courses : store.courses.filter((c) => !isCoursePrivate(c)),
     users: isStaff ? store.users.map(sanitizeUserForClient) : [],
     customQuizzes: isStaff
       ? store.customQuizzes
       : store.customQuizzes.filter((q) => !isQuizPrivate(q, store.courses)),
-    examSessions: store.examSessions,
+    examSessions: isStaff ? store.examSessions : [],
     examResults: isStaff ? store.examResults : [],
-    certificates: store.certificates,
-    revokedCertificates: store.revokedCertificates || [],
+    certificates: isStaff ? store.certificates : [],
+    revokedCertificates: isStaff ? store.revokedCertificates || [] : [],
     transactions: actor?.role === "admin" ? store.transactions : [],
     smsLogs: isStaff ? store.smsLogs : [],
     salesLeads: actor?.role === "admin" ? store.salesLeads : [],
@@ -1185,18 +1470,19 @@ export const serverSignupUser = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const store = getStore();
+    const actor = await getActorFromRequest();
     const cleanEmail = (data.email || "").trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes("@")) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       return { success: false, error: "Please enter a valid email address." };
     }
     if (!data.password || data.password.length < 6) {
       return { success: false, error: "Password must be at least 6 characters long." };
     }
-    if (data.role === "admin") {
+    const roleCheck = resolveSignupRoleForActor(actor, data.role);
+    if (!roleCheck.allowed) {
       return {
         success: false,
-        error:
-          "Super Admin accounts cannot be self-registered. Please contact your institution administrator.",
+        error: roleCheck.error,
       };
     }
 
@@ -1204,19 +1490,25 @@ export const serverSignupUser = createServerFn({ method: "POST" })
       return { success: false, error: "An account with this email already exists." };
     }
 
-    const safeRole: ManagedUser["role"] = data.role === "candidate" ? "candidate" : "instructor";
+    const safeRole: ManagedUser["role"] = roleCheck.role;
     const id = `usr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`;
+    const normalizedPhone = normalizeBdPhone(data.phone);
     const newUser: ManagedUser = {
       id,
       email: cleanEmail,
-      name: (data.name || "").trim() || cleanEmail.split("@")[0] || "Instructor",
+      name: (data.name || "").trim() || cleanEmail.split("@")[0] || "Candidate",
       role: safeRole,
-      institutionName: data.institutionName?.trim() || "Onnesha Member Institution",
-      institution: data.institutionName?.trim() || "Onnesha Member Institution",
-      phone: data.phone?.trim(),
+      institutionName:
+        data.institutionName?.trim() ||
+        (safeRole === "candidate" ? "Candidate Self-Sign-In" : "Onnesha Member Institution"),
+      institution:
+        data.institutionName?.trim() ||
+        (safeRole === "candidate" ? "Candidate Self-Sign-In" : "Onnesha Member Institution"),
+      ...(normalizedPhone ? { phone: normalizedPhone } : {}),
       passwordHash: hashPasswordScrypt(data.password),
+      plan: safeRole === "instructor" ? "starter" : "free",
       status: "active",
-      aiCredits: 50,
+      aiCredits: safeRole === "instructor" ? 50 : 0,
       createdAt: new Date().toISOString(),
     };
 
@@ -1233,32 +1525,55 @@ export const serverSignupUser = createServerFn({ method: "POST" })
 export const serverRequestPhoneOtp = createServerFn({ method: "POST" })
   .validator((data: { phone: string }) => data)
   .handler(async ({ data }) => {
-    const cleanPhone = normalizeDigits(data.phone);
-    if (cleanPhone.length < 11) {
-      return { success: false, error: "Please enter a valid 11-digit Bangladeshi mobile number." };
+    const cleanPhone = normalizeBdPhone(data.phone);
+    if (!/^01[3-9]\d{8}$/.test(cleanPhone)) {
+      return { success: false, error: "Please enter a valid 11-digit Bangladeshi mobile number (01XXXXXXXXX)." };
     }
-
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const smsToken =
-      typeof process !== "undefined" ? process.env["GREENWEB_SMS_TOKEN"]?.trim() : undefined;
 
     if (!globalStore.__onneshaPhoneOtps) {
       globalStore.__onneshaPhoneOtps = {};
     }
-    globalStore.__onneshaPhoneOtps[cleanPhone] = {
-      code: otpCode,
-      expiresAt: Date.now() + 5 * 60 * 1000,
-      attempts: 0,
-    };
+    const now = Date.now();
+    // Prune expired OTP records and cap memory size
+    for (const [key, entry] of Object.entries(globalStore.__onneshaPhoneOtps)) {
+      if (!entry || entry.expiresAt <= now) {
+        delete globalStore.__onneshaPhoneOtps[key];
+      }
+    }
+    const existingOtp = globalStore.__onneshaPhoneOtps[cleanPhone];
+    if (existingOtp && now - existingOtp.lastSentAt < 15_000) {
+      return {
+        success: false,
+        error: "Please wait a few seconds before requesting another OTP code.",
+      };
+    }
+
+    const crypto = getNodeCrypto();
+    const otpCode = crypto
+      ? crypto.randomInt(100000, 1000000).toString()
+      : Math.floor(100000 + Math.random() * 900000).toString();
+    const smsToken =
+      typeof process !== "undefined" ? process.env["GREENWEB_SMS_TOKEN"]?.trim() : undefined;
 
     if (smsToken && smsToken.length > 5) {
       try {
         const message = `[Onnesha Arena] Your login verification code is ${otpCode}. Valid for 5 minutes.`;
-        const url = `https://api.greenweb.com.bd/api.php?token=${encodeURIComponent(smsToken)}&to=${encodeURIComponent(cleanPhone)}&message=${encodeURIComponent(message)}`;
-        const res = await fetch(url, { method: "GET" });
-        if (!res.ok) {
+        const body = new URLSearchParams({ token: smsToken, to: cleanPhone, message });
+        const res = await fetch("https://api.greenweb.com.bd/api.php", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: body.toString(),
+        });
+        const text = await res.text().catch(() => "");
+        if (!res.ok || /^error/i.test(text.trim())) {
           return { success: false, error: "SMS provider returned an error while sending OTP." };
         }
+        globalStore.__onneshaPhoneOtps[cleanPhone] = {
+          code: otpCode,
+          expiresAt: now + 5 * 60 * 1000,
+          attempts: 0,
+          lastSentAt: now,
+        };
         return { success: true };
       } catch {
         return { success: false, error: "Failed to reach SMS OTP gateway." };
@@ -1274,6 +1589,17 @@ export const serverRequestPhoneOtp = createServerFn({ method: "POST" })
       };
     }
 
+    if (Object.keys(globalStore.__onneshaPhoneOtps).length >= 500) {
+      const oldestKey = Object.keys(globalStore.__onneshaPhoneOtps)[0];
+      if (oldestKey) delete globalStore.__onneshaPhoneOtps[oldestKey];
+    }
+    globalStore.__onneshaPhoneOtps[cleanPhone] = {
+      code: otpCode,
+      expiresAt: now + 5 * 60 * 1000,
+      attempts: 0,
+      lastSentAt: now,
+    };
+
     // Development convenience only (never exposed when NODE_ENV === 'production')
     return { success: true, devOtp: otpCode };
   });
@@ -1281,7 +1607,7 @@ export const serverRequestPhoneOtp = createServerFn({ method: "POST" })
 export const serverVerifyPhoneOtp = createServerFn({ method: "POST" })
   .validator((data: { phone: string; otp: string }) => data)
   .handler(async ({ data }) => {
-    const cleanPhone = normalizeDigits(data.phone);
+    const cleanPhone = normalizeBdPhone(data.phone);
     const pending = globalStore.__onneshaPhoneOtps?.[cleanPhone];
     if (!pending) {
       return { success: false, error: "OTP not requested or expired. Please request a new code." };
@@ -1302,7 +1628,7 @@ export const serverVerifyPhoneOtp = createServerFn({ method: "POST" })
     delete globalStore.__onneshaPhoneOtps?.[cleanPhone];
 
     const store = getStore();
-    let found = store.users.find((u) => normalizeDigits(u.phone) === cleanPhone);
+    let found = store.users.find((u) => u.phone && normalizeBdPhone(u.phone) === cleanPhone);
     if (!found) {
       const id = `usr-phone-${cleanPhone.slice(-6)}-${Date.now().toString(36)}`;
       found = {
@@ -1909,6 +2235,38 @@ export const serverAnchorCertificateNow = createServerFn({ method: "POST" })
       return { success: false, error: "Certificate is not cryptographically valid" };
     }
 
+    const existingEnriched = enrichCertificateWithOtsCheckpoint(found, store.ledgerCheckpoints);
+    if (
+      existingEnriched.rekorStatus === "anchored" &&
+      existingEnriched.otsStatus === "bitcoin_confirmed"
+    ) {
+      return {
+        success: true,
+        certificate: existingEnriched,
+        verification,
+        rekorAnchored: true,
+        otsAnchored: true,
+      };
+    }
+
+    if (!globalStore.__onneshaAnchorCooldowns) {
+      globalStore.__onneshaAnchorCooldowns = {};
+    }
+    const now = Date.now();
+    const key = found.certificateNumber.toUpperCase();
+    const lastSync = globalStore.__onneshaAnchorCooldowns[key] || 0;
+    if (now - lastSync < 15_000) {
+      return {
+        success: false,
+        certificate: existingEnriched,
+        verification,
+        rekorAnchored: existingEnriched.rekorStatus === "anchored",
+        otsAnchored: !!existingEnriched.otsProofBase64,
+        rekorError: "Please wait a few seconds before re-syncing transparency anchors.",
+      };
+    }
+    globalStore.__onneshaAnchorCooldowns[key] = now;
+
     const rekorRes = await anchorSingleCertificateToRekor(found.certificateNumber, 4500);
     const otsRes = await ensureLatestLedgerOtsCheckpoint(found.ledgerIndex, 4500);
     const updatedRaw =
@@ -1943,6 +2301,16 @@ export const serverExportVerifiableCredential = createServerFn({ method: "GET" }
         );
     if (!raw || !certKeys) {
       return { success: false, credential: null, didDocument: null, otsProofBase64: null };
+    }
+    const verification = verifyCertificateCryptographically(raw, dataDir, store.certificates);
+    if (verification.status !== "verified_signed") {
+      return {
+        success: false,
+        error: "Credential failed cryptographic verification.",
+        credential: null,
+        didDocument: null,
+        otsProofBase64: null,
+      };
     }
     const checkpoint = findCoveringOtsCheckpoint(raw, store.ledgerCheckpoints);
     const enriched = enrichCertificateWithOtsCheckpoint(raw, store.ledgerCheckpoints);
@@ -2004,6 +2372,10 @@ export async function handlePublicStandardEndpoint(request: Request): Promise<Re
     );
     if (!raw || !certKeys) {
       return Response.json({ error: "Credential not found" }, { status: 404 });
+    }
+    const vcVerify = verifyCertificateCryptographically(raw, dataDir, store.certificates);
+    if (vcVerify.status !== "verified_signed") {
+      return Response.json({ error: "Credential failed cryptographic verification" }, { status: 409 });
     }
     const checkpoint = findCoveringOtsCheckpoint(raw, store.ledgerCheckpoints);
     const enriched = enrichCertificateWithOtsCheckpoint(raw, store.ledgerCheckpoints);
@@ -2131,6 +2503,7 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
         | "delete_quiz"
         | "issue_certificate"
         | "delete_certificate"
+        | "restore_certificate"
         | "update_branding"
         | "update_sales_lead"
         | "update_transaction"
@@ -2176,18 +2549,18 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
     const perm = canActorMutateStoreAction(
       actor ? { id: actor.id, role: actor.role } : null,
       data.action,
-      targetCustomQuiz?.instructorId,
+      targetCustomQuiz ? targetCustomQuiz.instructorId || "usr-super-admin" : undefined,
       collidesWithTemplate || targetCustomQuiz?.isTemplate,
     );
     if (!perm.allowed) {
       return {
         success: false,
         error: perm.reason || "Unauthorized",
-        regions: store.regions,
+        regions: [],
         roster: [],
-        courses: store.courses,
+        courses: [],
         users: [],
-        customQuizzes: store.customQuizzes,
+        customQuizzes: [],
         branding: store.branding,
       };
     }
@@ -2256,6 +2629,7 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
       }
       case "clear_roster": {
         store.roster = [];
+        store.purgedSampleData = true;
         scheduleDiskPersist();
         break;
       }
@@ -2291,44 +2665,21 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
       }
       case "save_user": {
         if (data.user) {
-          const idx = store.users.findIndex(
-            (u) =>
-              u.id === data.user!.id || u.email.toLowerCase() === data.user!.email.toLowerCase(),
-          );
-          const incomingPass = data.user.passwordHash?.trim();
-          const nextHash =
-            incomingPass && !incomingPass.startsWith("scrypt:")
-              ? hashPasswordScrypt(incomingPass)
-              : incomingPass;
-          const existing = idx >= 0 ? store.users[idx] : undefined;
-          let savedUser: ManagedUser;
-          if (idx >= 0 && existing) {
-            savedUser = {
-              ...existing,
-              ...data.user,
-              passwordHash: nextHash || existing.passwordHash,
+          const result = upsertManagedUserInStore(store.users, data.user);
+          if (!result.success || !result.savedUser) {
+            return {
+              success: false,
+              error: result.error || "Failed to save user account.",
+              regions: store.regions,
+              roster: store.roster,
+              courses: store.courses,
+              users: store.users.map(sanitizeUserForClient),
+              customQuizzes: [],
+              branding: store.branding,
             };
-            store.users[idx] = savedUser;
-          } else {
-            if (!nextHash) {
-              return {
-                success: false,
-                error: "A password is required when creating a new user account.",
-                regions: store.regions,
-                roster: store.roster,
-                courses: store.courses,
-                users: store.users.map(sanitizeUserForClient),
-                customQuizzes: store.customQuizzes,
-                branding: store.branding,
-              };
-            }
-            savedUser = {
-              ...data.user,
-              passwordHash: nextHash,
-            };
-            store.users.push(savedUser);
           }
-          store.courses = syncUserCoursesInStore(store.courses, store.users, savedUser);
+          store.users = result.users;
+          store.courses = syncUserCoursesInStore(store.courses, store.users, result.savedUser);
           scheduleDiskPersist();
         }
         break;
@@ -2399,16 +2750,31 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
       }
       case "issue_certificate": {
         if (data.certificate) {
+          const certNo = (data.certificate.certificateNumber || "").trim();
+          const studentName = (data.certificate.studentName || "").trim();
+          const scoreVal = data.certificate.score;
+          if (!certNo || !studentName || typeof scoreVal !== "number" || !Number.isFinite(scoreVal) || scoreVal < 0) {
+            return {
+              success: false,
+              error:
+                "Invalid certificate payload: certificate number, student name, and non-negative numeric score are required.",
+              regions: store.regions,
+              roster: store.roster,
+              courses: store.courses,
+              users: store.users.map(sanitizeUserForClient),
+              customQuizzes: store.customQuizzes,
+              branding: store.branding,
+            };
+          }
           const existingSealed = store.certificates.find(
-            (c) =>
-              c.certificateNumber.toLowerCase() ===
-              data.certificate!.certificateNumber.toLowerCase(),
+            (c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase(),
           );
           if (
             existingSealed &&
             existingSealed.chainHash &&
             existingSealed.cryptoSignature &&
             existingSealed.score === data.certificate.score &&
+            existingSealed.quizTitle === data.certificate.quizTitle &&
             (existingSealed.studentRoll || "") === (data.certificate.studentRoll || "")
           ) {
             issuedCertificate = enrichCertificateWithOtsCheckpoint(
@@ -2466,16 +2832,13 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
         break;
       }
       case "delete_certificate": {
-        const targetCertNo = (data.certificateNumber || "").trim().toUpperCase();
-        if (targetCertNo) {
-          store.certificates = store.certificates.filter(
-            (c) => c.certificateNumber.trim().toUpperCase() !== targetCertNo,
-          );
-          const revoked = new Set(
-            (store.revokedCertificates || []).map((c) => c.trim().toUpperCase()),
-          );
-          revoked.add(targetCertNo);
-          store.revokedCertificates = [...revoked];
+        if (deleteCertificateInStore(store, data.certificateNumber || "")) {
+          scheduleDiskPersist();
+        }
+        break;
+      }
+      case "restore_certificate": {
+        if (restoreCertificateInStore(store, data.certificateNumber || "")) {
           scheduleDiskPersist();
         }
         break;
@@ -2500,10 +2863,38 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
         break;
       }
       case "update_transaction": {
-        if (data.trxId && data.trxStatus) {
-          store.transactions = store.transactions.map((t) =>
-            t.id === data.trxId || t.trxId === data.trxId ? { ...t, status: data.trxStatus! } : t,
-          );
+        if (
+          data.trxId &&
+          data.trxStatus &&
+          (["completed", "pending", "failed"] as const).includes(
+            data.trxStatus as "completed" | "pending" | "failed",
+          )
+        ) {
+          let matchedUserId: string | undefined;
+          let matchedPlan: ManagedUser["plan"] | undefined;
+          store.transactions = store.transactions.map((t) => {
+            if (t.id === data.trxId || t.trxId === data.trxId) {
+              matchedUserId = t.userId;
+              matchedPlan =
+                t.planId === "enterprise" || t.planId === "pro" || t.planId === "free"
+                  ? t.planId
+                  : "pro";
+              return { ...t, status: data.trxStatus! };
+            }
+            return t;
+          });
+          if (data.trxStatus === "completed" && matchedUserId && matchedPlan) {
+            store.users = store.users.map((u) =>
+              u.id === matchedUserId
+                ? {
+                    ...u,
+                    plan: matchedPlan!,
+                    aiCredits:
+                      matchedPlan === "enterprise" ? 9999 : Math.max(u.aiCredits ?? 0, 250),
+                  }
+                : u,
+            );
+          }
           scheduleDiskPersist();
         }
         break;
@@ -2513,11 +2904,35 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
           if (data.backup.regions?.length) store.regions = data.backup.regions;
           if (data.backup.roster?.length) store.roster = data.backup.roster;
           if (data.backup.courses?.length) store.courses = data.backup.courses;
-          if (data.backup.users?.length) store.users = ensureDefaultUsers(data.backup.users);
+          if (data.backup.users?.length) {
+            const existingById = new Map(store.users.map((u) => [u.id, u]));
+            const existingByEmail = new Map(
+              store.users.map((u) => [u.email.toLowerCase(), u]),
+            );
+            const mergedUsers = data.backup.users.map((u) => {
+              const existing =
+                existingById.get(u.id) || existingByEmail.get(u.email.toLowerCase());
+              const hasValidHash =
+                typeof u.passwordHash === "string" && u.passwordHash.startsWith("scrypt:");
+              return {
+                ...u,
+                passwordHash: hasValidHash
+                  ? u.passwordHash
+                  : existing?.passwordHash || hashPasswordScrypt("instructor123"),
+              };
+            });
+            store.users = ensureDefaultUsers(mergedUsers);
+          }
           if (data.backup.customQuizzes) store.customQuizzes = data.backup.customQuizzes;
           if (data.backup.examSessions) store.examSessions = data.backup.examSessions;
           if (data.backup.examResults) store.examResults = data.backup.examResults;
           if (data.backup.certificates) store.certificates = data.backup.certificates;
+          if (Array.isArray(data.backup.revokedCertificates)) {
+            store.revokedCertificates = data.backup.revokedCertificates;
+          }
+          if (data.backup.revokedCertificateArchive) {
+            store.revokedCertificateArchive = data.backup.revokedCertificateArchive;
+          }
           if (data.backup.branding)
             store.branding = mergeBrandingSettings(data.backup.branding, DEFAULT_BRANDING);
           scheduleDiskPersist();
@@ -2540,6 +2955,7 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
         store.certificates = store.certificates.filter(
           (c) => !["ONN-4821-9982", "ONN-4634-026104"].includes(c.certificateNumber.toUpperCase()),
         );
+        store.purgedSampleData = true;
         scheduleDiskPersist();
         break;
       }
@@ -2844,12 +3260,25 @@ export const serverCreateSession = createServerFn({ method: "POST" })
       }
     }
 
-    // Only authenticated staff persist new quizzes into server customQuizzes
+    // Only authenticated staff persist new quizzes into server customQuizzes (respecting ownership & templates)
     if (isStaff && activeQuiz && !READY_MADE_PACKS.some((p) => p.id === activeQuiz.id)) {
       const idx = store.customQuizzes.findIndex((q) => q.id === activeQuiz.id);
-      if (idx >= 0) store.customQuizzes[idx] = activeQuiz;
-      else store.customQuizzes.unshift(activeQuiz);
-      scheduleDiskPersist();
+      if (idx >= 0) {
+        const existingQuiz = store.customQuizzes[idx];
+        const canOverwrite = canActorMutateStoreAction(
+          actor ? { id: actor.id, role: actor.role } : null,
+          "save_quiz",
+          existingQuiz?.instructorId || "usr-super-admin",
+          existingQuiz?.isTemplate,
+        );
+        if (canOverwrite.allowed) {
+          store.customQuizzes[idx] = activeQuiz;
+          scheduleDiskPersist();
+        }
+      } else {
+        store.customQuizzes.unshift(activeQuiz);
+        scheduleDiskPersist();
+      }
     }
 
     let pin = Math.floor(100000 + Math.random() * 900000).toString();
@@ -3013,21 +3442,40 @@ export const serverGetSession = createServerFn({ method: "GET" })
   });
 
 export const serverSyncSession = createServerFn({ method: "POST" })
-  .validator((data: { session: GameSession; hostToken?: string | undefined }) => data)
+  .validator(
+    (data: {
+      session: GameSession & { fullQuiz?: Quiz | undefined };
+      hostToken?: string | undefined;
+    }) => data,
+  )
   .handler(async ({ data }) => {
     const sessions = getLiveSessions();
-    if (!data?.session?.pin) {
-      return { success: false, error: "Invalid session payload" };
+    const store = getStore();
+    if (!data?.session?.pin || !/^\d{6}$/.test(data.session.pin)) {
+      return { success: false, error: "Invalid session PIN format" };
     }
     const actor = await getActorFromRequest();
+    const isStaff = !!actor && (actor.role === "admin" || actor.role === "instructor");
     const existing = sessions[data.session.pin];
     if (!existing) {
-      const canCreate =
-        actor?.role === "admin" ||
-        actor?.role === "instructor" ||
-        !!data.session.isSelfPractice;
+      const matchedCatalogQuiz =
+        store.customQuizzes.find(
+          (q) => q.id === data.session.quizId || q.id === data.session.fullQuiz?.id,
+        ) ||
+        READY_MADE_PACKS.find(
+          (q) => q.id === data.session.quizId || q.id === data.session.fullQuiz?.id,
+        );
+      const quizIsPrivate =
+        (matchedCatalogQuiz ? isQuizPrivate(matchedCatalogQuiz, store.courses) : false) ||
+        (data.session.fullQuiz ? isQuizPrivate(data.session.fullQuiz, store.courses) : false);
+      const canCreate = isStaff || (!!data.session.isSelfPractice && !quizIsPrivate);
       if (!canCreate) {
-        return { success: false, error: "Host authorization required." };
+        return {
+          success: false,
+          error: quizIsPrivate
+            ? "Private course examinations can only be started by an authenticated Admin or Instructor."
+            : "Host authorization required.",
+        };
       }
       const hostToken = data.hostToken || generateHostToken();
       sessions[data.session.pin] = {
@@ -3059,12 +3507,8 @@ export const serverSyncSession = createServerFn({ method: "POST" })
     }
     existing.questionStartTime = data.session.questionStartTime;
     existing.questionEndTime = data.session.questionEndTime;
+    existing.pausedAt = data.session.pausedAt;
     existing.settings = { ...existing.settings, ...data.session.settings };
-    for (const [pId, pObj] of Object.entries(data.session.participants || {})) {
-      if (!existing.participants[pId]) {
-        existing.participants[pId] = pObj;
-      }
-    }
     recalculateSessionMetrics(existing);
     scheduleLiveSessionsPersist();
     return { success: true, session: toHostSessionView(existing) };
@@ -3087,25 +3531,12 @@ export const serverJoinSession = createServerFn({ method: "POST" })
       return { success: false, error: "No active examination room found for this PIN." };
     }
 
-    const incoming = data.participant;
+    const incoming = { ...data.participant };
     const requestedCandidateId = incoming.candidateId;
     const requestedRoll = normalizeCode(incoming.rollNumber);
     const requestedPhone = normalizeDigits(incoming.phone || data.verificationNumber);
 
-    // 1. Check Region Restriction
-    if (
-      session.settings.allowedRegionId &&
-      session.settings.allowedRegionId !== "all" &&
-      incoming.regionId &&
-      incoming.regionId !== session.settings.allowedRegionId
-    ) {
-      return {
-        success: false,
-        error: `Access Restricted: This examination room is exclusively for ${session.settings.allowedRegionName}.`,
-      };
-    }
-
-    // 2. If joining as an enrolled Roster Candidate, verify their Mobile / Roll Number ownership
+    // 1. If joining as an enrolled Roster Candidate, verify their Mobile / Roll Number ownership
     const rosterMatch = store.roster.find(
       (s) =>
         (requestedCandidateId && s.id === requestedCandidateId) ||
@@ -3168,6 +3599,17 @@ export const serverJoinSession = createServerFn({ method: "POST" })
           "Roster Verification Required: Your Roll Number or Mobile Number does not match an enrolled candidate in the Trainee Roster. Please check your Roll/Mobile or ask the Host to open walk-in entry.",
       };
     } else if (!session.isSelfPractice && incoming.rollNumber && incoming.name) {
+      // Check region eligibility before auto-enrolling walk-in candidate
+      if (
+        session.settings.allowedRegionId &&
+        session.settings.allowedRegionId !== "all" &&
+        incoming.regionId !== session.settings.allowedRegionId
+      ) {
+        return {
+          success: false,
+          error: `Access Restricted: This examination room is exclusively for ${session.settings.allowedRegionName}.`,
+        };
+      }
       // Auto-enroll new verified candidate into the Region roster when host allows open registration
       const newStd: RosterStudent = {
         id: `std-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
@@ -3183,6 +3625,18 @@ export const serverJoinSession = createServerFn({ method: "POST" })
       store.roster.push(newStd);
       incoming.candidateId = newStd.id;
       scheduleDiskPersist();
+    }
+
+    // 2. Check Region Restriction AFTER roster verification resolves authoritative regionId
+    if (
+      session.settings.allowedRegionId &&
+      session.settings.allowedRegionId !== "all" &&
+      incoming.regionId !== session.settings.allowedRegionId
+    ) {
+      return {
+        success: false,
+        error: `Access Restricted: This examination room is exclusively for ${session.settings.allowedRegionName}.`,
+      };
     }
 
     // 3. Anti-Impersonation Single-Seat Lock Check
@@ -3232,8 +3686,14 @@ export const serverJoinSession = createServerFn({ method: "POST" })
       };
     }
 
+    const safeParticipantId =
+      incoming.id && !session.participants[incoming.id]
+        ? incoming.id
+        : `p-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
     const participantRecord: Participant = {
       ...incoming,
+      id: safeParticipantId,
       seatToken: clientSeatToken,
       score: 0,
       streak: 0,
@@ -3334,67 +3794,67 @@ export const serverSubmitAnswer = createServerFn({ method: "POST" })
       };
     }
 
+    if (isQuestionSubmissionClosed(session, data.questionId)) {
+      return {
+        success: false,
+        code: "QUESTION_CLOSED",
+        error: "Answer window has closed for this question.",
+      };
+    }
+
     // Authoritative server-side grading using fullQuiz (strictly matching data.questionId)
     const resolvedQuiz = resolveSessionQuiz(session, store);
     const fullQuestion =
       resolvedQuiz?.questions.find((q) => q.id === data.questionId) ||
       (session.currentQuestion?.id === data.questionId ? session.currentQuestion : undefined);
 
-    const selectedIds = data.selectedOptionIds || data.answer?.selectedOptionIds || [];
-    const written = (data.writtenAnswer ?? data.answer?.writtenAnswer ?? "").trim();
-
-    let answerRecord: ParticipantAnswer;
-
-    if (fullQuestion) {
-      // Support offline-queued answers with fair timestamp clamping
-      const effectiveTimestamp = data.clientAnsweredAt
-        ? Math.max(
-            session.questionStartTime || Date.now(),
-            Math.min(Date.now(), data.clientAnsweredAt),
-          )
-        : Date.now();
-      const elapsedSec =
-        (effectiveTimestamp - (session.questionStartTime || effectiveTimestamp)) / 1000;
-      const timeTakenSec = Math.max(1, Math.min(fullQuestion.timeLimitSec || 20, elapsedSec));
-
-      const graded = evaluateQuestionAnswer({
-        question: fullQuestion,
-        selectedOptionIds: selectedIds,
-        writtenAnswer: written,
-        currentStreak: p.streak,
-        timeTakenSec,
-        speedBonus: !!session.settings.speedBonus,
-        negativeMarking: session.settings.negativeMarking || 0,
-      });
-
-      answerRecord = {
-        questionId: data.questionId,
-        selectedOptionIds: selectedIds,
-        writtenAnswer: written || undefined,
-        isCorrect: graded.isCorrect,
-        timeTakenSec,
-        pointsAwarded: graded.pointsAwarded,
-        streakCount: graded.newStreak,
-        answeredAt: effectiveTimestamp,
-      };
-
-      p.answers[data.questionId] = answerRecord;
-      p.score = Math.max(0, p.score + graded.pointsAwarded);
-      p.streak = graded.newStreak;
-      p.lastActive = Date.now();
-    } else if (data.answer && data.answer.questionId === data.questionId) {
-      answerRecord = data.answer;
-      p.answers[data.questionId] = answerRecord;
-      p.score = Math.max(0, p.score + (data.scoreDelta ?? data.answer.pointsAwarded ?? 0));
-      p.streak = data.answer.isCorrect ? p.streak + 1 : 0;
-      p.lastActive = Date.now();
-    } else {
+    if (!fullQuestion) {
       return {
         success: false,
         code: "QUESTION_NOT_FOUND",
         error: "Unable to locate question for grading",
       };
     }
+
+    const selectedIds = data.selectedOptionIds || data.answer?.selectedOptionIds || [];
+    const written = (data.writtenAnswer ?? data.answer?.writtenAnswer ?? "").trim();
+
+    // Support offline-queued answers with fair timestamp clamping
+    const effectiveTimestamp = data.clientAnsweredAt
+      ? Math.max(
+          session.questionStartTime || Date.now(),
+          Math.min(Date.now(), data.clientAnsweredAt),
+        )
+      : Date.now();
+    const elapsedSec =
+      (effectiveTimestamp - (session.questionStartTime || effectiveTimestamp)) / 1000;
+    const timeTakenSec = Math.max(1, Math.min(fullQuestion.timeLimitSec || 20, elapsedSec));
+
+    const graded = evaluateQuestionAnswer({
+      question: fullQuestion,
+      selectedOptionIds: selectedIds,
+      writtenAnswer: written,
+      currentStreak: p.streak,
+      timeTakenSec,
+      speedBonus: !!session.settings.speedBonus,
+      negativeMarking: session.settings.negativeMarking || 0,
+    });
+
+    const answerRecord: ParticipantAnswer = {
+      questionId: data.questionId,
+      selectedOptionIds: selectedIds,
+      writtenAnswer: written || undefined,
+      isCorrect: graded.isCorrect,
+      timeTakenSec,
+      pointsAwarded: graded.pointsAwarded,
+      streakCount: graded.newStreak,
+      answeredAt: effectiveTimestamp,
+    };
+
+    p.answers[data.questionId] = answerRecord;
+    p.score = Math.max(0, p.score + graded.pointsAwarded);
+    p.streak = graded.newStreak;
+    p.lastActive = Date.now();
 
     recalculateSessionMetrics(session);
     scheduleLiveSessionsPersist();
@@ -3481,6 +3941,8 @@ export const serverHostControl = createServerFn({ method: "POST" })
         | "next_question"
         | "show_chart"
         | "show_leaderboard"
+        | "pause_game"
+        | "resume_game"
         | "end_game"
         | "close_room"
         | "kick_player"
@@ -3518,6 +3980,7 @@ export const serverHostControl = createServerFn({ method: "POST" })
         if (session.phase === "lobby") {
           session.phase = "countdown";
           session.countdownStartedAt = Date.now();
+          session.pausedAt = undefined;
           session.updatedAt = session.countdownStartedAt;
         }
         break;
@@ -3530,20 +3993,32 @@ export const serverHostControl = createServerFn({ method: "POST" })
         ) {
           break;
         }
+        session.pausedAt = undefined;
         advanceSessionToQuestion(session, store, data.questionIndex);
         break;
       }
       case "show_chart": {
+        session.pausedAt = undefined;
         session.phase = "chart";
         recalculateSessionMetrics(session);
         break;
       }
       case "show_leaderboard": {
+        session.pausedAt = undefined;
         session.phase = "leaderboard";
         recalculateSessionMetrics(session);
         break;
       }
+      case "pause_game": {
+        applyPauseGameToSession(session);
+        break;
+      }
+      case "resume_game": {
+        applyResumeGameToSession(session);
+        break;
+      }
       case "end_game": {
+        session.pausedAt = undefined;
         const alreadyEnded = session.phase === "podium" || session.phase === "finished";
         session.phase = "podium";
         recalculateSessionMetrics(session);
@@ -3570,13 +4045,35 @@ export const serverHostControl = createServerFn({ method: "POST" })
       }
       case "update_settings": {
         if (data.settings) {
-          session.settings = { ...session.settings, ...data.settings };
+          const sanitizedSettings: Partial<GameSettings> = { ...data.settings };
+          if (typeof sanitizedSettings.passThresholdPct === "number" && Number.isFinite(sanitizedSettings.passThresholdPct)) {
+            sanitizedSettings.passThresholdPct = Math.max(
+              0,
+              Math.min(100, Math.round(sanitizedSettings.passThresholdPct)),
+            );
+          }
+          if (typeof sanitizedSettings.negativeMarking === "number" && Number.isFinite(sanitizedSettings.negativeMarking)) {
+            sanitizedSettings.negativeMarking = Math.max(
+              0,
+              Math.min(1000, Math.round(sanitizedSettings.negativeMarking)),
+            );
+          }
+          if (
+            typeof sanitizedSettings.maxProctorViolations === "number" &&
+            Number.isFinite(sanitizedSettings.maxProctorViolations)
+          ) {
+            sanitizedSettings.maxProctorViolations = Math.max(
+              1,
+              Math.min(20, Math.round(sanitizedSettings.maxProctorViolations)),
+            );
+          }
+          session.settings = { ...session.settings, ...sanitizedSettings };
           session.updatedAt = Date.now();
         }
         break;
       }
       case "add_bots": {
-        const count = data.botCount || 8;
+        const count = Math.max(1, Math.min(8, Math.round(data.botCount || 8)));
         const sampleRegions = store.regions.length ? store.regions : DEFAULT_REGIONS;
         const botProfiles = [
           { name: "Cadet Tanvir", emoji: "🦅", bg: "#059669" },

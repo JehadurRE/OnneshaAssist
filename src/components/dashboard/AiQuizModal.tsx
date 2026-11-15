@@ -26,7 +26,7 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
   const [quizNumber, setQuizNumber] = useState<number>(1);
   const [topic, setTopic] = useState("");
   const [sourceText, setSourceText] = useState("");
-  const [questionCount, setQuestionCount] = useState(5);
+  const [questionCount, setQuestionCount] = useState(6);
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
   const [questionStyleMode, setQuestionStyleMode] = useState<"mixed_all_4" | "single_mcq">(
     "mixed_all_4",
@@ -41,12 +41,11 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
     const allCourses = db.getCourses();
     const isAdmin = user?.role === "admin";
     const assignedSet = new Set(user?.assignedCourseIds || []);
-    const scopedCourses = isAdmin
+    const loadedCourses = isAdmin
       ? allCourses
       : allCourses.filter(
           (c) => assignedSet.has(c.id) || (c.instructorIds || []).includes(user?.id || ""),
         );
-    const loadedCourses = scopedCourses.length > 0 ? scopedCourses : allCourses;
     const allQuizzes = db.getQuizzes();
     setCourses(loadedCourses);
 
@@ -188,7 +187,7 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
                 <input
                   type="number"
                   min={1}
-                  max={99}
+                  max={9999}
                   disabled={isGenerating}
                   value={quizNumber}
                   onChange={(e) => setQuizNumber(Number(e.target.value) || 1)}

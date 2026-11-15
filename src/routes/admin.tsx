@@ -150,6 +150,16 @@ function SuperAdminPage() {
       brandingDefaultThreshold: db.getBranding().defaultPassThresholdPct,
     }),
   );
+  const [globalPassThresholdDraft, setGlobalPassThresholdDraft] = useState<string>(() =>
+    String(
+      resolvePassThresholdPct({
+        brandingDefaultThreshold: db.getBranding().defaultPassThresholdPct,
+      }),
+    ),
+  );
+  const [revokedCertificates, setRevokedCertificates] = useState<string[]>(() =>
+    db.getRevokedCertificates(),
+  );
   const [certSearch, setCertSearch] = useState("");
   const [certRegionFilter, setCertRegionFilter] = useState("all");
   const [certQuizFilter, setCertQuizFilter] = useState("all");
@@ -212,13 +222,16 @@ function SuperAdminPage() {
     setExamSessions(db.getExamSessions());
     setExamResults(db.getAllExamResults());
     setCertificates(db.getCertificates());
+    setRevokedCertificates(db.getRevokedCertificates());
     setSalesLeads(db.getSalesLeads());
     setTransactions(db.getTransactions());
     const nextBranding = db.getBranding();
     setBranding(nextBranding);
-    setGlobalPassThresholdInput(
-      resolvePassThresholdPct({ brandingDefaultThreshold: nextBranding.defaultPassThresholdPct }),
-    );
+    const nextThreshold = resolvePassThresholdPct({
+      brandingDefaultThreshold: nextBranding.defaultPassThresholdPct,
+    });
+    setGlobalPassThresholdInput(nextThreshold);
+    setGlobalPassThresholdDraft(String(nextThreshold));
   };
 
   const refreshActiveRooms = async () => {
@@ -293,14 +306,6 @@ function SuperAdminPage() {
     };
 
     db.saveCourse(courseObj);
-    // Also update each assigned instructor's assignedCourseIds
-    users.forEach((u) => {
-      const hasCourse = selectedCourseInstructors.includes(u.id);
-      const currentSet = new Set(u.assignedCourseIds || []);
-      if (hasCourse) currentSet.add(courseObj.id);
-      else if (editingCourseId) currentSet.delete(courseObj.id);
-      db.saveUser({ ...u, assignedCourseIds: Array.from(currentSet) });
-    });
 
     setEditingCourseId(null);
     setCourseCode("");
@@ -330,7 +335,8 @@ function SuperAdminPage() {
 
   const handleSaveGlobalPassThreshold = (e: React.FormEvent) => {
     e.preventDefault();
-    const clamped = clampPassThresholdPct(globalPassThresholdInput);
+    const parsed = parseInt(globalPassThresholdDraft, 10);
+    const clamped = clampPassThresholdPct(Number.isNaN(parsed) ? globalPassThresholdInput : parsed);
     const updatedBranding: BrandingSettings = {
       ...branding,
       defaultPassThresholdPct: clamped,
@@ -559,8 +565,10 @@ function SuperAdminPage() {
     e.preventDefault();
     if (!editingUser || !editUserName.trim()) return;
 
+    const { passwordHash: _oldPass, ...baseUser } = editingUser;
     const updatedUser: ManagedUser = {
-      ...editingUser,
+      ...baseUser,
+      passwordHash: editUserPassword.trim() ? editUserPassword.trim() : "",
       name: editUserName.trim(),
       designation: editUserDesignation.trim() || "Course Instructor",
       institution: editUserInstitution.trim() || "Onnesha Academic Wing",
@@ -568,7 +576,6 @@ function SuperAdminPage() {
       phone: editUserPhone.trim(),
       role: editingUser.email === "admin@onnesha.app" ? "admin" : editUserRole,
       assignedCourseIds: editUserCourses,
-      ...(editUserPassword.trim() ? { passwordHash: editUserPassword.trim() } : {}),
     };
 
     db.saveUser(updatedUser);
@@ -2153,15 +2160,36 @@ function SuperAdminPage() {
                       type="number"
                       min={0}
                       max={100}
-                      value={branding.defaultPassThresholdPct ?? 50}
-                      onChange={(e) =>
+                      value={globalPassThresholdDraft}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        setGlobalPassThresholdDraft(raw);
+                        const parsed = parseInt(raw, 10);
+                        if (!Number.isNaN(parsed)) {
+                          const clamped = clampPassThresholdPct(parsed);
+                          setGlobalPassThresholdInput(clamped);
+                          setBranding({
+                            ...branding,
+                            defaultPassThresholdPct: clamped,
+                          });
+                        }
+                      }}
+                      onBlur={() => {
+                        const parsed = parseInt(globalPassThresholdDraft, 10);
+                        const clamped = clampPassThresholdPct(
+                          Number.isNaN(parsed)
+                            ? resolvePassThresholdPct({
+                                brandingDefaultThreshold: branding.defaultPassThresholdPct,
+                              })
+                            : parsed,
+                        );
+                        setGlobalPassThresholdInput(clamped);
+                        setGlobalPassThresholdDraft(String(clamped));
                         setBranding({
                           ...branding,
-                          defaultPassThresholdPct: clampPassThresholdPct(
-                            parseInt(e.target.value, 10),
-                          ),
-                        })
-                      }
+                          defaultPassThresholdPct: clamped,
+                        });
+                      }}
                       className="w-20 rounded-xl border border-border bg-card px-3 py-1.5 font-mono text-xs font-bold text-center"
                     />
                   </div>
@@ -2366,13 +2394,11 @@ function SuperAdminPage() {
                             <select
                               value={trx.status || "completed"}
                               onChange={(e) => {
-                                db.updateTransactionStatus(
-                                  trx.id,
-                                  e.target.value as DbTransaction["status"],
-                                );
+                                const nextStatus = e.target.value as DbTransaction["status"];
+                                db.updateTransactionStatus(trx.id, nextStatus);
                                 refreshAll();
                                 showNotice(
-                                  `Transaction ${trx.trxId || trx.id} marked ${e.target.value}.`,
+                                  `Transaction ${trx.trxId || trx.id} marked ${nextStatus}${nextStatus === "completed" ? " · Account plan synced" : ""}.`,
                                 );
                               }}
                               className="rounded-xl border border-border bg-background px-2.5 py-1 font-mono text-[11px] font-bold uppercase text-foreground"
@@ -2467,12 +2493,23 @@ function SuperAdminPage() {
                           type="number"
                           min={0}
                           max={100}
-                          value={globalPassThresholdInput}
-                          onChange={(e) =>
-                            setGlobalPassThresholdInput(
-                              clampPassThresholdPct(parseInt(e.target.value, 10), 0),
-                            )
-                          }
+                          value={globalPassThresholdDraft}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            setGlobalPassThresholdDraft(raw);
+                            const parsed = parseInt(raw, 10);
+                            if (!Number.isNaN(parsed)) {
+                              setGlobalPassThresholdInput(clampPassThresholdPct(parsed));
+                            }
+                          }}
+                          onBlur={() => {
+                            const parsed = parseInt(globalPassThresholdDraft, 10);
+                            const clamped = clampPassThresholdPct(
+                              Number.isNaN(parsed) ? globalPassThresholdInput : parsed,
+                            );
+                            setGlobalPassThresholdInput(clamped);
+                            setGlobalPassThresholdDraft(String(clamped));
+                          }}
                           className="w-28 rounded-xl border border-border bg-card px-3 py-2 font-mono text-lg font-black text-center text-foreground outline-none focus:border-primary"
                         />
                         <div className="flex-1 text-xs text-muted-foreground leading-snug">
@@ -2782,6 +2819,52 @@ function SuperAdminPage() {
                     </table>
                   </div>
                 </div>
+
+                {/* Revoked Certificates Registry & Restore Controls */}
+                {revokedCertificates.length > 0 && (
+                  <div className="rounded-3xl border border-amber-500/30 bg-amber-500/5 p-5 space-y-3 shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="font-display text-sm font-black text-foreground flex items-center gap-2">
+                          <ShieldAlert className="h-4 w-4 text-amber-500" />
+                          <span>
+                            Revoked Certificates Registry ({revokedCertificates.length})
+                          </span>
+                        </h3>
+                        <p className="text-xs text-muted-foreground">
+                          Revoked credentials return &ldquo;Certificate Revoked&rdquo; on public /verify checks until restored.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {revokedCertificates.map((certNo) => (
+                        <div
+                          key={certNo}
+                          className="inline-flex items-center gap-2 rounded-xl border border-amber-500/30 bg-background px-3 py-1.5 text-xs"
+                        >
+                          <code className="font-mono font-bold text-amber-600 dark:text-amber-400">
+                            {certNo}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const ok = await db.restoreCertificate(certNo);
+                              refreshAll();
+                              showNotice(
+                                ok
+                                  ? `Restored certificate ${certNo}.`
+                                  : `Could not restore ${certNo}. Please verify administrator login.`,
+                              );
+                            }}
+                            className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
+                          >
+                            Restore
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Recent Exam Candidate Pass / Fail Eligibility Log */}
                 <div className="rounded-3xl border border-border bg-card p-6 space-y-4 shadow-sm">

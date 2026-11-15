@@ -1481,14 +1481,16 @@ export async function downloadMeritGazettePdf(params: {
   quizTitle: string;
   regionLabel: string;
   participants: MeritParticipant[];
-  branding?: BrandingSettings;
-  passThresholdPct?: number;
+  branding?: BrandingSettings | undefined;
+  passThresholdPct?: number | undefined;
+  thresholdLabel?: string | undefined;
 }): Promise<void> {
-  const { quizTitle, regionLabel, participants, branding, passThresholdPct } = params;
+  const { quizTitle, regionLabel, participants, branding, passThresholdPct, thresholdLabel } = params;
   const effectiveThreshold = resolvePassThresholdPct({
     sessionThreshold: passThresholdPct,
     brandingDefaultThreshold: branding?.defaultPassThresholdPct,
   });
+  const thresholdDisplay = thresholdLabel || `${effectiveThreshold}%`;
   const rowsPerPage = 28;
   const totalPages = Math.max(1, Math.ceil(participants.length / rowsPerPage));
   const canvases: HTMLCanvasElement[] = [];
@@ -1526,7 +1528,7 @@ export async function downloadMeritGazettePdf(params: {
     ctx.fillStyle = "#334155";
     ctx.font = "bold 22px sans-serif";
     ctx.fillText(
-      `${quizTitle}  •  Scope: ${regionLabel}  •  Pass Threshold: ${effectiveThreshold}%`,
+      `${quizTitle}  •  Scope: ${regionLabel}  •  Pass Threshold: ${thresholdDisplay}`,
       W / 2,
       240,
     );
@@ -1541,17 +1543,18 @@ export async function downloadMeritGazettePdf(params: {
     ctx.fillRect(tableLeft, tableTop, tableW, rowH);
 
     const cols = [
-      { label: "RANK", x: tableLeft + 25, align: "left" as const },
-      { label: "ROLL NO", x: tableLeft + 150, align: "left" as const },
-      { label: "CANDIDATE NAME", x: tableLeft + 380, align: "left" as const },
-      { label: "DIVISION / RANGE", x: tableLeft + 830, align: "left" as const },
-      { label: "CORRECT", x: tableLeft + 1140, align: "center" as const },
-      { label: "SCORE", x: tableLeft + 1290, align: "center" as const },
-      { label: "STATUS", x: tableLeft + 1410, align: "right" as const },
+      { label: "RANK", x: tableLeft + 20, align: "left" as const },
+      { label: "ROLL NO", x: tableLeft + 115, align: "left" as const },
+      { label: "CANDIDATE NAME", x: tableLeft + 310, align: "left" as const },
+      { label: "DIVISION / RANGE", x: tableLeft + 625, align: "left" as const },
+      { label: "CORRECT", x: tableLeft + 920, align: "center" as const },
+      { label: "WRONG", x: tableLeft + 1045, align: "center" as const },
+      { label: "SCORE", x: tableLeft + 1175, align: "center" as const },
+      { label: "STATUS", x: tableLeft + tableW - 20, align: "right" as const },
     ];
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 20px sans-serif";
+    ctx.font = "bold 19px sans-serif";
     cols.forEach((c) => {
       ctx.textAlign = c.align;
       ctx.fillText(c.label, c.x, tableTop + 38);
@@ -1570,25 +1573,28 @@ export async function downloadMeritGazettePdf(params: {
       ctx.strokeRect(tableLeft, y, tableW, rowH);
 
       ctx.fillStyle = "#0f172a";
-      ctx.font = "bold 20px monospace";
+      ctx.font = "bold 19px monospace";
       ctx.textAlign = "left";
       ctx.fillText(`#${globalRank}`, cols[0]!.x, y + 38);
-      ctx.fillText(p.rollNumber || `2026-${100 + globalRank}`, cols[1]!.x, y + 38);
+      ctx.fillText((p.rollNumber || `2026-${100 + globalRank}`).slice(0, 14), cols[1]!.x, y + 38);
 
-      ctx.font = "bold 20px sans-serif";
-      ctx.fillText((p.nickname || "Candidate").slice(0, 26), cols[2]!.x, y + 38);
+      ctx.font = "bold 19px sans-serif";
+      ctx.fillText((p.nickname || "Candidate").slice(0, 22), cols[2]!.x, y + 38);
 
-      ctx.font = "600 19px sans-serif";
+      ctx.font = "600 18px sans-serif";
       ctx.fillStyle = "#334155";
-      ctx.fillText((p.regionName || "Dhaka Range").slice(0, 20), cols[3]!.x, y + 38);
+      ctx.fillText((p.regionName || "Dhaka Range").slice(0, 18), cols[3]!.x, y + 38);
 
       ctx.textAlign = "center";
       ctx.fillStyle = "#047857";
-      ctx.font = "bold 20px monospace";
+      ctx.font = "bold 19px monospace";
       ctx.fillText(String(p.correctCount ?? 0), cols[4]!.x, y + 38);
 
+      ctx.fillStyle = "#b91c1c";
+      ctx.fillText(String(p.incorrectCount ?? 0), cols[5]!.x, y + 38);
+
       ctx.fillStyle = "#0f172a";
-      ctx.fillText(String(p.finalScore ?? 0), cols[5]!.x, y + 38);
+      ctx.fillText(String(p.finalScore ?? 0), cols[6]!.x, y + 38);
 
       ctx.textAlign = "right";
       const totalQ = (p.correctCount ?? 0) + (p.incorrectCount ?? 0) + (p.unansweredCount ?? 0);
@@ -1606,7 +1612,7 @@ export async function downloadMeritGazettePdf(params: {
         typeof p.passed === "boolean" ? p.passed : isPassingScore(acc, effectiveThreshold);
       ctx.fillStyle = qualified ? "#047857" : "#b91c1c";
       ctx.font = "bold 18px sans-serif";
-      ctx.fillText(qualified ? `PASSED (${acc}%)` : `FAILED (${acc}%)`, cols[6]!.x, y + 38);
+      ctx.fillText(qualified ? `PASSED (${acc}%)` : `FAILED (${acc}%)`, cols[7]!.x, y + 38);
     });
 
     // Footer

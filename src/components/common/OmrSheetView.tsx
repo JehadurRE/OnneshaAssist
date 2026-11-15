@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Quiz } from "@/lib/types";
 import { db, formatDeterministicCertNumber } from "@/lib/db";
+import { useAuth } from "@/lib/auth-context";
 import { useBranding } from "@/hooks/use-branding";
 import { downloadOmrSheetPdf } from "@/lib/pdf-generator";
 import {
@@ -30,7 +31,18 @@ interface OmrSheetViewProps {
   onClose: () => void;
 }
 
+function getOmrQuizCode(quiz: Quiz): string {
+  const key = quiz.id || quiz.slug || quiz.titleEn || "OMR";
+  let hash = 5381;
+  for (let i = 0; i < key.length; i++) {
+    hash = ((hash << 5) + hash + key.charCodeAt(i)) >>> 0;
+  }
+  const suffix = ((hash % 46655) + 1000).toString(36).toUpperCase().padStart(3, "0").slice(-3);
+  return `O${suffix}`;
+}
+
 export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => {
+  const { user } = useAuth();
   const roster = db.getRoster();
   const branding = useBranding();
   const matchedCourse = quiz.courseId
@@ -53,8 +65,10 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
   const [savedCertNumber, setSavedCertNumber] = useState<string | null>(null);
+  const [issuingCert, setIssuingCert] = useState(false);
+  const [certSaveError, setCertSaveError] = useState<string | null>(null);
 
-  // Interactive bubble states: { [questionNumber]: 'A' | 'B' | 'C' | 'D' | 'PASS' | 'FAIL' }
+  // Interactive bubble states: { [questionNumber]: 'A' | 'B' | 'A,C' | 'PASS' | 'FAIL' }
   const defaultPenaltyFromQuiz =
     quiz.questions.find((q) => typeof q.negativeMarks === "number")?.negativeMarks ?? 0.25;
   const [omrNegativeRate, setOmrNegativeRate] = useState<number>(defaultPenaltyFromQuiz);
@@ -75,15 +89,33 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
       setCandidateRoll(found.rollNumber);
       setCandidateRegionName(found.regionName || "Dhaka Range");
       setSavedCertNumber(null);
+      setCertSaveError(null);
     }
   };
 
-  const toggleBubble = (qNum: number, opt: string) => {
-    setFilledBubbles((prev) => ({
-      ...prev,
-      [qNum]: prev[qNum] === opt ? "" : opt,
-    }));
+  const toggleBubble = (qNum: number, opt: string, isMultiMcq = false) => {
+    setFilledBubbles((prev) => {
+      const current = prev[qNum] || "";
+      if (isMultiMcq) {
+        const order = ["A", "B", "C", "D"];
+        const selectedSet = new Set(
+          current
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean),
+        );
+        if (selectedSet.has(opt)) selectedSet.delete(opt);
+        else selectedSet.add(opt);
+        const joined = order.filter((l) => selectedSet.has(l)).join(",");
+        return { ...prev, [qNum]: joined };
+      }
+      return {
+        ...prev,
+        [qNum]: current === opt ? "" : opt,
+      };
+    });
     setSavedCertNumber(null);
+    setCertSaveError(null);
   };
 
   const handleAutoGrade = (bubblesToGrade?: Record<number, string>, negRateOverride?: number) => {
@@ -92,11 +124,13 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
     setGradingResult(gradeOmrSubmission(quiz.questions, bubbles, rate));
   };
 
-  const handleSaveToOfficialMerit = () => {
-    if (!gradingResult) return;
+  const handleSaveToOfficialMerit = async () => {
+    if (!gradingResult || issuingCert) return;
     if (!isPassingScore(gradingResult.accuracyPct, passThresholdPct)) return;
-    const certNo = formatDeterministicCertNumber("OMR8", candidateRoll, 1);
-    db.issueCertificate({
+    setIssuingCert(true);
+    setCertSaveError(null);
+    const certNo = formatDeterministicCertNumber(getOmrQuizCode(quiz), candidateRoll, 1);
+    const res = await db.issueCertificateAsync({
       certificateNumber: certNo,
       studentName: candidateName,
       studentRoll: candidateRoll,
@@ -113,14 +147,21 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
           ? `Onnesha × ${branding.partnerName}`
           : "Onnesha Assessment & Examination Arena",
       institutionName: branding.institutionTitle || "Onnesha Assessment Arena",
-      instructorName: "Chief Assessment Officer",
+      instructorName: user?.name || quiz.instructorName || "Chief Assessment Officer",
       verificationUrl:
         typeof window !== "undefined"
           ? `${window.location.origin}/verify/${certNo}`
           : `https://arena.onnesha.courses/verify/${certNo}`,
       verified: true,
     });
-    setSavedCertNumber(certNo);
+    setIssuingCert(false);
+    if (res.success && res.certificate) {
+      setSavedCertNumber(res.certificate.certificateNumber);
+    } else {
+      setCertSaveError(
+        res.error || "Server rejected OMR certificate issuance. Please verify staff login and retry.",
+      );
+    }
   };
 
   const handleResetBubbles = () => {
@@ -157,6 +198,18 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
 
         if (q.type === "written" || q.type === "fill_blank") {
           detectedBubbles[qNum] = willBeCorrect ? "PASS" : "FAIL";
+        } else if (q.type === "multi_mcq") {
+          if (willBeCorrect) {
+            const correctLetters = q.options
+              .map((o, oIdx) =>
+                q.correctOptionIds.includes(o.id) || o.isCorrect ? options[oIdx] : null,
+              )
+              .filter((l): l is string => Boolean(l));
+            detectedBubbles[qNum] = correctLetters.length ? correctLetters.join(",") : "A";
+          } else {
+            const wrongIdx = (idx + 1) % Math.max(2, q.options.length);
+            detectedBubbles[qNum] = options[wrongIdx] || "B";
+          }
         } else if (willBeCorrect) {
           const correctOptIdx = q.options.findIndex(
             (o) => q.correctOptionIds.includes(o.id) || o.isCorrect,
@@ -389,14 +442,31 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
                     </span>
                   </div>
                 ) : didPass ? (
-                  <button
-                    type="button"
-                    onClick={handleSaveToOfficialMerit}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-emerald-800 transition"
-                  >
-                    <Award className="h-3.5 w-3.5" />
-                    <span>Commit OMR Result &amp; Issue Official Certificate</span>
-                  </button>
+                  <div className="flex flex-col gap-2 w-full">
+                    <button
+                      type="button"
+                      disabled={issuingCert}
+                      onClick={handleSaveToOfficialMerit}
+                      className="inline-flex w-fit items-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-emerald-800 transition disabled:opacity-60"
+                    >
+                      {issuingCert ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Award className="h-3.5 w-3.5" />
+                      )}
+                      <span>
+                        {issuingCert
+                          ? "Sealing on Server Ledger..."
+                          : "Commit OMR Result & Issue Official Certificate"}
+                      </span>
+                    </button>
+                    {certSaveError && (
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-red-700">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                        <span>{certSaveError}</span>
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <div className="flex items-center gap-2 text-amber-900 font-semibold">
                     <Lock className="h-3.5 w-3.5 text-amber-700 shrink-0" />
@@ -574,9 +644,10 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
                   </div>
 
                   {colQuestions.map((qNum) => {
-                    const filledOpt = filledBubbles[qNum];
+                    const filledOpt = filledBubbles[qNum] || "";
                     const qItem = quiz.questions[qNum - 1];
                     const isWritten = qItem?.type === "written" || qItem?.type === "fill_blank";
+                    const isMultiMcq = qItem?.type === "multi_mcq";
                     return (
                       <div
                         key={qNum}
@@ -584,7 +655,7 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
                       >
                         <span className="font-bold tabular-nums w-8">
                           {qNum < 10 ? `0${qNum}` : qNum}
-                          {isWritten ? "W" : "."}
+                          {isWritten ? "W" : isMultiMcq ? "*" : "."}
                         </span>
                         <div className="flex items-center gap-1.5">
                           {isWritten
@@ -615,12 +686,14 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
                                 );
                               })
                             : ["A", "B", "C", "D"].map((opt) => {
-                                const isSelected = filledOpt === opt;
+                                const isSelected = isMultiMcq
+                                  ? filledOpt.split(",").includes(opt)
+                                  : filledOpt === opt;
                                 return (
                                   <button
                                     key={opt}
                                     type="button"
-                                    onClick={() => toggleBubble(qNum, opt)}
+                                    onClick={() => toggleBubble(qNum, opt, isMultiMcq)}
                                     className={`h-4 w-4 rounded-full border border-black flex items-center justify-center text-[8px] font-bold transition-transform active:scale-95 ${
                                       isSelected
                                         ? "bg-black text-white ring-1 ring-black"

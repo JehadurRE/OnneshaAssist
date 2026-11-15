@@ -336,6 +336,7 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
             onClick={() =>
               onChange({
                 ...DEFAULT_BRANDING_SETTINGS,
+                defaultPassThresholdPct: branding.defaultPassThresholdPct,
                 defaultEnforceFullscreen: branding.defaultEnforceFullscreen,
                 defaultBlockCopyPaste: branding.defaultBlockCopyPaste,
                 defaultMaxProctorViolations: branding.defaultMaxProctorViolations,

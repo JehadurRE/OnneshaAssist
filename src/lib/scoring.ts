@@ -226,6 +226,25 @@ export function gradeOmrSubmission(
     if (isWrittenStyle) {
       // Support both explicit examiner Pass marker ('PASS') and legacy bubble 'A'
       isRight = selected === "PASS" || selected === "A";
+    } else if (q.type === "multi_mcq") {
+      const letters = ["A", "B", "C", "D"];
+      const expectedLetters = new Set(
+        q.options
+          .map((opt, oIdx) =>
+            q.correctOptionIds.includes(opt.id) || opt.isCorrect ? letters[oIdx] : null,
+          )
+          .filter((l): l is string => Boolean(l)),
+      );
+      const selectedLetters = new Set(
+        selected
+          .split(",")
+          .map((s) => s.trim().toUpperCase())
+          .filter((s) => letters.includes(s)),
+      );
+      isRight =
+        expectedLetters.size > 0 &&
+        selectedLetters.size === expectedLetters.size &&
+        [...expectedLetters].every((l) => selectedLetters.has(l));
     } else {
       const optionIndex = ["A", "B", "C", "D"].indexOf(selected);
       const opt = q.options[optionIndex];

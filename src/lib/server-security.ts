@@ -211,6 +211,7 @@ const ADMIN_ONLY_MUTATIONS = new Set<string>([
   "save_course",
   "delete_course",
   "delete_certificate",
+  "restore_certificate",
   "update_branding",
   "import_store_backup",
   "purge_dummy_data",
@@ -406,9 +407,14 @@ export function sealCertificateWithLedger(
   const keys = keysOverride || getCertificateSigningKeys(dataDir);
   if (!crypto || !keys) return cert;
 
-  const latestSigned = existingCertificates
-    .filter((c) => typeof c.ledgerIndex === "number" && !!c.chainHash)
-    .sort((a, b) => (b.ledgerIndex || 0) - (a.ledgerIndex || 0))[0];
+  let latestSigned: CertificateData | undefined;
+  for (const c of existingCertificates) {
+    if (typeof c.ledgerIndex === "number" && c.chainHash) {
+      if (!latestSigned || (c.ledgerIndex || 0) > (latestSigned.ledgerIndex || 0)) {
+        latestSigned = c;
+      }
+    }
+  }
 
   const ledgerIndex = (latestSigned?.ledgerIndex || 0) + 1;
   const prevBlockHash = latestSigned?.chainHash || "0".repeat(64);

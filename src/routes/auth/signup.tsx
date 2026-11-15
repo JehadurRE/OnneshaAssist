@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { useAuth, UserRole } from "@/lib/auth-context";
+import { useAuth } from "@/lib/auth-context";
 import { useLanguage } from "@/lib/i18n";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
@@ -8,11 +8,9 @@ import onnesha from "@/assets/onnesha.jpg.asset.json";
 import {
   AlertCircle,
   Building2,
-  CheckCircle2,
-  GraduationCap,
   Lock,
   Mail,
-  Shield,
+  Phone,
   ShieldCheck,
   User,
   UserCheck,
@@ -21,10 +19,10 @@ import {
 export const Route = createFileRoute("/auth/signup")({
   head: () => ({
     meta: [
-      { title: "Register Instructor / Academy Account · Onnesha Arena" },
+      { title: "Create Candidate Account · Onnesha Arena" },
       {
         name: "description",
-        content: "Register an institutional assessment account for your coaching centre, school, or training unit.",
+        content: "Register a candidate account to join live assessments and view verified scores.",
       },
     ],
   }),
@@ -38,9 +36,9 @@ function SignupPage() {
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [institutionName, setInstitutionName] = useState("");
-  const [role, setRole] = useState<UserRole>("instructor");
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -53,17 +51,14 @@ function SignupPage() {
       name,
       email,
       password,
-      role,
+      role: "candidate",
       ...(institutionName.trim() ? { institutionName: institutionName.trim() } : {}),
+      ...(phone.trim() ? { phone: phone.trim() } : {}),
     });
     setIsLoading(false);
 
     if (result.success) {
-      if (role === "candidate") {
-        navigate({ to: "/play" });
-      } else {
-        navigate({ to: "/dashboard" });
-      }
+      navigate({ to: "/play" });
     } else {
       setErrorMessage(result.error || "Failed to create account. Please verify input data.");
     }
@@ -78,13 +73,17 @@ function SignupPage() {
           {/* Brand Header */}
           <div className="text-center">
             <img src={onnesha.url} alt="Onnesha" className="h-11 mx-auto rounded-lg object-contain mb-3" />
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-primary mb-2">
+              <ShieldCheck className="h-3 w-3" />
+              <span>{lang === "bn" ? "পরীক্ষার্থী পোর্টাল" : "Candidate Registration"}</span>
+            </div>
             <h1 className="font-display text-2xl sm:text-3xl font-black text-foreground tracking-tight">
-              {lang === "bn" ? "নতুন একাডেমি রেজিস্টার করুন" : "Register Onnesha Studio"}
+              {lang === "bn" ? "নতুন পরীক্ষার্থী অ্যাকাউন্ট তৈরি করুন" : "Create Candidate Account"}
             </h1>
             <p className="mt-1 text-xs text-muted-foreground">
               {lang === "bn"
-                ? "ফ্রি অ্যাকাউন্ট তৈরি করে আনলিমিটেড লাইভ মডেল টেস্ট শুরু করুন"
-                : "Create an institutional instructor workspace in seconds"}
+                ? "লাইভ পরীক্ষা ও ফলাফল ট্র্যাকিংয়ের জন্য ব্যক্তিগত পরীক্ষার্থী অ্যাকাউন্ট খুলুন"
+                : "Register to join scheduled model exams and track verified credentials"}
             </p>
           </div>
 
@@ -97,50 +96,11 @@ function SignupPage() {
           )}
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-            {/* Account Type Selector */}
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
-                Workspace Role
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRole("instructor")}
-                  className={`flex items-center gap-2 rounded-2xl border-2 p-3 text-left transition-all ${
-                    role === "instructor"
-                      ? "border-primary bg-primary/10 text-primary font-bold shadow-sm"
-                      : "border-border bg-background text-foreground"
-                  }`}
-                >
-                  <GraduationCap className="h-4 w-4" />
-                  <div>
-                    <div className="text-xs font-bold">Instructor / Academy</div>
-                    <div className="text-[10px] text-muted-foreground">Host &amp; grade model tests</div>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setRole("candidate")}
-                  className={`flex items-center gap-2 rounded-2xl border-2 p-3 text-left transition-all ${
-                    role === "candidate"
-                      ? "border-primary bg-primary/10 text-primary font-bold shadow-sm"
-                      : "border-border bg-background text-foreground"
-                  }`}
-                >
-                  <Shield className="h-4 w-4" />
-                  <div>
-                    <div className="text-xs font-bold">Cadet / Candidate</div>
-                    <div className="text-[10px] text-muted-foreground">Track test scores</div>
-                  </div>
-                </button>
-              </div>
-            </div>
 
             {/* Name */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                Full Name / Designation
+                Full Name
               </label>
               <div className="relative">
                 <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -149,25 +109,24 @@ function SignupPage() {
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Dr. Rafiqul Islam / Instructor Tanvir"
+                  placeholder="e.g. Tanvir Ahmed"
                   className="w-full rounded-2xl border border-border bg-background pl-10 pr-4 py-2.5 text-xs sm:text-sm font-semibold text-foreground outline-none focus:border-primary"
                 />
               </div>
             </div>
 
-            {/* Institution / Academy Name */}
+            {/* Institution / Academy Name (Optional) */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                Institution / Coaching Name
+                Institution / Batch (Optional)
               </label>
               <div className="relative">
                 <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <input
                   type="text"
-                  required
                   value={institutionName}
                   onChange={(e) => setInstitutionName(e.target.value)}
-                  placeholder="e.g. Apex BCS Cadre Care / Dhaka Cadet College"
+                  placeholder="e.g. Dhaka Range / Sanjibon Batch"
                   className="w-full rounded-2xl border border-border bg-background pl-10 pr-4 py-2.5 text-xs sm:text-sm font-semibold text-foreground outline-none focus:border-primary"
                 />
               </div>
@@ -176,7 +135,7 @@ function SignupPage() {
             {/* Email */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                Work Email Address
+                Email Address
               </label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -185,8 +144,25 @@ function SignupPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="instructor@academy.edu.bd"
+                  placeholder="candidate@example.com"
                   className="w-full rounded-2xl border border-border bg-background pl-10 pr-4 py-2.5 text-xs sm:text-sm font-semibold text-foreground outline-none focus:border-primary"
+                />
+              </div>
+            </div>
+
+            {/* Mobile Number (Optional for OTP Login) */}
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                Mobile Number (Optional, for Phone OTP)
+              </label>
+              <div className="relative">
+                <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="01711000000"
+                  className="w-full rounded-2xl border border-border bg-background pl-10 pr-4 py-2.5 font-mono text-xs sm:text-sm font-semibold text-foreground outline-none focus:border-primary"
                 />
               </div>
             </div>
@@ -216,7 +192,7 @@ function SignupPage() {
               className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 text-xs sm:text-sm font-extrabold text-primary-foreground shadow-glow hover:bg-primary/90 transition disabled:opacity-50"
             >
               <UserCheck className="h-4 w-4" />
-              <span>{isLoading ? "Creating Workspace..." : "Complete Registration & Open Studio"}</span>
+              <span>{isLoading ? "Creating Account..." : "Create Candidate Account"}</span>
             </button>
           </form>
 

@@ -21,7 +21,7 @@ import {
   resolveOrgName,
   resolvePassThresholdPct,
 } from "@/lib/scoring";
-import { serverGetActiveRooms } from "@/lib/server-session";
+import { serverGetActiveRooms, serverVerifyCertificate } from "@/lib/server-session";
 import { READY_MADE_PACKS } from "@/lib/mock-data";
 import { CertificateData, Course, GameSession, Participant, Question, Quiz } from "@/lib/types";
 import {
@@ -368,6 +368,13 @@ function PlayPage() {
         ? session.questionEndTime
         : nowServer + timeLimit * 1000;
 
+    if (typeof session.pausedAt === "number" && session.pausedAt > 0) {
+      const remMs = deadlineMs - session.pausedAt;
+      const remSec = Math.max(0, Math.min(timeLimit, Math.ceil(remMs / 1000)));
+      setTimeRemainingSec(remSec);
+      return;
+    }
+
     let selfChartTimer: ReturnType<typeof setTimeout> | null = null;
     let expiredFired = false;
 
@@ -408,6 +415,7 @@ function PlayPage() {
     session?.currentQuestionIndex,
     session?.currentQuestion?.id,
     session?.questionEndTime,
+    session?.pausedAt,
     session?.phase,
     isSelfPractice,
     session?.isSelfPractice,
@@ -617,7 +625,12 @@ function PlayPage() {
       ? formatDeterministicCertNumber(session.pin, participant.rollNumber, participant.rank)
       : "";
 
-  const sealedServerCert = certNumber ? db.getCertificateById(certNumber) : undefined;
+  const [fetchedServerCert, setFetchedServerCert] = useState<CertificateData | null>(null);
+  const sealedServerCert =
+    (certNumber ? db.getCertificateById(certNumber) : undefined) ||
+    (fetchedServerCert && fetchedServerCert.certificateNumber === certNumber
+      ? fetchedServerCert
+      : undefined);
 
   const certificateData: CertificateData | null =
     participant && session && studentStats.isPassed && !isPracticeSession
@@ -649,16 +662,39 @@ function PlayPage() {
       : null;
 
   useEffect(() => {
+    let active = true;
     if (session?.phase === "podium" || session?.phase === "finished") {
       gameEngine.stopPolling();
       if (!isPracticeSession) {
-        if (certificateData && !sealedServerCert) {
-          db.issueCertificate(certificateData, { syncToServer: false });
+        if (certNumber && studentStats.isPassed && !db.getCertificateById(certNumber)) {
+          serverVerifyCertificate({
+            data: {
+              certId: certNumber,
+              origin: typeof window !== "undefined" ? window.location.origin : undefined,
+            },
+          })
+            .then((res) => {
+              if (!active) return;
+              if (res.success && res.certificate) {
+                setFetchedServerCert(res.certificate);
+                db.issueCertificate(res.certificate, { syncToServer: false });
+              } else if (certificateData) {
+                db.issueCertificate(certificateData, { syncToServer: false });
+              }
+            })
+            .catch(() => {
+              if (active && certificateData) {
+                db.issueCertificate(certificateData, { syncToServer: false });
+              }
+            });
         }
         void db.syncFromServerStore();
       }
     }
-  }, [session?.phase, studentStats.isPassed, isPracticeSession]);
+    return () => {
+      active = false;
+    };
+  }, [session?.phase, studentStats.isPassed, isPracticeSession, certNumber]);
 
   const questionTimeLimit = session?.currentQuestion?.timeLimitSec || 20;
   const timerProgressPct = Math.max(
@@ -1340,6 +1376,7 @@ function PlayPage() {
 
             {/* Keypad Buttons */}
             <PlayerKeypad
+              key={session.currentQuestion.id}
               question={session.currentQuestion}
               hasAnswered={hasAnswered}
               selectedOptionIds={selectedOptionIds}
@@ -1519,6 +1556,15 @@ function PlayPage() {
                     <Award className="h-4 w-4" />
                     <span>{t("download_cert")}</span>
                   </button>
+                ) : isPracticeSession && studentStats.isPassed ? (
+                  <div className="flex flex-1 min-w-[200px] items-center justify-center gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 py-3.5 px-4 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                    <ShieldCheck className="h-4 w-4 shrink-0" />
+                    <span>
+                      {lang === "bn"
+                        ? "স্ব-অনুশীলন সম্পন্ন হয়েছে · আনুষ্ঠানিক সনদ শুধুমাত্র লাইভ পরীক্ষায় প্রযোজ্য"
+                        : "Self-Practice Completed · Certificates are issued for live proctored exams"}
+                    </span>
+                  </div>
                 ) : (
                   <div className="flex flex-1 min-w-[200px] items-center justify-center gap-2 rounded-2xl border border-destructive/30 bg-destructive/10 py-3.5 px-4 text-xs font-bold text-destructive">
                     <Lock className="h-4 w-4 shrink-0" />

@@ -186,6 +186,7 @@ export interface GameSession {
   currentQuestion?: Question | undefined;
   questionStartTime: number;
   questionEndTime: number;
+  pausedAt?: number | undefined;
   settings: GameSettings;
   participants: Record<string, Participant>;
   totalQuestions: number;

@@ -12,7 +12,7 @@ export const Footer: React.FC = () => {
 
   return (
     <footer className="border-t border-border/80 bg-card/60 transition-colors">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-12">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-12 pb-28 md:pb-12">
         <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-5">
           {/* Brand Col */}
           <div className="lg:col-span-2 space-y-4">
@@ -80,6 +80,11 @@ export const Footer: React.FC = () => {
               {lang === 'bn' ? 'রিসোর্স ও টুলস' : 'Platform & Tools'}
             </h4>
             <ul className="space-y-2 text-xs text-muted-foreground">
+              <li>
+                <Link to="/vault" className="hover:text-primary transition-colors">
+                  {t('vault')}
+                </Link>
+              </li>
               <li>
                 <Link to="/t" className="hover:text-primary transition-colors flex items-center gap-1.5">
                   <Sparkles className="h-3 w-3 text-amber-500" />

@@ -19,7 +19,14 @@ import {
   ExamResultRecord,
   Region,
 } from "@/lib/types";
-import { db, DbSmsLog, DbTransaction, formatDeterministicCertNumber, isQuizPrivate } from "@/lib/db";
+import {
+  db,
+  DbSmsLog,
+  DbTransaction,
+  formatDeterministicCertNumber,
+  isCoursePrivate,
+  isQuizPrivate,
+} from "@/lib/db";
 import { computeTotalQuizMarks, isPassingScore, resolvePassThresholdPct } from "@/lib/scoring";
 import { gameEngine } from "@/lib/game-engine";
 import { serverGetActiveRooms } from "@/lib/server-session";
@@ -224,24 +231,29 @@ function DashboardPage() {
   const assignedCourses = useMemo(() => {
     if (isSuperAdmin) return courses;
     const assignedIds = new Set(user?.assignedCourseIds || []);
-    const matched = courses.filter(
+    return courses.filter(
       (c) => assignedIds.has(c.id) || (c.instructorIds || []).includes(user?.id || ""),
     );
-    return matched.length > 0 ? matched : courses;
   }, [courses, isSuperAdmin, user?.assignedCourseIds, user?.id]);
 
   const scopedQuizzes = useMemo(() => {
-    if (isSuperAdmin || showAllModelPacks) return quizzes;
+    if (isSuperAdmin) return quizzes;
     const myCourseIds = new Set(assignedCourses.map((c) => c.id));
-    const filtered = quizzes.filter(
-      (q) =>
-        q.instructorId === user?.id || (q.courseId && myCourseIds.has(q.courseId)) || !q.isTemplate,
+    if (showAllModelPacks) {
+      return quizzes.filter(
+        (q) =>
+          !isQuizPrivate(q, courses) ||
+          q.instructorId === user?.id ||
+          (q.courseId && myCourseIds.has(q.courseId)),
+      );
+    }
+    return quizzes.filter(
+      (q) => q.instructorId === user?.id || (q.courseId && myCourseIds.has(q.courseId)),
     );
-    return filtered.length > 0 ? filtered : quizzes;
-  }, [quizzes, isSuperAdmin, showAllModelPacks, assignedCourses, user?.id]);
+  }, [quizzes, courses, isSuperAdmin, showAllModelPacks, assignedCourses, user?.id]);
 
   const primaryHostQuizSlug =
-    scopedQuizzes[0]?.slug || scopedQuizzes[0]?.id || quizzes[0]?.slug || "bcs-gk";
+    scopedQuizzes[0]?.slug || scopedQuizzes[0]?.id || "bcs-gk";
 
   // Filtered Roster by Region & Search Query
   const filteredRoster = useMemo(() => {
@@ -416,6 +428,9 @@ function DashboardPage() {
       categoryBn: selectedCourse?.categoryBn || newQuizCategory,
       questions: newQuestions,
       isTemplate: false,
+      isPrivate: selectedCourse
+        ? isCoursePrivate(selectedCourse)
+        : Boolean(editingQuizId && quizzes.find((q) => q.id === editingQuizId)?.isPrivate),
       tags: ["Custom", `Quiz ${newQuizNumber || 1}`, "Multi-Format"],
     };
 
@@ -472,7 +487,7 @@ function DashboardPage() {
       regionId: reg.id,
       regionName: reg.nameEn,
       guardianPhone: newGuardianPhone.trim() || newStudentPhone.trim(),
-      email: `${newStudentRoll.trim()}@academy.edu.bd`,
+      email: `${newStudentRoll.trim()}@candidate.local`,
       batch: newStudentBatch.trim() || "46th BCS & Cadet Batch",
     });
 
@@ -560,7 +575,7 @@ function DashboardPage() {
             phone: candPhone,
             guardianPhone: guardPhone,
             batch: parts[5] || "2026 Regional Assessment",
-            email: parts[6] || `${parts[0]}@academy.edu.bd`,
+            email: parts[6] || `${parts[0]}@candidate.local`,
           });
         }
       }
@@ -1705,13 +1720,15 @@ function DashboardPage() {
                           >
                             OMR
                           </button>
-                          <Link
-                            to="/play"
-                            search={{ practice: quiz.slug || quiz.id } as any}
-                            className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 transition"
-                          >
-                            Practice
-                          </Link>
+                          {!isQuizPrivate(quiz, courses) && (
+                            <Link
+                              to="/play"
+                              search={{ practice: quiz.slug || quiz.id } as any}
+                              className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 transition"
+                            >
+                              Practice
+                            </Link>
+                          )}
                         </div>
 
                         <Link
@@ -2868,18 +2885,41 @@ function DashboardPage() {
       {/* Official Merit Gazette Modal */}
       {showGazette &&
         (() => {
+          const allCourses = db.getCourses();
+          const brandingDefault = db.getBranding().defaultPassThresholdPct;
           const gazetteSess = examSessions.find((s) => s.id === selectedSessionId);
           const gazetteQuiz = gazetteSess
             ? quizzes.find((q) => q.id === gazetteSess.quizId || q.slug === gazetteSess.quizId)
             : undefined;
           const gazetteCourse = gazetteQuiz?.courseId
-            ? db.getCourses().find((c) => c.id === gazetteQuiz.courseId)
+            ? allCourses.find((c) => c.id === gazetteQuiz.courseId)
             : undefined;
-          const gazetteThreshold = resolvePassThresholdPct({
-            sessionThreshold: gazetteSess?.passThresholdPct,
-            courseThreshold: gazetteCourse?.passThresholdPct,
-            brandingDefaultThreshold: db.getBranding().defaultPassThresholdPct,
-          });
+          const distinctThresholds = new Set<number>();
+          if (!gazetteSess && activeResults.length > 0) {
+            for (const r of activeResults) {
+              const s = examSessions.find((es) => es.id === r.sessionId || es.pin === r.pin);
+              const q = s
+                ? quizzes.find((qz) => qz.id === s.quizId || qz.slug === s.quizId)
+                : undefined;
+              const c = q?.courseId ? allCourses.find((cr) => cr.id === q.courseId) : undefined;
+              distinctThresholds.add(
+                resolvePassThresholdPct({
+                  sessionThreshold: s?.passThresholdPct,
+                  courseThreshold: c?.passThresholdPct,
+                  brandingDefaultThreshold: brandingDefault,
+                }),
+              );
+            }
+          }
+          const hasMixedThresholds = distinctThresholds.size > 1;
+          const gazetteThreshold =
+            distinctThresholds.size === 1
+              ? Array.from(distinctThresholds)[0]!
+              : resolvePassThresholdPct({
+                  sessionThreshold: gazetteSess?.passThresholdPct,
+                  courseThreshold: gazetteCourse?.passThresholdPct,
+                  brandingDefaultThreshold: brandingDefault,
+                });
           return (
             <MeritGazetteView
               quizTitle={
@@ -2887,6 +2927,7 @@ function DashboardPage() {
                 "বিসিএস প্রিলিমিনারি ও প্রাতিষ্ঠানিক মডেল টেস্ট"
               }
               passThresholdPct={gazetteThreshold}
+              thresholdLabel={hasMixedThresholds ? "Mixed / Course-Specific" : undefined}
               participants={
                 activeResults.length > 0
                   ? activeResults.map((r) => ({

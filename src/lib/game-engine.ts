@@ -178,6 +178,7 @@ class RealtimeGameEngine {
       'INVALID_SEAT',
       'SUSPENDED',
       'SESSION_NOT_ACCEPTING_ANSWERS',
+      'QUESTION_CLOSED',
       'QUESTION_NOT_FOUND',
     ]);
 
@@ -946,6 +947,7 @@ class RealtimeGameEngine {
             errCode === 'PARTICIPANT_NOT_FOUND' ||
             errCode === 'INVALID_SEAT' ||
             errCode === 'SESSION_NOT_ACCEPTING_ANSWERS' ||
+            errCode === 'QUESTION_CLOSED' ||
             errCode === 'QUESTION_NOT_FOUND';
           if (!permanent) {
             this.enqueueOfflineAnswer(payload);
@@ -1046,6 +1048,45 @@ class RealtimeGameEngine {
         if (!session) return;
         this.recalculateRanks(session);
         session.phase = 'leaderboard';
+        this.saveSession(session);
+      });
+  }
+
+  public pauseGame(pin: string) {
+    serverHostControl({
+      data: { pin, hostToken: this.getStoredHostToken(pin), action: 'pause_game' },
+    })
+      .then((res) => {
+        this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
+        if (res.success && res.session) this.cacheSessionLocally(res.session);
+      })
+      .catch(() => {
+        const session = this.getSession(pin);
+        if (!session || session.pausedAt || session.phase !== 'question') return;
+        session.pausedAt = Date.now();
+        this.saveSession(session);
+      });
+  }
+
+  public resumeGame(pin: string) {
+    serverHostControl({
+      data: { pin, hostToken: this.getStoredHostToken(pin), action: 'resume_game' },
+    })
+      .then((res) => {
+        this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
+        if (res.success && res.session) this.cacheSessionLocally(res.session);
+      })
+      .catch(() => {
+        const session = this.getSession(pin);
+        if (!session || !session.pausedAt) return;
+        const pausedMs = Math.max(0, Date.now() - session.pausedAt);
+        if (typeof session.questionStartTime === 'number') {
+          session.questionStartTime += pausedMs;
+        }
+        if (typeof session.questionEndTime === 'number') {
+          session.questionEndTime += pausedMs;
+        }
+        session.pausedAt = undefined;
         this.saveSession(session);
       });
   }

@@ -47,17 +47,16 @@ function TimerPage() {
   useEffect(() => {
     if (!running) return;
     const id = setInterval(() => {
-      setLeft((v) => {
-        if (v <= 1) {
-          clearInterval(id);
-          setRunning(false);
-          return 0;
-        }
-        return v - 1;
-      });
+      setLeft((v) => (v <= 1 ? 0 : v - 1));
     }, 1000);
     return () => clearInterval(id);
   }, [running]);
+
+  useEffect(() => {
+    if (left === 0 && running) {
+      setRunning(false);
+    }
+  }, [left, running]);
 
   const apply = useCallback((seconds: number) => {
     const s = Math.max(0, Math.min(seconds, 24 * 3600));
@@ -194,8 +193,13 @@ function TimerPage() {
               <button
                 onClick={() => {
                   const el = shellRef.current;
-                  if (!document.fullscreenElement) el?.requestFullscreen?.();
-                  else document.exitFullscreen();
+                  try {
+                    if (!document.fullscreenElement) {
+                      Promise.resolve(el?.requestFullscreen?.()).catch(() => {});
+                    } else if (document.exitFullscreen) {
+                      Promise.resolve(document.exitFullscreen()).catch(() => {});
+                    }
+                  } catch {}
                 }}
                 className="rounded-2xl border border-border bg-card px-8 py-3.5 text-sm font-bold uppercase tracking-wider text-foreground shadow-sm transition hover:bg-accent"
               >

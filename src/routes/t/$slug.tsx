@@ -1,10 +1,7 @@
-import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/t/$slug")({
-  component: RedirectToVaultSlug,
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: "/vault/$slug", params: { slug: params.slug } });
+  },
 });
-
-function RedirectToVaultSlug() {
-  const { slug } = Route.useParams();
-  return <Navigate to="/vault/$slug" params={{ slug }} />;
-}

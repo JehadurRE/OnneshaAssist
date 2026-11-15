@@ -15,6 +15,7 @@ interface MeritGazetteViewProps {
   quizTitle: string;
   participants: MeritParticipant[];
   passThresholdPct?: number | undefined;
+  thresholdLabel?: string | undefined;
   onClose: () => void;
 }
 
@@ -22,6 +23,7 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
   quizTitle,
   participants,
   passThresholdPct,
+  thresholdLabel,
   onClose,
 }) => {
   const regions = db.getRegions();
@@ -30,6 +32,7 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
     sessionThreshold: passThresholdPct,
     brandingDefaultThreshold: branding.defaultPassThresholdPct,
   });
+  const thresholdDisplay = thresholdLabel || `${effectiveThreshold}%`;
   const [selectedRegionId, setSelectedRegionId] = useState<string>('all');
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
@@ -58,6 +61,7 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
         participants: filtered,
         branding,
         passThresholdPct: effectiveThreshold,
+        thresholdLabel,
       });
     } finally {
       setIsDownloadingPdf(false);
@@ -160,7 +164,8 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
             merit list contains verified final rankings based on raw marks, speed velocity, and
             applicable negative marking (-0.25 penalty). This gazette is officially certified for
             public notice boards and regional archives. Qualifying passing threshold:{' '}
-            <span className="font-bold">{effectiveThreshold}%</span> accuracy.
+            <span className="font-bold">{thresholdDisplay}</span>
+            {!thresholdLabel && ' accuracy'}.
           </div>
 
           {/* Merit Table */}
@@ -203,7 +208,7 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
                         #{idx + 1}
                       </td>
                       <td className="border border-black p-2 font-mono">
-                        {p.rollNumber || `2026-${100 + idx}`}
+                        {p.rollNumber || `2026-${100 + idx + 1}`}
                       </td>
                       <td className="border border-black p-2 font-bold">{p.nickname}</td>
                       <td className="border border-black p-2 font-semibold">

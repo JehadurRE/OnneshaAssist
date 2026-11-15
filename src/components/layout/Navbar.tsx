@@ -38,6 +38,12 @@ export const Navbar: React.FC = () => {
 
   const pathname = location.pathname;
 
+  React.useEffect(() => {
+    setMobileDrawerOpen(false);
+    setSolutionsOpen(false);
+    setUserDropdownOpen(false);
+  }, [pathname]);
+
   const isActive = (path: string) => {
     if (path === '/' && pathname === '/') return true;
     if (path !== '/' && pathname.startsWith(path)) return true;
@@ -342,14 +348,6 @@ export const Navbar: React.FC = () => {
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <Link
-                  to="/admin"
-                  className="hidden md:inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition"
-                >
-                  <Shield className="h-3.5 w-3.5" />
-                  <span>{lang === 'bn' ? 'অ্যাডমিন' : 'Admin'}</span>
-                </Link>
-
                 <Link
                   to="/auth/login"
                   className="hidden sm:inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-border bg-card px-3.5 py-2 text-xs font-bold text-foreground hover:bg-accent transition"

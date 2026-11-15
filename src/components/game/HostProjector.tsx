@@ -32,18 +32,22 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
   const { lang, t } = useLanguage();
   const computeInitialRemaining = () => {
     if (session.questionEndTime && session.questionEndTime > 0) {
+      const refNow =
+        typeof session.pausedAt === 'number' && session.pausedAt > 0
+          ? session.pausedAt
+          : gameEngine.getServerNow();
       return Math.max(
         0,
         Math.min(
           question.timeLimitSec,
-          Math.ceil((session.questionEndTime - gameEngine.getServerNow()) / 1000),
+          Math.ceil((session.questionEndTime - refNow) / 1000),
         ),
       );
     }
     return question.timeLimitSec;
   };
   const [timeLeft, setTimeLeft] = useState(computeInitialRemaining);
-  const [isPaused, setIsPaused] = useState(false);
+  const [isPaused, setIsPaused] = useState(Boolean(session.pausedAt));
   const [showProctorModal, setShowProctorModal] = useState(false);
 
   const onSkipTimerRef = useRef(onSkipTimer);
@@ -81,14 +85,19 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
 
   useEffect(() => {
     skippedQuestionIdRef.current = null;
-    setIsPaused(false);
+    const serverPaused = Boolean(session.pausedAt);
+    setIsPaused(serverPaused);
+    const refNow =
+      typeof session.pausedAt === 'number' && session.pausedAt > 0
+        ? session.pausedAt
+        : gameEngine.getServerNow();
     const initialSec =
       session.questionEndTime && session.questionEndTime > 0
         ? Math.max(
             0,
             Math.min(
               question.timeLimitSec,
-              Math.ceil((session.questionEndTime - gameEngine.getServerNow()) / 1000),
+              Math.ceil((session.questionEndTime - refNow) / 1000),
             ),
           )
         : question.timeLimitSec;
@@ -96,10 +105,10 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
       session.questionEndTime && session.questionEndTime > 0
         ? session.questionEndTime
         : gameEngine.getServerNow() + question.timeLimitSec * 1000;
-    pausedRemainingMsRef.current = Math.max(0, deadlineMsRef.current - gameEngine.getServerNow());
+    pausedRemainingMsRef.current = Math.max(0, deadlineMsRef.current - refNow);
     lastAudioSecRef.current = initialSec;
     setTimeLeft(initialSec);
-  }, [question.id, question.timeLimitSec, session.questionEndTime]);
+  }, [question.id, question.timeLimitSec, session.questionEndTime, session.pausedAt]);
 
   // Auto-advance to response chart 1.2s after 100% of connected examinees have submitted their answers
   useEffect(() => {
@@ -115,11 +124,19 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
 
   useEffect(() => {
     if (isPaused) {
-      pausedRemainingMsRef.current = Math.max(0, deadlineMsRef.current - gameEngine.getServerNow());
+      const refNow =
+        typeof session.pausedAt === 'number' && session.pausedAt > 0
+          ? session.pausedAt
+          : gameEngine.getServerNow();
+      pausedRemainingMsRef.current = Math.max(0, deadlineMsRef.current - refNow);
+      setTimeLeft(Math.max(0, Math.min(question.timeLimitSec, Math.ceil(pausedRemainingMsRef.current / 1000))));
       return;
     }
 
-    deadlineMsRef.current = gameEngine.getServerNow() + pausedRemainingMsRef.current;
+    deadlineMsRef.current =
+      session.questionEndTime && session.questionEndTime > 0 && !session.pausedAt
+        ? session.questionEndTime
+        : gameEngine.getServerNow() + pausedRemainingMsRef.current;
 
     const interval = setInterval(() => {
       const remainingMs = deadlineMsRef.current - gameEngine.getServerNow();
@@ -146,7 +163,7 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
     }, 250);
 
     return () => clearInterval(interval);
-  }, [isPaused, question.id]);
+  }, [isPaused, question.id, question.timeLimitSec, session.questionEndTime, session.pausedAt]);
 
   const pct = (timeLeft / question.timeLimitSec) * 100;
   const isUrgent = timeLeft <= 5;
@@ -198,7 +215,15 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
 
           <button
             type="button"
-            onClick={() => setIsPaused(!isPaused)}
+            onClick={() => {
+              if (isPaused) {
+                setIsPaused(false);
+                gameEngine.resumeGame(session.pin);
+              } else {
+                setIsPaused(true);
+                gameEngine.pauseGame(session.pin);
+              }
+            }}
             className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-background hover:bg-accent text-foreground"
             title={isPaused ? 'Resume' : 'Pause'}
           >

@@ -8,11 +8,41 @@ class SQLiteEngine {
   private initPromise: Promise<void> | null = null;
   private inBatch = false;
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  private hasPendingPersist = false;
 
   constructor() {
     if (typeof window !== "undefined") {
       this.initPromise = this.init();
+      const flushOnUnload = () => {
+        if (this.hasPendingPersist || this.persistTimer) {
+          this.persist();
+        }
+      };
+      window.addEventListener("beforeunload", flushOnUnload);
+      window.addEventListener("pagehide", flushOnUnload);
     }
+  }
+
+  private restoreFromStorageOrBlank(): Database {
+    if (!this.SQL) {
+      throw new Error("SQL.js not initialized");
+    }
+    const savedDbBase64 =
+      typeof window !== "undefined" ? localStorage.getItem("onnesha_sqlite_db_bin") : null;
+    if (savedDbBase64) {
+      try {
+        const raw = atob(savedDbBase64);
+        const len = raw.length;
+        const binary = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          binary[i] = raw.charCodeAt(i);
+        }
+        return new this.SQL.Database(binary);
+      } catch (e) {
+        console.warn("Failed to load saved SQLite binary, creating fresh DB:", e);
+      }
+    }
+    return new this.SQL.Database();
   }
 
   public async init(): Promise<void> {
@@ -26,25 +56,7 @@ class SQLiteEngine {
           : { locateFile: () => sqlWasmUrl || "/sql-wasm.wasm" },
       );
 
-      const savedDbBase64 =
-        typeof window !== "undefined" ? localStorage.getItem("onnesha_sqlite_db_bin") : null;
-      if (savedDbBase64) {
-        try {
-          const raw = atob(savedDbBase64);
-          const len = raw.length;
-          const binary = new Uint8Array(len);
-          for (let i = 0; i < len; i++) {
-            binary[i] = raw.charCodeAt(i);
-          }
-          this.db = new this.SQL.Database(binary);
-        } catch (e) {
-          console.warn("Failed to load saved SQLite binary, creating fresh DB:", e);
-          this.db = new this.SQL.Database();
-        }
-      } else {
-        this.db = new this.SQL.Database();
-      }
-
+      this.db = this.restoreFromStorageOrBlank();
       this.createTables();
       this.isInitialized = true;
     } catch (err) {
@@ -53,7 +65,7 @@ class SQLiteEngine {
         this.SQL = await initSqlJs({
           locateFile: () => "https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.12.0/sql-wasm.wasm",
         });
-        this.db = new this.SQL.Database();
+        this.db = this.restoreFromStorageOrBlank();
         this.createTables();
         this.isInitialized = true;
       } catch (fallbackErr) {
@@ -334,6 +346,7 @@ class SQLiteEngine {
   }
 
   public schedulePersist(delayMs = 120): void {
+    this.hasPendingPersist = true;
     if (typeof window === "undefined" || !this.db) return;
     if (this.persistTimer) {
       clearTimeout(this.persistTimer);
@@ -349,6 +362,7 @@ class SQLiteEngine {
       clearTimeout(this.persistTimer);
       this.persistTimer = null;
     }
+    this.hasPendingPersist = false;
     if (!this.db || typeof window === "undefined") return;
     try {
       const data = this.db.export();

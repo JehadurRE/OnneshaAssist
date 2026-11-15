@@ -66,9 +66,10 @@ export const PlayerKeypad: React.FC<PlayerKeypadProps> = ({
   const [writtenText, setWrittenText] = useState(submittedWrittenAnswer || '');
 
   useEffect(() => {
-    setMultiSelected(selectedOptionIds);
+    setMultiSelected(hasAnswered ? selectedOptionIds : []);
     setWrittenText(submittedWrittenAnswer || '');
-  }, [question.id, submittedWrittenAnswer]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [question.id, hasAnswered, submittedWrittenAnswer]);
 
   useEffect(() => {
     if (hasAnswered) {

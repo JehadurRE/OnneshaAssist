@@ -4,6 +4,7 @@ import { useLanguage } from '@/lib/i18n';
 import { Confetti } from '@/components/common/Confetti';
 import { CertificateView } from '@/components/common/CertificateView';
 import { db, formatDeterministicCertNumber } from '@/lib/db';
+import { serverVerifyCertificate } from '@/lib/server-session';
 import {
   computeParticipantAccuracyPct,
   computeTotalQuizMarks,
@@ -69,7 +70,7 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
     audioEngine.playFanfare();
   }, []);
 
-  const handleGenerateCertificate = (player: typeof p1, rank: number) => {
+  const handleGenerateCertificate = async (player: typeof p1, rank: number) => {
     if (!player) return;
     const { accuracyPct, passed } = getPlayerEval(player);
     if (!passed) return;
@@ -79,6 +80,19 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
       setSelectedCert(existingSealed);
       return;
     }
+    try {
+      const verifiedRes = await serverVerifyCertificate({
+        data: {
+          certId: certNo,
+          origin: typeof window !== 'undefined' ? window.location.origin : undefined,
+        },
+      });
+      if (verifiedRes.success && verifiedRes.certificate) {
+        db.issueCertificate(verifiedRes.certificate, { syncToServer: false });
+        setSelectedCert(verifiedRes.certificate);
+        return;
+      }
+    } catch {}
     const cert: CertificateData = {
       id: `cert-${certNo.toLowerCase()}`,
       certificateNumber: certNo,

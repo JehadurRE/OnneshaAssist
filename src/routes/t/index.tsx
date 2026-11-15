@@ -1,5 +1,7 @@
-import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/t/")({
-  component: () => <Navigate to="/vault" />,
+  beforeLoad: () => {
+    throw redirect({ to: "/vault" });
+  },
 });

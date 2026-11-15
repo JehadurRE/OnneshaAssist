@@ -266,23 +266,25 @@ function SingleCurriculumDetailPage() {
               </Link>
 
               {isStaff && (
-                <Link
-                  to="/host/$quizId"
-                  params={{ quizId: pack.slug || pack.id }}
-                  className="flex items-center justify-center gap-2 rounded-2xl border border-primary/40 bg-primary/10 px-5 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition"
-                >
-                  <span>{lang === "bn" ? "লাইভ রুম হোস্ট করুন" : "Host Live Room"}</span>
-                </Link>
-              )}
+                <>
+                  <Link
+                    to="/host/$quizId"
+                    params={{ quizId: pack.slug || pack.id }}
+                    className="flex items-center justify-center gap-2 rounded-2xl border border-primary/40 bg-primary/10 px-5 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition"
+                  >
+                    <span>{lang === "bn" ? "লাইভ রুম হোস্ট করুন" : "Host Live Room"}</span>
+                  </Link>
 
-              <button
-                type="button"
-                onClick={() => setShowOmrModal(true)}
-                className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-5 py-2.5 text-xs font-bold text-foreground hover:bg-accent transition"
-              >
-                <Printer className="h-4 w-4 text-primary" />
-                <span>{lang === "bn" ? "OMR শিট প্রিন্ট করুন" : "Print OMR Sheet"}</span>
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowOmrModal(true)}
+                    className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-5 py-2.5 text-xs font-bold text-foreground hover:bg-accent transition"
+                  >
+                    <Printer className="h-4 w-4 text-primary" />
+                    <span>{lang === "bn" ? "OMR শিট প্রিন্ট করুন" : "Print OMR Sheet"}</span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -425,8 +427,8 @@ function SingleCurriculumDetailPage() {
         </div>
       </main>
 
-      {/* OMR Sheet Modal */}
-      {showOmrModal && (
+      {/* OMR Sheet Modal (Staff Only) */}
+      {isStaff && showOmrModal && (
         <OmrSheetView
           quiz={pack}
           onClose={() => setShowOmrModal(false)}

@@ -60,14 +60,21 @@ import {
   normalizeRollToken,
 } from "../sanjibon-seed-data";
 import {
+  applyPauseGameToSession,
+  applyResumeGameToSession,
   buildJoinDirectoryForSession,
+  deleteCertificateInStore,
   filterActiveRoomsFromSessions,
   findRosterCandidate,
   isCertificateRevoked,
+  isQuestionSubmissionClosed,
   mergeSeededStoreData,
+  resolveSignupRoleForActor,
+  restoreCertificateInStore,
   sanitizeLookupCandidate,
   syncCourseInstructorsInStore,
   syncUserCoursesInStore,
+  upsertManagedUserInStore,
 } from "../server-session";
 import { sqliteEngine } from "../db/sqlite-engine";
 import { db } from "../db";
@@ -176,6 +183,12 @@ describe("server-security: signed HTTP-only session tokens & RBAC", () => {
     ).toBe(true);
     expect(
       canActorMutateStoreAction({ id: "adm-1", role: "admin" }, "purge_dummy_data").allowed,
+    ).toBe(true);
+    expect(
+      canActorMutateStoreAction({ id: "inst-1", role: "instructor" }, "restore_certificate").allowed,
+    ).toBe(false);
+    expect(
+      canActorMutateStoreAction({ id: "adm-1", role: "admin" }, "restore_certificate").allowed,
     ).toBe(true);
   });
 });
@@ -289,6 +302,35 @@ describe("scoring & certificate metadata helpers", () => {
     expect(omr.negativeDeduction).toBeCloseTo(1.0);
     expect(omr.netScore).toBe(0);
     expect(omr.maxPossibleScore).toBeCloseTo(2.5);
+  });
+
+  it("grades multi_mcq questions on exact option-letter sets in OMR mode", () => {
+    const multiMcq: Question = {
+      id: "q-multi",
+      textEn: "Select prime numbers",
+      textBn: "মৌলিক সংখ্যা নির্বাচন করুন",
+      type: "multi_mcq",
+      timeLimitSec: 30,
+      points: 1000,
+      options: [
+        { id: "opt-a", textEn: "2", textBn: "২", isCorrect: true },
+        { id: "opt-b", textEn: "4", textBn: "৪", isCorrect: false },
+        { id: "opt-c", textEn: "5", textBn: "৫", isCorrect: true },
+        { id: "opt-d", textEn: "9", textBn: "৯", isCorrect: false },
+      ],
+      correctOptionIds: ["opt-a", "opt-c"],
+    };
+
+    const exactHit = gradeOmrSubmission([multiMcq], { 1: "A, C" }, 0.25);
+    expect(exactHit.correct).toBe(1);
+    expect(exactHit.incorrect).toBe(0);
+    expect(exactHit.netScore).toBeCloseTo(1.0);
+
+    const partialWrong = gradeOmrSubmission([multiMcq], { 1: "A" }, 0.25);
+    expect(partialWrong.correct).toBe(0);
+    expect(partialWrong.incorrect).toBe(1);
+    expect(partialWrong.negativeDeduction).toBeCloseTo(0.25);
+    expect(partialWrong.netScore).toBeCloseTo(0);
   });
 });
 
@@ -1723,5 +1765,185 @@ describe("public join directory scoping, phone masking & active rooms filter", (
       cutoff,
     );
     expect(active.map((r) => r.pin)).toEqual(["100001", "100002"]);
+  });
+});
+
+describe("server-session domain state transitions & safeguards", () => {
+  it("resolves signup roles strictly based on caller authority", () => {
+    expect(resolveSignupRoleForActor(null, "candidate")).toEqual({
+      allowed: true,
+      role: "candidate",
+    });
+    expect(resolveSignupRoleForActor(null, "instructor").allowed).toBe(false);
+    expect(resolveSignupRoleForActor(null, "admin").allowed).toBe(false);
+    expect(resolveSignupRoleForActor({ role: "instructor" }, "instructor").allowed).toBe(false);
+    expect(resolveSignupRoleForActor({ role: "admin" }, "instructor")).toEqual({
+      allowed: true,
+      role: "instructor",
+    });
+  });
+
+  it("preserves passwordHash when placeholder or blank is sent on user update and hashes new passwords", () => {
+    const existing: ManagedUser = {
+      id: "usr-inst-1",
+      name: "Instructor One",
+      email: "inst1@onnesha.app",
+      passwordHash: "scrypt:salt01:hash01",
+      role: "instructor",
+      institution: "Onnesha Academy",
+      assignedCourseIds: [],
+      status: "active",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    const preservedPlaceholder = upsertManagedUserInStore([existing], {
+      ...existing,
+      name: "Instructor Updated",
+      passwordHash: "instructor123",
+    });
+    expect(preservedPlaceholder.success).toBe(true);
+    expect(preservedPlaceholder.savedUser?.passwordHash).toBe("scrypt:salt01:hash01");
+    expect(preservedPlaceholder.savedUser?.name).toBe("Instructor Updated");
+
+    const preservedBlank = upsertManagedUserInStore([existing], {
+      ...existing,
+      passwordHash: "   ",
+    });
+    expect(preservedBlank.success).toBe(true);
+    expect(preservedBlank.savedUser?.passwordHash).toBe("scrypt:salt01:hash01");
+
+    const rejectedNew = upsertManagedUserInStore([existing], {
+      ...existing,
+      id: "usr-new",
+      email: "new@onnesha.app",
+      passwordHash: "",
+    });
+    expect(rejectedNew.success).toBe(false);
+
+    const createdNew = upsertManagedUserInStore([existing], {
+      ...existing,
+      id: "usr-new",
+      email: "new@onnesha.app",
+      passwordHash: "StrongPass!2026",
+    });
+    expect(createdNew.success).toBe(true);
+    expect(createdNew.savedUser?.passwordHash?.startsWith("scrypt:")).toBe(true);
+    expect(
+      verifyPasswordScrypt("StrongPass!2026", createdNew.savedUser!.passwordHash!).valid,
+    ).toBe(true);
+  });
+
+  it("archives revoked certificates on delete and restores them cleanly", () => {
+    const cert: CertificateData = {
+      id: "cert-1",
+      certificateNumber: "ONN-2026-0101",
+      studentName: "Rafiqul Islam",
+      studentRoll: "2026-101",
+      quizTitle: "Model Test 1",
+      score: 4000,
+      marksObtained: 4000,
+      totalPoints: 5000,
+      totalMarks: 5000,
+      rank: 1,
+      totalParticipants: 25,
+      accuracyPercent: 80,
+      issueDate: "2026-11-15",
+      verified: true,
+    };
+
+    const store: {
+      certificates: CertificateData[];
+      revokedCertificates: string[];
+      revokedCertificateArchive: Record<string, CertificateData>;
+    } = {
+      certificates: [cert],
+      revokedCertificates: [],
+      revokedCertificateArchive: {},
+    };
+
+    expect(deleteCertificateInStore(store, "onn-2026-0101")).toBe(true);
+    expect(store.certificates).toHaveLength(0);
+    expect(store.revokedCertificates).toEqual(["ONN-2026-0101"]);
+    expect(store.revokedCertificateArchive["ONN-2026-0101"]?.studentName).toBe("Rafiqul Islam");
+
+    expect(restoreCertificateInStore(store, " ONN-2026-0101 ")).toBe(true);
+    expect(store.certificates).toHaveLength(1);
+    expect(store.certificates[0]?.certificateNumber).toBe("ONN-2026-0101");
+    expect(store.revokedCertificates).toEqual([]);
+    expect(store.revokedCertificateArchive["ONN-2026-0101"]).toBeUndefined();
+  });
+
+  it("enforces question submission lock in chart/leaderboard phases and supports pause/resume timing", () => {
+    const currentQ: Question = {
+      id: "q-live-1",
+      textEn: "Sample Q",
+      textBn: "নমুনা প্রশ্ন",
+      type: "single_mcq",
+      timeLimitSec: 20,
+      points: 1000,
+      options: [],
+      correctOptionIds: [],
+    };
+
+    expect(
+      isQuestionSubmissionClosed({ phase: "question", currentQuestion: currentQ }, "q-live-1"),
+    ).toBe(false);
+    expect(
+      isQuestionSubmissionClosed({ phase: "chart", currentQuestion: currentQ }, "q-live-1"),
+    ).toBe(true);
+    expect(
+      isQuestionSubmissionClosed(
+        { phase: "leaderboard", currentQuestion: currentQ },
+        "q-live-1",
+      ),
+    ).toBe(true);
+    expect(
+      isQuestionSubmissionClosed({ phase: "chart", currentQuestion: currentQ }, "q-other"),
+    ).toBe(false);
+
+    const session: Parameters<typeof applyPauseGameToSession>[0] = {
+      pin: "445566",
+      quizId: "quiz-1",
+      quizTitleEn: "Live Exam",
+      quizTitleBn: "লাইভ পরীক্ষা",
+      hostId: "host-1",
+      phase: "lobby",
+      currentQuestionIndex: 0,
+      currentQuestion: currentQ,
+      questionStartTime: 10_000,
+      questionEndTime: 30_000,
+      settings: {
+        timePerQuestion: 20,
+        speedBonus: true,
+        negativeMarking: 0.25,
+        shuffleQuestions: false,
+        shuffleOptions: false,
+        soundEnabled: true,
+        musicEnabled: true,
+        isFormalAssessment: true,
+        requireRollNumber: false,
+      },
+      participants: {},
+      createdAt: 5_000,
+      updatedAt: 5_000,
+      totalQuestions: 1,
+    };
+
+    // Cannot pause in lobby phase
+    expect(applyPauseGameToSession(session, 12_000)).toBe(false);
+    expect(session.pausedAt).toBeUndefined();
+
+    // Pause succeeds in question phase and resume shifts deadline by exact pause duration
+    session.phase = "question";
+    expect(applyPauseGameToSession(session, 15_000)).toBe(true);
+    expect(session.pausedAt).toBe(15_000);
+    // Double pause returns false
+    expect(applyPauseGameToSession(session, 16_000)).toBe(false);
+
+    expect(applyResumeGameToSession(session, 22_500)).toBe(true);
+    expect(session.pausedAt).toBeUndefined();
+    expect(session.questionStartTime).toBe(17_500);
+    expect(session.questionEndTime).toBe(37_500);
+    expect(session.updatedAt).toBe(22_500);
   });
 });

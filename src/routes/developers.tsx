@@ -1,9 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLanguage } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth-context";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { db } from "@/lib/db";
+import { isQuizPrivate } from "@/lib/sanjibon-seed-data";
 import { Check, CheckCircle2, Code2, Copy, Key, Play, RefreshCw, Send, Terminal, Webhook } from "lucide-react";
 
 export const Route = createFileRoute("/developers")({
@@ -18,28 +20,49 @@ export const Route = createFileRoute("/developers")({
 
 function DevelopersPage() {
   const { lang } = useLanguage();
+  const { user, isAuthenticated } = useAuth();
+  const isStaff = isAuthenticated && (user?.role === "admin" || user?.role === "instructor");
   const [apiKey, setApiKey] = useState("onn_live_9k28al90p482910");
   const [copied, setCopied] = useState(false);
   const [selectedEndpoint, setSelectedEndpoint] = useState<"get_quizzes" | "get_certificate" | "get_roster">("get_quizzes");
   const [apiResponse, setApiResponse] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const apiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      if (apiTimerRef.current) clearTimeout(apiTimerRef.current);
+    };
+  }, []);
 
   const handleGenerateKey = () => {
     const newKey = `onn_live_${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 10)}`;
     setApiKey(newKey);
   };
 
-  const handleCopyKey = () => {
-    navigator.clipboard.writeText(apiKey);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopyKey = async () => {
+    try {
+      await navigator.clipboard?.writeText?.(apiKey);
+      setCopied(true);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
   };
 
   const handleRunApiTest = () => {
     setIsLoading(true);
-    setTimeout(() => {
+    if (apiTimerRef.current) clearTimeout(apiTimerRef.current);
+    apiTimerRef.current = setTimeout(() => {
       if (selectedEndpoint === "get_quizzes") {
-        const data = db.getQuizzes().slice(0, 3).map((q) => ({
+        const courses = db.getCourses();
+        const visibleQuizzes = isStaff
+          ? db.getQuizzes()
+          : db.getQuizzes().filter((q) => !isQuizPrivate(q, courses));
+        const data = visibleQuizzes.slice(0, 3).map((q) => ({
           id: q.id,
           slug: q.slug,
           title: q.titleEn,
@@ -48,11 +71,40 @@ function DevelopersPage() {
         }));
         setApiResponse(JSON.stringify({ status: "success", count: data.length, data }, null, 2));
       } else if (selectedEndpoint === "get_certificate") {
-        const certs = db.getCertificates();
-        setApiResponse(JSON.stringify({ status: "success", count: certs.length, certificates: certs.slice(0, 5) }, null, 2));
+        if (!isStaff) {
+          setApiResponse(
+            JSON.stringify(
+              {
+                status: "auth_required",
+                message: "Sign in as Instructor or Admin to query live issued certificates. Public checks use /verify/<certId>.",
+              },
+              null,
+              2,
+            ),
+          );
+        } else {
+          const certs = db.getCertificates();
+          setApiResponse(JSON.stringify({ status: "success", count: certs.length, certificates: certs.slice(0, 5) }, null, 2));
+        }
       } else {
-        const roster = db.getRoster().slice(0, 3);
-        setApiResponse(JSON.stringify({ status: "success", count: roster.length, roster }, null, 2));
+        if (!isStaff) {
+          setApiResponse(
+            JSON.stringify(
+              {
+                status: "auth_required",
+                message: "Candidate roster PII is redacted for unauthenticated requests. Sign in as staff to inspect.",
+                sampleRedacted: [
+                  { id: "sample-1", rollNumber: "DEMO-101", regionName: "Dhaka Range" },
+                ],
+              },
+              null,
+              2,
+            ),
+          );
+        } else {
+          const roster = db.getRoster().slice(0, 3);
+          setApiResponse(JSON.stringify({ status: "success", count: roster.length, roster }, null, 2));
+        }
       }
       setIsLoading(false);
     }, 400);

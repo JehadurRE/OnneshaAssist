@@ -133,11 +133,13 @@ export const PlayerLobby: React.FC<PlayerLobbyProps> = ({
     };
   }, [pin, allowedRegionId, allowedRegionName]);
 
-  // Live auto-lookup when user types Mobile Number or Roll Number in Mode 1
+  // Live auto-lookup when user types Mobile Number, Roll Number, or 1–2 digit Centre Serial in Mode 1
   useEffect(() => {
     const clean = searchNumber.trim();
     setSubmitError(null);
-    if (clean.length < 3) {
+    const canSerialLookup =
+      !!selectedRegionId && selectedRegionId !== 'all' && /^\d{1,2}$/.test(clean);
+    if (!clean || (!canSerialLookup && clean.length < 2)) {
       setMatchedCandidate(null);
       setLookupError(null);
       return;
@@ -148,7 +150,11 @@ export const PlayerLobby: React.FC<PlayerLobbyProps> = ({
       setLookupError(null);
       try {
         const res = await serverLookupCandidateByNumber({
-          data: { pin, query: clean },
+          data: {
+            pin,
+            query: clean,
+            ...(selectedRegionId ? { regionId: selectedRegionId } : {}),
+          },
         });
         if (res.success && res.candidate) {
           setMatchedCandidate(res.candidate);
@@ -166,7 +172,7 @@ export const PlayerLobby: React.FC<PlayerLobbyProps> = ({
     }, 280);
 
     return () => clearTimeout(timer);
-  }, [searchNumber, pin]);
+  }, [searchNumber, pin, selectedRegionId]);
 
   const availableRegions = useMemo(() => {
     if (sessionAllowedRegionId && sessionAllowedRegionId !== 'all') {
@@ -380,11 +386,27 @@ export const PlayerLobby: React.FC<PlayerLobbyProps> = ({
         {entryMode === 'number_search' && (
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-foreground mb-1.5">
-                {lang === 'bn'
-                  ? 'আপনার মোবাইল নম্বর অথবা রোল/আইডি নম্বর লিখুন *'
-                  : 'Type Registered Mobile Number or Roll / ID Number *'}
-              </label>
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-foreground">
+                  {lang === 'bn'
+                    ? 'আপনার মোবাইল নম্বর অথবা রোল/সিরিয়াল লিখুন *'
+                    : 'Type Mobile Number, Roll Number, or Serial *'}
+                </label>
+                {availableRegions.length > 1 && (
+                  <select
+                    aria-label="Serial lookup centre"
+                    value={selectedRegionId}
+                    onChange={(e) => setSelectedRegionId(e.target.value)}
+                    className="rounded-lg border border-border bg-background px-2 py-1 text-[11px] font-semibold text-foreground outline-none focus:border-primary"
+                  >
+                    {availableRegions.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.nameEn}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
               <div className="relative">
                 <Search className="h-4 w-4 text-muted-foreground absolute left-4 top-1/2 -translate-y-1/2" />
                 <input
@@ -394,16 +416,16 @@ export const PlayerLobby: React.FC<PlayerLobbyProps> = ({
                   onChange={(e) => setSearchNumber(e.target.value)}
                   placeholder={
                     lang === 'bn'
-                      ? 'যেমন: 017XXXXXXXX অথবা JHN-01 / GZP-01'
-                      : 'e.g. 017XXXXXXXX or JHN-01 / GZP-01'
+                      ? 'যেমন: 017XXXXXXXX, JHN-01 অথবা সিরিয়াল 1'
+                      : 'e.g. 017XXXXXXXX, JHN-01, or serial 1'
                   }
                   className="w-full rounded-2xl border-2 border-border bg-background pl-11 pr-4 py-3.5 font-mono text-sm font-bold text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
               </div>
               <p className="mt-1.5 text-[11px] text-muted-foreground">
                 {lang === 'bn'
-                  ? 'আপনার মোবাইল নম্বর (যেমন 017XXXXXXXX), রোল নম্বর (JHN-01) অথবা ইমেইল লিখলেই নাম ও কেন্দ্র অটো-ফিল হবে।'
-                  : 'Enter your registered Mobile Number (e.g. 017XXXXXXXX), Roll Number (e.g. JHN-01), or email to auto-fill your profile.'}
+                  ? 'আপনার মোবাইল নম্বর (017XXXXXXXX), রোল (JHN-01), ইমেইল অথবা কেন্দ্র বেছে ১-২ সংখ্যার সিরিয়াল (যেমন 01) লিখলেই প্রোফাইল অটো-ফিল হবে।'
+                  : 'Enter your Mobile Number, Roll Number (JHN-01), email, or select a Centre and type a 1–2 digit serial (e.g. 1).'}
               </p>
             </div>
 

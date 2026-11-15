@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useLanguage } from "@/lib/i18n";
 import { Navbar } from "@/components/layout/Navbar";
@@ -11,7 +11,9 @@ import {
   Award,
   Building,
   Check,
+  CheckCircle2,
   ChevronDown,
+  Clock,
   Cpu,
   Eye,
   FileSpreadsheet,
@@ -165,8 +167,13 @@ const INSTITUTIONAL_PLANS: InstitutionalPlan[] = [
 
 function PricingPage() {
   const { lang, t } = useLanguage();
+  const navigate = useNavigate();
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [selectedPlanForBkash, setSelectedPlanForBkash] = useState<InstitutionalPlan | null>(null);
+  const [paymentNotice, setPaymentNotice] = useState<{
+    trxId: string;
+    status: 'completed' | 'pending' | 'failed';
+  } | null>(null);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
   // Interactive Estimator State
@@ -174,17 +181,21 @@ function PricingPage() {
   const [includeSms, setIncludeSms] = useState<boolean>(true);
   const [includeCertificates, setIncludeCertificates] = useState<boolean>(true);
 
+  const isEnterpriseCustom = selectedBatchSize >= 5000;
+
   // Recommended plan based on estimator
-  const recommendedPlan =
-    selectedBatchSize <= 50
+  const recommendedPlan = isEnterpriseCustom
+    ? null
+    : selectedBatchSize <= 50
       ? INSTITUTIONAL_PLANS[0]
       : selectedBatchSize <= 300
-      ? INSTITUTIONAL_PLANS[1]
-      : INSTITUTIONAL_PLANS[2];
+        ? INSTITUTIONAL_PLANS[1]
+        : INSTITUTIONAL_PLANS[2];
 
   const handleOpenBkash = (plan: InstitutionalPlan) => {
+    setPaymentNotice(null);
     if (plan.monthlyPrice === 0) {
-      window.location.href = '/dashboard';
+      navigate({ to: '/dashboard' });
       return;
     }
     setSelectedPlanForBkash(plan);
@@ -243,6 +254,40 @@ function PricingPage() {
             </div>
           </div>
         </div>
+
+        {paymentNotice && (
+          <div
+            className={`mt-8 rounded-2xl border p-4 text-xs sm:text-sm font-semibold flex items-center justify-between gap-3 ${
+              paymentNotice.status === 'completed'
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                : paymentNotice.status === 'pending'
+                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                  : 'border-destructive/40 bg-destructive/10 text-destructive'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              {paymentNotice.status === 'completed' ? (
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+              ) : (
+                <Clock className="h-4 w-4 shrink-0" />
+              )}
+              <span>
+                {paymentNotice.status === 'completed'
+                  ? `Payment verified! Transaction ID: ${paymentNotice.trxId}. Institutional subscription activated.`
+                  : paymentNotice.status === 'pending'
+                    ? `bKash TrxID ${paymentNotice.trxId} recorded and queued for manual verification in Super Admin Panel.`
+                    : `Transaction ${paymentNotice.trxId} could not be verified. Please contact support or retry.`}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPaymentNotice(null)}
+              className="text-xs underline shrink-0"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {/* 3-COLUMN INSTITUTIONAL TIER CARDS */}
         <div className="mt-12 grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch">
@@ -424,46 +469,123 @@ function PricingPage() {
             </div>
 
             {/* Right Recommended Box */}
-            {recommendedPlan && (
-            <div className="lg:col-span-5 rounded-3xl border-2 border-primary/40 bg-card p-6 shadow-tactical space-y-4">
-              <div className="text-xs font-bold uppercase tracking-widest text-primary">
-                Recommended Configuration
-              </div>
+            {isEnterpriseCustom ? (
+              <div className="lg:col-span-5 rounded-3xl border-2 border-primary/40 bg-card p-6 shadow-tactical space-y-4">
+                <div className="text-xs font-bold uppercase tracking-widest text-primary">
+                  Enterprise Custom Tier
+                </div>
 
-              <div className="border-b border-border/60 pb-4">
-                <h3 className="font-display text-2xl font-black text-foreground">
-                  {lang === 'bn' ? recommendedPlan.nameBn : recommendedPlan.nameEn}
-                </h3>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Matched for {selectedBatchSize.toLocaleString()} examinees with automated diagnostics.
-                </p>
-              </div>
+                <div className="border-b border-border/60 pb-4">
+                  <h3 className="font-display text-2xl font-black text-foreground">
+                    {lang === 'bn' ? 'এন্টারপ্রাইজ ও জাতীয় বোর্ড' : 'Dedicated National & Defense Grid'}
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Matched for {selectedBatchSize.toLocaleString()}+ simultaneous examinees with isolated database nodes, Bank PO billing, and custom SLA.
+                  </p>
+                </div>
 
-              <div className="flex items-baseline gap-1 font-mono">
-                <span className="text-4xl font-black text-foreground">
-                  {recommendedPlan.monthlyPrice === null
-                    ? 'Custom'
-                    : recommendedPlan.monthlyPrice === 0
-                      ? 'Free'
-                      : `৳${recommendedPlan.monthlyPrice.toLocaleString()}`}
-                </span>
-                {recommendedPlan.monthlyPrice !== null && recommendedPlan.monthlyPrice > 0 && (
-                  <span className="text-xs text-muted-foreground">/ month</span>
-                )}
-              </div>
+                <div className="flex items-baseline gap-2 font-mono">
+                  <span className="text-4xl font-black text-foreground">Custom Quote</span>
+                  <span className="text-xs text-muted-foreground">
+                    ({billingCycle === 'yearly' ? 'Annual Contract' : 'Monthly SLA'})
+                  </span>
+                </div>
 
-              <button
-                type="button"
-                onClick={() => handleOpenBkash(recommendedPlan)}
-                className="w-full rounded-2xl bg-primary py-3.5 text-xs font-extrabold text-primary-foreground shadow-glow hover:bg-primary/90 transition"
-              >
-                Proceed with bKash Checkout →
-              </button>
+                <ul className="space-y-1.5 text-xs text-muted-foreground">
+                  <li>✓ Dedicated 5,000+ concurrent capacity</li>
+                  {includeSms && <li>✓ Bulk Greenweb / Academy SMS Gateway included</li>}
+                  {includeCertificates && <li>✓ Rekor + OpenTimestamps QR certificates included</li>}
+                </ul>
 
-              <div className="text-center text-[10px] text-muted-foreground">
-                🔒 Verified 256-Bit Encrypted Institutional Gateway
+                <Link
+                  to="/contact-sales"
+                  className="block w-full text-center rounded-2xl bg-primary py-3.5 text-xs font-extrabold text-primary-foreground shadow-glow hover:bg-primary/90 transition"
+                >
+                  {t('contact_sales')} →
+                </Link>
+
+                <div className="text-center text-[10px] text-muted-foreground">
+                  Official Procurement · Tender &amp; Bank PO Supported
+                </div>
               </div>
-            </div>
+            ) : (
+              recommendedPlan && (
+                <div className="lg:col-span-5 rounded-3xl border-2 border-primary/40 bg-card p-6 shadow-tactical space-y-4">
+                  <div className="text-xs font-bold uppercase tracking-widest text-primary">
+                    Recommended Configuration ({billingCycle === 'yearly' ? 'Annual' : 'Monthly'})
+                  </div>
+
+                  <div className="border-b border-border/60 pb-4">
+                    <h3 className="font-display text-2xl font-black text-foreground">
+                      {lang === 'bn' ? recommendedPlan.nameBn : recommendedPlan.nameEn}
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Matched for up to {recommendedPlan.capacity.toLocaleString()} simultaneous examinees.
+                    </p>
+                  </div>
+
+                  {(() => {
+                    const baseMonthly = recommendedPlan.monthlyPrice;
+                    const smsExtra = includeSms && recommendedPlan.id === 'tier-starter' ? 400 : 0;
+                    const certExtra =
+                      includeCertificates && recommendedPlan.id !== 'tier-campus' ? 500 : 0;
+                    const estMonthly = baseMonthly + smsExtra + certExtra;
+                    const estTotal =
+                      billingCycle === 'yearly' ? estMonthly * 10 : estMonthly;
+
+                    return (
+                      <div className="space-y-2">
+                        <div className="flex items-baseline gap-1 font-mono">
+                          <span className="text-4xl font-black text-foreground">
+                            {estTotal === 0 ? 'Free' : `৳${estTotal.toLocaleString()}`}
+                          </span>
+                          {estTotal > 0 && (
+                            <span className="text-xs text-muted-foreground">
+                              / {billingCycle === 'yearly' ? 'year (2 months free)' : 'month'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="space-y-1 text-[11px] text-muted-foreground">
+                          <div>
+                            • Guardian SMS:{' '}
+                            <strong className="text-foreground">
+                              {!includeSms
+                                ? 'Not selected'
+                                : smsExtra > 0
+                                  ? '+৳400/mo add-on'
+                                  : 'Included in plan'}
+                            </strong>
+                          </div>
+                          <div>
+                            • Cryptographic QR Certs:{' '}
+                            <strong className="text-foreground">
+                              {!includeCertificates
+                                ? 'Not selected'
+                                : certExtra > 0
+                                  ? '+৳500/mo add-on'
+                                  : 'Included in plan'}
+                            </strong>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenBkash(recommendedPlan)}
+                    className="w-full rounded-2xl bg-primary py-3.5 text-xs font-extrabold text-primary-foreground shadow-glow hover:bg-primary/90 transition"
+                  >
+                    {recommendedPlan.monthlyPrice === 0
+                      ? 'Start Free Assessment →'
+                      : 'Proceed with bKash Checkout →'}
+                  </button>
+
+                  <div className="text-center text-[10px] text-muted-foreground">
+                    🔒 Verified 256-Bit Encrypted Institutional Gateway
+                  </div>
+                </div>
+              )
             )}
           </div>
         </section>
@@ -612,8 +734,8 @@ function PricingPage() {
           billingCycle={billingCycle}
           isOpen={!!selectedPlanForBkash}
           onClose={() => setSelectedPlanForBkash(null)}
-          onSuccess={(trxId) => {
-            alert(`Payment verified! Transaction ID: ${trxId}. Institutional license activated.`);
+          onSuccess={(trxId, status) => {
+            setPaymentNotice({ trxId, status });
             setSelectedPlanForBkash(null);
           }}
         />

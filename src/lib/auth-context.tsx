@@ -104,13 +104,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } catch (err) {
         console.warn('Auth session verify notice:', err);
-        const cached = localStorage.getItem('onnesha_auth_user');
-        if (cached && active) {
-          try {
-            setUser(JSON.parse(cached) as User);
-          } catch {
-            localStorage.removeItem('onnesha_auth_user');
-          }
+        if (active) {
+          setUser(null);
+          localStorage.removeItem('onnesha_auth_user');
         }
       } finally {
         if (active) setIsLoading(false);
@@ -139,7 +135,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const profile = toUserProfile(res.user);
         setUser(profile);
         localStorage.setItem('onnesha_auth_user', JSON.stringify(profile));
-        import('./db').then(({ db }) => db.syncFromServerStore().catch(() => {}));
+        await import('./db').then(({ db }) => db.syncFromServerStore()).catch(() => {});
         return { success: true, role: profile.role };
       }
 
@@ -181,7 +177,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const profile = toUserProfile(res.user);
         setUser(profile);
         localStorage.setItem('onnesha_auth_user', JSON.stringify(profile));
-        import('./db').then(({ db }) => db.syncFromServerStore().catch(() => {}));
+        await import('./db').then(({ db }) => db.syncFromServerStore()).catch(() => {});
         return { success: true, role: profile.role };
       }
       return { success: false, error: res.error || 'OTP verification failed.' };
@@ -217,6 +213,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const profile = toUserProfile(res.user);
         setUser(profile);
         localStorage.setItem('onnesha_auth_user', JSON.stringify(profile));
+        await import('./db').then(({ db }) => db.syncFromServerStore()).catch(() => {});
         return { success: true };
       }
       return { success: false, error: res.error || 'Registration failed.' };

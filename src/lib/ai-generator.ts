@@ -65,8 +65,23 @@ export async function generateQuizWithAi(params: AiGenerateParams): Promise<Quiz
       }
       return serverRes.quiz;
     }
-  } catch {
-    // Fall back to optional local key / curated offline synthesis
+    if (
+      serverRes.error &&
+      !serverRes.error.includes('GEMINI_API_KEY not configured')
+    ) {
+      throw new Error(serverRes.error);
+    }
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      err.message &&
+      !err.message.includes('GEMINI_API_KEY') &&
+      !err.message.toLowerCase().includes('fetch') &&
+      !err.message.toLowerCase().includes('network')
+    ) {
+      throw err;
+    }
+    // Fall back to optional local key / curated offline synthesis when server Gemini key is unset or unreachable
   }
 
   const apiKey = typeof window !== 'undefined' ? localStorage.getItem('onnesha_gemini_key') : null;
@@ -312,12 +327,22 @@ Return ONLY a valid JSON object matching this exact schema:
     },
   ];
 
+  const activePool =
+    styleMode === 'single_mcq'
+      ? curatedPool.filter((t) => t.type === 'single_mcq' || t.type === 'true_false')
+      : curatedPool;
+  const effectivePool = activePool.length > 0 ? activePool : curatedPool;
+
   for (let i = 1; i <= count; i++) {
     const qId = `q-ai-${i}-${Date.now() % 10000}`;
-    const template = curatedPool[(i - 1) % curatedPool.length];
+    const template = effectivePool[(i - 1) % effectivePool.length];
     if (!template) continue;
     const effectiveType: QuestionType =
-      styleMode === 'single_mcq' ? 'single_mcq' : template.type;
+      styleMode === 'single_mcq'
+        ? template.type === 'true_false'
+          ? 'true_false'
+          : 'single_mcq'
+        : template.type;
 
     if (effectiveType === 'written') {
       generatedQuestions.push({

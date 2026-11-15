@@ -17,6 +17,11 @@ import {
 } from "lucide-react";
 
 export const Route = createFileRoute("/for/$segment")({
+  beforeLoad: ({ params }) => {
+    if (!SEGMENTS[params.segment]) {
+      throw notFound();
+    }
+  },
   head: ({ params }) => ({
     meta: [
       { title: `Onnesha Quiz for ${params.segment} · Tailored Assessment Solutions` },

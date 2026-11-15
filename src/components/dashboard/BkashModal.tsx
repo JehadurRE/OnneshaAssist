@@ -19,7 +19,7 @@ interface BkashModalProps {
   billingCycle: 'monthly' | 'yearly';
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (trxId: string) => void;
+  onSuccess: (trxId: string, status: 'completed' | 'pending' | 'failed') => void;
 }
 
 export const BkashModal: React.FC<BkashModalProps> = ({
@@ -73,24 +73,27 @@ export const BkashModal: React.FC<BkashModalProps> = ({
         },
       }).catch(() => null);
 
+      const serverTrxId = res?.transaction?.trxId || generatedTrxId;
       const rawStatus = res?.transaction?.status;
       const verifiedStatus: 'completed' | 'pending' | 'failed' =
-        rawStatus === 'completed' || rawStatus === 'failed' || rawStatus === 'pending'
-          ? rawStatus
-          : 'pending';
+        res && !res.success
+          ? 'failed'
+          : rawStatus === 'completed' || rawStatus === 'failed' || rawStatus === 'pending'
+            ? rawStatus
+            : 'pending';
 
       // Mirror server-determined status into local DB instead of hardcoding completed
       db.recordTransaction({
         planId: tier.id,
         amount: price,
         msisdn: phone,
-        trxId: generatedTrxId,
+        trxId: serverTrxId,
         method: 'bkash',
         status: verifiedStatus,
       });
 
       setRecordedStatus(verifiedStatus);
-      setTrxId(generatedTrxId);
+      setTrxId(serverTrxId);
       setStep(3);
     } finally {
       setIsProcessing(false);
@@ -98,7 +101,7 @@ export const BkashModal: React.FC<BkashModalProps> = ({
   };
 
   const handleFinish = () => {
-    onSuccess(trxId);
+    onSuccess(trxId, recordedStatus);
     onClose();
     setStep(1);
     setRecordedStatus('pending');

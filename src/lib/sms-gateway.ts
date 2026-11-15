@@ -68,7 +68,7 @@ export class SmsGateway {
           status = 'failed';
         }
       } catch {
-        status = 'queued';
+        status = 'failed';
       }
     } else {
       status = 'failed';
@@ -85,7 +85,7 @@ export class SmsGateway {
       status,
     });
 
-    return { success: status !== 'failed', log };
+    return { success: status === 'delivered', log };
   }
 
   static async sendBulkGuardianScorecards(
