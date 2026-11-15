@@ -35,7 +35,15 @@ import {
   OTS_BITCOIN_ATTESTATION_TAG,
   verifyW3CVerifiableCredentialProof,
 } from "../transparency-anchor";
-import { CertificateData, Course, ManagedUser, Question, Region, RosterStudent } from "../types";
+import {
+  CertificateData,
+  Course,
+  GameSession,
+  ManagedUser,
+  Question,
+  Region,
+  RosterStudent,
+} from "../types";
 import { DEFAULT_COURSES, DEFAULT_REGIONS, READY_MADE_PACKS, SAMPLE_ROSTER } from "../mock-data";
 import {
   SANJIBON_COURSE,
@@ -46,6 +54,8 @@ import {
   normalizeRollToken,
 } from "../sanjibon-seed-data";
 import { findRosterCandidate, mergeSeededStoreData } from "../server-session";
+import { sqliteEngine } from "../db/sqlite-engine";
+import { db } from "../db";
 
 describe("server-security: password hashing & user sanitization", () => {
   it("hashes passwords with unique per-user scrypt salts and verifies cleanly", () => {
@@ -693,5 +703,153 @@ describe("Sanjibon Batch-04 seed curriculum, 11 quizzes & 228 trainees roster", 
     const mergedTwice = mergeSeededStoreData(mergedOnce);
     expect(mergedTwice.roster.length).toBe(229);
     expect(mergedTwice.courses.length).toBe(mergedOnce.courses.length);
+  });
+});
+
+describe("SQLite batch persistence & post-exam session recording performance", () => {
+  it("batches 260+ inserts in under 250ms with single debounced localStorage persist and records exam session cleanly", async () => {
+    const storageMap = new Map<string, string>();
+    let setItemCalls = 0;
+    const origWindow = (globalThis as Record<string, unknown>)["window"];
+    const origLocalStorage = (globalThis as Record<string, unknown>)["localStorage"];
+
+    const mockLocalStorage = {
+      getItem: (k: string) => storageMap.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        setItemCalls += 1;
+        storageMap.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        storageMap.delete(k);
+      },
+      clear: () => {
+        storageMap.clear();
+      },
+      key: (idx: number) => Array.from(storageMap.keys())[idx] ?? null,
+      get length() {
+        return storageMap.size;
+      },
+    };
+
+    try {
+      (globalThis as Record<string, unknown>)["window"] = globalThis;
+      (globalThis as Record<string, unknown>)["localStorage"] = mockLocalStorage;
+
+      await sqliteEngine.init();
+      setItemCalls = 0;
+
+      const t0 = performance.now();
+      sqliteEngine.runBatch((run) => {
+        for (let i = 0; i < 260; i++) {
+          run(
+            "INSERT OR REPLACE INTO roster_students (id, rollNumber, name, phone, regionId, regionName, section, batch, guardianPhone, email, passcode, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+              `batch-std-${i}`,
+              `B-${1000 + i}`,
+              `Trainee ${i}`,
+              `0170000${String(i).padStart(4, "0")}`,
+              "reg-gazipur",
+              "Gazipur Training Centre",
+              "A",
+              "Batch-04",
+              "",
+              `t${i}@example.com`,
+              "",
+              "2026-11-15T00:00:00Z",
+            ],
+          );
+        }
+      });
+      const elapsedMs = performance.now() - t0;
+
+      expect(elapsedMs).toBeLessThan(250);
+      // Debounced persist must not synchronously export per row inside runBatch
+      expect(setItemCalls).toBe(0);
+
+      sqliteEngine.persist();
+      expect(setItemCalls).toBe(1);
+      expect(storageMap.has("onnesha_sqlite_db_bin")).toBe(true);
+
+      const mockSession: GameSession = {
+        pin: "789012",
+        quizId: "quiz-sanjibon-s00-baseline",
+        quizTitleEn: "Baseline Assessment (Pre-Test)",
+        quizTitleBn: "প্রারম্ভিক মূল্যায়ন কুইজ (Pre-Test)",
+        hostId: "usr-instructor-1",
+        phase: "podium",
+        currentQuestionIndex: 19,
+        questionStartTime: Date.now() - 20000,
+        questionEndTime: Date.now(),
+        settings: {
+          speedBonus: true,
+          negativeMarking: 0.25,
+          shuffleQuestions: false,
+          shuffleOptions: false,
+          soundEnabled: true,
+          musicEnabled: true,
+          isFormalAssessment: true,
+          requireRollNumber: true,
+          allowedRegionId: "all",
+          allowedRegionName: "All Regions",
+        },
+        participants: {
+          "p-test-1": {
+            id: "p-test-1",
+            name: "Al Shahriar Shohan",
+            nickname: "Al Shahriar Shohan",
+            avatarEmoji: "🎯",
+            avatarBg: "#10b981",
+            rollNumber: "JHN-01",
+            phone: "01950350417",
+            regionId: "reg-jhenaidah",
+            regionName: "Jhenaidah Training Centre",
+            score: 14250,
+            streak: 4,
+            rank: 1,
+            isBot: false,
+            answers: {
+              "sj-s00-q01": {
+                questionId: "sj-s00-q01",
+                selectedOptionIds: ["o-sj-s00-q01-3"],
+                isCorrect: true,
+                timeTakenSec: 3,
+                pointsAwarded: 950,
+                streakCount: 1,
+                answeredAt: Date.now(),
+              },
+            },
+            connected: true,
+            lastActive: Date.now(),
+          },
+        },
+        totalQuestions: 20,
+        createdAt: Date.now() - 60000,
+        updatedAt: Date.now(),
+      };
+
+      db.recordExamSession(mockSession, { syncToServer: false });
+
+      const sessions = db.getExamSessions();
+      expect(sessions.some((s) => s.pin === "789012")).toBe(true);
+      const results = db.getExamResults("789012");
+      expect(results).toHaveLength(1);
+      expect(results[0]?.rollNumber).toBe("JHN-01");
+      const certs = db.getCertificates();
+      expect(certs.some((c) => c.certificateNumber === "ONN-7890-JHN01")).toBe(true);
+
+      // Flush scheduled persist timer before restoring global window/localStorage
+      sqliteEngine.persist();
+    } finally {
+      if (origWindow === undefined) {
+        delete (globalThis as Record<string, unknown>)["window"];
+      } else {
+        (globalThis as Record<string, unknown>)["window"] = origWindow;
+      }
+      if (origLocalStorage === undefined) {
+        delete (globalThis as Record<string, unknown>)["localStorage"];
+      } else {
+        (globalThis as Record<string, unknown>)["localStorage"] = origLocalStorage;
+      }
+    }
   });
 });

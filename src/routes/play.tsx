@@ -172,6 +172,7 @@ function PlayPage() {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
       unsubscribe();
+      gameEngine.stopPolling();
     };
   }, [session, participant]);
 
@@ -459,8 +460,11 @@ function PlayPage() {
       : null;
 
   useEffect(() => {
-    if (session?.phase === "podium" && certificateData) {
-      db.issueCertificate(certificateData);
+    if (session?.phase === "podium") {
+      gameEngine.stopPolling();
+      if (certificateData) {
+        db.issueCertificate(certificateData, { syncToServer: false });
+      }
     }
   }, [session?.phase]);
 

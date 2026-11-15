@@ -17,6 +17,7 @@ import {
   READY_MADE_PACKS,
   SAMPLE_ROSTER,
 } from "../mock-data";
+import type { SqlValue } from "sql.js";
 import { sqliteEngine } from "./sqlite-engine";
 import { serverAdminMutateStore, serverGetBootstrapData } from "../server-session";
 import { computeTotalQuizMarks, resolveOrgName } from "../scoring";
@@ -73,6 +74,7 @@ export function formatDeterministicCertNumber(
 
 class OnneshaDatabase {
   private listeners: (() => void)[] = [];
+  private syncInFlight: Promise<void> | null = null;
 
   constructor() {
     if (typeof window !== "undefined") {
@@ -94,274 +96,301 @@ class OnneshaDatabase {
     this.listeners.forEach((cb) => cb());
   }
 
-  public async syncFromServerStore(): Promise<void> {
+  public syncFromServerStore(): Promise<void> {
+    if (typeof window === "undefined") return Promise.resolve();
+    if (this.syncInFlight) return this.syncInFlight;
+    this.syncInFlight = this._executeServerStoreSync().finally(() => {
+      this.syncInFlight = null;
+    });
+    return this.syncInFlight;
+  }
+
+  private upsertSingleCertificateLocal(
+    cert: CertificateData,
+    runFn: (sql: string, params?: SqlValue[]) => void = (sql, params = []) =>
+      sqliteEngine.run(sql, params),
+  ): void {
+    runFn(
+      "INSERT OR REPLACE INTO certificates (id, certificateNumber, studentName, studentRoll, regionName, quizTitle, score, totalPoints, rank, totalParticipants, accuracyPercent, issueDate, organizationName, institutionName, instructorName, verificationUrl, signatureUrl, verified, payloadHash, prevBlockHash, ledgerIndex, chainHash, cryptoSignature, signerKeyId, signedAt, rekorEntryUuid, rekorLogIndex, rekorIntegratedTime, rekorLogId, rekorStatus, rekorReceiptDigest, rekorPublicKeyId, rekorExplorerUrl, otsStatus, otsProofBase64, otsChainHash, otsLedgerIndex, otsCalendarUrl, otsSubmittedAt, otsBitcoinBlockHeight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [
+        cert.id,
+        cert.certificateNumber,
+        cert.studentName,
+        cert.studentRoll || "",
+        cert.regionName || "Dhaka Range",
+        cert.quizTitle,
+        cert.score || cert.marksObtained || 0,
+        cert.totalPoints || cert.totalMarks || 100,
+        cert.rank,
+        cert.totalParticipants,
+        cert.accuracyPercent || cert.scorePct || 0,
+        cert.issueDate,
+        cert.organizationName || "Onnesha Assessment",
+        cert.institutionName || "Onnesha Assessment Arena",
+        cert.instructorName || "Chief Assessment Officer",
+        cert.verificationUrl || "",
+        cert.signatureUrl || "",
+        cert.verified ? 1 : 0,
+        cert.payloadHash || "",
+        cert.prevBlockHash || "",
+        cert.ledgerIndex ?? null,
+        cert.chainHash || "",
+        cert.cryptoSignature || "",
+        cert.signerKeyId || "",
+        cert.signedAt || "",
+        cert.rekorEntryUuid || "",
+        cert.rekorLogIndex ?? null,
+        cert.rekorIntegratedTime ?? null,
+        cert.rekorLogId || "",
+        cert.rekorStatus || "",
+        cert.rekorReceiptDigest || "",
+        cert.rekorPublicKeyId || "",
+        cert.rekorExplorerUrl || "",
+        cert.otsStatus || "",
+        cert.otsProofBase64 || "",
+        cert.otsChainHash || "",
+        cert.otsLedgerIndex ?? null,
+        cert.otsCalendarUrl || "",
+        cert.otsSubmittedAt || "",
+        cert.otsBitcoinBlockHeight ?? null,
+      ],
+    );
+  }
+
+  private async _executeServerStoreSync(): Promise<void> {
     if (typeof window === "undefined") return;
     try {
+      await sqliteEngine.ready();
       const res = await serverGetBootstrapData();
       if (!res.success) return;
 
-      if (res.regions?.length) {
-        res.regions.forEach((reg) => {
-          sqliteEngine.run(
-            "INSERT OR REPLACE INTO regions (id, code, nameEn, nameBn, centerName, createdAt) VALUES (?, ?, ?, ?, ?, ?)",
-            [reg.id, reg.code, reg.nameEn, reg.nameBn, reg.centerName || "", reg.createdAt],
-          );
-        });
-        this.setStorage("regions", res.regions);
-      }
+      const mappedTrx: DbTransaction[] = res.transactions?.length
+        ? res.transactions.map((t) => ({
+            id: t.id,
+            planId: t.planId,
+            amount: t.amount,
+            msisdn: t.msisdn,
+            trxId: t.trxId,
+            method: (t.method as DbTransaction["method"]) || "bkash",
+            date: t.createdAt,
+            status: (t.status as DbTransaction["status"]) || "completed",
+          }))
+        : [];
 
-      if (res.roster?.length) {
-        res.roster.forEach((s) => {
-          sqliteEngine.run(
-            "INSERT OR REPLACE INTO roster_students (id, rollNumber, name, phone, regionId, regionName, section, batch, guardianPhone, email, passcode, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-              s.id,
-              s.rollNumber,
-              s.name,
-              s.phone || s.guardianPhone || "",
-              s.regionId || "reg-dhaka",
-              s.regionName || "Dhaka Range",
-              s.section || "A",
-              s.batch || "46th BCS & Cadet Batch",
-              s.guardianPhone || s.phone || "",
-              s.email || `${s.rollNumber}@academy.edu.bd`,
-              s.passcode || "",
-              s.createdAt || new Date().toISOString(),
-            ],
-          );
-        });
-        this.setStorage("roster_students", res.roster);
-      }
+      const mappedLeads: DbSalesLead[] = res.salesLeads?.length
+        ? res.salesLeads.map((l) => ({
+            id: l.id,
+            name: l.name,
+            organization: l.organization,
+            email: l.email,
+            phone: l.phone,
+            studentCount: l.studentCount,
+            message: l.message,
+            status: l.status || "new",
+            createdAt: l.createdAt,
+          }))
+        : [];
 
-      if (res.courses?.length) {
-        res.courses.forEach((c) => {
-          sqliteEngine.run(
-            "INSERT OR REPLACE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-              c.id,
-              c.code,
-              c.titleEn,
-              c.titleBn,
-              c.descriptionEn,
-              c.descriptionBn,
-              c.categoryEn,
-              c.categoryBn,
-              c.icon || "📚",
-              c.color || "from-emerald-500/20 to-teal-500/20",
-              JSON.stringify(c.instructorIds || []),
-              JSON.stringify(c.instructorNames || []),
-              c.status || "active",
-              c.createdAt || new Date().toISOString(),
-            ],
-          );
-        });
-        this.setStorage("courses", res.courses);
-      }
+      sqliteEngine.runBatch((run) => {
+        if (res.regions?.length) {
+          res.regions.forEach((reg) => {
+            run(
+              "INSERT OR REPLACE INTO regions (id, code, nameEn, nameBn, centerName, createdAt) VALUES (?, ?, ?, ?, ?, ?)",
+              [reg.id, reg.code, reg.nameEn, reg.nameBn, reg.centerName || "", reg.createdAt],
+            );
+          });
+        }
 
-      if (res.users?.length) {
-        res.users.forEach((u) => {
-          sqliteEngine.run(
-            "INSERT OR REPLACE INTO users (id, email, name, role, institution, designation, phone, passwordHash, plan, assignedCourseIdsJson, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-              u.id,
-              u.email,
-              u.name,
-              u.role,
-              u.institution || "",
-              u.designation || "",
-              u.phone || "",
-              u.passwordHash || "",
-              u.plan || "institution_max",
-              JSON.stringify(u.assignedCourseIds || []),
-              u.status || "active",
-              u.createdAt || new Date().toISOString(),
-            ],
-          );
-        });
-        this.setStorage("users", res.users);
-      }
+        if (res.roster?.length) {
+          res.roster.forEach((s) => {
+            run(
+              "INSERT OR REPLACE INTO roster_students (id, rollNumber, name, phone, regionId, regionName, section, batch, guardianPhone, email, passcode, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              [
+                s.id,
+                s.rollNumber,
+                s.name,
+                s.phone || s.guardianPhone || "",
+                s.regionId || "reg-dhaka",
+                s.regionName || "Dhaka Range",
+                s.section || "A",
+                s.batch || "46th BCS & Cadet Batch",
+                s.guardianPhone || s.phone || "",
+                s.email || `${s.rollNumber}@academy.edu.bd`,
+                s.passcode || "",
+                s.createdAt || new Date().toISOString(),
+              ],
+            );
+          });
+        }
 
-      if (res.customQuizzes?.length) {
-        res.customQuizzes.forEach((quiz) => {
-          sqliteEngine.run(
-            "INSERT OR REPLACE INTO quizzes (id, slug, courseId, courseTitle, quizNumber, instructorId, instructorName, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, questionsJson, isTemplate, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-              quiz.id,
-              quiz.slug,
-              quiz.courseId || "",
-              quiz.courseTitle || "",
-              quiz.quizNumber || 1,
-              quiz.instructorId || "",
-              quiz.instructorName || "",
-              quiz.titleEn,
-              quiz.titleBn,
-              quiz.descriptionEn,
-              quiz.descriptionBn,
-              quiz.categoryEn,
-              quiz.categoryBn,
-              quiz.icon,
-              JSON.stringify(quiz.questions),
-              quiz.isTemplate ? 1 : 0,
-              quiz.createdAt || new Date().toISOString(),
-            ],
-          );
-        });
-        this.setStorage("custom_quizzes", res.customQuizzes);
-      }
+        if (res.courses?.length) {
+          res.courses.forEach((c) => {
+            run(
+              "INSERT OR REPLACE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              [
+                c.id,
+                c.code,
+                c.titleEn,
+                c.titleBn,
+                c.descriptionEn,
+                c.descriptionBn,
+                c.categoryEn || "",
+                c.categoryBn || "",
+                c.icon || "📚",
+                c.color || "from-emerald-500/20 to-teal-500/20",
+                JSON.stringify(c.instructorIds || []),
+                JSON.stringify(c.instructorNames || []),
+                c.status || "active",
+                c.createdAt || new Date().toISOString(),
+              ],
+            );
+          });
+        }
 
-      if (res.examSessions?.length) {
-        res.examSessions.forEach((es) => {
-          sqliteEngine.run(
-            "INSERT OR REPLACE INTO exam_sessions (id, pin, quizId, quizTitleEn, quizTitleBn, hostId, allowedRegionId, allowedRegionName, totalQuestions, participantCount, averageScore, highestScore, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-              es.id,
-              es.pin,
-              es.quizId,
-              es.quizTitleEn,
-              es.quizTitleBn,
-              es.hostId,
-              es.allowedRegionId || "all",
-              es.allowedRegionName || "All Regions",
-              es.totalQuestions,
-              es.participantCount,
-              es.averageScore,
-              es.highestScore,
-              es.createdAt,
-            ],
-          );
-        });
-        this.setStorage("exam_sessions", res.examSessions);
-      }
+        if (res.users?.length) {
+          res.users.forEach((u) => {
+            run(
+              "INSERT OR REPLACE INTO users (id, email, name, role, institution, designation, phone, passwordHash, plan, assignedCourseIdsJson, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              [
+                u.id,
+                u.email,
+                u.name,
+                u.role,
+                u.institution || "",
+                u.designation || "",
+                u.phone || "",
+                u.passwordHash || "",
+                u.plan || "institution_max",
+                JSON.stringify(u.assignedCourseIds || []),
+                u.status || "active",
+                u.createdAt || new Date().toISOString(),
+              ],
+            );
+          });
+        }
 
-      if (res.examResults?.length) {
-        res.examResults.forEach((er) => {
-          sqliteEngine.run(
-            "INSERT OR REPLACE INTO exam_results (id, sessionId, pin, participantId, rollNumber, name, phone, regionId, regionName, score, rank, correctCount, incorrectCount, unattemptedCount, accuracyPct, answersJson, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-              er.id,
-              er.sessionId,
-              er.pin,
-              er.participantId,
-              er.rollNumber,
-              er.name,
-              er.phone || "",
-              er.regionId || "reg-dhaka",
-              er.regionName || "Dhaka Range",
-              er.score,
-              er.rank,
-              er.correctCount,
-              er.incorrectCount,
-              er.unattemptedCount,
-              er.accuracyPct,
-              er.answersJson || "{}",
-              er.createdAt,
-            ],
-          );
-        });
-        this.setStorage("exam_results", res.examResults);
-      }
+        if (res.customQuizzes?.length) {
+          res.customQuizzes.forEach((quiz) => {
+            run(
+              "INSERT OR REPLACE INTO quizzes (id, slug, courseId, courseTitle, quizNumber, instructorId, instructorName, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, questionsJson, isTemplate, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              [
+                quiz.id,
+                quiz.slug,
+                quiz.courseId || "",
+                quiz.courseTitle || "",
+                quiz.quizNumber || 1,
+                quiz.instructorId || "",
+                quiz.instructorName || "",
+                quiz.titleEn,
+                quiz.titleBn,
+                quiz.descriptionEn,
+                quiz.descriptionBn,
+                quiz.categoryEn,
+                quiz.categoryBn,
+                quiz.icon,
+                JSON.stringify(quiz.questions),
+                quiz.isTemplate ? 1 : 0,
+                quiz.createdAt || new Date().toISOString(),
+              ],
+            );
+          });
+        }
 
-      if (res.certificates?.length) {
-        res.certificates.forEach((cert) => {
-          sqliteEngine.run(
-            "INSERT OR REPLACE INTO certificates (id, certificateNumber, studentName, studentRoll, regionName, quizTitle, score, totalPoints, rank, totalParticipants, accuracyPercent, issueDate, organizationName, institutionName, instructorName, verificationUrl, signatureUrl, verified, payloadHash, prevBlockHash, ledgerIndex, chainHash, cryptoSignature, signerKeyId, signedAt, rekorEntryUuid, rekorLogIndex, rekorIntegratedTime, rekorLogId, rekorStatus, rekorReceiptDigest, rekorPublicKeyId, rekorExplorerUrl, otsStatus, otsProofBase64, otsChainHash, otsLedgerIndex, otsCalendarUrl, otsSubmittedAt, otsBitcoinBlockHeight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-              cert.id,
-              cert.certificateNumber,
-              cert.studentName,
-              cert.studentRoll || "",
-              cert.regionName || "Dhaka Range",
-              cert.quizTitle,
-              cert.score || cert.marksObtained || 0,
-              cert.totalPoints || cert.totalMarks || 100,
-              cert.rank,
-              cert.totalParticipants,
-              cert.accuracyPercent || cert.scorePct || 0,
-              cert.issueDate,
-              cert.organizationName || "Onnesha Assessment",
-              cert.institutionName || "Onnesha Assessment Arena",
-              cert.instructorName || "Chief Assessment Officer",
-              cert.verificationUrl || "",
-              cert.signatureUrl || "",
-              cert.verified ? 1 : 0,
-              cert.payloadHash || "",
-              cert.prevBlockHash || "",
-              cert.ledgerIndex ?? null,
-              cert.chainHash || "",
-              cert.cryptoSignature || "",
-              cert.signerKeyId || "",
-              cert.signedAt || "",
-              cert.rekorEntryUuid || "",
-              cert.rekorLogIndex ?? null,
-              cert.rekorIntegratedTime ?? null,
-              cert.rekorLogId || "",
-              cert.rekorStatus || "",
-              cert.rekorReceiptDigest || "",
-              cert.rekorPublicKeyId || "",
-              cert.rekorExplorerUrl || "",
-              cert.otsStatus || "",
-              cert.otsProofBase64 || "",
-              cert.otsChainHash || "",
-              cert.otsLedgerIndex ?? null,
-              cert.otsCalendarUrl || "",
-              cert.otsSubmittedAt || "",
-              cert.otsBitcoinBlockHeight ?? null,
-            ],
-          );
-        });
-        this.setStorage("certificates", res.certificates);
-      }
+        if (res.examSessions?.length) {
+          res.examSessions.forEach((es) => {
+            run(
+              "INSERT OR REPLACE INTO exam_sessions (id, pin, quizId, quizTitleEn, quizTitleBn, hostId, allowedRegionId, allowedRegionName, totalQuestions, participantCount, averageScore, highestScore, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              [
+                es.id,
+                es.pin,
+                es.quizId,
+                es.quizTitleEn,
+                es.quizTitleBn,
+                es.hostId,
+                es.allowedRegionId || "all",
+                es.allowedRegionName || "All Regions",
+                es.totalQuestions,
+                es.participantCount,
+                es.averageScore,
+                es.highestScore,
+                es.createdAt,
+              ],
+            );
+          });
+        }
 
-      if (res.transactions?.length) {
-        const mappedTrx: DbTransaction[] = res.transactions.map((t) => ({
-          id: t.id,
-          planId: t.planId,
-          amount: t.amount,
-          msisdn: t.msisdn,
-          trxId: t.trxId,
-          method: (t.method as DbTransaction["method"]) || "bkash",
-          date: t.createdAt,
-          status: (t.status as DbTransaction["status"]) || "completed",
-        }));
-        mappedTrx.forEach((t) => {
-          sqliteEngine.run(
-            "INSERT OR REPLACE INTO transactions (id, planId, amount, msisdn, trxId, method, date, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [t.id, t.planId, t.amount, t.msisdn, t.trxId, t.method, t.date, t.status],
-          );
-        });
-        this.setStorage("transactions", mappedTrx);
-      }
+        if (res.examResults?.length) {
+          res.examResults.forEach((er) => {
+            run(
+              "INSERT OR REPLACE INTO exam_results (id, sessionId, pin, participantId, rollNumber, name, phone, regionId, regionName, score, rank, correctCount, incorrectCount, unattemptedCount, accuracyPct, answersJson, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              [
+                er.id,
+                er.sessionId,
+                er.pin,
+                er.participantId,
+                er.rollNumber,
+                er.name,
+                er.phone || "",
+                er.regionId || "reg-dhaka",
+                er.regionName || "Dhaka Range",
+                er.score,
+                er.rank,
+                er.correctCount,
+                er.incorrectCount,
+                er.unattemptedCount,
+                er.accuracyPct,
+                er.answersJson || "{}",
+                er.createdAt,
+              ],
+            );
+          });
+        }
 
-      if (res.salesLeads?.length) {
-        const mappedLeads: DbSalesLead[] = res.salesLeads.map((l) => ({
-          id: l.id,
-          name: l.name,
-          organization: l.organization,
-          email: l.email,
-          phone: l.phone,
-          studentCount: l.studentCount,
-          message: l.message,
-          status: l.status || "new",
-          createdAt: l.createdAt,
-        }));
-        mappedLeads.forEach((l) => {
-          sqliteEngine.run(
-            "INSERT OR REPLACE INTO sales_leads (id, name, organization, email, phone, studentCount, message, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-              l.id,
-              l.name,
-              l.organization,
-              l.email,
-              l.phone,
-              l.studentCount,
-              l.message,
-              l.status || "new",
-              l.createdAt,
-            ],
-          );
-        });
-        this.setStorage("sales_leads", mappedLeads);
-      }
+        if (res.certificates?.length) {
+          res.certificates.forEach((cert) => {
+            this.upsertSingleCertificateLocal(cert, run);
+          });
+        }
+
+        if (mappedTrx.length) {
+          mappedTrx.forEach((t) => {
+            run(
+              "INSERT OR REPLACE INTO transactions (id, planId, amount, msisdn, trxId, method, date, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+              [t.id, t.planId, t.amount, t.msisdn, t.trxId, t.method, t.date, t.status],
+            );
+          });
+        }
+
+        if (mappedLeads.length) {
+          mappedLeads.forEach((l) => {
+            run(
+              "INSERT OR REPLACE INTO sales_leads (id, name, organization, email, phone, studentCount, message, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              [
+                l.id,
+                l.name,
+                l.organization,
+                l.email,
+                l.phone,
+                l.studentCount,
+                l.message,
+                l.status || "new",
+                l.createdAt,
+              ],
+            );
+          });
+        }
+      });
+
+      if (res.regions?.length) this.setStorage("regions", res.regions);
+      if (res.roster?.length) this.setStorage("roster_students", res.roster);
+      if (res.courses?.length) this.setStorage("courses", res.courses);
+      if (res.users?.length) this.setStorage("users", res.users);
+      if (res.customQuizzes?.length) this.setStorage("custom_quizzes", res.customQuizzes);
+      if (res.examSessions?.length) this.setStorage("exam_sessions", res.examSessions);
+      if (res.examResults?.length) this.setStorage("exam_results", res.examResults);
+      if (res.certificates?.length) this.setStorage("certificates", res.certificates);
+      if (mappedTrx.length) this.setStorage("transactions", mappedTrx);
+      if (mappedLeads.length) this.setStorage("sales_leads", mappedLeads);
 
       if (res.branding) {
         const mergedBranding = mergeBrandingSettings(res.branding, DEFAULT_BRANDING_SETTINGS);
@@ -380,99 +409,108 @@ class OnneshaDatabase {
   }
 
   private seedInitialDataIfEmpty() {
-    // Idempotently seed missing Regions & Training Centres
+    // Idempotently seed missing Regions, Courses & Sanjibon Trainees in one transaction
     const existingRegions = sqliteEngine.query<Region>("SELECT * FROM regions");
     const existingRegMap = new Map(existingRegions.map((r) => [r.id, r]));
-    DEFAULT_REGIONS.forEach((reg) => {
-      const prev = existingRegMap.get(reg.id);
-      if (!prev) {
-        sqliteEngine.run(
-          "INSERT OR IGNORE INTO regions (id, code, nameEn, nameBn, centerName, createdAt) VALUES (?, ?, ?, ?, ?, ?)",
-          [reg.id, reg.code, reg.nameEn, reg.nameBn, reg.centerName || "", reg.createdAt],
-        );
-      } else if (
-        (reg.id === "reg-sylhet" && prev.nameEn === "Sylhet Range") ||
-        (reg.id === "reg-barishal" && prev.nameEn === "Barishal Range")
-      ) {
-        sqliteEngine.run(
-          "UPDATE regions SET code = ?, nameEn = ?, nameBn = ?, centerName = ? WHERE id = ?",
-          [reg.code, reg.nameEn, reg.nameBn, reg.centerName || "", reg.id],
-        );
-      }
-    });
-
-    // Idempotently seed missing official Courses (including Sanjibon Batch-04)
     const existingCourses = sqliteEngine.query<{ id: string }>("SELECT id FROM courses");
     const existingCourseIds = new Set(existingCourses.map((c) => c.id));
-    DEFAULT_COURSES.forEach((c) => {
-      if (!existingCourseIds.has(c.id)) {
-        sqliteEngine.run(
-          "INSERT OR IGNORE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          [
-            c.id,
-            c.code,
-            c.titleEn,
-            c.titleBn,
-            c.descriptionEn,
-            c.descriptionBn,
-            c.categoryEn || "",
-            c.categoryBn || "",
-            c.icon || "📚",
-            c.color || "from-emerald-500/20 to-teal-500/20",
-            JSON.stringify(c.instructorIds || []),
-            JSON.stringify(c.instructorNames || []),
-            c.status || "active",
-            c.createdAt || new Date().toISOString(),
-          ],
-        );
-      }
-    });
-
-    // Idempotently seed missing Roster Students (all 228 Sanjibon trainees)
     const existingRoster = sqliteEngine.query<RosterStudent>("SELECT * FROM roster_students");
     const existingStudentIds = new Set(existingRoster.map((s) => s.id));
     const existingStudentRolls = new Set(
-      existingRoster.map((s) => (s.rollNumber || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "")),
+      existingRoster.map((s) =>
+        (s.rollNumber || "")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, ""),
+      ),
     );
-    SAMPLE_ROSTER.forEach((s) => {
-      const cleanRoll = (s.rollNumber || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-      if (!existingStudentIds.has(s.id) && (!cleanRoll || !existingStudentRolls.has(cleanRoll))) {
-        sqliteEngine.run(
-          "INSERT OR IGNORE INTO roster_students (id, rollNumber, name, phone, regionId, regionName, section, batch, guardianPhone, email, passcode, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          [
-            s.id,
-            s.rollNumber,
-            s.name,
-            s.phone || s.guardianPhone || "",
-            s.regionId || "reg-dhaka",
-            s.regionName || "Dhaka Range",
-            s.section || "",
-            s.batch || "Ansar VDP Digital Marketing Batch -04",
-            s.guardianPhone || s.phone || "",
-            s.email || `${s.rollNumber}@sanjibon.onnesha.courses`,
-            s.passcode || "",
-            s.createdAt || new Date().toISOString(),
-          ],
-        );
-        existingStudentIds.add(s.id);
-        if (cleanRoll) existingStudentRolls.add(cleanRoll);
-      }
-    });
 
-    // Backfill any older custom rows missing regionId or phone
-    existingRoster.forEach((s, idx) => {
-      if (!s.regionId || !s.phone) {
-        const fallbackReg = DEFAULT_REGIONS[idx % DEFAULT_REGIONS.length] || DEFAULT_REGIONS[0];
-        sqliteEngine.run(
-          "UPDATE roster_students SET regionId = ?, regionName = ?, phone = ? WHERE id = ?",
-          [
+    sqliteEngine.runBatch((run) => {
+      DEFAULT_REGIONS.forEach((reg) => {
+        const prev = existingRegMap.get(reg.id);
+        if (!prev) {
+          run(
+            "INSERT OR IGNORE INTO regions (id, code, nameEn, nameBn, centerName, createdAt) VALUES (?, ?, ?, ?, ?, ?)",
+            [reg.id, reg.code, reg.nameEn, reg.nameBn, reg.centerName || "", reg.createdAt],
+          );
+        } else if (
+          (reg.id === "reg-sylhet" && prev.nameEn === "Sylhet Range") ||
+          (reg.id === "reg-barishal" && prev.nameEn === "Barishal Range")
+        ) {
+          run("UPDATE regions SET code = ?, nameEn = ?, nameBn = ?, centerName = ? WHERE id = ?", [
+            reg.code,
+            reg.nameEn,
+            reg.nameBn,
+            reg.centerName || "",
+            reg.id,
+          ]);
+        }
+      });
+
+      DEFAULT_COURSES.forEach((c) => {
+        if (!existingCourseIds.has(c.id)) {
+          run(
+            "INSERT OR IGNORE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+              c.id,
+              c.code,
+              c.titleEn,
+              c.titleBn,
+              c.descriptionEn,
+              c.descriptionBn,
+              c.categoryEn || "",
+              c.categoryBn || "",
+              c.icon || "📚",
+              c.color || "from-emerald-500/20 to-teal-500/20",
+              JSON.stringify(c.instructorIds || []),
+              JSON.stringify(c.instructorNames || []),
+              c.status || "active",
+              c.createdAt || new Date().toISOString(),
+            ],
+          );
+        }
+      });
+
+      SAMPLE_ROSTER.forEach((s) => {
+        const cleanRoll = (s.rollNumber || "")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "");
+        if (!existingStudentIds.has(s.id) && (!cleanRoll || !existingStudentRolls.has(cleanRoll))) {
+          run(
+            "INSERT OR IGNORE INTO roster_students (id, rollNumber, name, phone, regionId, regionName, section, batch, guardianPhone, email, passcode, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+              s.id,
+              s.rollNumber,
+              s.name,
+              s.phone || s.guardianPhone || "",
+              s.regionId || "reg-dhaka",
+              s.regionName || "Dhaka Range",
+              s.section || "",
+              s.batch || "Ansar VDP Digital Marketing Batch -04",
+              s.guardianPhone || s.phone || "",
+              s.email || `${s.rollNumber}@sanjibon.onnesha.courses`,
+              s.passcode || "",
+              s.createdAt || new Date().toISOString(),
+            ],
+          );
+          existingStudentIds.add(s.id);
+          if (cleanRoll) existingStudentRolls.add(cleanRoll);
+        }
+      });
+
+      // Backfill any older custom rows missing regionId or phone
+      existingRoster.forEach((s, idx) => {
+        if (!s.regionId || !s.phone) {
+          const fallbackReg = DEFAULT_REGIONS[idx % DEFAULT_REGIONS.length] || DEFAULT_REGIONS[0];
+          run("UPDATE roster_students SET regionId = ?, regionName = ?, phone = ? WHERE id = ?", [
             s.regionId || fallbackReg?.id || "reg-dhaka",
             s.regionName || fallbackReg?.nameEn || "Dhaka Range",
             s.phone || s.guardianPhone || `01711000${101 + idx}`,
             s.id,
-          ],
-        );
-      }
+          ]);
+        }
+      });
     });
   }
 
@@ -588,8 +626,8 @@ class OnneshaDatabase {
         course.titleBn,
         course.descriptionEn,
         course.descriptionBn,
-        course.categoryEn,
-        course.categoryBn,
+        course.categoryEn || "",
+        course.categoryBn || "",
         course.icon || "📚",
         course.color || "from-emerald-500/20 to-teal-500/20",
         JSON.stringify(course.instructorIds || []),
@@ -873,7 +911,10 @@ class OnneshaDatabase {
   bulkAddStudentsToRoster(
     studentsInput: Omit<RosterStudent, "id" | "createdAt">[],
   ): RosterStudent[] {
-    const added = studentsInput.map((s) => this.addStudentToRoster(s, true));
+    let added: RosterStudent[] = [];
+    sqliteEngine.runBatch(() => {
+      added = studentsInput.map((s) => this.addStudentToRoster(s, true));
+    });
     serverAdminMutateStore({ data: { action: "bulk_add_students", students: added } }).catch(
       (err) => console.warn("Bulk student server sync notice:", err),
     );
@@ -894,7 +935,7 @@ class OnneshaDatabase {
   }
 
   // ---------------- EXAM SESSIONS & RESULTS REPOSITORY ----------------
-  recordExamSession(session: GameSession): void {
+  recordExamSession(session: GameSession, options?: { syncToServer?: boolean }): void {
     const sessionId = `exam-${session.pin}`;
     const createdAt = new Date().toISOString();
     const participantsList = Object.values(session.participants)
@@ -907,92 +948,104 @@ class OnneshaDatabase {
     const avgScore = count > 0 ? Math.round(totalScore / count) : 0;
     const highestScore = participantsList[0]?.score ?? 0;
 
-    sqliteEngine.run(
-      "INSERT OR REPLACE INTO exam_sessions (id, pin, quizId, quizTitleEn, quizTitleBn, hostId, allowedRegionId, allowedRegionName, totalQuestions, participantCount, averageScore, highestScore, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [
-        sessionId,
-        session.pin,
-        session.quizId,
-        session.quizTitleEn || "Onnesha Assessment",
-        session.quizTitleBn || "অন্বেষা মডেল টেস্ট",
-        session.hostId || "host",
-        session.settings.allowedRegionId || "all",
-        session.settings.allowedRegionName || "All Regions",
-        session.totalQuestions,
-        count,
-        avgScore,
-        highestScore,
-        createdAt,
-      ],
-    );
+    // Hoist branding & quiz question lookup outside the participant loop
+    const branding = this.getBranding();
+    const quizQuestions =
+      session.completedQuestions && session.completedQuestions.length >= session.totalQuestions
+        ? session.completedQuestions
+        : this.getQuizBySlug(session.quizId)?.questions || [];
+    const computedTotalPoints = computeTotalQuizMarks(quizQuestions, session.totalQuestions);
+    const orgName = resolveOrgName(branding);
+    const instTitle = branding.institutionTitle || "Onnesha Assessment Arena";
+    const verifyOrigin =
+      typeof window !== "undefined" && window.location?.origin
+        ? window.location.origin
+        : "https://arena.onnesha.courses";
+    const shouldSyncCerts = options?.syncToServer ?? false;
 
-    participantsList.forEach((p, idx) => {
-      const answersList = Object.values(p.answers || {});
-      const correctCount = answersList.filter((a) => a.isCorrect).length;
-      const incorrectCount = answersList.filter(
-        (a) => !a.isCorrect && (a.selectedOptionIds?.length > 0 || !!a.writtenAnswer),
-      ).length;
-      const unattemptedCount = Math.max(0, session.totalQuestions - answersList.length);
-      const totalAnswers = answersList.length;
-      const accuracy = totalAnswers > 0 ? Math.round((correctCount / totalAnswers) * 100) : 0;
-      const roll = p.rollNumber || `2026-${100 + idx + 1}`;
-
-      const resultId = `res-${session.pin}-${p.id}`;
-      sqliteEngine.run(
-        "INSERT OR REPLACE INTO exam_results (id, sessionId, pin, participantId, rollNumber, name, phone, regionId, regionName, score, rank, correctCount, incorrectCount, unattemptedCount, accuracyPct, answersJson, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    sqliteEngine.runBatch((run) => {
+      run(
+        "INSERT OR REPLACE INTO exam_sessions (id, pin, quizId, quizTitleEn, quizTitleBn, hostId, allowedRegionId, allowedRegionName, totalQuestions, participantCount, averageScore, highestScore, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
-          resultId,
           sessionId,
           session.pin,
-          p.id,
-          roll,
-          p.nickname || p.name || `Candidate ${idx + 1}`,
-          p.phone || "",
-          p.regionId || "reg-dhaka",
-          p.regionName || "Dhaka Range",
-          p.score,
-          p.rank || idx + 1,
-          correctCount,
-          incorrectCount,
-          unattemptedCount,
-          accuracy,
-          JSON.stringify(p.answers || {}),
+          session.quizId,
+          session.quizTitleEn || "Onnesha Assessment",
+          session.quizTitleBn || "অন্বেষা মডেল টেস্ট",
+          session.hostId || "host",
+          session.settings.allowedRegionId || "all",
+          session.settings.allowedRegionName || "All Regions",
+          session.totalQuestions,
+          count,
+          avgScore,
+          highestScore,
           createdAt,
         ],
       );
 
-      const branding = this.getBranding();
-      const quizQuestions =
-        session.completedQuestions && session.completedQuestions.length >= session.totalQuestions
-          ? session.completedQuestions
-          : this.getQuizBySlug(session.quizId)?.questions || [];
-      const computedTotalPoints = computeTotalQuizMarks(quizQuestions, session.totalQuestions);
-      const certNo = formatDeterministicCertNumber(session.pin, roll, idx + 1);
-      this.issueCertificate({
-        certificateNumber: certNo,
-        studentName: p.nickname || p.name || `Candidate ${idx + 1}`,
-        studentRoll: roll,
-        regionName: p.regionName || "Dhaka Range",
-        quizTitle: session.quizTitleBn || session.quizTitleEn || "Institutional Assessment",
-        score: p.score,
-        totalPoints: computedTotalPoints,
-        rank: p.rank || idx + 1,
-        totalParticipants: count,
-        accuracyPercent: accuracy,
-        issueDate: createdAt.slice(0, 10),
-        organizationName: resolveOrgName(branding),
-        institutionName: branding.institutionTitle || "Onnesha Assessment Arena",
-        instructorName: "Chief Assessment Officer",
-        verificationUrl:
-          typeof window !== "undefined"
-            ? `${window.location.origin}/verify/${certNo}`
-            : `https://arena.onnesha.courses/verify/${certNo}`,
-        verified: true,
+      participantsList.forEach((p, idx) => {
+        const answersList = Object.values(p.answers || {});
+        const correctCount = answersList.filter((a) => a.isCorrect).length;
+        const incorrectCount = answersList.filter(
+          (a) => !a.isCorrect && (a.selectedOptionIds?.length > 0 || !!a.writtenAnswer),
+        ).length;
+        const unattemptedCount = Math.max(0, session.totalQuestions - answersList.length);
+        const totalAnswers = answersList.length;
+        const accuracy = totalAnswers > 0 ? Math.round((correctCount / totalAnswers) * 100) : 0;
+        const roll = p.rollNumber || `2026-${100 + idx + 1}`;
+
+        const resultId = `res-${session.pin}-${p.id}`;
+        run(
+          "INSERT OR REPLACE INTO exam_results (id, sessionId, pin, participantId, rollNumber, name, phone, regionId, regionName, score, rank, correctCount, incorrectCount, unattemptedCount, accuracyPct, answersJson, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          [
+            resultId,
+            sessionId,
+            session.pin,
+            p.id,
+            roll,
+            p.nickname || p.name || `Candidate ${idx + 1}`,
+            p.phone || "",
+            p.regionId || "reg-dhaka",
+            p.regionName || "Dhaka Range",
+            p.score,
+            p.rank || idx + 1,
+            correctCount,
+            incorrectCount,
+            unattemptedCount,
+            accuracy,
+            JSON.stringify(p.answers || {}),
+            createdAt,
+          ],
+        );
+
+        const certNo = formatDeterministicCertNumber(session.pin, roll, idx + 1);
+        this.issueCertificate(
+          {
+            certificateNumber: certNo,
+            studentName: p.nickname || p.name || `Candidate ${idx + 1}`,
+            studentRoll: roll,
+            regionName: p.regionName || "Dhaka Range",
+            quizTitle: session.quizTitleBn || session.quizTitleEn || "Institutional Assessment",
+            score: p.score,
+            totalPoints: computedTotalPoints,
+            rank: p.rank || idx + 1,
+            totalParticipants: count,
+            accuracyPercent: accuracy,
+            issueDate: createdAt.slice(0, 10),
+            organizationName: orgName,
+            institutionName: instTitle,
+            instructorName: "Chief Assessment Officer",
+            verificationUrl: `${verifyOrigin}/verify/${certNo}`,
+            verified: true,
+          },
+          { syncToServer: shouldSyncCerts, skipStorageRefresh: true },
+        );
       });
     });
 
-    const sessions = this.getExamSessions();
-    this.setStorage("exam_sessions", sessions);
+    this.setStorage("certificates", this.getCertificates());
+    this.setStorage("exam_sessions", this.getExamSessions());
+    this.setStorage("exam_results", this.getAllExamResults());
     this.notifyListeners();
   }
 
@@ -1110,7 +1163,10 @@ class OnneshaDatabase {
     return undefined;
   }
 
-  issueCertificate(cert: Omit<CertificateData, "id">): CertificateData {
+  issueCertificate(
+    cert: Omit<CertificateData, "id">,
+    options?: { syncToServer?: boolean; skipStorageRefresh?: boolean },
+  ): CertificateData {
     const id = `cert-${cert.certificateNumber.toLowerCase()}`;
     const newCert: CertificateData = {
       ...cert,
@@ -1141,16 +1197,25 @@ class OnneshaDatabase {
       ],
     );
 
-    const certs = this.getCertificates();
-    this.setStorage("certificates", certs);
+    if (!options?.skipStorageRefresh) {
+      const certs = this.getCertificates();
+      this.setStorage("certificates", certs);
+    }
 
-    serverAdminMutateStore({ data: { action: "issue_certificate", certificate: newCert } })
-      .then((res) => {
-        if (res.success) {
-          this.syncFromServerStore();
-        }
-      })
-      .catch(() => {});
+    const syncToServer = options?.syncToServer ?? true;
+    if (syncToServer) {
+      serverAdminMutateStore({ data: { action: "issue_certificate", certificate: newCert } })
+        .then((res) => {
+          if (res.success && (res as { certificate?: CertificateData }).certificate) {
+            this.upsertSingleCertificateLocal(
+              (res as { certificate: CertificateData }).certificate,
+            );
+            this.setStorage("certificates", this.getCertificates());
+            this.notifyListeners();
+          }
+        })
+        .catch(() => {});
+    }
     return newCert;
   }
 

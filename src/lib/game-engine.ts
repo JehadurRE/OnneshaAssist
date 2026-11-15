@@ -308,6 +308,9 @@ class RealtimeGameEngine {
 
         if (res.success && !res.unchanged && res.session) {
           this.cacheSessionLocally(res.session);
+          if (res.session.phase === 'podium' || res.session.phase === 'finished') {
+            this.stopPolling();
+          }
         }
       } catch {
         // quiet fallback
@@ -666,8 +669,10 @@ class RealtimeGameEngine {
         if (res.success && res.session) {
           this.cacheSessionLocally(res.session);
           if (res.session.phase === 'podium') {
+            this.stopPolling();
             try {
-              db.recordExamSession(res.session);
+              db.recordExamSession(res.session, { syncToServer: false });
+              db.syncFromServerStore();
             } catch {}
           }
         }
@@ -832,7 +837,7 @@ class RealtimeGameEngine {
           this.cacheSessionLocally(res.session);
           this.stopPolling();
           try {
-            db.recordExamSession(res.session);
+            db.recordExamSession(res.session, { syncToServer: false });
             db.syncFromServerStore();
           } catch {}
         }

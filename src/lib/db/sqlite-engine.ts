@@ -1,4 +1,4 @@
-import initSqlJs, { Database, SqlJsStatic } from "sql.js";
+import initSqlJs, { Database, SqlJsStatic, SqlValue } from "sql.js";
 import sqlWasmUrl from "sql.js/dist/sql-wasm.wasm?url";
 
 class SQLiteEngine {
@@ -6,6 +6,8 @@ class SQLiteEngine {
   private db: Database | null = null;
   private isInitialized = false;
   private initPromise: Promise<void> | null = null;
+  private inBatch = false;
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     if (typeof window !== "undefined") {
@@ -17,14 +19,23 @@ class SQLiteEngine {
     if (this.isInitialized && this.db) return;
 
     try {
-      this.SQL = await initSqlJs({
-        locateFile: () => sqlWasmUrl || "/sql-wasm.wasm",
-      });
+      const isNodeRuntime = typeof process !== "undefined" && Boolean(process.versions?.node);
+      this.SQL = await initSqlJs(
+        isNodeRuntime
+          ? { locateFile: (file) => `${process.cwd()}/node_modules/sql.js/dist/${file}` }
+          : { locateFile: () => sqlWasmUrl || "/sql-wasm.wasm" },
+      );
 
-      const savedDbBase64 = localStorage.getItem("onnesha_sqlite_db_bin");
+      const savedDbBase64 =
+        typeof window !== "undefined" ? localStorage.getItem("onnesha_sqlite_db_bin") : null;
       if (savedDbBase64) {
         try {
-          const binary = Uint8Array.from(atob(savedDbBase64), (c) => c.charCodeAt(0));
+          const raw = atob(savedDbBase64);
+          const len = raw.length;
+          const binary = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            binary[i] = raw.charCodeAt(i);
+          }
           this.db = new this.SQL.Database(binary);
         } catch (e) {
           console.warn("Failed to load saved SQLite binary, creating fresh DB:", e);
@@ -312,32 +323,81 @@ class SQLiteEngine {
     this.persist();
   }
 
+  public schedulePersist(delayMs = 120): void {
+    if (typeof window === "undefined" || !this.db) return;
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+    }
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      this.persist();
+    }, delayMs);
+  }
+
   public persist(): void {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
     if (!this.db || typeof window === "undefined") return;
     try {
       const data = this.db.export();
       // Guard against 5MB localStorage overflow on huge datasets
       if (data.byteLength > 3_500_000) return;
-      let binary = "";
-      const len = data.byteLength;
-      for (let i = 0; i < len; i++) {
-        const byte = data[i];
-        if (byte !== undefined) binary += String.fromCharCode(byte);
+      const chunkSize = 8192;
+      const chunks: string[] = [];
+      for (let i = 0; i < data.byteLength; i += chunkSize) {
+        const sub = data.subarray(i, i + chunkSize);
+        chunks.push(String.fromCharCode(...sub));
       }
-      const base64 = btoa(binary);
+      const base64 = btoa(chunks.join(""));
       localStorage.setItem("onnesha_sqlite_db_bin", base64);
     } catch (e) {
       console.warn("SQLite persistence error:", e);
     }
   }
 
-  public run(sql: string, params: any[] = []): void {
+  public run(sql: string, params: SqlValue[] = []): void {
     if (!this.db) return;
     this.db.run(sql, params);
-    this.persist();
+    if (!this.inBatch) {
+      this.schedulePersist();
+    }
   }
 
-  public query<T = any>(sql: string, params: any[] = []): T[] {
+  public runBatch(fn: (run: (sql: string, params?: SqlValue[]) => void) => void): void {
+    if (!this.db) return;
+    const wasInBatch = this.inBatch;
+    this.inBatch = true;
+    if (!wasInBatch) {
+      this.db.run("BEGIN TRANSACTION");
+    }
+    try {
+      fn((sql, params = []) => {
+        this.db?.run(sql, params);
+      });
+      if (!wasInBatch) {
+        this.db.run("COMMIT");
+      }
+    } catch (e) {
+      if (!wasInBatch) {
+        try {
+          this.db.run("ROLLBACK");
+        } catch {
+          // ignore rollback error if transaction already closed
+        }
+      }
+      console.warn("SQLite batch execution warning:", e);
+      throw e;
+    } finally {
+      this.inBatch = wasInBatch;
+      if (!wasInBatch) {
+        this.schedulePersist();
+      }
+    }
+  }
+
+  public query<T = unknown>(sql: string, params: SqlValue[] = []): T[] {
     if (!this.db) return [];
     try {
       const stmt = this.db.prepare(sql);
@@ -354,7 +414,7 @@ class SQLiteEngine {
     }
   }
 
-  public queryOne<T = any>(sql: string, params: any[] = []): T | null {
+  public queryOne<T = unknown>(sql: string, params: SqlValue[] = []): T | null {
     const res = this.query<T>(sql, params);
     return res[0] ?? null;
   }

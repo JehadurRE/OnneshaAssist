@@ -92,6 +92,7 @@ function HostPage() {
     return () => {
       active = false;
       if (unsubscribe) unsubscribe();
+      gameEngine.stopPolling();
     };
   }, [quizId, requestedPin, authLoading, isStaff, navigate]);
 

@@ -1946,6 +1946,7 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const store = getStore();
     const actor = await getActorFromRequest();
+    let issuedCertificate: CertificateData | undefined;
 
     const targetCustomQuiz =
       data.action === "delete_quiz" && data.quizId
@@ -2181,6 +2182,24 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
       }
       case "issue_certificate": {
         if (data.certificate) {
+          const existingSealed = store.certificates.find(
+            (c) =>
+              c.certificateNumber.toLowerCase() ===
+              data.certificate!.certificateNumber.toLowerCase(),
+          );
+          if (
+            existingSealed &&
+            existingSealed.chainHash &&
+            existingSealed.cryptoSignature &&
+            existingSealed.score === data.certificate.score &&
+            (existingSealed.studentRoll || "") === (data.certificate.studentRoll || "")
+          ) {
+            issuedCertificate = enrichCertificateWithOtsCheckpoint(
+              existingSealed,
+              store.ledgerCheckpoints,
+            );
+            break;
+          }
           const {
             payloadHash: _ph,
             prevBlockHash: _pbh,
@@ -2218,6 +2237,7 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
                 c.certificateNumber.toLowerCase() !== sealedCert.certificateNumber.toLowerCase(),
             ),
           ];
+          issuedCertificate = sealedCert;
           scheduleDiskPersist();
           triggerBackgroundExternalAnchoring([sealedCert.certificateNumber]);
         }
@@ -2298,6 +2318,7 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
       branding: store.branding,
       salesLeads: actor?.role === "admin" ? store.salesLeads : [],
       transactions: actor?.role === "admin" ? store.transactions : [],
+      ...(issuedCertificate ? { certificate: issuedCertificate } : {}),
     };
   });
 
