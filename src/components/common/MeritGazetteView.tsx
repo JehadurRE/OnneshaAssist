@@ -1,6 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { MeritParticipant } from '@/lib/types';
 import { db } from '@/lib/db';
+import {
+  computeParticipantAccuracyPct,
+  isPassingScore,
+  resolvePassThresholdPct,
+} from '@/lib/scoring';
 import { useBranding } from '@/hooks/use-branding';
 import { downloadMeritGazettePdf } from '@/lib/pdf-generator';
 import { Download, Loader2, MapPin, Shield, X } from 'lucide-react';
@@ -9,16 +14,22 @@ import onnesha from '@/assets/onnesha.jpg.asset.json';
 interface MeritGazetteViewProps {
   quizTitle: string;
   participants: MeritParticipant[];
+  passThresholdPct?: number | undefined;
   onClose: () => void;
 }
 
 export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
   quizTitle,
   participants,
+  passThresholdPct,
   onClose,
 }) => {
   const regions = db.getRegions();
   const branding = useBranding();
+  const effectiveThreshold = resolvePassThresholdPct({
+    sessionThreshold: passThresholdPct,
+    brandingDefaultThreshold: branding.defaultPassThresholdPct,
+  });
   const [selectedRegionId, setSelectedRegionId] = useState<string>('all');
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
@@ -46,6 +57,7 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
         regionLabel: activeRegionLabel,
         participants: filtered,
         branding,
+        passThresholdPct: effectiveThreshold,
       });
     } finally {
       setIsDownloadingPdf(false);
@@ -147,7 +159,8 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
             <strong>NOTICE FOR CANDIDATES ({activeRegionLabel.toUpperCase()}):</strong> The following
             merit list contains verified final rankings based on raw marks, speed velocity, and
             applicable negative marking (-0.25 penalty). This gazette is officially certified for
-            public notice boards and regional archives.
+            public notice boards and regional archives. Qualifying passing threshold:{' '}
+            <span className="font-bold">{effectiveThreshold}%</span> accuracy.
           </div>
 
           {/* Merit Table */}
@@ -161,13 +174,29 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
                   <th className="border border-black p-2">Region / Range</th>
                   <th className="border border-black p-2 text-center">Correct</th>
                   <th className="border border-black p-2 text-center">Wrong</th>
+                  <th className="border border-black p-2 text-center">Accuracy</th>
                   <th className="border border-black p-2 text-center">Net Score</th>
                   <th className="border border-black p-2 text-center">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((p, idx) => {
-                  const isPassed = p.finalScore >= 500;
+                  const totalQ =
+                    (p.correctCount ?? 0) + (p.incorrectCount ?? 0) + (p.unansweredCount ?? 0);
+                  const acc =
+                    typeof p.accuracyPct === 'number'
+                      ? p.accuracyPct
+                      : totalQ > 0
+                        ? computeParticipantAccuracyPct({
+                            correctCount: p.correctCount,
+                            totalQuestions: totalQ,
+                            score: p.finalScore,
+                          })
+                        : 0;
+                  const isPassed =
+                    typeof p.passed === 'boolean'
+                      ? p.passed
+                      : isPassingScore(acc, effectiveThreshold);
                   return (
                     <tr key={p.id} className={idx < 3 ? 'bg-amber-50/60 font-semibold' : ''}>
                       <td className="border border-black p-2 text-center font-bold font-mono">
@@ -186,14 +215,17 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
                       <td className="border border-black p-2 text-center text-red-700 font-bold">
                         {p.incorrectCount}
                       </td>
+                      <td className="border border-black p-2 text-center font-mono font-semibold">
+                        {acc}%
+                      </td>
                       <td className="border border-black p-2 text-center font-mono font-black">
                         {p.finalScore}
                       </td>
                       <td className="border border-black p-2 text-center font-bold">
                         {isPassed ? (
-                          <span className="text-emerald-700">QUALIFIED</span>
+                          <span className="text-emerald-700">PASSED</span>
                         ) : (
-                          <span className="text-gray-500">STANDBY</span>
+                          <span className="text-red-700">FAILED (&lt;{effectiveThreshold}%)</span>
                         )}
                       </td>
                     </tr>

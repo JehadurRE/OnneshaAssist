@@ -4,8 +4,15 @@ import { useLanguage } from '@/lib/i18n';
 import { Confetti } from '@/components/common/Confetti';
 import { CertificateView } from '@/components/common/CertificateView';
 import { db, formatDeterministicCertNumber } from '@/lib/db';
+import {
+  computeParticipantAccuracyPct,
+  computeTotalQuizMarks,
+  isPassingScore,
+  resolveOrgName,
+  resolvePassThresholdPct,
+} from '@/lib/scoring';
 import { downloadMeritGazettePdf } from '@/lib/pdf-generator';
-import { Award, FileSpreadsheet, FileDown, RotateCcw, ShieldCheck, Trophy, Users, X } from 'lucide-react';
+import { Award, FileSpreadsheet, FileDown, Lock, RotateCcw, ShieldCheck, Trophy, Users, X } from 'lucide-react';
 import { audioEngine } from '@/lib/audio-engine';
 
 interface HostPodiumProps {
@@ -22,23 +29,47 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
   const p2 = sorted[1];
   const p3 = sorted[2];
 
+  const branding = db.getBranding();
+  const matchedQuiz = db.getQuizBySlug(session.quizId);
+  const matchedCourse = matchedQuiz?.courseId
+    ? db.getCourses().find((c) => c.id === matchedQuiz.courseId)
+    : undefined;
+  const passThresholdPct = resolvePassThresholdPct({
+    sessionThreshold: session.settings?.passThresholdPct,
+    courseThreshold: matchedCourse?.passThresholdPct,
+    brandingDefaultThreshold: branding.defaultPassThresholdPct,
+  });
+  const quizQuestions = session.completedQuestions?.length
+    ? session.completedQuestions
+    : matchedQuiz?.questions || [];
+  const totalMarks = computeTotalQuizMarks(quizQuestions, session.totalQuestions);
+
+  const getPlayerEval = (player: typeof p1) => {
+    if (!player) return { accuracyPct: 0, passed: false };
+    const ansList = Object.values(player.answers || {});
+    const correctCount = ansList.filter((a) => a.isCorrect).length;
+    const accuracyPct = computeParticipantAccuracyPct({
+      answers: ansList,
+      correctCount,
+      totalQuestions: session.totalQuestions,
+      score: player.score,
+      totalMarks,
+    });
+    return {
+      accuracyPct,
+      passed: isPassingScore(accuracyPct, passThresholdPct),
+    };
+  };
+
   useEffect(() => {
     audioEngine.playFanfare();
   }, []);
 
   const handleGenerateCertificate = (player: typeof p1, rank: number) => {
     if (!player) return;
+    const { accuracyPct, passed } = getPlayerEval(player);
+    if (!passed) return;
     const certNo = formatDeterministicCertNumber(session.pin, player.rollNumber, rank);
-    const ansList = Object.values(player.answers || {});
-    const correctCount = ansList.filter((a) => a.isCorrect).length;
-    const accuracyPct =
-      session.totalQuestions > 0
-        ? Math.round((correctCount / session.totalQuestions) * 100)
-        : 100;
-    const branding = db.getBranding();
-    const totalMarks = session.completedQuestions?.length
-      ? session.completedQuestions.reduce((acc, q) => acc + (q.points || 1000), 0)
-      : session.totalQuestions * 1000;
     const cert: CertificateData = {
       id: `cert-${certNo.toLowerCase()}`,
       certificateNumber: certNo,
@@ -55,9 +86,7 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
       rank,
       totalParticipants: sorted.length,
       issueDate: new Date().toISOString().slice(0, 10),
-      organizationName: branding.partnerName
-        ? `Onnesha × ${branding.partnerName}`
-        : 'Onnesha Assessment & Examination Arena',
+      organizationName: resolveOrgName(branding),
       institutionName: branding.institutionTitle || 'Onnesha Assessment Arena',
       instructorName: 'Chief Assessment Officer',
       verificationUrl:
@@ -70,14 +99,18 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
   };
 
   const handleExportCsv = () => {
-    const headers = ['Rank', 'Name', 'Roll Number', 'Score', 'Accuracy %'];
-    const rows = sorted.map((p, idx) => [
-      idx + 1,
-      p.nickname,
-      p.rollNumber || 'N/A',
-      p.score,
-      Math.min(100, Math.round((p.score / (session.totalQuestions * 1000)) * 100)) + '%',
-    ]);
+    const headers = ['Rank', 'Name', 'Roll Number', 'Score', 'Accuracy %', `Status (>=${passThresholdPct}%)`];
+    const rows = sorted.map((p, idx) => {
+      const { accuracyPct, passed } = getPlayerEval(p);
+      return [
+        idx + 1,
+        p.nickname,
+        p.rollNumber || 'N/A',
+        p.score,
+        `${accuracyPct}%`,
+        passed ? 'PASSED' : 'FAILED',
+      ];
+    });
     const csvContent =
       'data:text/csv;charset=utf-8,' +
       [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
@@ -129,13 +162,20 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
                 <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                   Silver
                 </span>
-                <button
-                  onClick={() => handleGenerateCertificate(p2, 2)}
-                  className="mt-2 text-[10px] font-bold text-primary hover:underline flex items-center gap-1"
-                >
-                  <Award className="h-3 w-3" />
-                  <span>Certificate</span>
-                </button>
+                {getPlayerEval(p2).passed ? (
+                  <button
+                    onClick={() => handleGenerateCertificate(p2, 2)}
+                    className="mt-2 text-[10px] font-bold text-primary hover:underline flex items-center gap-1"
+                  >
+                    <Award className="h-3 w-3" />
+                    <span>Certificate</span>
+                  </button>
+                ) : (
+                  <span className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-destructive">
+                    <Lock className="h-3 w-3" />
+                    <span>Below {passThresholdPct}%</span>
+                  </span>
+                )}
               </div>
             </div>
           )}
@@ -165,13 +205,20 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
                 <span className="text-xs font-extrabold uppercase tracking-wider text-amber-950">
                   CHAMPION
                 </span>
-                <button
-                  onClick={() => handleGenerateCertificate(p1, 1)}
-                  className="mt-3 rounded-xl bg-amber-950 px-3 py-1 text-[11px] font-bold text-amber-200 shadow hover:bg-amber-900 flex items-center gap-1"
-                >
-                  <Award className="h-3.5 w-3.5" />
-                  <span>Get Certificate</span>
-                </button>
+                {getPlayerEval(p1).passed ? (
+                  <button
+                    onClick={() => handleGenerateCertificate(p1, 1)}
+                    className="mt-3 rounded-xl bg-amber-950 px-3 py-1 text-[11px] font-bold text-amber-200 shadow hover:bg-amber-900 flex items-center gap-1"
+                  >
+                    <Award className="h-3.5 w-3.5" />
+                    <span>Get Certificate</span>
+                  </button>
+                ) : (
+                  <span className="mt-3 rounded-xl bg-amber-950/80 px-2.5 py-1 text-[10px] font-bold text-amber-200 flex items-center gap-1">
+                    <Lock className="h-3 w-3" />
+                    <span>Below {passThresholdPct}%</span>
+                  </span>
+                )}
               </div>
             </div>
           )}
@@ -196,13 +243,20 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
                 <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                   Bronze
                 </span>
-                <button
-                  onClick={() => handleGenerateCertificate(p3, 3)}
-                  className="mt-2 text-[10px] font-bold text-primary hover:underline flex items-center gap-1"
-                >
-                  <Award className="h-3 w-3" />
-                  <span>Certificate</span>
-                </button>
+                {getPlayerEval(p3).passed ? (
+                  <button
+                    onClick={() => handleGenerateCertificate(p3, 3)}
+                    className="mt-2 text-[10px] font-bold text-primary hover:underline flex items-center gap-1"
+                  >
+                    <Award className="h-3 w-3" />
+                    <span>Certificate</span>
+                  </button>
+                ) : (
+                  <span className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-destructive">
+                    <Lock className="h-3 w-3" />
+                    <span>Below {passThresholdPct}%</span>
+                  </span>
+                )}
               </div>
             </div>
           )}
@@ -220,7 +274,6 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
 
           <button
             onClick={() => {
-              const branding = db.getBranding();
               const participants = sorted.map((p, idx) => {
                 const ansList = Object.values(p.answers || {});
                 const correctCount = ansList.filter((a) => a.isCorrect).length;
@@ -229,6 +282,7 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
                     !a.isCorrect &&
                     ((a.selectedOptionIds && a.selectedOptionIds.length > 0) || !!a.writtenAnswer)
                 ).length;
+                const evalRes = getPlayerEval(p);
                 return {
                   id: p.id,
                   nickname: p.nickname,
@@ -240,6 +294,8 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
                   correctCount,
                   incorrectCount,
                   unansweredCount: Math.max(0, session.totalQuestions - ansList.length),
+                  accuracyPct: evalRes.accuracyPct,
+                  passed: evalRes.passed,
                 };
               });
               downloadMeritGazettePdf({
@@ -247,6 +303,7 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
                 regionLabel: session.settings.allowedRegionName || 'All Divisions',
                 participants,
                 branding,
+                passThresholdPct,
               }).catch(() => {});
             }}
             className="flex items-center gap-2 rounded-2xl border border-border bg-background px-5 py-3 text-xs font-bold text-foreground shadow-sm hover:bg-accent transition-all"

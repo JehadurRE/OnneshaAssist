@@ -12,10 +12,14 @@ import {
   verifySessionToken,
 } from "../server-security";
 import {
+  clampPassThresholdPct,
+  computeParticipantAccuracyPct,
   computeTotalQuizMarks,
   evaluateQuestionAnswer,
   gradeOmrSubmission,
+  isPassingScore,
   resolveOrgName,
+  resolvePassThresholdPct,
 } from "../scoring";
 import {
   CERTIFICATE_THEME_PRESETS,
@@ -879,5 +883,233 @@ describe("course & quiz privacy access control helpers", () => {
     );
     const demoPack = READY_MADE_PACKS.find((q) => q.id === "pack-bcs-gk")!;
     expect(isQuizPrivate(demoPack, toggledPrivateCourses)).toBe(true);
+  });
+});
+
+describe("minimum passing threshold & certificate issuance gating", () => {
+  it("resolves passing threshold in priority order (session > course > global > default 50%)", () => {
+    expect(clampPassThresholdPct(-10)).toBe(0);
+    expect(clampPassThresholdPct(150)).toBe(100);
+    expect(clampPassThresholdPct(undefined)).toBe(50);
+
+    expect(resolvePassThresholdPct({})).toBe(50);
+    expect(resolvePassThresholdPct({ brandingDefaultThreshold: 60 })).toBe(60);
+    expect(
+      resolvePassThresholdPct({
+        courseThreshold: 75,
+        brandingDefaultThreshold: 60,
+      }),
+    ).toBe(75);
+    expect(
+      resolvePassThresholdPct({
+        sessionThreshold: 80,
+        courseThreshold: 75,
+        brandingDefaultThreshold: 60,
+      }),
+    ).toBe(80);
+  });
+
+  it("evaluates pass/fail and computes real accuracy over totalQuestions", () => {
+    expect(isPassingScore(50, 50)).toBe(true);
+    expect(isPassingScore(49, 50)).toBe(false);
+    expect(isPassingScore(69, 70)).toBe(false);
+    expect(isPassingScore(70, 70)).toBe(true);
+
+    // Answering only 1 out of 20 correctly must equal 5%, not 100%
+    const oneOfTwenty = computeParticipantAccuracyPct({
+      answers: [{ isCorrect: true }],
+      totalQuestions: 20,
+      score: 950,
+      totalMarks: 20000,
+    });
+    expect(oneOfTwenty).toBe(5);
+    expect(isPassingScore(oneOfTwenty, 50)).toBe(false);
+  });
+
+  it("issues certificates only to candidates meeting the threshold and blocks revoked fallback reconstruction", async () => {
+    const storageMap = new Map<string, string>();
+    const origWindow = (globalThis as Record<string, unknown>)["window"];
+    const origLocalStorage = (globalThis as Record<string, unknown>)["localStorage"];
+
+    const mockLocalStorage = {
+      getItem: (k: string) => storageMap.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        storageMap.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        storageMap.delete(k);
+      },
+      clear: () => {
+        storageMap.clear();
+      },
+      key: (idx: number) => Array.from(storageMap.keys())[idx] ?? null,
+      get length() {
+        return storageMap.size;
+      },
+    };
+
+    try {
+      (globalThis as Record<string, unknown>)["window"] = globalThis;
+      (globalThis as Record<string, unknown>)["localStorage"] = mockLocalStorage;
+
+      await sqliteEngine.init();
+
+      const customCourse: Course = {
+        id: "course-threshold-test",
+        code: "THR-70",
+        titleEn: "Threshold Policy Course",
+        titleBn: "Threshold Policy Course",
+        descriptionEn: "Requires 70% to earn certificate",
+        descriptionBn: "Requires 70%",
+        categoryEn: "Test",
+        categoryBn: "Test",
+        icon: "🎯",
+        color: "from-emerald-500/20 to-teal-500/20",
+        instructorIds: ["usr-instructor-1"],
+        instructorNames: ["Instructor"],
+        isPrivate: true,
+        passThresholdPct: 70,
+        status: "active",
+        createdAt: "2026-11-15T00:00:00Z",
+      };
+      db.saveCourse(customCourse);
+      const loadedCourse = db.getCourses().find((c) => c.id === "course-threshold-test");
+      expect(loadedCourse?.passThresholdPct).toBe(70);
+
+      const sessionWithThreshold: GameSession = {
+        pin: "445566",
+        quizId: "quiz-threshold-test",
+        quizTitleEn: "Threshold Gate Exam",
+        quizTitleBn: "Threshold Gate Exam",
+        hostId: "usr-instructor-1",
+        phase: "podium",
+        currentQuestionIndex: 9,
+        questionStartTime: Date.now() - 20000,
+        questionEndTime: Date.now(),
+        settings: {
+          speedBonus: true,
+          negativeMarking: 0,
+          shuffleQuestions: false,
+          shuffleOptions: false,
+          soundEnabled: true,
+          musicEnabled: true,
+          isFormalAssessment: true,
+          requireRollNumber: true,
+          allowedRegionId: "all",
+          allowedRegionName: "All Regions",
+          passThresholdPct: 70,
+        },
+        participants: {
+          "p-pass": {
+            id: "p-pass",
+            name: "Qualified Student",
+            nickname: "Qualified Student",
+            avatarEmoji: "🎯",
+            avatarBg: "#10b981",
+            rollNumber: "PASS-01",
+            regionId: "reg-dhaka",
+            regionName: "Dhaka Range",
+            score: 7600,
+            streak: 3,
+            rank: 1,
+            isBot: false,
+            answers: Object.fromEntries(
+              Array.from({ length: 10 }, (_, idx) => [
+                `q-${idx}`,
+                {
+                  questionId: `q-${idx}`,
+                  selectedOptionIds: ["o1"],
+                  isCorrect: idx < 8,
+                  timeTakenSec: 5,
+                  pointsAwarded: idx < 8 ? 950 : 0,
+                  streakCount: 1,
+                  answeredAt: Date.now(),
+                },
+              ]),
+            ),
+            connected: true,
+            lastActive: Date.now(),
+          },
+          "p-fail": {
+            id: "p-fail",
+            name: "Below Threshold Student",
+            nickname: "Below Threshold Student",
+            avatarEmoji: "📝",
+            avatarBg: "#ef4444",
+            rollNumber: "FAIL-02",
+            regionId: "reg-dhaka",
+            regionName: "Dhaka Range",
+            score: 1900,
+            streak: 0,
+            rank: 2,
+            isBot: false,
+            answers: {
+              "q-0": {
+                questionId: "q-0",
+                selectedOptionIds: ["o1"],
+                isCorrect: true,
+                timeTakenSec: 5,
+                pointsAwarded: 950,
+                streakCount: 1,
+                answeredAt: Date.now(),
+              },
+              "q-1": {
+                questionId: "q-1",
+                selectedOptionIds: ["o1"],
+                isCorrect: true,
+                timeTakenSec: 5,
+                pointsAwarded: 950,
+                streakCount: 1,
+                answeredAt: Date.now(),
+              },
+            },
+            connected: true,
+            lastActive: Date.now(),
+          },
+        },
+        totalQuestions: 10,
+        createdAt: Date.now() - 60000,
+        updatedAt: Date.now(),
+      };
+
+      db.recordExamSession(sessionWithThreshold, { syncToServer: false });
+
+      const recordedSession = db.getExamSessions().find((s) => s.pin === "445566");
+      expect(recordedSession?.passThresholdPct).toBe(70);
+
+      const results = db.getExamResults("445566");
+      const passRes = results.find((r) => r.rollNumber === "PASS-01");
+      const failRes = results.find((r) => r.rollNumber === "FAIL-02");
+      expect(passRes?.accuracyPct).toBe(80);
+      expect(passRes?.passed).toBe(true);
+      expect(failRes?.accuracyPct).toBe(20);
+      expect(failRes?.passed).toBe(false);
+
+      const certs = db.getCertificates();
+      expect(certs.some((c) => c.certificateNumber === "ONN-4455-PASS01")).toBe(true);
+      expect(certs.some((c) => c.certificateNumber === "ONN-4455-FAIL02")).toBe(false);
+      expect(db.getCertificateById("ONN-4455-PASS01")?.studentName).toBe("Qualified Student");
+      expect(db.getCertificateById("ONN-4455-FAIL02")).toBeUndefined();
+
+      // Revoking an issued certificate must remove it and prevent deterministic resurrection
+      db.deleteCertificate("ONN-4455-PASS01", { syncToServer: false });
+      expect(db.getCertificates().some((c) => c.certificateNumber === "ONN-4455-PASS01")).toBe(
+        false,
+      );
+      expect(db.getCertificateById("ONN-4455-PASS01")).toBeUndefined();
+
+      sqliteEngine.persist();
+    } finally {
+      if (origWindow === undefined) {
+        delete (globalThis as Record<string, unknown>)["window"];
+      } else {
+        (globalThis as Record<string, unknown>)["window"] = origWindow;
+      }
+      if (origLocalStorage === undefined) {
+        delete (globalThis as Record<string, unknown>)["localStorage"];
+      } else {
+        (globalThis as Record<string, unknown>)["localStorage"] = origLocalStorage;
+      }
+    }
   });
 });

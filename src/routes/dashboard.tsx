@@ -20,7 +20,7 @@ import {
   Region,
 } from "@/lib/types";
 import { db, DbSmsLog, DbTransaction, formatDeterministicCertNumber, isQuizPrivate } from "@/lib/db";
-import { computeTotalQuizMarks } from "@/lib/scoring";
+import { computeTotalQuizMarks, isPassingScore, resolvePassThresholdPct } from "@/lib/scoring";
 import { gameEngine } from "@/lib/game-engine";
 import { serverGetActiveRooms } from "@/lib/server-session";
 import { SmsGateway } from "@/lib/sms-gateway";
@@ -2235,6 +2235,7 @@ function DashboardPage() {
                       <th className="p-4 font-bold text-center">Wrong</th>
                       <th className="p-4 font-bold text-center">Accuracy</th>
                       <th className="p-4 font-bold text-center">Final Score</th>
+                      <th className="p-4 font-bold text-center">Status</th>
                       <th className="p-4 text-right">Certificate</th>
                     </tr>
                   </thead>
@@ -2245,6 +2246,26 @@ function DashboardPage() {
                         r.rollNumber,
                         r.rank || idx + 1,
                       );
+                      const activeSess = examSessions.find(
+                        (s) => s.id === r.sessionId || s.pin === r.pin,
+                      );
+                      const sessQuiz = activeSess
+                        ? quizzes.find(
+                            (q) => q.id === activeSess.quizId || q.slug === activeSess.quizId,
+                          )
+                        : undefined;
+                      const sessCourse = sessQuiz?.courseId
+                        ? db.getCourses().find((c) => c.id === sessQuiz.courseId)
+                        : undefined;
+                      const threshold = resolvePassThresholdPct({
+                        sessionThreshold: activeSess?.passThresholdPct,
+                        courseThreshold: sessCourse?.passThresholdPct,
+                        brandingDefaultThreshold: db.getBranding().defaultPassThresholdPct,
+                      });
+                      const didPass =
+                        typeof r.passed === "boolean"
+                          ? r.passed
+                          : isPassingScore(r.accuracyPct, threshold);
                       return (
                         <tr key={r.id} className="hover:bg-accent/40 transition-colors">
                           <td className="p-4 text-center font-mono font-bold text-primary">
@@ -2271,15 +2292,33 @@ function DashboardPage() {
                           <td className="p-4 text-center font-mono font-black text-foreground">
                             {r.score.toLocaleString()}
                           </td>
+                          <td className="p-4 text-center">
+                            {didPass ? (
+                              <span className="inline-flex items-center rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400">
+                                PASSED (&ge;{threshold}%)
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center rounded-full bg-destructive/10 border border-destructive/30 px-2.5 py-0.5 text-[10px] font-extrabold text-destructive">
+                                FAILED (&lt;{threshold}%)
+                              </span>
+                            )}
+                          </td>
                           <td className="p-4 text-right">
-                            <Link
-                              to="/verify/$certId"
-                              params={{ certId: certNo }}
-                              className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
-                            >
-                              <span>View Seal</span>
-                              <ChevronRight className="h-3 w-3" />
-                            </Link>
+                            {didPass ? (
+                              <Link
+                                to="/verify/$certId"
+                                params={{ certId: certNo }}
+                                className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
+                              >
+                                <span>View Seal</span>
+                                <ChevronRight className="h-3 w-3" />
+                              </Link>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
+                                <Lock className="h-3 w-3" />
+                                <span>Below {threshold}%</span>
+                              </span>
+                            )}
                           </td>
                         </tr>
                       );
@@ -2827,42 +2866,65 @@ function DashboardPage() {
       )}
 
       {/* Official Merit Gazette Modal */}
-      {showGazette && (
-        <MeritGazetteView
-          quizTitle={
-            examSessions.find((s) => s.id === selectedSessionId)?.quizTitleBn ||
-            "বিসিএস প্রিলিমিনারি ও প্রাতিষ্ঠানিক মডেল টেস্ট"
-          }
-          participants={
-            activeResults.length > 0
-              ? activeResults.map((r) => ({
-                  id: r.id,
-                  nickname: r.name,
-                  rollNumber: r.rollNumber,
-                  regionId: r.regionId,
-                  regionName: r.regionName,
-                  finalScore: r.score,
-                  rank: r.rank,
-                  correctCount: r.correctCount,
-                  incorrectCount: r.incorrectCount,
-                  unansweredCount: r.unattemptedCount,
-                }))
-              : filteredRoster.map((s, idx) => ({
-                  id: s.id,
-                  nickname: s.name,
-                  rollNumber: s.rollNumber,
-                  regionId: s.regionId,
-                  regionName: s.regionName,
-                  finalScore: 0,
-                  rank: idx + 1,
-                  correctCount: 0,
-                  incorrectCount: 0,
-                  unansweredCount: 0,
-                }))
-          }
-          onClose={() => setShowGazette(false)}
-        />
-      )}
+      {showGazette &&
+        (() => {
+          const gazetteSess = examSessions.find((s) => s.id === selectedSessionId);
+          const gazetteQuiz = gazetteSess
+            ? quizzes.find((q) => q.id === gazetteSess.quizId || q.slug === gazetteSess.quizId)
+            : undefined;
+          const gazetteCourse = gazetteQuiz?.courseId
+            ? db.getCourses().find((c) => c.id === gazetteQuiz.courseId)
+            : undefined;
+          const gazetteThreshold = resolvePassThresholdPct({
+            sessionThreshold: gazetteSess?.passThresholdPct,
+            courseThreshold: gazetteCourse?.passThresholdPct,
+            brandingDefaultThreshold: db.getBranding().defaultPassThresholdPct,
+          });
+          return (
+            <MeritGazetteView
+              quizTitle={
+                gazetteSess?.quizTitleBn ||
+                "বিসিএস প্রিলিমিনারি ও প্রাতিষ্ঠানিক মডেল টেস্ট"
+              }
+              passThresholdPct={gazetteThreshold}
+              participants={
+                activeResults.length > 0
+                  ? activeResults.map((r) => ({
+                      id: r.id,
+                      nickname: r.name,
+                      rollNumber: r.rollNumber,
+                      regionId: r.regionId,
+                      regionName: r.regionName,
+                      finalScore: r.score,
+                      rank: r.rank,
+                      correctCount: r.correctCount,
+                      incorrectCount: r.incorrectCount,
+                      unansweredCount: r.unattemptedCount,
+                      accuracyPct: r.accuracyPct,
+                      passed:
+                        typeof r.passed === "boolean"
+                          ? r.passed
+                          : isPassingScore(r.accuracyPct, gazetteThreshold),
+                    }))
+                  : filteredRoster.map((s, idx) => ({
+                      id: s.id,
+                      nickname: s.name,
+                      rollNumber: s.rollNumber,
+                      regionId: s.regionId,
+                      regionName: s.regionName,
+                      finalScore: 0,
+                      rank: idx + 1,
+                      correctCount: 0,
+                      incorrectCount: 0,
+                      unansweredCount: 0,
+                      accuracyPct: 0,
+                      passed: false,
+                    }))
+              }
+              onClose={() => setShowGazette(false)}
+            />
+          );
+        })()}
 
       <Footer />
     </div>

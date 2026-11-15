@@ -101,6 +101,7 @@ class SQLiteEngine {
         instructorIdsJson TEXT,
         instructorNamesJson TEXT,
         isPrivate INTEGER DEFAULT 1,
+        passThresholdPct INTEGER,
         status TEXT,
         createdAt TEXT
       );
@@ -242,6 +243,7 @@ class SQLiteEngine {
         participantCount INTEGER,
         averageScore REAL,
         highestScore REAL,
+        passThresholdPct INTEGER,
         createdAt TEXT
       );
 
@@ -261,6 +263,7 @@ class SQLiteEngine {
         incorrectCount INTEGER,
         unattemptedCount INTEGER,
         accuracyPct REAL,
+        passed INTEGER,
         answersJson TEXT,
         createdAt TEXT
       );
@@ -287,6 +290,9 @@ class SQLiteEngine {
       "ALTER TABLE quizzes ADD COLUMN instructorName TEXT",
       "ALTER TABLE quizzes ADD COLUMN isPrivate INTEGER",
       "ALTER TABLE courses ADD COLUMN isPrivate INTEGER",
+      "ALTER TABLE courses ADD COLUMN passThresholdPct INTEGER",
+      "ALTER TABLE exam_sessions ADD COLUMN passThresholdPct INTEGER",
+      "ALTER TABLE exam_results ADD COLUMN passed INTEGER",
       "ALTER TABLE users ADD COLUMN institution TEXT",
       "ALTER TABLE users ADD COLUMN designation TEXT",
       "ALTER TABLE users ADD COLUMN plan TEXT",

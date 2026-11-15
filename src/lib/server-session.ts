@@ -45,7 +45,14 @@ import {
   verifyPasswordScrypt,
   verifySessionToken,
 } from "./server-security";
-import { computeTotalQuizMarks, evaluateQuestionAnswer, resolveOrgName } from "./scoring";
+import {
+  computeParticipantAccuracyPct,
+  computeTotalQuizMarks,
+  evaluateQuestionAnswer,
+  isPassingScore,
+  resolveOrgName,
+  resolvePassThresholdPct,
+} from "./scoring";
 import {
   anchorCertificateToRekor,
   anchorDigestToOpenTimestamps,
@@ -110,6 +117,7 @@ interface PersistentStoreData {
   examSessions: ExamSessionRecord[];
   examResults: ExamResultRecord[];
   certificates: CertificateData[];
+  revokedCertificates?: string[] | undefined;
   ledgerCheckpoints: LedgerOtsCheckpoint[];
   transactions: ServerTransactionRecord[];
   smsLogs: ServerSmsLogRecord[];
@@ -419,6 +427,7 @@ function loadInitialStore(): PersistentStoreData {
           examSessions: parsed.examSessions || [],
           examResults: cleanedResults,
           certificates: parsed.certificates || [],
+          revokedCertificates: parsed.revokedCertificates || [],
           ledgerCheckpoints: parsed.ledgerCheckpoints || [],
           transactions: parsed.transactions || [],
           smsLogs: parsed.smsLogs || [],
@@ -441,6 +450,7 @@ function loadInitialStore(): PersistentStoreData {
     examSessions: [],
     examResults: [],
     certificates: [],
+    revokedCertificates: [],
     ledgerCheckpoints: [],
     transactions: [],
     smsLogs: [],
@@ -770,6 +780,19 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
   const avgScore = count > 0 ? Math.round(totalScore / count) : 0;
   const highestScore = participantsList[0]?.score ?? 0;
 
+  const quizObj =
+    session.fullQuiz ||
+    store.customQuizzes.find((q) => q.id === session.quizId || q.slug === session.quizId) ||
+    READY_MADE_PACKS.find((q) => q.id === session.quizId || q.slug === session.quizId);
+  const matchedCourse = quizObj?.courseId
+    ? store.courses.find((c) => c.id === quizObj.courseId)
+    : undefined;
+  const effectivePassThresholdPct = resolvePassThresholdPct({
+    sessionThreshold: session.settings?.passThresholdPct,
+    courseThreshold: matchedCourse?.passThresholdPct,
+    brandingDefaultThreshold: store.branding?.defaultPassThresholdPct,
+  });
+
   const sessionRecord: ExamSessionRecord = {
     id: sessionId,
     pin: session.pin,
@@ -783,6 +806,7 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
     participantCount: count,
     averageScore: avgScore,
     highestScore,
+    passThresholdPct: effectivePassThresholdPct,
     createdAt,
   };
 
@@ -794,10 +818,6 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
   // Remove any previous results for this pin before writing final results
   store.examResults = store.examResults.filter((r) => r.pin !== session.pin);
 
-  const quizObj =
-    session.fullQuiz ||
-    store.customQuizzes.find((q) => q.id === session.quizId || q.slug === session.quizId) ||
-    READY_MADE_PACKS.find((q) => q.id === session.quizId || q.slug === session.quizId);
   const totalMarks = computeTotalQuizMarks(quizObj?.questions, session.totalQuestions);
   const mintedCertNumbers: string[] = [];
 
@@ -810,8 +830,14 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
         ((a.selectedOptionIds && a.selectedOptionIds.length > 0) || !!a.writtenAnswer),
     ).length;
     const unattemptedCount = Math.max(0, session.totalQuestions - answersList.length);
-    const totalAnswers = answersList.length;
-    const accuracy = totalAnswers > 0 ? Math.round((correctCount / totalAnswers) * 100) : 0;
+    const accuracy = computeParticipantAccuracyPct({
+      answers: answersList,
+      correctCount,
+      totalQuestions: session.totalQuestions,
+      score: p.score,
+      totalMarks,
+    });
+    const passed = isPassingScore(accuracy, effectivePassThresholdPct);
     const roll = p.rollNumber || `2026-${100 + idx + 1}`;
 
     const resultRecord: ExamResultRecord = {
@@ -830,52 +856,57 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
       incorrectCount,
       unattemptedCount,
       accuracyPct: accuracy,
+      passed,
       answersJson: JSON.stringify(p.answers || {}),
       createdAt,
     };
     store.examResults.push(resultRecord);
 
-    const certNo = makeCertificateNumber(session.pin, roll, idx + 1);
-    const unsignedCert: CertificateData = {
-      id: `cert-${session.pin}-${p.id}`,
-      certificateNumber: certNo,
-      studentName: p.nickname || p.name || `Candidate ${idx + 1}`,
-      studentRoll: roll,
-      regionName: p.regionName || "Dhaka Range",
-      quizTitle: session.quizTitleBn || session.quizTitleEn || "Institutional Assessment",
-      score: p.score,
-      marksObtained: p.score,
-      totalPoints: totalMarks,
-      totalMarks,
-      rank: p.rank || idx + 1,
-      totalParticipants: count,
-      accuracyPercent: accuracy,
-      scorePct: accuracy,
-      issueDate: createdAt.slice(0, 10),
-      organizationName: resolveOrgName(store.branding),
-      institutionName: store.branding?.institutionTitle || "Onnesha Assessment Arena",
-      instructorName: "Chief Assessment Officer",
-      verificationUrl: `/verify/${certNo}`,
-      verified: true,
-    };
+    if (passed) {
+      const certNo = makeCertificateNumber(session.pin, roll, idx + 1);
+      const unsignedCert: CertificateData = {
+        id: `cert-${session.pin}-${p.id}`,
+        certificateNumber: certNo,
+        studentName: p.nickname || p.name || `Candidate ${idx + 1}`,
+        studentRoll: roll,
+        regionName: p.regionName || "Dhaka Range",
+        quizTitle: session.quizTitleBn || session.quizTitleEn || "Institutional Assessment",
+        score: p.score,
+        marksObtained: p.score,
+        totalPoints: totalMarks,
+        totalMarks,
+        rank: p.rank || idx + 1,
+        totalParticipants: count,
+        accuracyPercent: accuracy,
+        scorePct: accuracy,
+        issueDate: createdAt.slice(0, 10),
+        organizationName: resolveOrgName(store.branding),
+        institutionName: store.branding?.institutionTitle || "Onnesha Assessment Arena",
+        instructorName: "Chief Assessment Officer",
+        verificationUrl: `/verify/${certNo}`,
+        verified: true,
+      };
 
-    const certRecord = sealCertificateWithLedger(
-      unsignedCert,
-      store.certificates,
-      getStorePaths().dataDir,
-    );
+      const certRecord = sealCertificateWithLedger(
+        unsignedCert,
+        store.certificates,
+        getStorePaths().dataDir,
+      );
 
-    store.certificates = [
-      certRecord,
-      ...store.certificates.filter(
-        (c) => c.certificateNumber.toLowerCase() !== certNo.toLowerCase(),
-      ),
-    ];
-    mintedCertNumbers.push(certNo);
+      store.certificates = [
+        certRecord,
+        ...store.certificates.filter(
+          (c) => c.certificateNumber.toLowerCase() !== certNo.toLowerCase(),
+        ),
+      ];
+      mintedCertNumbers.push(certNo);
+    }
   });
 
   scheduleDiskPersist();
-  triggerBackgroundExternalAnchoring(mintedCertNumbers);
+  if (mintedCertNumbers.length > 0) {
+    triggerBackgroundExternalAnchoring(mintedCertNumbers);
+  }
 }
 
 function resolveSessionQuiz(
@@ -997,6 +1028,7 @@ export const serverGetBootstrapData = createServerFn({ method: "GET" }).handler(
     examSessions: store.examSessions,
     examResults: isStaff ? store.examResults : [],
     certificates: store.certificates,
+    revokedCertificates: store.revokedCertificates || [],
     transactions: actor?.role === "admin" ? store.transactions : [],
     smsLogs: isStaff ? store.smsLogs : [],
     salesLeads: actor?.role === "admin" ? store.salesLeads : [],
@@ -1623,9 +1655,13 @@ export const serverVerifyCertificate = createServerFn({ method: "GET" })
       return await resolveVerifiedEnvelope(found);
     }
 
-    // Check if it matches a deterministic ONN-<PIN>-<ROLL> pattern backed by a real exam result
+    const isRevoked = (store.revokedCertificates || []).some(
+      (rc) => rc.toLowerCase() === target,
+    );
+
+    // Check if it matches a deterministic ONN-<PIN>-<ROLL> pattern backed by a passing exam result
     const match = rawCert.toUpperCase().match(/^ONN-([A-Z0-9]{4})-([A-Z0-9]{4,6})$/);
-    if (match && match[1] && match[2]) {
+    if (!isRevoked && match && match[1] && match[2]) {
       const pinPrefix = match[1];
       const rollSuffix = match[2];
       const matchedResult = store.examResults.find((r) => {
@@ -1649,50 +1685,65 @@ export const serverVerifyCertificate = createServerFn({ method: "GET" })
               (q) => q.id === matchedSession.quizId || q.slug === matchedSession.quizId,
             )
           : undefined;
-        const totalMarks = computeTotalQuizMarks(
-          quizObj?.questions,
-          matchedSession?.totalQuestions || 5,
-        );
-        const certNoUpper = rawCert.toUpperCase();
-        const synthesized = sealCertificateWithLedger(
-          {
-            id: `cert-${certNoUpper.toLowerCase()}`,
-            certificateNumber: certNoUpper,
-            studentName: matchedResult.name,
-            studentRoll: matchedResult.rollNumber,
-            regionName: matchedResult.regionName || "Dhaka Range",
-            quizTitle:
-              matchedSession?.quizTitleBn ||
-              matchedSession?.quizTitleEn ||
-              "Onnesha Assessment Evaluation",
-            score: matchedResult.score,
-            marksObtained: matchedResult.score,
-            totalPoints: totalMarks,
-            totalMarks,
-            rank: matchedResult.rank,
-            totalParticipants: matchedSession?.participantCount || 1,
-            accuracyPercent: matchedResult.accuracyPct,
-            scorePct: matchedResult.accuracyPct,
-            issueDate: (matchedResult.createdAt || new Date().toISOString()).slice(0, 10),
-            organizationName: resolveOrgName(store.branding),
-            institutionName: store.branding?.institutionTitle || "Onnesha Assessment Arena",
-            instructorName: "Chief Assessment Officer",
-            verificationUrl: `/verify/${certNoUpper}`,
-            verified: true,
-          },
-          store.certificates,
-          dataDir,
-        );
+        const matchedCourse = quizObj?.courseId
+          ? store.courses.find((c) => c.id === quizObj.courseId)
+          : undefined;
+        const threshold = resolvePassThresholdPct({
+          sessionThreshold: matchedSession?.passThresholdPct,
+          courseThreshold: matchedCourse?.passThresholdPct,
+          brandingDefaultThreshold: store.branding?.defaultPassThresholdPct,
+        });
+        const didPass =
+          typeof matchedResult.passed === "boolean"
+            ? matchedResult.passed
+            : isPassingScore(matchedResult.accuracyPct, threshold);
 
-        store.certificates = [
-          synthesized,
-          ...store.certificates.filter(
-            (c) => c.certificateNumber.toLowerCase() !== certNoUpper.toLowerCase(),
-          ),
-        ];
-        scheduleDiskPersist();
+        if (didPass) {
+          const totalMarks = computeTotalQuizMarks(
+            quizObj?.questions,
+            matchedSession?.totalQuestions || 5,
+          );
+          const certNoUpper = rawCert.toUpperCase();
+          const synthesized = sealCertificateWithLedger(
+            {
+              id: `cert-${certNoUpper.toLowerCase()}`,
+              certificateNumber: certNoUpper,
+              studentName: matchedResult.name,
+              studentRoll: matchedResult.rollNumber,
+              regionName: matchedResult.regionName || "Dhaka Range",
+              quizTitle:
+                matchedSession?.quizTitleBn ||
+                matchedSession?.quizTitleEn ||
+                "Onnesha Assessment Evaluation",
+              score: matchedResult.score,
+              marksObtained: matchedResult.score,
+              totalPoints: totalMarks,
+              totalMarks,
+              rank: matchedResult.rank,
+              totalParticipants: matchedSession?.participantCount || 1,
+              accuracyPercent: matchedResult.accuracyPct,
+              scorePct: matchedResult.accuracyPct,
+              issueDate: (matchedResult.createdAt || new Date().toISOString()).slice(0, 10),
+              organizationName: resolveOrgName(store.branding),
+              institutionName: store.branding?.institutionTitle || "Onnesha Assessment Arena",
+              instructorName: "Chief Assessment Officer",
+              verificationUrl: `/verify/${certNoUpper}`,
+              verified: true,
+            },
+            store.certificates,
+            dataDir,
+          );
 
-        return await resolveVerifiedEnvelope(synthesized);
+          store.certificates = [
+            synthesized,
+            ...store.certificates.filter(
+              (c) => c.certificateNumber.toLowerCase() !== certNoUpper.toLowerCase(),
+            ),
+          ];
+          scheduleDiskPersist();
+
+          return await resolveVerifiedEnvelope(synthesized);
+        }
       }
     }
 
@@ -1936,6 +1987,7 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
         | "save_quiz"
         | "delete_quiz"
         | "issue_certificate"
+        | "delete_certificate"
         | "update_branding"
         | "update_sales_lead"
         | "update_transaction"
@@ -1953,6 +2005,7 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
       quiz?: Quiz | undefined;
       quizId?: string | undefined;
       certificate?: CertificateData | undefined;
+      certificateNumber?: string | undefined;
       branding?: BrandingSettings | undefined;
       leadId?: string | undefined;
       leadStatus?: string | undefined;
@@ -2255,9 +2308,29 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
                 c.certificateNumber.toLowerCase() !== sealedCert.certificateNumber.toLowerCase(),
             ),
           ];
+          if (store.revokedCertificates?.length) {
+            store.revokedCertificates = store.revokedCertificates.filter(
+              (rc) => rc.toLowerCase() !== sealedCert.certificateNumber.toLowerCase(),
+            );
+          }
           issuedCertificate = sealedCert;
           scheduleDiskPersist();
           triggerBackgroundExternalAnchoring([sealedCert.certificateNumber]);
+        }
+        break;
+      }
+      case "delete_certificate": {
+        const targetCertNo = (data.certificateNumber || "").trim().toUpperCase();
+        if (targetCertNo) {
+          store.certificates = store.certificates.filter(
+            (c) => c.certificateNumber.trim().toUpperCase() !== targetCertNo,
+          );
+          const revoked = new Set(
+            (store.revokedCertificates || []).map((c) => c.trim().toUpperCase()),
+          );
+          revoked.add(targetCertNo);
+          store.revokedCertificates = [...revoked];
+          scheduleDiskPersist();
         }
         break;
       }
@@ -2497,6 +2570,7 @@ export const serverCreateSession = createServerFn({ method: "POST" })
       enforceFullscreen?: boolean | undefined;
       blockCopyPaste?: boolean | undefined;
       maxProctorViolations?: number | undefined;
+      passThresholdPct?: number | undefined;
       isSelfPractice?: boolean | undefined;
     }) => data,
   )
@@ -2563,6 +2637,14 @@ export const serverCreateSession = createServerFn({ method: "POST" })
       store.branding.defaultMaxProctorViolations ??
       store.branding.maxProctorViolationsDefault ??
       3;
+    const matchedCourse = data.quiz.courseId
+      ? store.courses.find((c) => c.id === data.quiz.courseId)
+      : undefined;
+    const passThresholdPct = resolvePassThresholdPct({
+      sessionThreshold: data.passThresholdPct,
+      courseThreshold: matchedCourse?.passThresholdPct,
+      brandingDefaultThreshold: store.branding?.defaultPassThresholdPct,
+    });
 
     const newSession: ServerLiveSession = {
       pin,
@@ -2591,6 +2673,7 @@ export const serverCreateSession = createServerFn({ method: "POST" })
         enforceFullscreen: enforceFs,
         blockCopyPaste: blockCopy,
         maxProctorViolations: maxViol,
+        passThresholdPct,
       },
       participants: {},
       totalQuestions: data.quiz.questions.length,

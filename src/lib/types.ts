@@ -50,6 +50,7 @@ export interface Course {
   instructorIds: string[];
   instructorNames: string[];
   isPrivate?: boolean | undefined;
+  passThresholdPct?: number | undefined;
   status?: "active" | "archived" | string | undefined;
   createdAt: string;
 }
@@ -171,6 +172,7 @@ export interface GameSettings {
   blockCopyPaste?: boolean | undefined;
   proctorMode?: boolean | undefined;
   maxProctorViolations?: number | undefined;
+  passThresholdPct?: number | undefined;
 }
 
 export interface GameSession {
@@ -222,6 +224,8 @@ export interface MeritParticipant {
   correctCount: number;
   incorrectCount: number;
   unansweredCount: number;
+  accuracyPct?: number | undefined;
+  passed?: boolean | undefined;
 }
 
 export interface StudentMeritRank {
@@ -351,6 +355,7 @@ export interface ExamSessionRecord {
   participantCount: number;
   averageScore: number;
   highestScore: number;
+  passThresholdPct?: number | undefined;
   createdAt: string;
 }
 
@@ -370,6 +375,7 @@ export interface ExamResultRecord {
   incorrectCount: number;
   unattemptedCount: number;
   accuracyPct: number;
+  passed?: boolean | undefined;
   answersJson?: string | undefined;
   createdAt: string;
 }
@@ -417,6 +423,7 @@ export interface BrandingSettings {
   defaultEnforceFullscreen?: boolean | undefined;
   defaultBlockCopyPaste?: boolean | undefined;
   defaultMaxProctorViolations?: number | undefined;
+  defaultPassThresholdPct?: number | undefined;
   enforceFullscreenDefault?: boolean | undefined;
   blockCopyPasteDefault?: boolean | undefined;
   maxProctorViolationsDefault?: number | undefined;

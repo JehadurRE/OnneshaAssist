@@ -210,6 +210,7 @@ const ADMIN_ONLY_MUTATIONS = new Set<string>([
   "delete_region",
   "save_course",
   "delete_course",
+  "delete_certificate",
   "update_branding",
   "import_store_backup",
   "purge_dummy_data",

@@ -12,6 +12,11 @@ import {
   DEFAULT_CERTIFICATE_SIGNATORIES,
   resolveCertificateTheme,
 } from "./branding";
+import {
+  computeParticipantAccuracyPct,
+  isPassingScore,
+  resolvePassThresholdPct,
+} from "./scoring";
 import onnesha from "@/assets/onnesha.jpg.asset.json";
 
 /**
@@ -1477,8 +1482,13 @@ export async function downloadMeritGazettePdf(params: {
   regionLabel: string;
   participants: MeritParticipant[];
   branding?: BrandingSettings;
+  passThresholdPct?: number;
 }): Promise<void> {
-  const { quizTitle, regionLabel, participants, branding } = params;
+  const { quizTitle, regionLabel, participants, branding, passThresholdPct } = params;
+  const effectiveThreshold = resolvePassThresholdPct({
+    sessionThreshold: passThresholdPct,
+    brandingDefaultThreshold: branding?.defaultPassThresholdPct,
+  });
   const rowsPerPage = 28;
   const totalPages = Math.max(1, Math.ceil(participants.length / rowsPerPage));
   const canvases: HTMLCanvasElement[] = [];
@@ -1515,7 +1525,11 @@ export async function downloadMeritGazettePdf(params: {
 
     ctx.fillStyle = "#334155";
     ctx.font = "bold 22px sans-serif";
-    ctx.fillText(`${quizTitle}  •  Scope: ${regionLabel}`, W / 2, 240);
+    ctx.fillText(
+      `${quizTitle}  •  Scope: ${regionLabel}  •  Pass Threshold: ${effectiveThreshold}%`,
+      W / 2,
+      240,
+    );
 
     // Table Header
     const tableTop = 290;
@@ -1577,10 +1591,22 @@ export async function downloadMeritGazettePdf(params: {
       ctx.fillText(String(p.finalScore ?? 0), cols[5]!.x, y + 38);
 
       ctx.textAlign = "right";
-      const qualified = (p.finalScore ?? 0) >= 500;
-      ctx.fillStyle = qualified ? "#047857" : "#64748b";
+      const totalQ = (p.correctCount ?? 0) + (p.incorrectCount ?? 0) + (p.unansweredCount ?? 0);
+      const acc =
+        typeof p.accuracyPct === "number"
+          ? p.accuracyPct
+          : totalQ > 0
+            ? computeParticipantAccuracyPct({
+                correctCount: p.correctCount,
+                totalQuestions: totalQ,
+                score: p.finalScore,
+              })
+            : 0;
+      const qualified =
+        typeof p.passed === "boolean" ? p.passed : isPassingScore(acc, effectiveThreshold);
+      ctx.fillStyle = qualified ? "#047857" : "#b91c1c";
       ctx.font = "bold 18px sans-serif";
-      ctx.fillText(qualified ? "QUALIFIED" : "STANDBY", cols[6]!.x, y + 38);
+      ctx.fillText(qualified ? `PASSED (${acc}%)` : `FAILED (${acc}%)`, cols[6]!.x, y + 38);
     });
 
     // Footer

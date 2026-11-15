@@ -18,6 +18,90 @@ export function resolveOrgName(branding?: BrandingSettings): string {
   return "Onnesha Assessment & Examination Arena";
 }
 
+export const DEFAULT_PASS_THRESHOLD_PCT = 50;
+
+export function clampPassThresholdPct(
+  value: number | undefined | null,
+  fallback = DEFAULT_PASS_THRESHOLD_PCT,
+): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.min(100, Math.round(value)));
+  }
+  if (typeof fallback === "number" && Number.isFinite(fallback)) {
+    return Math.max(0, Math.min(100, Math.round(fallback)));
+  }
+  return DEFAULT_PASS_THRESHOLD_PCT;
+}
+
+export function resolvePassThresholdPct(options?: {
+  sessionThreshold?: number | null | undefined;
+  courseThreshold?: number | null | undefined;
+  brandingDefaultThreshold?: number | null | undefined;
+}): number {
+  if (typeof options?.sessionThreshold === "number" && Number.isFinite(options.sessionThreshold)) {
+    return clampPassThresholdPct(options.sessionThreshold);
+  }
+  if (typeof options?.courseThreshold === "number" && Number.isFinite(options.courseThreshold)) {
+    return clampPassThresholdPct(options.courseThreshold);
+  }
+  if (
+    typeof options?.brandingDefaultThreshold === "number" &&
+    Number.isFinite(options.brandingDefaultThreshold)
+  ) {
+    return clampPassThresholdPct(options.brandingDefaultThreshold);
+  }
+  return DEFAULT_PASS_THRESHOLD_PCT;
+}
+
+export function isPassingScore(
+  accuracyPct: number | undefined | null,
+  thresholdPct?: number | null,
+): boolean {
+  const safeThreshold = clampPassThresholdPct(thresholdPct);
+  const safeAccuracy =
+    typeof accuracyPct === "number" && Number.isFinite(accuracyPct) ? accuracyPct : 0;
+  return safeAccuracy >= safeThreshold;
+}
+
+export function computeParticipantAccuracyPct(params: {
+  answers?: Array<{ isCorrect?: boolean | undefined } | null | undefined> | undefined;
+  correctCount?: number | undefined;
+  totalQuestions?: number | undefined;
+  score?: number | undefined;
+  totalMarks?: number | undefined;
+}): number {
+  const answersLen = params.answers?.length ?? 0;
+  const totalQuestions = Math.max(params.totalQuestions ?? 0, answersLen, 0);
+  const correct =
+    typeof params.correctCount === "number" && Number.isFinite(params.correctCount)
+      ? Math.max(0, params.correctCount)
+      : (params.answers?.filter((a) => Boolean(a?.isCorrect)).length ?? 0);
+
+  const questionPct =
+    totalQuestions > 0 ? Math.min(100, Math.round((correct / totalQuestions) * 100)) : 0;
+
+  if (
+    typeof params.score === "number" &&
+    Number.isFinite(params.score) &&
+    params.score > 0 &&
+    typeof params.totalMarks === "number" &&
+    Number.isFinite(params.totalMarks) &&
+    params.totalMarks > 0
+  ) {
+    const avgMarkPerQuestion = totalQuestions > 0 ? params.totalMarks / totalQuestions : 1000;
+    const scoreExceedsLoggedAnswers =
+      answersLen === 0
+        ? correct === 0
+        : params.score > Math.max(1, correct) * avgMarkPerQuestion * 1.5;
+
+    if (scoreExceedsLoggedAnswers) {
+      return Math.max(0, Math.min(100, Math.round((params.score / params.totalMarks) * 100)));
+    }
+  }
+
+  return questionPct;
+}
+
 export interface EvaluateAnswerInput {
   question: Question;
   selectedOptionIds?: string[];

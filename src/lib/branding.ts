@@ -192,6 +192,7 @@ export const DEFAULT_BRANDING_SETTINGS: BrandingSettings = {
   defaultEnforceFullscreen: false,
   defaultBlockCopyPaste: true,
   defaultMaxProctorViolations: 3,
+  defaultPassThresholdPct: 50,
 };
 
 function sanitizePartnerLogos(raw: CertificatePartnerLogo[] | undefined): CertificatePartnerLogo[] {
@@ -327,6 +328,12 @@ export function mergeBrandingSettings(
       1,
       10,
       3,
+    ),
+    defaultPassThresholdPct: clampNumber(
+      next.defaultPassThresholdPct ?? base.defaultPassThresholdPct,
+      0,
+      100,
+      50,
     ),
     updatedAt: next.updatedAt ?? base.updatedAt,
   };

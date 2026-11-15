@@ -14,7 +14,13 @@ import { gameEngine, JoinSessionParams, JoinSessionResult } from "@/lib/game-eng
 import { audioEngine } from "@/lib/audio-engine";
 import { proctorEngine, ProctorIncident } from "@/lib/proctor-engine";
 import { db, formatDeterministicCertNumber, isCoursePrivate, isQuizPrivate } from "@/lib/db";
-import { computeTotalQuizMarks, resolveOrgName } from "@/lib/scoring";
+import {
+  computeParticipantAccuracyPct,
+  computeTotalQuizMarks,
+  isPassingScore,
+  resolveOrgName,
+  resolvePassThresholdPct,
+} from "@/lib/scoring";
 import { serverGetActiveRooms } from "@/lib/server-session";
 import { READY_MADE_PACKS } from "@/lib/mock-data";
 import { CertificateData, Course, GameSession, Participant, Question, Quiz } from "@/lib/types";
@@ -425,9 +431,43 @@ function PlayPage() {
     : 1;
 
   // Compute accurate post-exam statistics for the student
+  const branding = db.getBranding();
+
+  const certQuiz = useMemo(() => {
+    if (!session) return undefined;
+    return (
+      db.getQuizzes().find((q) => q.id === session.quizId || q.slug === session.quizId) ||
+      READY_MADE_PACKS.find((q) => q.id === session.quizId || q.slug === session.quizId)
+    );
+  }, [session?.quizId]);
+
+  const certCourse = useMemo(() => {
+    if (!certQuiz?.courseId) return undefined;
+    return db.getCourses().find((c) => c.id === certQuiz.courseId);
+  }, [certQuiz?.courseId]);
+
+  const certQuestions =
+    session?.completedQuestions &&
+    session.completedQuestions.length >= (session?.totalQuestions || 0)
+      ? session.completedQuestions
+      : certQuiz?.questions;
+  const certTotalMarks = computeTotalQuizMarks(certQuestions, session?.totalQuestions || 1);
+
   const studentStats = useMemo(() => {
+    const passThresholdPct = resolvePassThresholdPct({
+      sessionThreshold: session?.settings?.passThresholdPct,
+      courseThreshold: certCourse?.passThresholdPct,
+      brandingDefaultThreshold: branding.defaultPassThresholdPct,
+    });
     if (!participant || !session) {
-      return { correctCount: 0, wrongCount: 0, unattemptedCount: 0, accuracyPct: 0 };
+      return {
+        correctCount: 0,
+        wrongCount: 0,
+        unattemptedCount: 0,
+        accuracyPct: 0,
+        passThresholdPct,
+        isPassed: false,
+      };
     }
     const ansList = Object.values(participant.answers || {});
     const correctCount = ansList.filter((a) => a.isCorrect).length;
@@ -437,10 +477,29 @@ function PlayPage() {
         ((a.selectedOptionIds && a.selectedOptionIds.length > 0) || !!a.writtenAnswer),
     ).length;
     const unattemptedCount = Math.max(0, session.totalQuestions - (correctCount + wrongCount));
-    const accuracyPct =
-      session.totalQuestions > 0 ? Math.round((correctCount / session.totalQuestions) * 100) : 0;
-    return { correctCount, wrongCount, unattemptedCount, accuracyPct };
-  }, [participant, session]);
+    const accuracyPct = computeParticipantAccuracyPct({
+      answers: ansList,
+      correctCount,
+      totalQuestions: session.totalQuestions,
+      score: participant.score,
+      totalMarks: certTotalMarks,
+    });
+    const isPassed = isPassingScore(accuracyPct, passThresholdPct);
+    return {
+      correctCount,
+      wrongCount,
+      unattemptedCount,
+      accuracyPct,
+      passThresholdPct,
+      isPassed,
+    };
+  }, [
+    participant,
+    session,
+    certCourse?.passThresholdPct,
+    branding.defaultPassThresholdPct,
+    certTotalMarks,
+  ]);
 
   // Resolve full questions for post-exam Answer Script review
   const reviewQuestions: Question[] = useMemo(() => {
@@ -448,11 +507,8 @@ function PlayPage() {
     if (session.completedQuestions && session.completedQuestions.length > 0) {
       return session.completedQuestions;
     }
-    const matchedQuiz =
-      db.getQuizzes().find((q) => q.id === session.quizId || q.slug === session.quizId) ||
-      READY_MADE_PACKS.find((q) => q.id === session.quizId || q.slug === session.quizId);
-    return matchedQuiz?.questions || [];
-  }, [session]);
+    return certQuiz?.questions || [];
+  }, [session, certQuiz]);
 
   // Deterministic certificate number matching Dashboard & Verification Portal
   const certNumber =
@@ -460,18 +516,8 @@ function PlayPage() {
       ? formatDeterministicCertNumber(session.pin, participant.rollNumber, participant.rank)
       : "";
 
-  const branding = db.getBranding();
-  const certQuestions = (() => {
-    const completed = session?.completedQuestions || [];
-    if (completed.length > 0 && completed.length >= (session?.totalQuestions || 0)) {
-      return completed;
-    }
-    return session?.quizId ? db.getQuizBySlug(session.quizId)?.questions : undefined;
-  })();
-  const certTotalMarks = computeTotalQuizMarks(certQuestions, session?.totalQuestions || 1);
-
   const certificateData: CertificateData | null =
-    participant && session
+    participant && session && studentStats.isPassed
       ? {
           id: `cert-${certNumber.toLowerCase()}`,
           certificateNumber: certNumber,
@@ -506,7 +552,7 @@ function PlayPage() {
         db.issueCertificate(certificateData, { syncToServer: false });
       }
     }
-  }, [session?.phase]);
+  }, [session?.phase, studentStats.isPassed]);
 
   const questionTimeLimit = session?.currentQuestion?.timeLimitSec || 20;
   const timerProgressPct = Math.max(
@@ -1226,6 +1272,35 @@ function PlayPage() {
                     {participant.regionName} · Roll: {participant.rollNumber || "Verified"}
                   </span>
                 )}
+                <div className="mt-3 flex justify-center">
+                  <div
+                    className={`inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-extrabold ${
+                      studentStats.isPassed
+                        ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                        : "border-destructive/40 bg-destructive/10 text-destructive"
+                    }`}
+                  >
+                    {studentStats.isPassed ? (
+                      <>
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
+                        <span>
+                          {lang === "bn"
+                            ? `উত্তীর্ণ (${studentStats.accuracyPct}% ≥ ন্যূনতম ${studentStats.passThresholdPct}%) · সার্টিফিকেট আনলক হয়েছে`
+                            : `PASSED (${studentStats.accuracyPct}% ≥ ${studentStats.passThresholdPct}% Threshold) · Certificate Unlocked`}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <XCircle className="h-4 w-4 shrink-0" />
+                        <span>
+                          {lang === "bn"
+                            ? `অকৃতকার্য (${studentStats.accuracyPct}% < ন্যূনতম ${studentStats.passThresholdPct}%) · সার্টিফিকেট প্রযোজ্য নয়`
+                            : `NOT QUALIFIED (${studentStats.accuracyPct}% < ${studentStats.passThresholdPct}% Pass Threshold)`}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Rank & Score Highlight */}
@@ -1278,13 +1353,24 @@ function PlayPage() {
 
               {/* Action Buttons */}
               <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-                <button
-                  onClick={() => setShowCertificate(true)}
-                  className="flex flex-1 min-w-[200px] items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 px-5 text-xs sm:text-sm font-extrabold text-primary-foreground shadow-md transition hover:bg-primary/90"
-                >
-                  <Award className="h-4 w-4" />
-                  <span>{t("download_cert")}</span>
-                </button>
+                {studentStats.isPassed && certificateData ? (
+                  <button
+                    onClick={() => setShowCertificate(true)}
+                    className="flex flex-1 min-w-[200px] items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 px-5 text-xs sm:text-sm font-extrabold text-primary-foreground shadow-md transition hover:bg-primary/90"
+                  >
+                    <Award className="h-4 w-4" />
+                    <span>{t("download_cert")}</span>
+                  </button>
+                ) : (
+                  <div className="flex flex-1 min-w-[200px] items-center justify-center gap-2 rounded-2xl border border-destructive/30 bg-destructive/10 py-3.5 px-4 text-xs font-bold text-destructive">
+                    <Lock className="h-4 w-4 shrink-0" />
+                    <span>
+                      {lang === "bn"
+                        ? `সার্টিফিকেটের জন্য ন্যূনতম ${studentStats.passThresholdPct}% নম্বর প্রয়োজন`
+                        : `Certificate Locked · Requires ≥ ${studentStats.passThresholdPct}%`}
+                    </span>
+                  </div>
+                )}
 
                 <button
                   onClick={() => setShowAnswerScript(!showAnswerScript)}

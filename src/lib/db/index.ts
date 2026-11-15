@@ -21,7 +21,13 @@ import type { SqlValue } from "sql.js";
 import { sqliteEngine } from "./sqlite-engine";
 import { serverAdminMutateStore, serverGetBootstrapData } from "../server-session";
 import { isCoursePrivate, isQuizPrivate } from "../sanjibon-seed-data";
-import { computeTotalQuizMarks, resolveOrgName } from "../scoring";
+import {
+  computeParticipantAccuracyPct,
+  computeTotalQuizMarks,
+  isPassingScore,
+  resolveOrgName,
+  resolvePassThresholdPct,
+} from "../scoring";
 import { DEFAULT_BRANDING_SETTINGS, mergeBrandingSettings } from "../branding";
 
 export { isCoursePrivate, isQuizPrivate };
@@ -236,8 +242,12 @@ class OnneshaDatabase {
                 : isCoursePrivate(c)
                   ? 1
                   : 0;
+            const thresholdVal =
+              typeof c.passThresholdPct === "number" && Number.isFinite(c.passThresholdPct)
+                ? c.passThresholdPct
+                : null;
             run(
-              "INSERT OR REPLACE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, isPrivate, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              "INSERT OR REPLACE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, isPrivate, passThresholdPct, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
               [
                 c.id,
                 c.code,
@@ -252,6 +262,7 @@ class OnneshaDatabase {
                 JSON.stringify(c.instructorIds || []),
                 JSON.stringify(c.instructorNames || []),
                 privFlag,
+                thresholdVal,
                 c.status || "active",
                 c.createdAt || new Date().toISOString(),
               ],
@@ -319,8 +330,12 @@ class OnneshaDatabase {
 
         if (res.examSessions?.length) {
           res.examSessions.forEach((es) => {
+            const thresholdVal =
+              typeof es.passThresholdPct === "number" && Number.isFinite(es.passThresholdPct)
+                ? es.passThresholdPct
+                : null;
             run(
-              "INSERT OR REPLACE INTO exam_sessions (id, pin, quizId, quizTitleEn, quizTitleBn, hostId, allowedRegionId, allowedRegionName, totalQuestions, participantCount, averageScore, highestScore, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              "INSERT OR REPLACE INTO exam_sessions (id, pin, quizId, quizTitleEn, quizTitleBn, hostId, allowedRegionId, allowedRegionName, totalQuestions, participantCount, averageScore, highestScore, passThresholdPct, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
               [
                 es.id,
                 es.pin,
@@ -334,6 +349,7 @@ class OnneshaDatabase {
                 es.participantCount,
                 es.averageScore,
                 es.highestScore,
+                thresholdVal,
                 es.createdAt,
               ],
             );
@@ -342,8 +358,9 @@ class OnneshaDatabase {
 
         if (res.examResults?.length) {
           res.examResults.forEach((er) => {
+            const passedVal = typeof er.passed === "boolean" ? (er.passed ? 1 : 0) : null;
             run(
-              "INSERT OR REPLACE INTO exam_results (id, sessionId, pin, participantId, rollNumber, name, phone, regionId, regionName, score, rank, correctCount, incorrectCount, unattemptedCount, accuracyPct, answersJson, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              "INSERT OR REPLACE INTO exam_results (id, sessionId, pin, participantId, rollNumber, name, phone, regionId, regionName, score, rank, correctCount, incorrectCount, unattemptedCount, accuracyPct, passed, answersJson, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
               [
                 er.id,
                 er.sessionId,
@@ -360,6 +377,7 @@ class OnneshaDatabase {
                 er.incorrectCount,
                 er.unattemptedCount,
                 er.accuracyPct,
+                passedVal,
                 er.answersJson || "{}",
                 er.createdAt,
               ],
@@ -367,10 +385,18 @@ class OnneshaDatabase {
           });
         }
 
-        if (res.certificates?.length) {
+        if (Array.isArray(res.certificates)) {
+          run("DELETE FROM certificates");
           res.certificates.forEach((cert) => {
             this.upsertSingleCertificateLocal(cert, run);
           });
+        }
+
+        if (Array.isArray((res as { revokedCertificates?: string[] }).revokedCertificates)) {
+          this.setStorage(
+            "revoked_certificates",
+            (res as { revokedCertificates: string[] }).revokedCertificates,
+          );
         }
 
         if (mappedTrx.length) {
@@ -478,8 +504,12 @@ class OnneshaDatabase {
               : isCoursePrivate(c)
                 ? 1
                 : 0;
+          const thresholdVal =
+            typeof c.passThresholdPct === "number" && Number.isFinite(c.passThresholdPct)
+              ? c.passThresholdPct
+              : null;
           run(
-            "INSERT OR IGNORE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, isPrivate, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, isPrivate, passThresholdPct, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
               c.id,
               c.code,
@@ -494,6 +524,7 @@ class OnneshaDatabase {
               JSON.stringify(c.instructorIds || []),
               JSON.stringify(c.instructorNames || []),
               privFlag,
+              thresholdVal,
               c.status || "active",
               c.createdAt || new Date().toISOString(),
             ],
@@ -648,6 +679,8 @@ class OnneshaDatabase {
         return {
           ...baseCourse,
           isPrivate: resolvedPrivate,
+          passThresholdPct:
+            typeof r.passThresholdPct === "number" ? r.passThresholdPct : undefined,
         };
       });
     }
@@ -659,13 +692,18 @@ class OnneshaDatabase {
 
   saveCourse(course: Course): Course {
     const resolvedPrivate = isCoursePrivate(course);
+    const resolvedThreshold =
+      typeof course.passThresholdPct === "number" && Number.isFinite(course.passThresholdPct)
+        ? Math.max(0, Math.min(100, Math.round(course.passThresholdPct)))
+        : undefined;
     const normalizedCourse: Course = {
       ...course,
       isPrivate: resolvedPrivate,
+      passThresholdPct: resolvedThreshold,
     };
 
     sqliteEngine.run(
-      "INSERT OR REPLACE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, isPrivate, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT OR REPLACE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, isPrivate, passThresholdPct, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         normalizedCourse.id,
         normalizedCourse.code,
@@ -680,6 +718,7 @@ class OnneshaDatabase {
         JSON.stringify(normalizedCourse.instructorIds || []),
         JSON.stringify(normalizedCourse.instructorNames || []),
         resolvedPrivate ? 1 : 0,
+        resolvedThreshold ?? null,
         normalizedCourse.status || "active",
         normalizedCourse.createdAt || new Date().toISOString(),
       ],
@@ -1033,12 +1072,21 @@ class OnneshaDatabase {
     const avgScore = count > 0 ? Math.round(totalScore / count) : 0;
     const highestScore = participantsList[0]?.score ?? 0;
 
-    // Hoist branding & quiz question lookup outside the participant loop
+    // Hoist branding, pass threshold & quiz question lookup outside the participant loop
     const branding = this.getBranding();
+    const matchedQuiz = this.getQuizBySlug(session.quizId);
+    const matchedCourse = matchedQuiz?.courseId
+      ? this.getCourses().find((c) => c.id === matchedQuiz.courseId)
+      : undefined;
+    const effectivePassThresholdPct = resolvePassThresholdPct({
+      sessionThreshold: session.settings?.passThresholdPct,
+      courseThreshold: matchedCourse?.passThresholdPct,
+      brandingDefaultThreshold: branding.defaultPassThresholdPct,
+    });
     const quizQuestions =
       session.completedQuestions && session.completedQuestions.length >= session.totalQuestions
         ? session.completedQuestions
-        : this.getQuizBySlug(session.quizId)?.questions || [];
+        : matchedQuiz?.questions || [];
     const computedTotalPoints = computeTotalQuizMarks(quizQuestions, session.totalQuestions);
     const orgName = resolveOrgName(branding);
     const instTitle = branding.institutionTitle || "Onnesha Assessment Arena";
@@ -1050,7 +1098,7 @@ class OnneshaDatabase {
 
     sqliteEngine.runBatch((run) => {
       run(
-        "INSERT OR REPLACE INTO exam_sessions (id, pin, quizId, quizTitleEn, quizTitleBn, hostId, allowedRegionId, allowedRegionName, totalQuestions, participantCount, averageScore, highestScore, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO exam_sessions (id, pin, quizId, quizTitleEn, quizTitleBn, hostId, allowedRegionId, allowedRegionName, totalQuestions, participantCount, averageScore, highestScore, passThresholdPct, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
           sessionId,
           session.pin,
@@ -1064,6 +1112,7 @@ class OnneshaDatabase {
           count,
           avgScore,
           highestScore,
+          effectivePassThresholdPct,
           createdAt,
         ],
       );
@@ -1075,13 +1124,19 @@ class OnneshaDatabase {
           (a) => !a.isCorrect && (a.selectedOptionIds?.length > 0 || !!a.writtenAnswer),
         ).length;
         const unattemptedCount = Math.max(0, session.totalQuestions - answersList.length);
-        const totalAnswers = answersList.length;
-        const accuracy = totalAnswers > 0 ? Math.round((correctCount / totalAnswers) * 100) : 0;
+        const accuracy = computeParticipantAccuracyPct({
+          answers: answersList,
+          correctCount,
+          totalQuestions: session.totalQuestions,
+          score: p.score,
+          totalMarks: computedTotalPoints,
+        });
+        const passed = isPassingScore(accuracy, effectivePassThresholdPct);
         const roll = p.rollNumber || `2026-${100 + idx + 1}`;
 
         const resultId = `res-${session.pin}-${p.id}`;
         run(
-          "INSERT OR REPLACE INTO exam_results (id, sessionId, pin, participantId, rollNumber, name, phone, regionId, regionName, score, rank, correctCount, incorrectCount, unattemptedCount, accuracyPct, answersJson, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT OR REPLACE INTO exam_results (id, sessionId, pin, participantId, rollNumber, name, phone, regionId, regionName, score, rank, correctCount, incorrectCount, unattemptedCount, accuracyPct, passed, answersJson, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
           [
             resultId,
             sessionId,
@@ -1098,33 +1153,36 @@ class OnneshaDatabase {
             incorrectCount,
             unattemptedCount,
             accuracy,
+            passed ? 1 : 0,
             JSON.stringify(p.answers || {}),
             createdAt,
           ],
         );
 
-        const certNo = formatDeterministicCertNumber(session.pin, roll, idx + 1);
-        this.issueCertificate(
-          {
-            certificateNumber: certNo,
-            studentName: p.nickname || p.name || `Candidate ${idx + 1}`,
-            studentRoll: roll,
-            regionName: p.regionName || "Dhaka Range",
-            quizTitle: session.quizTitleBn || session.quizTitleEn || "Institutional Assessment",
-            score: p.score,
-            totalPoints: computedTotalPoints,
-            rank: p.rank || idx + 1,
-            totalParticipants: count,
-            accuracyPercent: accuracy,
-            issueDate: createdAt.slice(0, 10),
-            organizationName: orgName,
-            institutionName: instTitle,
-            instructorName: "Chief Assessment Officer",
-            verificationUrl: `${verifyOrigin}/verify/${certNo}`,
-            verified: true,
-          },
-          { syncToServer: shouldSyncCerts, skipStorageRefresh: true },
-        );
+        if (passed) {
+          const certNo = formatDeterministicCertNumber(session.pin, roll, idx + 1);
+          this.issueCertificate(
+            {
+              certificateNumber: certNo,
+              studentName: p.nickname || p.name || `Candidate ${idx + 1}`,
+              studentRoll: roll,
+              regionName: p.regionName || "Dhaka Range",
+              quizTitle: session.quizTitleBn || session.quizTitleEn || "Institutional Assessment",
+              score: p.score,
+              totalPoints: computedTotalPoints,
+              rank: p.rank || idx + 1,
+              totalParticipants: count,
+              accuracyPercent: accuracy,
+              issueDate: createdAt.slice(0, 10),
+              organizationName: orgName,
+              institutionName: instTitle,
+              instructorName: "Chief Assessment Officer",
+              verificationUrl: `${verifyOrigin}/verify/${certNo}`,
+              verified: true,
+            },
+            { syncToServer: shouldSyncCerts, skipStorageRefresh: true },
+          );
+        }
       });
     });
 
@@ -1135,30 +1193,48 @@ class OnneshaDatabase {
   }
 
   getExamSessions(): ExamSessionRecord[] {
-    const rows = sqliteEngine.query<ExamSessionRecord>(
-      "SELECT * FROM exam_sessions ORDER BY createdAt DESC",
-    );
-    if (rows.length > 0) return rows;
+    const rows = sqliteEngine.query<any>("SELECT * FROM exam_sessions ORDER BY createdAt DESC");
+    if (rows.length > 0) {
+      return rows.map((r) => ({
+        ...r,
+        passThresholdPct:
+          typeof r.passThresholdPct === "number" ? r.passThresholdPct : undefined,
+      }));
+    }
     return this.getStorage<ExamSessionRecord[]>("exam_sessions", []);
+  }
+
+  private normalizeExamResultRow(r: any): ExamResultRecord {
+    return {
+      ...r,
+      passed:
+        typeof r.passed === "number"
+          ? r.passed !== 0
+          : typeof r.passed === "boolean"
+            ? r.passed
+            : undefined,
+    };
   }
 
   getExamResults(sessionId?: string): ExamResultRecord[] {
     if (sessionId) {
-      return sqliteEngine.query<ExamResultRecord>(
-        "SELECT * FROM exam_results WHERE sessionId = ? OR pin = ? ORDER BY rank ASC",
-        [sessionId, sessionId],
-      );
+      return sqliteEngine
+        .query<any>(
+          "SELECT * FROM exam_results WHERE sessionId = ? OR pin = ? ORDER BY rank ASC",
+          [sessionId, sessionId],
+        )
+        .map((r) => this.normalizeExamResultRow(r));
     }
-    return sqliteEngine.query<ExamResultRecord>(
-      "SELECT * FROM exam_results ORDER BY createdAt DESC, rank ASC",
-    );
+    return sqliteEngine
+      .query<any>("SELECT * FROM exam_results ORDER BY createdAt DESC, rank ASC")
+      .map((r) => this.normalizeExamResultRow(r));
   }
 
   getAllExamResults(): ExamResultRecord[] {
-    const rows = sqliteEngine.query<ExamResultRecord>(
+    const rows = sqliteEngine.query<any>(
       "SELECT * FROM exam_results ORDER BY createdAt DESC, rank ASC",
     );
-    if (rows.length > 0) return rows;
+    if (rows.length > 0) return rows.map((r) => this.normalizeExamResultRow(r));
     return this.getStorage<ExamResultRecord[]>("exam_results", []);
   }
 
@@ -1190,12 +1266,14 @@ class OnneshaDatabase {
     const matched = certs.find((c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase());
     if (matched) return matched;
 
-    // Deterministic resolution ONLY when backed by an actual examResult record
-    const match = certNo
-      .trim()
-      .toUpperCase()
-      .match(/^ONN-([A-Z0-9]{4})-([A-Z0-9]{4,6})$/);
-    if (match && match[1] && match[2]) {
+    const revokedSet = new Set(
+      this.getStorage<string[]>("revoked_certificates", []).map((c) => c.toUpperCase()),
+    );
+    const certNoUpper = certNo.trim().toUpperCase();
+
+    // Deterministic resolution ONLY when backed by a passing examResult record and not revoked
+    const match = certNoUpper.match(/^ONN-([A-Z0-9]{4})-([A-Z0-9]{4,6})$/);
+    if (!revokedSet.has(certNoUpper) && match && match[1] && match[2]) {
       const pinPrefix = match[1];
       const rollSuffix = match[2];
       const results = this.getAllExamResults();
@@ -1212,8 +1290,29 @@ class OnneshaDatabase {
         const matchedSession = this.getExamSessions().find(
           (s) => s.id === matchedResult.sessionId || s.pin === matchedResult.pin,
         );
+        const matchedQuiz = matchedSession ? this.getQuizBySlug(matchedSession.quizId) : undefined;
+        const matchedCourse = matchedQuiz?.courseId
+          ? this.getCourses().find((c) => c.id === matchedQuiz.courseId)
+          : undefined;
         const branding = this.getBranding();
-        const certNoUpper = certNo.trim().toUpperCase();
+        const threshold = resolvePassThresholdPct({
+          sessionThreshold: matchedSession?.passThresholdPct,
+          courseThreshold: matchedCourse?.passThresholdPct,
+          brandingDefaultThreshold: branding.defaultPassThresholdPct,
+        });
+        const didPass =
+          typeof matchedResult.passed === "boolean"
+            ? matchedResult.passed
+            : isPassingScore(matchedResult.accuracyPct, threshold);
+
+        if (!didPass) {
+          return undefined;
+        }
+
+        const totalMarks = computeTotalQuizMarks(
+          matchedQuiz?.questions,
+          matchedSession?.totalQuestions || 5,
+        );
         return {
           id: `cert-${certNoUpper.toLowerCase()}`,
           certificateNumber: certNoUpper,
@@ -1226,8 +1325,8 @@ class OnneshaDatabase {
             "Onnesha Assessment Evaluation",
           score: matchedResult.score,
           marksObtained: matchedResult.score,
-          totalPoints: (matchedSession?.totalQuestions || 5) * 1000,
-          totalMarks: (matchedSession?.totalQuestions || 5) * 1000,
+          totalPoints: totalMarks,
+          totalMarks,
           rank: matchedResult.rank,
           totalParticipants: matchedSession?.participantCount || 1,
           accuracyPercent: matchedResult.accuracyPct,
@@ -1302,6 +1401,34 @@ class OnneshaDatabase {
         .catch(() => {});
     }
     return newCert;
+  }
+
+  deleteCertificate(certificateNumber: string, options?: { syncToServer?: boolean }): void {
+    const normalized = certificateNumber.trim().toUpperCase();
+    if (!normalized) return;
+
+    sqliteEngine.run("DELETE FROM certificates WHERE LOWER(certificateNumber) = LOWER(?)", [
+      normalized,
+    ]);
+
+    const revoked = new Set(
+      this.getStorage<string[]>("revoked_certificates", []).map((c) => c.trim().toUpperCase()),
+    );
+    revoked.add(normalized);
+    this.setStorage("revoked_certificates", [...revoked]);
+
+    const remaining = this.getCertificates().filter(
+      (c) => c.certificateNumber.trim().toUpperCase() !== normalized,
+    );
+    this.setStorage("certificates", remaining);
+
+    if (options?.syncToServer ?? true) {
+      serverAdminMutateStore({
+        data: { action: "delete_certificate", certificateNumber: normalized },
+      }).catch((err) => console.warn("Certificate revoke sync notice:", err));
+    }
+
+    this.notifyListeners();
   }
 
   // ---------------- BRANDING & JOINT PARTNER LOGO ----------------

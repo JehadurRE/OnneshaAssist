@@ -3,14 +3,25 @@ import React, { useEffect, useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { CertificateDesignerStudio } from "@/components/admin/CertificateDesignerStudio";
+import { CertificateView } from "@/components/common/CertificateView";
 import { useAuth } from "@/lib/auth-context";
 import { useLanguage } from "@/lib/i18n";
-import { db, DbSalesLead, DbTransaction, isCoursePrivate } from "@/lib/db";
+import {
+  db,
+  DbSalesLead,
+  DbTransaction,
+  formatDeterministicCertNumber,
+  isCoursePrivate,
+} from "@/lib/db";
+import { downloadCertificatePdf } from "@/lib/pdf-generator";
+import { clampPassThresholdPct, isPassingScore, resolvePassThresholdPct } from "@/lib/scoring";
 import { gameEngine } from "@/lib/game-engine";
 import { serverGetActiveRooms } from "@/lib/server-session";
 import {
   BrandingSettings,
+  CertificateData,
   Course,
+  ExamResultRecord,
   ExamSessionRecord,
   ManagedUser,
   Quiz,
@@ -19,11 +30,14 @@ import {
 } from "@/lib/types";
 import {
   AlertCircle,
+  Award,
   BookOpen,
   Building2,
   Check,
   CheckCircle2,
   Download,
+  ExternalLink,
+  Eye,
   FileSpreadsheet,
   GraduationCap,
   KeyRound,
@@ -31,6 +45,7 @@ import {
   LayoutDashboard,
   Lock,
   MapPin,
+  Percent,
   Play,
   Plus,
   Radio,
@@ -48,6 +63,7 @@ import {
   UserPlus,
   Users,
   X,
+  XCircle,
 } from "lucide-react";
 
 interface ActiveRoomRow {
@@ -76,7 +92,13 @@ export const Route = createFileRoute("/admin")({
   component: SuperAdminPage,
 });
 
-type AdminTab = "courses" | "instructors" | "roster" | "settings" | "sales_billing";
+type AdminTab =
+  | "courses"
+  | "instructors"
+  | "roster"
+  | "certificates"
+  | "settings"
+  | "sales_billing";
 
 function SuperAdminPage() {
   const { lang } = useLanguage();
@@ -101,6 +123,8 @@ function SuperAdminPage() {
   const [regions, setRegions] = useState<Region[]>([]);
   const [roster, setRoster] = useState<RosterStudent[]>([]);
   const [examSessions, setExamSessions] = useState<ExamSessionRecord[]>([]);
+  const [examResults, setExamResults] = useState<ExamResultRecord[]>([]);
+  const [certificates, setCertificates] = useState<CertificateData[]>([]);
   const [salesLeads, setSalesLeads] = useState<DbSalesLead[]>([]);
   const [transactions, setTransactions] = useState<DbTransaction[]>([]);
   const [branding, setBranding] = useState<BrandingSettings>(() => db.getBranding());
@@ -115,9 +139,23 @@ function SuperAdminPage() {
   const [courseCategory, setCourseCategory] = useState("Civil Service & Training");
   const [courseIcon, setCourseIcon] = useState("🎯");
   const [courseIsPrivate, setCourseIsPrivate] = useState<boolean>(true);
+  const [coursePassThreshold, setCoursePassThreshold] = useState<string>("");
   const [selectedCourseInstructors, setSelectedCourseInstructors] = useState<string[]>([
     "usr-instructor-1",
   ]);
+
+  // Issued Certificates & Pass Policy State
+  const [globalPassThresholdInput, setGlobalPassThresholdInput] = useState<number>(() =>
+    resolvePassThresholdPct({
+      brandingDefaultThreshold: db.getBranding().defaultPassThresholdPct,
+    }),
+  );
+  const [certSearch, setCertSearch] = useState("");
+  const [certRegionFilter, setCertRegionFilter] = useState("all");
+  const [certQuizFilter, setCertQuizFilter] = useState("all");
+  const [previewCert, setPreviewCert] = useState<CertificateData | null>(null);
+  const [downloadingCertNo, setDownloadingCertNo] = useState<string | null>(null);
+  const [confirmRevokeCertNo, setConfirmRevokeCertNo] = useState<string | null>(null);
 
   // Quick Sequential Quiz Under Course Modal State
   const [addingQuizForCourse, setAddingQuizForCourse] = useState<Course | null>(null);
@@ -172,9 +210,15 @@ function SuperAdminPage() {
     setRegions(db.getRegions());
     setRoster(db.getRoster());
     setExamSessions(db.getExamSessions());
+    setExamResults(db.getAllExamResults());
+    setCertificates(db.getCertificates());
     setSalesLeads(db.getSalesLeads());
     setTransactions(db.getTransactions());
-    setBranding(db.getBranding());
+    const nextBranding = db.getBranding();
+    setBranding(nextBranding);
+    setGlobalPassThresholdInput(
+      resolvePassThresholdPct({ brandingDefaultThreshold: nextBranding.defaultPassThresholdPct }),
+    );
   };
 
   const refreshActiveRooms = async () => {
@@ -223,6 +267,11 @@ function SuperAdminPage() {
         .toLowerCase()
         .replace(/[^a-z0-9]/g, "-")}-${Date.now().toString(36).slice(-4)}`;
 
+    const parsedThreshold =
+      coursePassThreshold.trim() !== "" && !Number.isNaN(Number(coursePassThreshold))
+        ? clampPassThresholdPct(Number(coursePassThreshold))
+        : undefined;
+
     const courseObj: Course = {
       id,
       code: courseCode.trim().toUpperCase(),
@@ -238,6 +287,7 @@ function SuperAdminPage() {
       instructorIds: selectedCourseInstructors,
       instructorNames: instructorObjs.map((i) => i.name),
       isPrivate: courseIsPrivate,
+      passThresholdPct: parsedThreshold,
       status: "active",
       createdAt: new Date().toISOString(),
     };
@@ -258,9 +308,10 @@ function SuperAdminPage() {
     setCourseTitleBn("");
     setCourseDescEn("");
     setCourseIsPrivate(true);
+    setCoursePassThreshold("");
     refreshAll();
     showNotice(
-      `Saved course "${courseObj.code} — ${courseObj.titleEn}" (${courseObj.isPrivate ? "Private · Live Exam Only" : "Public Self-Practice"}) with ${instructorObjs.length} instructor(s).`,
+      `Saved course "${courseObj.code} — ${courseObj.titleEn}" (${courseObj.isPrivate ? "Private · Live Exam Only" : "Public Self-Practice"}${typeof parsedThreshold === "number" ? ` · Pass ≥ ${parsedThreshold}%` : ""}) with ${instructorObjs.length} instructor(s).`,
     );
   };
 
@@ -273,7 +324,90 @@ function SuperAdminPage() {
     setCourseCategory(c.categoryEn || "BCS / Job");
     setCourseIcon(c.icon || "🎯");
     setCourseIsPrivate(isCoursePrivate(c));
+    setCoursePassThreshold(typeof c.passThresholdPct === "number" ? String(c.passThresholdPct) : "");
     setSelectedCourseInstructors(c.instructorIds || []);
+  };
+
+  const handleSaveGlobalPassThreshold = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clamped = clampPassThresholdPct(globalPassThresholdInput);
+    const updatedBranding: BrandingSettings = {
+      ...branding,
+      defaultPassThresholdPct: clamped,
+    };
+    db.saveBranding(updatedBranding);
+    refreshAll();
+    showNotice(`Updated Global Minimum Passing Threshold to ${clamped}%.`);
+  };
+
+  const handleUpdateCourseThreshold = (course: Course, rawVal: string) => {
+    const trimmed = rawVal.trim();
+    const nextThreshold =
+      trimmed !== "" && !Number.isNaN(Number(trimmed))
+        ? clampPassThresholdPct(Number(trimmed))
+        : undefined;
+    db.saveCourse({ ...course, passThresholdPct: nextThreshold });
+    refreshAll();
+    showNotice(
+      typeof nextThreshold === "number"
+        ? `Set passing threshold for "${course.code}" to ${nextThreshold}%.`
+        : `"${course.code}" now inherits global passing threshold.`,
+    );
+  };
+
+  const handleDownloadAdminCertPdf = async (cert: CertificateData) => {
+    if (downloadingCertNo) return;
+    setDownloadingCertNo(cert.certificateNumber);
+    try {
+      await downloadCertificatePdf(cert, branding);
+    } finally {
+      setDownloadingCertNo(null);
+    }
+  };
+
+  const handleExportCertificatesCsv = (rows: CertificateData[]) => {
+    const headers = [
+      "Certificate Number",
+      "Student Name",
+      "Roll Number",
+      "Assessment",
+      "Region",
+      "Score",
+      "Accuracy %",
+      "Rank",
+      "Total Participants",
+      "Issue Date",
+      "Verified",
+    ];
+    const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const csvLines = [
+      headers.map(esc).join(","),
+      ...rows.map((c) =>
+        [
+          c.certificateNumber,
+          c.studentName,
+          c.studentRoll,
+          c.quizTitle,
+          c.regionName || "Dhaka Range",
+          c.marksObtained ?? c.score,
+          c.accuracyPercent ?? c.scorePct ?? 0,
+          c.rank,
+          c.totalParticipants,
+          c.issueDate,
+          c.verified ? "VERIFIED" : "UNVERIFIED",
+        ]
+          .map(esc)
+          .join(","),
+      ),
+    ];
+    const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `onnesha-issued-certificates-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showNotice(`Exported ${rows.length} issued certificate(s) to CSV.`);
   };
 
   const handleToggleCoursePrivacy = (c: Course) => {
@@ -736,7 +870,7 @@ function SuperAdminPage() {
         </div>
 
         {/* KPI Summary Strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
           <div className="rounded-2xl border border-border bg-card p-4">
             <div className="flex items-center justify-between text-xs text-muted-foreground font-semibold">
               <span>Active Courses</span>
@@ -783,6 +917,27 @@ function SuperAdminPage() {
               Across {regions.length} Regional Ranges
             </div>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("certificates")}
+            className="text-left rounded-2xl border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 p-4 transition"
+          >
+            <div className="flex items-center justify-between text-xs text-muted-foreground font-semibold">
+              <span>Issued Certificates</span>
+              <Award className="h-4 w-4 text-emerald-500" />
+            </div>
+            <div className="mt-2 font-mono text-2xl font-black text-foreground">
+              {certificates.length}
+            </div>
+            <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
+              Min Pass:{" "}
+              {resolvePassThresholdPct({
+                brandingDefaultThreshold: branding.defaultPassThresholdPct,
+              })}
+              % · View All &rarr;
+            </div>
+          </button>
         </div>
 
         {/* Live Examination Rooms Monitor */}
@@ -908,6 +1063,19 @@ function SuperAdminPage() {
 
           <button
             type="button"
+            onClick={() => setActiveTab("certificates")}
+            className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-extrabold transition ${
+              activeTab === "certificates"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-card border border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Award className="h-4 w-4" />
+            <span>4. Issued Certificates &amp; Pass Policy ({certificates.length})</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab("settings")}
             className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-extrabold transition ${
               activeTab === "settings"
@@ -916,7 +1084,7 @@ function SuperAdminPage() {
             }`}
           >
             <Settings className="h-4 w-4" />
-            <span>4. Anti-Cheat Lock, Co-Branding &amp; DB Backup</span>
+            <span>5. Anti-Cheat Lock, Co-Branding &amp; DB Backup</span>
           </button>
 
           <button
@@ -929,7 +1097,7 @@ function SuperAdminPage() {
             }`}
           >
             <Receipt className="h-4 w-4" />
-            <span>5. Sales Leads &amp; Billing ({salesLeads.length + transactions.length})</span>
+            <span>6. Sales Leads &amp; Billing ({salesLeads.length + transactions.length})</span>
           </button>
         </div>
 
@@ -954,6 +1122,7 @@ function SuperAdminPage() {
                       setCourseTitleBn("");
                       setCourseDescEn("");
                       setCourseIsPrivate(true);
+                      setCoursePassThreshold("");
                     }}
                     className="text-xs font-bold text-muted-foreground hover:text-foreground"
                   >
@@ -1064,6 +1233,32 @@ function SuperAdminPage() {
                   </div>
                 </div>
 
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                    Min Passing Threshold (% · Optional Course Override)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={coursePassThreshold}
+                      onChange={(e) => setCoursePassThreshold(e.target.value)}
+                      placeholder={`Inherit Global (${resolvePassThresholdPct({ brandingDefaultThreshold: branding.defaultPassThresholdPct })}%)`}
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs font-bold text-foreground outline-none focus:border-primary"
+                    />
+                    {coursePassThreshold !== "" && (
+                      <button
+                        type="button"
+                        onClick={() => setCoursePassThreshold("")}
+                        className="shrink-0 rounded-xl border border-border px-2.5 py-2 text-[11px] font-bold text-muted-foreground hover:text-foreground"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </div>
+
                 <label className="flex items-start gap-2.5 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-3 cursor-pointer">
                   <input
                     type="checkbox"
@@ -1130,6 +1325,17 @@ function SuperAdminPage() {
                             ) : (
                               <span>Public Self-Practice</span>
                             )}
+                          </span>
+                          <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-sky-600 dark:text-sky-400">
+                            <Percent className="h-2.5 w-2.5" />
+                            <span>
+                              Pass &ge;{" "}
+                              {resolvePassThresholdPct({
+                                courseThreshold: course.passThresholdPct,
+                                brandingDefaultThreshold: branding.defaultPassThresholdPct,
+                              })}
+                              %{typeof course.passThresholdPct === "number" ? " (Course)" : " (Global)"}
+                            </span>
                           </span>
                         </div>
                         <h3 className="font-display text-xl font-black text-foreground">
@@ -1932,6 +2138,33 @@ function SuperAdminPage() {
                       className="w-20 rounded-xl border border-border bg-card px-3 py-1.5 font-mono text-xs font-bold text-center"
                     />
                   </div>
+
+                  <div className="flex items-center justify-between gap-4 pt-2 border-t border-border/60">
+                    <div>
+                      <div className="text-xs font-bold text-foreground">
+                        Global Default Passing Threshold (% for Certificates)
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        Minimum accuracy percentage required to pass and unlock official certificates
+                        when a course does not define its own threshold.
+                      </div>
+                    </div>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={branding.defaultPassThresholdPct ?? 50}
+                      onChange={(e) =>
+                        setBranding({
+                          ...branding,
+                          defaultPassThresholdPct: clampPassThresholdPct(
+                            parseInt(e.target.value, 10),
+                          ),
+                        })
+                      }
+                      className="w-20 rounded-xl border border-border bg-card px-3 py-1.5 font-mono text-xs font-bold text-center"
+                    />
+                  </div>
                 </div>
 
                 <button
@@ -2155,6 +2388,573 @@ function SuperAdminPage() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* =================================================================== */}
+        {/* TAB 4: ISSUED CERTIFICATES REGISTRY & PASSING THRESHOLD POLICY      */}
+        {/* =================================================================== */}
+        {activeTab === "certificates" &&
+          (() => {
+            const globalThreshold = resolvePassThresholdPct({
+              brandingDefaultThreshold: branding.defaultPassThresholdPct,
+            });
+            const normalizedSearch = certSearch.trim().toLowerCase();
+            const uniqueCertQuizzes = Array.from(
+              new Set(certificates.map((c) => c.quizTitle).filter(Boolean)),
+            );
+            const uniqueCertRegions = Array.from(
+              new Set(
+                certificates
+                  .map((c) => c.regionName || "Dhaka Range")
+                  .filter(Boolean),
+              ),
+            );
+            const filteredCerts = certificates.filter((c) => {
+              if (
+                certRegionFilter !== "all" &&
+                (c.regionName || "Dhaka Range") !== certRegionFilter
+              ) {
+                return false;
+              }
+              if (certQuizFilter !== "all" && c.quizTitle !== certQuizFilter) {
+                return false;
+              }
+              if (!normalizedSearch) return true;
+              return (
+                c.certificateNumber.toLowerCase().includes(normalizedSearch) ||
+                c.studentName.toLowerCase().includes(normalizedSearch) ||
+                (c.studentRoll || "").toLowerCase().includes(normalizedSearch) ||
+                c.quizTitle.toLowerCase().includes(normalizedSearch) ||
+                (c.regionName || "").toLowerCase().includes(normalizedSearch)
+              );
+            });
+
+            const certNumberSet = new Set(
+              certificates.map((c) => c.certificateNumber.toUpperCase()),
+            );
+
+            return (
+              <div className="space-y-6">
+                {/* Pass Threshold Policy Grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {/* Global Threshold Card */}
+                  <form
+                    onSubmit={handleSaveGlobalPassThreshold}
+                    className="lg:col-span-5 rounded-3xl border border-border bg-card p-6 space-y-4 shadow-sm"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                        <Percent className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <h3 className="font-display text-base font-black text-foreground">
+                          Global Passing Threshold (%)
+                        </h3>
+                        <p className="text-[11px] text-muted-foreground">
+                          Applies to all exams unless overridden per course.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-border bg-background p-4 space-y-3">
+                      <label className="block text-[11px] font-bold uppercase text-muted-foreground">
+                        Minimum Accuracy Required for Certificate (0–100%)
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={globalPassThresholdInput}
+                          onChange={(e) =>
+                            setGlobalPassThresholdInput(
+                              clampPassThresholdPct(parseInt(e.target.value, 10), 0),
+                            )
+                          }
+                          className="w-28 rounded-xl border border-border bg-card px-3 py-2 font-mono text-lg font-black text-center text-foreground outline-none focus:border-primary"
+                        />
+                        <div className="flex-1 text-xs text-muted-foreground leading-snug">
+                          Current active policy:{" "}
+                          <strong className="text-foreground">{globalThreshold}%</strong> minimum accuracy.
+                          Examinees scoring below{" "}
+                          <strong className="text-destructive">{globalThreshold}%</strong> are marked{" "}
+                          <strong>FAILED</strong> and do not receive a certificate.
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-2.5 text-xs font-extrabold text-primary-foreground shadow-sm hover:bg-primary/90 transition"
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      <span>Save Global Passing Threshold</span>
+                    </button>
+                  </form>
+
+                  {/* Per-Course Passing Threshold Overrides */}
+                  <div className="lg:col-span-7 rounded-3xl border border-border bg-card p-6 space-y-4 shadow-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <h3 className="font-display text-base font-black text-foreground">
+                          Per-Course Passing Threshold Overrides
+                        </h3>
+                        <p className="text-[11px] text-muted-foreground">
+                          Leave blank to inherit the {globalThreshold}% global threshold, or enter a custom % and press Enter.
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-primary/10 px-3 py-1 font-mono text-[11px] font-bold text-primary">
+                        {courses.length} Courses
+                      </span>
+                    </div>
+
+                    <div className="max-h-56 overflow-y-auto rounded-2xl border border-border divide-y divide-border/60">
+                      {courses.map((course) => {
+                        const effectiveCourseThreshold = resolvePassThresholdPct({
+                          courseThreshold: course.passThresholdPct,
+                          brandingDefaultThreshold: branding.defaultPassThresholdPct,
+                        });
+                        return (
+                          <div
+                            key={course.id}
+                            className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-background/60"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-[11px] font-black text-primary">
+                                  {course.code}
+                                </span>
+                                <span className="text-xs font-bold text-foreground truncate">
+                                  {course.titleEn}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-muted-foreground">
+                                Effective: Pass &ge; {effectiveCourseThreshold}%{" "}
+                                {typeof course.passThresholdPct === "number"
+                                  ? "(Course Override)"
+                                  : "(Global Default)"}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                key={`${course.id}-${course.passThresholdPct ?? "global"}`}
+                                type="number"
+                                min={0}
+                                max={100}
+                                defaultValue={
+                                  typeof course.passThresholdPct === "number"
+                                    ? String(course.passThresholdPct)
+                                    : ""
+                                }
+                                placeholder={`${globalThreshold}%`}
+                                onBlur={(e) => {
+                                  const next = e.target.value.trim();
+                                  const prevStr =
+                                    typeof course.passThresholdPct === "number"
+                                      ? String(course.passThresholdPct)
+                                      : "";
+                                  if (next !== prevStr) {
+                                    handleUpdateCourseThreshold(course, next);
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    (e.target as HTMLInputElement).blur();
+                                  }
+                                }}
+                                className="w-20 rounded-xl border border-border bg-card px-2.5 py-1.5 font-mono text-xs font-bold text-center text-foreground outline-none focus:border-primary"
+                              />
+                              {typeof course.passThresholdPct === "number" && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateCourseThreshold(course, "")}
+                                  className="rounded-lg border border-border px-2 py-1 text-[10px] font-bold text-muted-foreground hover:text-foreground"
+                                  title="Reset to Global Default"
+                                >
+                                  Reset
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Issued Certificates Registry */}
+                <div className="rounded-3xl border border-border bg-card p-6 space-y-4 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="font-display text-lg font-black text-foreground flex items-center gap-2">
+                        <Award className="h-5 w-5 text-emerald-500" />
+                        <span>All Issued Verifiable Certificates ({filteredCerts.length})</span>
+                      </h3>
+                      <p className="text-xs text-muted-foreground">
+                        Only examinees meeting their assessment passing threshold are issued certificates here.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleExportCertificatesCsv(filteredCerts)}
+                      disabled={filteredCerts.length === 0}
+                      className="inline-flex items-center gap-1.5 rounded-2xl border border-border bg-background px-4 py-2 text-xs font-bold text-foreground hover:bg-accent transition disabled:opacity-50"
+                    >
+                      <FileSpreadsheet className="h-4 w-4 text-emerald-500" />
+                      <span>Export CSV</span>
+                    </button>
+                  </div>
+
+                  {/* Search & Filter Bar */}
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                    <div className="sm:col-span-2 relative">
+                      <Search className="h-4 w-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={certSearch}
+                        onChange={(e) => setCertSearch(e.target.value)}
+                        placeholder="Search by Certificate ID, student name, roll, or assessment..."
+                        className="w-full rounded-xl border border-border bg-background pl-9 pr-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                      />
+                    </div>
+
+                    <select
+                      value={certRegionFilter}
+                      onChange={(e) => setCertRegionFilter(e.target.value)}
+                      className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                    >
+                      <option value="all">All Regions ({certificates.length})</option>
+                      {uniqueCertRegions.map((reg) => (
+                        <option key={reg} value={reg}>
+                          {reg}
+                        </option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={certQuizFilter}
+                      onChange={(e) => setCertQuizFilter(e.target.value)}
+                      className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                    >
+                      <option value="all">All Assessments</option>
+                      {uniqueCertQuizzes.map((qt) => (
+                        <option key={qt} value={qt}>
+                          {qt}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Certificates Table */}
+                  <div className="overflow-x-auto rounded-2xl border border-border">
+                    <table className="w-full border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-border bg-muted/40 text-left font-display">
+                          <th className="p-3 font-bold">Cert Number</th>
+                          <th className="p-3 font-bold">Student &amp; Roll</th>
+                          <th className="p-3 font-bold">Assessment</th>
+                          <th className="p-3 font-bold">Region</th>
+                          <th className="p-3 font-bold text-center">Score &amp; Accuracy</th>
+                          <th className="p-3 font-bold text-center">Issued</th>
+                          <th className="p-3 font-bold text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/60">
+                        {filteredCerts.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                              No issued certificates match your current filter.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredCerts.map((cert) => {
+                            const acc = cert.accuracyPercent ?? cert.scorePct ?? 0;
+                            const isConfirmingRevoke =
+                              confirmRevokeCertNo === cert.certificateNumber;
+                            return (
+                              <tr key={cert.id} className="hover:bg-accent/30 transition-colors">
+                                <td className="p-3 font-mono font-black text-primary whitespace-nowrap">
+                                  {cert.certificateNumber}
+                                </td>
+                                <td className="p-3">
+                                  <div className="font-bold text-foreground">
+                                    {cert.studentName}
+                                  </div>
+                                  <div className="font-mono text-[10px] text-muted-foreground">
+                                    Roll: {cert.studentRoll} · Rank #{cert.rank}/
+                                    {cert.totalParticipants}
+                                  </div>
+                                </td>
+                                <td className="p-3 font-semibold text-foreground max-w-[220px] truncate">
+                                  {cert.quizTitle}
+                                </td>
+                                <td className="p-3">
+                                  <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold text-primary whitespace-nowrap">
+                                    {cert.regionName || "Dhaka Range"}
+                                  </span>
+                                </td>
+                                <td className="p-3 text-center whitespace-nowrap">
+                                  <span className="font-mono font-black text-foreground">
+                                    {(cert.marksObtained ?? cert.score ?? 0).toLocaleString()}
+                                  </span>{" "}
+                                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                                    {acc}%
+                                  </span>
+                                </td>
+                                <td className="p-3 text-center font-mono text-muted-foreground whitespace-nowrap">
+                                  {cert.issueDate}
+                                </td>
+                                <td className="p-3 text-right whitespace-nowrap">
+                                  <div className="inline-flex items-center justify-end gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreviewCert(cert)}
+                                      className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1 text-[11px] font-bold text-foreground hover:bg-accent"
+                                      title="Preview Certificate"
+                                    >
+                                      <Eye className="h-3 w-3" />
+                                      <span>Preview</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={downloadingCertNo === cert.certificateNumber}
+                                      onClick={() => handleDownloadAdminCertPdf(cert)}
+                                      className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary hover:bg-primary/20 disabled:opacity-50"
+                                      title="Download Official PDF"
+                                    >
+                                      <Download className="h-3 w-3" />
+                                      <span>
+                                        {downloadingCertNo === cert.certificateNumber
+                                          ? "..."
+                                          : "PDF"}
+                                      </span>
+                                    </button>
+                                    <Link
+                                      to="/verify/$certId"
+                                      params={{ certId: cert.certificateNumber }}
+                                      className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:bg-accent"
+                                      title="Open Public Verification Page"
+                                    >
+                                      <ExternalLink className="h-3 w-3" />
+                                      <span>Verify</span>
+                                    </Link>
+                                    {isConfirmingRevoke ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          db.deleteCertificate(cert.certificateNumber);
+                                          setConfirmRevokeCertNo(null);
+                                          refreshAll();
+                                          showNotice(
+                                            `Revoked certificate ${cert.certificateNumber} for ${cert.studentName}.`,
+                                          );
+                                        }}
+                                        className="inline-flex items-center gap-1 rounded-lg bg-destructive px-2.5 py-1 text-[11px] font-extrabold text-destructive-foreground hover:bg-destructive/90"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                        <span>Confirm Revoke</span>
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setConfirmRevokeCertNo(cert.certificateNumber)
+                                        }
+                                        className="inline-flex items-center gap-1 rounded-lg border border-destructive/30 bg-destructive/10 px-2.5 py-1 text-[11px] font-bold text-destructive hover:bg-destructive/20"
+                                        title="Revoke Certificate"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                        <span>Revoke</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Recent Exam Candidate Pass / Fail Eligibility Log */}
+                <div className="rounded-3xl border border-border bg-card p-6 space-y-4 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="font-display text-base font-black text-foreground flex items-center gap-2">
+                        <ShieldCheck className="h-4 w-4 text-primary" />
+                        <span>
+                          Candidate Pass / Fail &amp; Certificate Eligibility Log (Latest{" "}
+                          {Math.min(40, examResults.length)})
+                        </span>
+                      </h3>
+                      <p className="text-xs text-muted-foreground">
+                        Displays both qualified candidates (certificate issued) and non-passing attempts blocked by threshold policy.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-2xl border border-border">
+                    <table className="w-full border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-border bg-muted/40 text-left font-display">
+                          <th className="p-3 font-bold">PIN / Assessment</th>
+                          <th className="p-3 font-bold">Candidate &amp; Roll</th>
+                          <th className="p-3 font-bold">Region</th>
+                          <th className="p-3 font-bold text-center">Accuracy / Required</th>
+                          <th className="p-3 font-bold text-center">Score</th>
+                          <th className="p-3 font-bold text-right">Eligibility Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/60">
+                        {examResults.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="p-6 text-center text-muted-foreground">
+                              No exam attempt records recorded yet.
+                            </td>
+                          </tr>
+                        ) : (
+                          examResults.slice(0, 40).map((r) => {
+                            const sess = examSessions.find(
+                              (s) => s.id === r.sessionId || s.pin === r.pin,
+                            );
+                            const sessQuiz = sess
+                              ? quizzes.find(
+                                  (q) => q.id === sess.quizId || q.slug === sess.quizId,
+                                )
+                              : undefined;
+                            const sessCourse = sessQuiz?.courseId
+                              ? courses.find((c) => c.id === sessQuiz.courseId)
+                              : undefined;
+                            const effThreshold = resolvePassThresholdPct({
+                              sessionThreshold: sess?.passThresholdPct,
+                              courseThreshold: sessCourse?.passThresholdPct,
+                              brandingDefaultThreshold: branding.defaultPassThresholdPct,
+                            });
+                            const didPass =
+                              typeof r.passed === "boolean"
+                                ? r.passed
+                                : isPassingScore(r.accuracyPct, effThreshold);
+                            const candidateCertNo = formatDeterministicCertNumber(
+                              r.pin,
+                              r.rollNumber,
+                              r.rank,
+                            ).toUpperCase();
+                            const hasCert = certNumberSet.has(candidateCertNo);
+                            return (
+                              <tr key={r.id} className="hover:bg-accent/30 transition-colors">
+                                <td className="p-3">
+                                  <div className="font-mono font-bold text-primary">
+                                    PIN {r.pin}
+                                  </div>
+                                  <div className="text-[11px] text-muted-foreground truncate max-w-[200px]">
+                                    {sess?.quizTitleEn || sess?.quizId || "Assessment"}
+                                  </div>
+                                </td>
+                                <td className="p-3">
+                                  <div className="font-bold text-foreground">{r.name}</div>
+                                  <div className="font-mono text-[10px] text-muted-foreground">
+                                    Roll: {r.rollNumber}
+                                  </div>
+                                </td>
+                                <td className="p-3 text-muted-foreground font-semibold">
+                                  {r.regionName || "Dhaka Range"}
+                                </td>
+                                <td className="p-3 text-center font-mono">
+                                  <span
+                                    className={`font-black ${
+                                      didPass
+                                        ? "text-emerald-600 dark:text-emerald-400"
+                                        : "text-destructive"
+                                    }`}
+                                  >
+                                    {r.accuracyPct}%
+                                  </span>{" "}
+                                  <span className="text-muted-foreground">
+                                    / {effThreshold}%
+                                  </span>
+                                </td>
+                                <td className="p-3 text-center font-mono font-bold text-foreground">
+                                  {r.score.toLocaleString()}
+                                </td>
+                                <td className="p-3 text-right whitespace-nowrap">
+                                  {didPass ? (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400">
+                                      <CheckCircle2 className="h-3 w-3" />
+                                      <span>
+                                        {hasCert ? "PASSED · Cert Issued" : "PASSED · Revoked/Pending"}
+                                      </span>
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 border border-destructive/30 px-2.5 py-0.5 text-[10px] font-extrabold text-destructive">
+                                      <XCircle className="h-3 w-3" />
+                                      <span>FAILED (&lt;{effThreshold}%) · No Cert</span>
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+        {/* Certificate Preview Modal */}
+        {previewCert && (
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm p-4 sm:p-8 flex flex-col items-center justify-start">
+            <div className="w-full max-w-5xl rounded-3xl border border-border bg-card p-4 sm:p-6 shadow-2xl space-y-4 my-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+                <div>
+                  <span className="font-mono text-[10px] font-bold uppercase text-primary">
+                    {previewCert.certificateNumber}
+                  </span>
+                  <h3 className="font-display text-base sm:text-lg font-black text-foreground">
+                    {previewCert.studentName} · {previewCert.quizTitle}
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={downloadingCertNo === previewCert.certificateNumber}
+                    onClick={() => handleDownloadAdminCertPdf(previewCert)}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-extrabold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>
+                      {downloadingCertNo === previewCert.certificateNumber
+                        ? "Generating..."
+                        : "Download PDF"}
+                    </span>
+                  </button>
+                  <Link
+                    to="/verify/$certId"
+                    params={{ certId: previewCert.certificateNumber }}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3.5 py-2 text-xs font-bold text-foreground hover:bg-accent"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5 text-emerald-500" />
+                    <span>Open Verification</span>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewCert(null)}
+                    className="rounded-xl border border-border p-2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+              <CertificateView certificate={previewCert} />
             </div>
           </div>
         )}
