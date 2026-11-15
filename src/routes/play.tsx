@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLanguage } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
 import { Navbar } from "@/components/layout/Navbar";
@@ -150,7 +150,16 @@ function PlayPage() {
     };
   }, []);
 
-  // Sync game session state & offline outbox from delta polling
+  // Latest room/seat identity for the long-lived engine subscription below.
+  const activePinRef = useRef<string | null>(null);
+  const activeParticipantIdRef = useRef<string | null>(null);
+  activePinRef.current = session?.pin ?? null;
+  activeParticipantIdRef.current = participant?.id ?? null;
+
+  // Sync game session state & offline outbox from delta polling.
+  // IMPORTANT: subscribe ONCE. This effect previously depended on [session, participant] and
+  // called gameEngine.stopPolling() in its cleanup, so every join / state update killed the
+  // examinee's polling timer — remote candidates stayed frozen in the lobby and never saw questions.
   useEffect(() => {
     setOfflineQueueCount(gameEngine.getOfflineOutbox().length);
     const handleOnline = () => setIsOnline(true);
@@ -163,13 +172,22 @@ function PlayPage() {
         setOfflineQueueCount(event.count);
         setIsOnline(event.isOnline);
       }
-      if (session && event.type === "SESSION_UPDATED" && event.session.pin === session.pin) {
-        setSession((prev) => ({
-          ...event.session,
-          isSelfPractice: prev?.isSelfPractice || event.session.isSelfPractice,
-        }));
-        if (participant) {
-          const updatedP = event.session.participants[participant.id];
+      if (
+        event.type === "SESSION_UPDATED" &&
+        activePinRef.current &&
+        event.session.pin === activePinRef.current
+      ) {
+        setSession((prev) =>
+          prev && prev.pin === event.session.pin
+            ? {
+                ...event.session,
+                isSelfPractice: prev.isSelfPractice || event.session.isSelfPractice,
+              }
+            : prev,
+        );
+        const pid = activeParticipantIdRef.current;
+        if (pid) {
+          const updatedP = event.session.participants[pid];
           if (updatedP) {
             setParticipant({ ...updatedP });
           }
@@ -183,7 +201,22 @@ function PlayPage() {
       unsubscribe();
       gameEngine.stopPolling();
     };
-  }, [session, participant]);
+  }, []);
+
+  // Polling watchdog: keep the examinee's live feed running for the whole exam
+  // (lobby → countdown → questions → leaderboard) and stop it only on podium / leaving.
+  useEffect(() => {
+    if (!session) {
+      gameEngine.stopPolling();
+      return;
+    }
+    if (session.phase === "podium" || session.phase === "finished") return;
+    gameEngine.startPolling(session.pin, "player", participant?.id);
+    // Question phase without its payload (e.g. a delta reply was missed) → force a full resync.
+    if (session.phase === "question" && !session.currentQuestion) {
+      gameEngine.pollNow(true);
+    }
+  }, [session?.pin, session?.phase, session?.currentQuestion?.id, participant?.id]);
 
   // Load session if PIN in URL search
   useEffect(() => {
@@ -1090,6 +1123,21 @@ function PlayPage() {
             <div className="font-mono text-6xl sm:text-7xl font-black text-primary animate-pulse">
               3 · 2 · 1
             </div>
+          </div>
+        )}
+
+        {/* STEP 4b: Question phase reached but question payload not yet received — never show a blank screen */}
+        {session && participant && session.phase === "question" && !session.currentQuestion && (
+          <div className="text-center animate-in fade-in space-y-3">
+            <div className="mx-auto h-10 w-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
+            <div className="font-display text-lg font-extrabold text-foreground">
+              {lang === "bn" ? "প্রশ্ন লোড হচ্ছে…" : "Loading question…"}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {lang === "bn"
+                ? "সংযোগ ধীর হলে কয়েক সেকেন্ড অপেক্ষা করুন — পেজ রিফ্রেশ করার প্রয়োজন নেই।"
+                : "On a slow connection this can take a few seconds — no need to refresh."}
+            </p>
           </div>
         )}
 

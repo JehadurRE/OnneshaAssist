@@ -74,11 +74,22 @@ class RealtimeGameEngine {
   private activePollingPin: string | null = null;
   private pollingRole: 'host' | 'player' = 'player';
   private pollingParticipantId: string | undefined = undefined;
-  private lastKnownUpdatedAt = 0;
+  // Delta-polling watermark tracked PER PIN (server clock only). A single global watermark
+  // leaked Exam 1's timestamp into Exam 2 and made the server answer "unchanged" forever.
+  private lastKnownUpdatedAtByPin: Record<string, number> = {};
   private pollingTimer: any = null;
+  private pollInFlightSince = 0;
+  private pollRequestSeq = 0;
+  private pollTickCount = 0;
 
   constructor() {
     if (typeof window !== 'undefined') {
+      // Mobile browsers freeze/throttle timers in background tabs and on flaky networks.
+      // Re-sync immediately the moment the examinee comes back or the network returns.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') this.pollNow(true);
+      });
+      window.addEventListener('online', () => this.pollNow(true));
       if ('BroadcastChannel' in window) {
         this.channel = new BroadcastChannel('onnesha_quiz_sync');
         this.channel.onmessage = (ev) => {
@@ -212,16 +223,38 @@ class RealtimeGameEngine {
     }
   }
 
-  private cacheSessionLocally(session: GameSession) {
+  public getLastKnownUpdatedAt(pin: string): number {
+    return this.lastKnownUpdatedAtByPin[pin] || 0;
+  }
+
+  /**
+   * Caches a session snapshot and notifies listeners.
+   * - `fromServer` (default true): only server-stamped snapshots may advance the delta-poll
+   *   watermark. Locally stamped snapshots (host `saveSession`, client clock) must not, otherwise
+   *   a device whose clock runs ahead of the server suppresses every future update.
+   * - Server snapshots OLDER than the watermark are dropped: on slow networks overlapping
+   *   responses can arrive out of order, and an old "lobby" reply must never overwrite a newer
+   *   "question" reply.
+   */
+  private cacheSessionLocally(session: GameSession, opts: { fromServer?: boolean } = {}) {
     if (typeof window === 'undefined') return;
+    const fromServer = opts.fromServer !== false;
+    const known = this.lastKnownUpdatedAtByPin[session.pin] || 0;
+    if (fromServer && session.updatedAt && known && session.updatedAt < known) {
+      return;
+    }
+    if (fromServer && session.updatedAt && session.updatedAt > known) {
+      this.lastKnownUpdatedAtByPin[session.pin] = session.updatedAt;
+    }
     try {
       localStorage.setItem(`onnesha_session_${session.pin}`, JSON.stringify(session));
-      if (session.updatedAt && session.updatedAt > this.lastKnownUpdatedAt) {
-        this.lastKnownUpdatedAt = session.updatedAt;
-      }
-      this.broadcast({ type: 'SESSION_UPDATED', session });
     } catch {
       // ignore storage quota errors on large sessions
+    }
+    try {
+      this.broadcast({ type: 'SESSION_UPDATED', session });
+    } catch {
+      // ignore broadcast failures
     }
   }
 
@@ -260,7 +293,7 @@ class RealtimeGameEngine {
   public saveSession(session: GameSession) {
     if (typeof window === 'undefined') return;
     session.updatedAt = Date.now();
-    this.cacheSessionLocally(session);
+    this.cacheSessionLocally(session, { fromServer: false });
     const hostToken = this.getStoredHostToken(session.pin);
     serverSyncSession({ data: { session, hostToken } })
       .then((res) => {
@@ -287,43 +320,76 @@ class RealtimeGameEngine {
     this.activePollingPin = pin;
     this.pollingRole = role;
     this.pollingParticipantId = participantId;
+    this.pollTickCount = 0;
 
     // Host polls every 800ms; 500 Players poll every 1250ms + 0-250ms random jitter to prevent thundering herd
     const intervalMs = role === 'host' ? 800 : 1250 + Math.floor(Math.random() * 250);
 
-    this.pollingTimer = setInterval(async () => {
-      try {
-        if (this.pollingRole === 'player' && this.getOfflineOutbox().length > 0) {
-          await this.flushOfflineOutbox();
-        }
-        const effectivePid = this.pollingParticipantId || this.getStoredParticipantId(pin);
-        const res = await serverGetSession({
-          data: {
-            pin,
-            role: this.pollingRole,
-            ...(effectivePid ? { participantId: effectivePid } : {}),
-            sinceUpdatedAt: this.lastKnownUpdatedAt,
-          },
-        });
-
-        if (res.success && !res.unchanged && res.session) {
-          this.cacheSessionLocally(res.session);
-          if (res.session.phase === 'podium' || res.session.phase === 'finished') {
-            this.stopPolling();
-          }
-        }
-      } catch {
-        // quiet fallback
-      }
+    this.pollingTimer = setInterval(() => {
+      this.pollTickCount += 1;
+      // Every ~12 ticks (~15s) do a full (non-delta) resync as a self-healing safety net.
+      void this.runPollTick(pin, this.pollTickCount % 12 === 0);
     }, intervalMs);
+  }
+
+  public isPolling(pin?: string): boolean {
+    return !!this.pollingTimer && (pin === undefined || this.activePollingPin === pin);
+  }
+
+  /** Fire one poll right now (e.g. tab became visible again / network came back). */
+  public pollNow(forceFull = false) {
+    if (!this.pollingTimer || !this.activePollingPin) return;
+    void this.runPollTick(this.activePollingPin, forceFull);
+  }
+
+  private async runPollTick(pin: string, forceFull: boolean) {
+    // Never stack requests: on slow 2G/3G links a 1.25s interval would otherwise pile up
+    // overlapping requests whose responses arrive out of order. A request hung for >8s is
+    // abandoned (its late reply is discarded by the watermark check) so polling never freezes.
+    const now = Date.now();
+    if (this.pollInFlightSince && now - this.pollInFlightSince < 8000) return;
+    const requestId = ++this.pollRequestSeq;
+    this.pollInFlightSince = now;
+    try {
+      if (this.pollingRole === 'player' && this.getOfflineOutbox().length > 0) {
+        await this.flushOfflineOutbox();
+      }
+      const effectivePid = this.pollingParticipantId || this.getStoredParticipantId(pin);
+      const since = this.lastKnownUpdatedAtByPin[pin] || 0;
+      const res = await serverGetSession({
+        data: {
+          pin,
+          role: this.pollingRole,
+          ...(effectivePid ? { participantId: effectivePid } : {}),
+          ...(!forceFull && since ? { sinceUpdatedAt: since } : {}),
+        },
+      });
+
+      // Ignore late replies for a room we already left.
+      if (this.activePollingPin !== pin) return;
+
+      if (res.success && !res.unchanged && res.session) {
+        this.cacheSessionLocally(res.session);
+        if (res.session.phase === 'podium' || res.session.phase === 'finished') {
+          this.stopPolling();
+        }
+      }
+    } catch {
+      // quiet fallback
+    } finally {
+      if (requestId === this.pollRequestSeq) {
+        this.pollInFlightSince = 0;
+      }
+    }
   }
 
   public stopPolling() {
     if (this.pollingTimer) {
       clearInterval(this.pollingTimer);
       this.pollingTimer = null;
-      this.activePollingPin = null;
     }
+    this.activePollingPin = null;
+    this.pollInFlightSince = 0;
   }
 
   // Create Session (Host)
