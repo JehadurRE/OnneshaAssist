@@ -6,7 +6,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { PinInput } from "@/components/common/PinInput";
 import { READY_MADE_PACKS } from "@/lib/mock-data";
-import { db } from "@/lib/db";
+import { db, isQuizPrivate } from "@/lib/db";
 import { audioEngine } from "@/lib/audio-engine";
 import { ExamResultRecord, Quiz, RosterStudent } from "@/lib/types";
 import onnesha from "@/assets/onnesha.jpg.asset.json";
@@ -66,13 +66,16 @@ function HomePage() {
   const [demoQuery, setDemoQuery] = useState("");
   const [realResults, setRealResults] = useState<ExamResultRecord[]>([]);
   const [realRoster, setRealRoster] = useState<RosterStudent[]>([]);
-  const [availablePacks, setAvailablePacks] = useState<Quiz[]>(READY_MADE_PACKS);
+  const [availablePacks, setAvailablePacks] = useState<Quiz[]>(() =>
+    READY_MADE_PACKS.filter((q) => !isQuizPrivate(q)),
+  );
 
   useEffect(() => {
     const sync = () => {
       setRealResults(db.getAllExamResults());
       setRealRoster(db.getRoster());
-      setAvailablePacks(db.getQuizzes());
+      const allCourses = db.getCourses();
+      setAvailablePacks(db.getQuizzes().filter((q) => !isQuizPrivate(q, allCourses)));
     };
     sync();
     return db.subscribe(sync);

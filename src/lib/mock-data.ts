@@ -52,6 +52,7 @@ export const DEFAULT_COURSES: Course[] = [
     color: 'from-emerald-500/20 to-teal-500/20',
     instructorIds: ['usr-instructor-1'],
     instructorNames: ['Course Instructor'],
+    isPrivate: false,
     status: 'active',
     createdAt: '2026-01-05T00:00:00Z',
   },
@@ -91,6 +92,7 @@ export const READY_MADE_PACKS: Quiz[] = [
     categoryEn: 'General Knowledge',
     categoryBn: 'সাধারণ জ্ঞান',
     color: 'from-emerald-500/20 to-teal-500/20',
+    isPrivate: false,
     tags: ['BCS', 'Job Prep', 'General Knowledge', 'Multi-Style'],
     questions: [
       {

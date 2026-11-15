@@ -1,12 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useLanguage } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth-context";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { READY_MADE_PACKS } from "@/lib/mock-data";
-import { db } from "@/lib/db";
+import { db, isQuizPrivate } from "@/lib/db";
 import { Quiz } from "@/lib/types";
-import { ArrowRight, BookOpen, Download, FileText, Play, Search, ShieldCheck, Sparkles, Tag } from "lucide-react";
+import { ArrowRight, BookOpen, Download, FileText, Lock, Play, Search, ShieldCheck, Sparkles, Tag } from "lucide-react";
 
 export const Route = createFileRoute("/vault/")({
   head: () => ({
@@ -24,12 +25,20 @@ export const Route = createFileRoute("/vault/")({
 
 function KnowledgeVaultCatalogPage() {
   const { lang, t } = useLanguage();
+  const { user, isAuthenticated } = useAuth();
+  const isStaff = isAuthenticated && (user?.role === "admin" || user?.role === "instructor");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCurriculum, setSelectedCurriculum] = useState<string>("all");
   const [allQuizzes, setAllQuizzes] = useState<Quiz[]>(READY_MADE_PACKS);
+  const [courses, setCourses] = useState(() => db.getCourses());
 
   useEffect(() => {
-    setAllQuizzes(db.getQuizzes());
+    const sync = () => {
+      setAllQuizzes(db.getQuizzes());
+      setCourses(db.getCourses());
+    };
+    sync();
+    return db.subscribe(sync);
   }, []);
 
   const curricula = [
@@ -43,6 +52,7 @@ function KnowledgeVaultCatalogPage() {
   ];
 
   const filteredPacks = allQuizzes.filter((pack) => {
+    if (!isStaff && isQuizPrivate(pack, courses)) return false;
     const matchesCategory =
       selectedCurriculum === "all" || pack.categoryEn === selectedCurriculum || (pack.tags && pack.tags.includes(selectedCurriculum));
     const matchesSearch =
@@ -122,6 +132,12 @@ function KnowledgeVaultCatalogPage() {
                     )}
                   </div>
                   <div className="flex items-center gap-1.5">
+                    {isStaff && isQuizPrivate(pack, courses) && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                        <Lock className="h-2.5 w-2.5" />
+                        <span>Private</span>
+                      </span>
+                    )}
                     <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-mono font-bold text-primary">
                       {pack.questions.length} Items
                     </span>

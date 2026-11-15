@@ -20,8 +20,11 @@ import {
 import type { SqlValue } from "sql.js";
 import { sqliteEngine } from "./sqlite-engine";
 import { serverAdminMutateStore, serverGetBootstrapData } from "../server-session";
+import { isCoursePrivate, isQuizPrivate } from "../sanjibon-seed-data";
 import { computeTotalQuizMarks, resolveOrgName } from "../scoring";
 import { DEFAULT_BRANDING_SETTINGS, mergeBrandingSettings } from "../branding";
+
+export { isCoursePrivate, isQuizPrivate };
 
 export interface DbTransaction {
   id: string;
@@ -225,8 +228,16 @@ class OnneshaDatabase {
 
         if (res.courses?.length) {
           res.courses.forEach((c) => {
+            const privFlag =
+              typeof c.isPrivate === "boolean"
+                ? c.isPrivate
+                  ? 1
+                  : 0
+                : isCoursePrivate(c)
+                  ? 1
+                  : 0;
             run(
-              "INSERT OR REPLACE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              "INSERT OR REPLACE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, isPrivate, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
               [
                 c.id,
                 c.code,
@@ -240,6 +251,7 @@ class OnneshaDatabase {
                 c.color || "from-emerald-500/20 to-teal-500/20",
                 JSON.stringify(c.instructorIds || []),
                 JSON.stringify(c.instructorNames || []),
+                privFlag,
                 c.status || "active",
                 c.createdAt || new Date().toISOString(),
               ],
@@ -271,8 +283,16 @@ class OnneshaDatabase {
 
         if (res.customQuizzes?.length) {
           res.customQuizzes.forEach((quiz) => {
+            const quizPrivFlag =
+              typeof quiz.isPrivate === "boolean"
+                ? quiz.isPrivate
+                  ? 1
+                  : 0
+                : isQuizPrivate(quiz, res.courses)
+                  ? 1
+                  : 0;
             run(
-              "INSERT OR REPLACE INTO quizzes (id, slug, courseId, courseTitle, quizNumber, instructorId, instructorName, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, questionsJson, isTemplate, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              "INSERT OR REPLACE INTO quizzes (id, slug, courseId, courseTitle, quizNumber, instructorId, instructorName, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, questionsJson, isTemplate, isPrivate, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
               [
                 quiz.id,
                 quiz.slug,
@@ -290,6 +310,7 @@ class OnneshaDatabase {
                 quiz.icon,
                 JSON.stringify(quiz.questions),
                 quiz.isTemplate ? 1 : 0,
+                quizPrivFlag,
                 quiz.createdAt || new Date().toISOString(),
               ],
             );
@@ -449,8 +470,16 @@ class OnneshaDatabase {
 
       DEFAULT_COURSES.forEach((c) => {
         if (!existingCourseIds.has(c.id)) {
+          const privFlag =
+            typeof c.isPrivate === "boolean"
+              ? c.isPrivate
+                ? 1
+                : 0
+              : isCoursePrivate(c)
+                ? 1
+                : 0;
           run(
-            "INSERT OR IGNORE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, isPrivate, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
               c.id,
               c.code,
@@ -464,6 +493,7 @@ class OnneshaDatabase {
               c.color || "from-emerald-500/20 to-teal-500/20",
               JSON.stringify(c.instructorIds || []),
               JSON.stringify(c.instructorNames || []),
+              privFlag,
               c.status || "active",
               c.createdAt || new Date().toISOString(),
             ],
@@ -596,58 +626,76 @@ class OnneshaDatabase {
   getCourses(): Course[] {
     const rows = sqliteEngine.query<any>("SELECT * FROM courses ORDER BY createdAt ASC");
     if (rows.length > 0) {
-      return rows.map((r) => ({
-        id: r.id,
-        code: r.code,
-        titleEn: r.titleEn,
-        titleBn: r.titleBn,
-        descriptionEn: r.descriptionEn,
-        descriptionBn: r.descriptionBn,
-        categoryEn: r.categoryEn,
-        categoryBn: r.categoryBn,
-        icon: r.icon || "📚",
-        color: r.color || "from-emerald-500/20 to-teal-500/20",
-        instructorIds: r.instructorIdsJson ? JSON.parse(r.instructorIdsJson) : [],
-        instructorNames: r.instructorNamesJson ? JSON.parse(r.instructorNamesJson) : [],
-        status: (r.status as "active" | "archived") || "active",
-        createdAt: r.createdAt,
-      }));
+      return rows.map((r) => {
+        const baseCourse: Course = {
+          id: r.id,
+          code: r.code,
+          titleEn: r.titleEn,
+          titleBn: r.titleBn,
+          descriptionEn: r.descriptionEn,
+          descriptionBn: r.descriptionBn,
+          categoryEn: r.categoryEn,
+          categoryBn: r.categoryBn,
+          icon: r.icon || "📚",
+          color: r.color || "from-emerald-500/20 to-teal-500/20",
+          instructorIds: r.instructorIdsJson ? JSON.parse(r.instructorIdsJson) : [],
+          instructorNames: r.instructorNamesJson ? JSON.parse(r.instructorNamesJson) : [],
+          status: (r.status as "active" | "archived") || "active",
+          createdAt: r.createdAt,
+        };
+        const resolvedPrivate =
+          typeof r.isPrivate === "number" ? r.isPrivate !== 0 : isCoursePrivate(baseCourse);
+        return {
+          ...baseCourse,
+          isPrivate: resolvedPrivate,
+        };
+      });
     }
-    return this.getStorage<Course[]>("courses", DEFAULT_COURSES);
+    return this.getStorage<Course[]>("courses", DEFAULT_COURSES).map((c) => ({
+      ...c,
+      isPrivate: isCoursePrivate(c),
+    }));
   }
 
   saveCourse(course: Course): Course {
+    const resolvedPrivate = isCoursePrivate(course);
+    const normalizedCourse: Course = {
+      ...course,
+      isPrivate: resolvedPrivate,
+    };
+
     sqliteEngine.run(
-      "INSERT OR REPLACE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT OR REPLACE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, isPrivate, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
-        course.id,
-        course.code,
-        course.titleEn,
-        course.titleBn,
-        course.descriptionEn,
-        course.descriptionBn,
-        course.categoryEn || "",
-        course.categoryBn || "",
-        course.icon || "📚",
-        course.color || "from-emerald-500/20 to-teal-500/20",
-        JSON.stringify(course.instructorIds || []),
-        JSON.stringify(course.instructorNames || []),
-        course.status || "active",
-        course.createdAt || new Date().toISOString(),
+        normalizedCourse.id,
+        normalizedCourse.code,
+        normalizedCourse.titleEn,
+        normalizedCourse.titleBn,
+        normalizedCourse.descriptionEn,
+        normalizedCourse.descriptionBn,
+        normalizedCourse.categoryEn || "",
+        normalizedCourse.categoryBn || "",
+        normalizedCourse.icon || "📚",
+        normalizedCourse.color || "from-emerald-500/20 to-teal-500/20",
+        JSON.stringify(normalizedCourse.instructorIds || []),
+        JSON.stringify(normalizedCourse.instructorNames || []),
+        resolvedPrivate ? 1 : 0,
+        normalizedCourse.status || "active",
+        normalizedCourse.createdAt || new Date().toISOString(),
       ],
     );
 
     const courses = this.getStorage<Course[]>("courses", [...DEFAULT_COURSES]);
-    const idx = courses.findIndex((c) => c.id === course.id);
-    if (idx >= 0) courses[idx] = course;
-    else courses.unshift(course);
+    const idx = courses.findIndex((c) => c.id === normalizedCourse.id);
+    if (idx >= 0) courses[idx] = normalizedCourse;
+    else courses.unshift(normalizedCourse);
     this.setStorage("courses", courses);
 
-    serverAdminMutateStore({ data: { action: "save_course", course } }).catch((err) =>
+    serverAdminMutateStore({ data: { action: "save_course", course: normalizedCourse } }).catch((err) =>
       console.warn("Course server sync notice:", err),
     );
     this.notifyListeners();
-    return course;
+    return normalizedCourse;
   }
 
   deleteCourse(id: string): void {
@@ -730,9 +778,9 @@ class OnneshaDatabase {
 
   // ---------------- QUIZZES REPOSITORY (SQLite + Server) ----------------
   getQuizzes(): Quiz[] {
-    const sqliteRows = sqliteEngine.query<any>("SELECT * FROM quizzes ORDER BY createdAt DESC");
-    if (sqliteRows.length > 0) {
-      const customQuizzes: Quiz[] = sqliteRows.map((r) => ({
+    const courses = this.getCourses();
+    const mapRow = (r: any): Quiz => {
+      const baseQuiz: Quiz = {
         id: r.id,
         slug: r.slug,
         courseId: r.courseId || undefined,
@@ -749,24 +797,46 @@ class OnneshaDatabase {
         icon: r.icon || "🎯",
         questions: r.questionsJson ? JSON.parse(r.questionsJson) : [],
         isTemplate: !!r.isTemplate,
+        isPrivate: typeof r.isPrivate === "number" ? r.isPrivate !== 0 : undefined,
         createdAt: r.createdAt,
-      }));
+      };
+      return {
+        ...baseQuiz,
+        isPrivate: isQuizPrivate(baseQuiz, courses),
+      };
+    };
+
+    const sqliteRows = sqliteEngine.query<any>("SELECT * FROM quizzes ORDER BY createdAt DESC");
+    if (sqliteRows.length > 0) {
+      const customQuizzes: Quiz[] = sqliteRows.map(mapRow);
       const customIds = new Set(customQuizzes.map((q) => q.id));
-      return [...customQuizzes, ...READY_MADE_PACKS.filter((p) => !customIds.has(p.id))];
+      const remainingPacks = READY_MADE_PACKS.filter((p) => !customIds.has(p.id)).map((p) => ({
+        ...p,
+        isPrivate: isQuizPrivate(p, courses),
+      }));
+      return [...customQuizzes, ...remainingPacks];
     }
 
-    const custom = this.getStorage<Quiz[]>("custom_quizzes", []);
+    const custom = this.getStorage<Quiz[]>("custom_quizzes", []).map((q) => ({
+      ...q,
+      isPrivate: isQuizPrivate(q, courses),
+    }));
     const customIds = new Set(custom.map((q) => q.id));
-    return [...custom, ...READY_MADE_PACKS.filter((p) => !customIds.has(p.id))];
+    const remainingPacks = READY_MADE_PACKS.filter((p) => !customIds.has(p.id)).map((p) => ({
+      ...p,
+      isPrivate: isQuizPrivate(p, courses),
+    }));
+    return [...custom, ...remainingPacks];
   }
 
   getQuizBySlug(slug: string): Quiz | undefined {
+    const courses = this.getCourses();
     const row = sqliteEngine.queryOne<any>("SELECT * FROM quizzes WHERE slug = ? OR id = ?", [
       slug,
       slug,
     ]);
     if (row) {
-      return {
+      const baseQuiz: Quiz = {
         id: row.id,
         slug: row.slug,
         courseId: row.courseId || undefined,
@@ -783,46 +853,61 @@ class OnneshaDatabase {
         icon: row.icon || "🎯",
         questions: row.questionsJson ? JSON.parse(row.questionsJson) : [],
         isTemplate: !!row.isTemplate,
+        isPrivate: typeof row.isPrivate === "number" ? row.isPrivate !== 0 : undefined,
         createdAt: row.createdAt,
+      };
+      return {
+        ...baseQuiz,
+        isPrivate: isQuizPrivate(baseQuiz, courses),
       };
     }
     return this.getQuizzes().find((q) => q.slug === slug || q.id === slug);
   }
 
   saveCustomQuiz(quiz: Quiz): void {
+    const courses = this.getCourses();
+    const resolvedPrivate = isQuizPrivate(quiz, courses);
+    const normalizedQuiz: Quiz = {
+      ...quiz,
+      isPrivate: resolvedPrivate,
+    };
+
     sqliteEngine.run(
-      "INSERT OR REPLACE INTO quizzes (id, slug, courseId, courseTitle, quizNumber, instructorId, instructorName, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, questionsJson, isTemplate, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT OR REPLACE INTO quizzes (id, slug, courseId, courseTitle, quizNumber, instructorId, instructorName, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, questionsJson, isTemplate, isPrivate, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
-        quiz.id,
-        quiz.slug,
-        quiz.courseId || "",
-        quiz.courseTitle || "",
-        quiz.quizNumber || 1,
-        quiz.instructorId || "",
-        quiz.instructorName || "",
-        quiz.titleEn,
-        quiz.titleBn,
-        quiz.descriptionEn,
-        quiz.descriptionBn,
-        quiz.categoryEn,
-        quiz.categoryBn,
-        quiz.icon,
-        JSON.stringify(quiz.questions),
-        quiz.isTemplate ? 1 : 0,
-        quiz.createdAt || new Date().toISOString(),
+        normalizedQuiz.id,
+        normalizedQuiz.slug,
+        normalizedQuiz.courseId || "",
+        normalizedQuiz.courseTitle || "",
+        normalizedQuiz.quizNumber || 1,
+        normalizedQuiz.instructorId || "",
+        normalizedQuiz.instructorName || "",
+        normalizedQuiz.titleEn,
+        normalizedQuiz.titleBn,
+        normalizedQuiz.descriptionEn,
+        normalizedQuiz.descriptionBn,
+        normalizedQuiz.categoryEn,
+        normalizedQuiz.categoryBn,
+        normalizedQuiz.icon,
+        JSON.stringify(normalizedQuiz.questions),
+        normalizedQuiz.isTemplate ? 1 : 0,
+        resolvedPrivate ? 1 : 0,
+        normalizedQuiz.createdAt || new Date().toISOString(),
       ],
     );
 
     const custom = this.getStorage<Quiz[]>("custom_quizzes", []);
-    const existingIndex = custom.findIndex((q) => q.id === quiz.id || q.slug === quiz.slug);
+    const existingIndex = custom.findIndex(
+      (q) => q.id === normalizedQuiz.id || q.slug === normalizedQuiz.slug,
+    );
     if (existingIndex >= 0) {
-      custom[existingIndex] = quiz;
+      custom[existingIndex] = normalizedQuiz;
     } else {
-      custom.unshift(quiz);
+      custom.unshift(normalizedQuiz);
     }
     this.setStorage("custom_quizzes", custom);
 
-    serverAdminMutateStore({ data: { action: "save_quiz", quiz } }).catch((err) =>
+    serverAdminMutateStore({ data: { action: "save_quiz", quiz: normalizedQuiz } }).catch((err) =>
       console.warn("Quiz server sync notice:", err),
     );
     this.notifyListeners();

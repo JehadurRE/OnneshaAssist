@@ -1,12 +1,13 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useState } from "react";
 import { useLanguage } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth-context";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { READY_MADE_PACKS } from "@/lib/mock-data";
-import { db } from "@/lib/db";
+import { db, isQuizPrivate } from "@/lib/db";
 import { OmrSheetView } from "@/components/common/OmrSheetView";
-import { ArrowLeft, BookOpen, CheckCircle2, ChevronDown, ChevronUp, Download, Eye, EyeOff, FileText, Play, Printer, ShieldCheck } from "lucide-react";
+import { ArrowLeft, BookOpen, CheckCircle2, ChevronDown, ChevronUp, Download, Eye, EyeOff, FileText, Lock, Play, Printer, ShieldCheck } from "lucide-react";
 
 export const Route = createFileRoute("/vault/$slug")({
   head: ({ params }) => {
@@ -27,13 +28,76 @@ export const Route = createFileRoute("/vault/$slug")({
 function SingleCurriculumDetailPage() {
   const { slug } = Route.useParams();
   const { lang, t } = useLanguage();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [revealedAnswers, setRevealedAnswers] = useState<Record<string, boolean>>({});
   const [showOmrModal, setShowOmrModal] = useState(false);
 
+  const isStaff = isAuthenticated && (user?.role === "admin" || user?.role === "instructor");
   const pack = db.getQuizBySlug(slug) || READY_MADE_PACKS.find((p) => p.slug === slug);
 
   if (!pack) {
     throw notFound();
+  }
+
+  const packIsPrivate = isQuizPrivate(pack, db.getCourses());
+
+  if (packIsPrivate && authLoading) {
+    return (
+      <div className="min-h-screen bg-background text-foreground bg-grid flex flex-col">
+        <Navbar />
+        <main className="flex-1 flex items-center justify-center px-4 py-12">
+          <div className="flex items-center gap-3 font-display text-base font-bold text-foreground">
+            <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <span>{lang === "bn" ? "অনুমতি যাচাই করা হচ্ছে..." : "Checking access permissions..."}</span>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (packIsPrivate && !isStaff) {
+    return (
+      <div className="min-h-screen bg-background text-foreground bg-grid flex flex-col transition-colors">
+        <Navbar />
+        <main className="flex-1 flex items-center justify-center px-4 py-12">
+          <div className="w-full max-w-md rounded-3xl border border-amber-500/40 bg-card p-6 sm:p-8 shadow-tactical text-center space-y-4">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-500 border border-amber-500/30">
+              <Lock className="h-7 w-7" />
+            </div>
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/30 px-3 py-0.5 font-mono text-[10px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">
+              Live Exam Only
+            </span>
+            <h1 className="font-display text-xl sm:text-2xl font-black text-foreground">
+              {lang === "bn"
+                ? "প্রাইভেট কোর্স প্রশ্নপত্র — সংরক্ষিত"
+                : "Private Course Examination Paper — Restricted"}
+            </h1>
+            <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+              {lang === "bn"
+                ? "এই প্রাইভেট কোর্সের প্রশ্ন ও উত্তরপত্র পাবলিক অনুশীলনের জন্য উন্মুক্ত নয়। শুধুমাত্র আপনার অ্যাডমিন বা ইন্সট্রাক্টর লাইভ পরীক্ষা শুরু করলে ৬-ডিজিট পিন দিয়ে অংশগ্রহণ করতে পারবেন।"
+                : "Questions, answer keys, and self-practice for private course modules are disabled for the public. Trainees can only take this assessment when an Admin or Instructor starts a live exam room."}
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
+              <Link
+                to="/play"
+                className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-2xl bg-primary py-3 text-xs font-extrabold text-primary-foreground shadow-sm hover:bg-primary/90 transition"
+              >
+                <Play className="h-3.5 w-3.5 fill-current" />
+                <span>{lang === "bn" ? "পিন দিয়ে লাইভ পরীক্ষায় যোগ দিন" : "Join Live Exam with PIN"}</span>
+              </Link>
+              <Link
+                to="/auth/login"
+                className="flex-1 rounded-2xl border border-border bg-background py-3 text-xs font-bold text-foreground hover:bg-accent transition"
+              >
+                {lang === "bn" ? "ইন্সট্রাক্টর / অ্যাডমিন লগইন" : "Instructor / Admin Sign In"}
+              </Link>
+            </div>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
   }
 
   const toggleReveal = (qId: string) => {

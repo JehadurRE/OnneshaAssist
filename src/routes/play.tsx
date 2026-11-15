@@ -1,6 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useLanguage } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth-context";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { PinInput } from "@/components/common/PinInput";
@@ -12,7 +13,7 @@ import { Confetti } from "@/components/common/Confetti";
 import { gameEngine, JoinSessionParams, JoinSessionResult } from "@/lib/game-engine";
 import { audioEngine } from "@/lib/audio-engine";
 import { proctorEngine, ProctorIncident } from "@/lib/proctor-engine";
-import { db, formatDeterministicCertNumber } from "@/lib/db";
+import { db, formatDeterministicCertNumber, isCoursePrivate, isQuizPrivate } from "@/lib/db";
 import { computeTotalQuizMarks, resolveOrgName } from "@/lib/scoring";
 import { serverGetActiveRooms } from "@/lib/server-session";
 import { READY_MADE_PACKS } from "@/lib/mock-data";
@@ -78,6 +79,8 @@ export const Route = createFileRoute("/play")({
 
 function PlayPage() {
   const { lang, t } = useLanguage();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+  const isStaff = isAuthenticated && (user?.role === "admin" || user?.role === "instructor");
   const search = Route.useSearch();
   const [pin, setPin] = useState(search.pin || "");
   const [session, setSession] = useState<GameSession | null>(null);
@@ -176,20 +179,35 @@ function PlayPage() {
     };
   }, [session, participant]);
 
-  // Load session if PIN or ?practice=slug in URL search
+  // Load session if PIN in URL search
   useEffect(() => {
     if (search.pin && search.pin.length === 6) {
       handleCheckPin(search.pin);
-    } else if (search.practice) {
-      const targetQuiz =
-        db.getQuizBySlug(search.practice) ||
-        db.getQuizzes().find((q) => q.id === search.practice || q.slug === search.practice) ||
-        READY_MADE_PACKS.find((q) => q.id === search.practice || q.slug === search.practice);
-      if (targetQuiz) {
-        handleStartSelfPractice(targetQuiz);
-      }
     }
-  }, [search.pin, search.practice]);
+  }, [search.pin]);
+
+  // Launch self-practice ONLY for public demo quizzes (or authenticated staff)
+  useEffect(() => {
+    if (search.pin && search.pin.length === 6) return;
+    if (!search.practice || authLoading) return;
+
+    const allCourses = db.getCourses();
+    const targetQuiz =
+      db.getQuizBySlug(search.practice) ||
+      db.getQuizzes().find((q) => q.id === search.practice || q.slug === search.practice) ||
+      READY_MADE_PACKS.find((q) => q.id === search.practice || q.slug === search.practice);
+    if (targetQuiz) {
+      if (!isStaff && isQuizPrivate(targetQuiz, allCourses)) {
+        setErrorMsg(
+          lang === "bn"
+            ? "এই প্রাইভেট কোর্সের কুইজ পাবলিক অনুশীলনের জন্য উন্মুক্ত নয়। শুধুমাত্র অ্যাডমিন বা ইন্সট্রাক্টর লাইভ পরীক্ষা শুরু করলে ৬-ডিজিট পিন দিয়ে অংশগ্রহণ করা যাবে।"
+            : "This private course examination is restricted to live instructor-hosted sessions. Please wait for your Admin or Instructor to start the exam and join using the 6-digit PIN.",
+        );
+        return;
+      }
+      handleStartSelfPractice(targetQuiz);
+    }
+  }, [search.pin, search.practice, authLoading, isStaff]);
 
   // Proctoring Engine Lifecycle — transmits incidents directly to Server & Host Projector
   useEffect(() => {
@@ -310,16 +328,38 @@ function PlayPage() {
     }
   };
 
-  // Start a Self-Paced Student Mock Exam without needing a second Host browser tab
+  // Start a Self-Paced Student Mock Exam (Public Demo Quizzes only; Private Courses require Host Live Room)
   const handleStartSelfPractice = async (quiz: Quiz) => {
+    const allCourses = courses.length > 0 ? courses : db.getCourses();
+    if (!isStaff && isQuizPrivate(quiz, allCourses)) {
+      setErrorMsg(
+        lang === "bn"
+          ? "এই প্রাইভেট কোর্সের কুইজ পাবলিক অনুশীলনের জন্য উন্মুক্ত নয়। শুধুমাত্র অ্যাডমিন বা ইন্সট্রাক্টর লাইভ পরীক্ষা শুরু করলে ৬-ডিজিট পিন দিয়ে অংশগ্রহণ করা যাবে।"
+          : "This private course examination is restricted to live instructor-hosted sessions. Please wait for your Admin or Instructor to start the exam and join using the 6-digit PIN.",
+      );
+      return;
+    }
+
     setErrorMsg("");
     setIsStartingPractice(true);
     try {
-      const created = await gameEngine.createSessionAsync(quiz, true);
+      const created = await gameEngine.createSessionAsync(
+        quiz,
+        true,
+        "all",
+        "All Regions (National)",
+        true,
+      );
       created.isSelfPractice = true;
       setIsSelfPractice(true);
       setSession({ ...created, isSelfPractice: true });
       setPin(created.pin);
+    } catch (err) {
+      setErrorMsg(
+        err instanceof Error
+          ? err.message
+          : "Unable to start self-practice session for this assessment.",
+      );
     } finally {
       setIsStartingPractice(false);
     }
@@ -676,105 +716,215 @@ function PlayPage() {
                 )}
               </div>
 
-              {/* Right Column: Student Self-Practice / Solo Mock Exam Selector */}
-              <div className="lg:col-span-7 rounded-3xl border border-border bg-card p-6 sm:p-7 shadow-tactical space-y-5">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 pb-4">
-                  <div>
-                    <div className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-0.5 text-[11px] font-bold text-primary mb-1">
-                      <Sparkles className="h-3 w-3" />
-                      <span>
-                        {lang === "bn" ? "সেলফ-প্র্যাকটিস মক টেস্ট" : "Student Self-Practice Mode"}
-                      </span>
-                    </div>
-                    <h2 className="font-display text-lg sm:text-xl font-extrabold text-foreground">
-                      {lang === "bn"
-                        ? "কোর্স ও ক্রমানুসারে কুইজ অনুশীলন করুন (Quiz 1 → Quiz 2...)"
-                        : "Practice Course Quizzes Anytime (Solo Timed Exam)"}
-                    </h2>
-                    <p className="text-xs text-muted-foreground">
-                      {lang === "bn"
-                        ? "হোস্ট ছাড়াই যেকোনো কোর্সের কুইজ সিলেক্ট করে সরাসরি নিজের ফোনে বা কম্পিউটারে পরীক্ষা দিন ও ব্যাখ্যাসহ উত্তরপত্র দেখুন।"
-                        : "No host PIN required — select any Course Quiz below to take a full timed mock test with instant rationale and certificate."}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Course Filter Pills */}
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedCourseId("all")}
-                    className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-                      selectedCourseId === "all"
-                        ? "bg-primary text-primary-foreground"
-                        : "border border-border bg-background text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {lang === "bn" ? "সকল কোর্স" : "All Courses"} ({quizzes.length})
-                  </button>
-                  {courses.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => setSelectedCourseId(c.id)}
-                      className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-                        selectedCourseId === c.id
-                          ? "bg-primary text-primary-foreground"
-                          : "border border-border bg-background text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      <span className="font-mono mr-1">{c.code}:</span>
-                      <span>{lang === "bn" ? c.titleBn : c.titleEn}</span>
-                    </button>
-                  ))}
-                </div>
-
-                {/* Sequential Quiz List */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[420px] overflow-y-auto pr-1">
-                  {quizzes
-                    .filter((q) => selectedCourseId === "all" || q.courseId === selectedCourseId)
-                    .sort((a, b) => (a.quizNumber || 99) - (b.quizNumber || 99))
-                    .map((quiz) => (
-                      <div
-                        key={quiz.id}
-                        className="flex flex-col justify-between rounded-2xl border border-border bg-background p-4 hover:border-primary/50 transition space-y-3"
-                      >
-                        <div>
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="rounded-lg bg-primary/10 px-2.5 py-0.5 font-mono text-[10px] font-black text-primary uppercase">
-                              {quiz.quizNumber ? `Quiz #${quiz.quizNumber}` : "Model Test"}
-                            </span>
-                            <span className="font-mono text-[11px] font-bold text-muted-foreground">
-                              {quiz.questions.length} Qs · -0.25
+              {/* Right Column: Private Course Live-Exam Notice + Public Self-Practice */}
+              <div className="lg:col-span-7 space-y-5">
+                {/* Official Private Courses — Instructor Live Exam Only */}
+                {(() => {
+                  const privateCourses = courses.filter((c) => isCoursePrivate(c));
+                  if (privateCourses.length === 0) return null;
+                  return (
+                    <div className="rounded-3xl border border-amber-500/40 bg-card p-6 sm:p-7 shadow-tactical space-y-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/70 pb-4">
+                        <div className="space-y-1">
+                          <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 border border-amber-500/30 px-3 py-0.5 text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                            <Lock className="h-3 w-3" />
+                            <span>
+                              {lang === "bn"
+                                ? "লাইভ পরীক্ষা শুধুমাত্র (সেলফ-প্র্যাকটিস বন্ধ)"
+                                : "Live Exam Only · Self-Practice Disabled"}
                             </span>
                           </div>
-                          {quiz.courseTitle && (
-                            <div className="mt-1.5 text-[10px] font-bold text-primary truncate">
-                              {quiz.courseTitle}
-                            </div>
-                          )}
-                          <h3 className="mt-0.5 font-display text-sm font-bold text-foreground leading-snug">
-                            {lang === "bn" ? quiz.titleBn : quiz.titleEn}
-                          </h3>
-                          {quiz.instructorName && (
-                            <p className="mt-1 text-[11px] text-muted-foreground">
-                              Faculty: {quiz.instructorName}
-                            </p>
-                          )}
+                          <h2 className="font-display text-lg sm:text-xl font-extrabold text-foreground">
+                            {lang === "bn"
+                              ? "অফিসিয়াল কোর্স পরীক্ষার হল (ইন্সট্রাক্টর-নিয়ন্ত্রিত)"
+                              : "Official Course Examination Hall (Instructor-Controlled)"}
+                          </h2>
+                          <p className="text-xs text-muted-foreground leading-relaxed">
+                            {lang === "bn"
+                              ? "কোর্সের কুইজসমূহ পাবলিক প্র্যাকটিসের জন্য উন্মুক্ত নয়। আপনার অ্যাডমিন বা ইন্সট্রাক্টর পরীক্ষা শুরু করলে বাম পাশের ৬-ডিজিট পিন কোড অথবা 'Active Live Exam Rooms' তালিকা থেকে সরাসরি পরীক্ষায় অংশগ্রহণ করুন।"
+                              : "Private course quizzes are locked against public self-practice. Trainees can enter using the 6-digit PIN or Active Live Exam Rooms on the left as soon as the Admin or Instructor launches the exam."}
+                          </p>
                         </div>
-
-                        <button
-                          type="button"
-                          disabled={isStartingPractice}
-                          onClick={() => handleStartSelfPractice(quiz)}
-                          className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary/10 border border-primary/30 py-2 text-xs font-extrabold text-primary hover:bg-primary hover:text-primary-foreground transition disabled:opacity-50"
-                        >
-                          <Play className="h-3.5 w-3.5 fill-current" />
-                          <span>{lang === "bn" ? "অনুশীলন শুরু করুন" : "Start Practice Exam"}</span>
-                        </button>
+                        {isStaff ? (
+                          <Link
+                            to="/dashboard"
+                            className="shrink-0 rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 transition"
+                          >
+                            {lang === "bn" ? "স্টুডিও থেকে পরীক্ষা চালু করুন →" : "Open Studio to Host →"}
+                          </Link>
+                        ) : (
+                          <Link
+                            to="/auth/login"
+                            className="shrink-0 rounded-xl border border-border bg-background px-3.5 py-2 text-xs font-bold text-foreground hover:bg-accent transition"
+                          >
+                            {lang === "bn" ? "ইন্সট্রাক্টর / অ্যাডমিন লগইন →" : "Sign In as Instructor / Admin to Host →"}
+                          </Link>
+                        )}
                       </div>
-                    ))}
-                </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {privateCourses.map((course) => {
+                          const courseQuizzes = quizzes
+                            .filter((q) => q.courseId === course.id)
+                            .sort((a, b) => (a.quizNumber ?? 99) - (b.quizNumber ?? 99));
+                          const firstQuiz = courseQuizzes[0];
+                          return (
+                            <div
+                              key={course.id}
+                              className="flex flex-col justify-between rounded-2xl border border-border bg-background p-4 space-y-2.5"
+                            >
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="rounded-lg bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-black text-primary">
+                                    {course.code}
+                                  </span>
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                                    <Lock className="h-2.5 w-2.5" />
+                                    <span>Live Exam Only</span>
+                                  </span>
+                                </div>
+                                <h3 className="font-display text-sm font-bold text-foreground leading-snug">
+                                  {course.icon} {lang === "bn" ? course.titleBn : course.titleEn}
+                                </h3>
+                                <p className="text-[11px] font-mono text-muted-foreground">
+                                  {courseQuizzes.length}{" "}
+                                  {lang === "bn" ? "টি নির্ধারিত কুইজ · হোস্ট পিন প্রয়োজন" : "locked modules · Instructor PIN required"}
+                                </p>
+                              </div>
+
+                              {isStaff && firstQuiz && (
+                                <Link
+                                  to="/host/$quizId"
+                                  params={{ quizId: firstQuiz.slug || firstQuiz.id }}
+                                  className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary/15 py-2 text-xs font-bold text-primary hover:bg-primary hover:text-primary-foreground transition"
+                                >
+                                  <Play className="h-3.5 w-3.5 fill-current" />
+                                  <span>Host Live Room →</span>
+                                </Link>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Public Demo Self-Practice Section */}
+                {(() => {
+                  const publicQuizzes = quizzes.filter((q) => !isQuizPrivate(q, courses));
+                  const publicCourses = courses.filter((c) => !isCoursePrivate(c));
+                  const visiblePublicQuizzes = publicQuizzes
+                    .filter((q) => selectedCourseId === "all" || q.courseId === selectedCourseId)
+                    .sort((a, b) => (a.quizNumber ?? 99) - (b.quizNumber ?? 99));
+
+                  return (
+                    <div className="rounded-3xl border border-border bg-card p-6 sm:p-7 shadow-tactical space-y-5">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 pb-4">
+                        <div>
+                          <div className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-0.5 text-[11px] font-bold text-primary mb-1">
+                            <Sparkles className="h-3 w-3" />
+                            <span>
+                              {lang === "bn" ? "পাবলিক ডেমো সেলফ-প্র্যাকটিস" : "Public Demo Self-Practice"}
+                            </span>
+                          </div>
+                          <h2 className="font-display text-lg sm:text-xl font-extrabold text-foreground">
+                            {lang === "bn"
+                              ? "ওপেন ডেমো মক টেস্ট অনুশীলন করুন"
+                              : "Practice Public Demo Quizzes Anytime"}
+                          </h2>
+                          <p className="text-xs text-muted-foreground">
+                            {lang === "bn"
+                              ? "শুধুমাত্র পাবলিক ডেমো কুইজগুলো হোস্ট পিন ছাড়াই তাৎক্ষণিক অনুশীলন করা যাবে।"
+                              : "Open public demo packs available for solo timed practice without a host PIN."}
+                          </p>
+                        </div>
+                      </div>
+
+                      {publicCourses.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedCourseId("all")}
+                            className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                              selectedCourseId === "all"
+                                ? "bg-primary text-primary-foreground"
+                                : "border border-border bg-background text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            {lang === "bn" ? "সকল পাবলিক কুইজ" : "All Public Quizzes"} ({publicQuizzes.length})
+                          </button>
+                          {publicCourses.map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => setSelectedCourseId(c.id)}
+                              className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                                selectedCourseId === c.id
+                                  ? "bg-primary text-primary-foreground"
+                                  : "border border-border bg-background text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              <span className="font-mono mr-1">{c.code}:</span>
+                              <span>{lang === "bn" ? c.titleBn : c.titleEn}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {visiblePublicQuizzes.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-border bg-background/60 p-6 text-center text-xs text-muted-foreground">
+                          {lang === "bn"
+                            ? "বর্তমানে কোনো পাবলিক সেলফ-প্র্যাকটিস কুইজ নির্বাচিত নেই। লাইভ পরীক্ষার জন্য বাম পাশের পিন বক্স ব্যবহার করুন।"
+                            : "No public demo quizzes in this filter. Enter a Live Room PIN on the left for scheduled examinations."}
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[380px] overflow-y-auto pr-1">
+                          {visiblePublicQuizzes.map((quiz) => (
+                            <div
+                              key={quiz.id}
+                              className="flex flex-col justify-between rounded-2xl border border-border bg-background p-4 hover:border-primary/50 transition space-y-3"
+                            >
+                              <div>
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="rounded-lg bg-primary/10 px-2.5 py-0.5 font-mono text-[10px] font-black text-primary uppercase">
+                                    {quiz.quizNumber ? `Quiz #${quiz.quizNumber}` : "Model Test"}
+                                  </span>
+                                  <span className="font-mono text-[11px] font-bold text-muted-foreground">
+                                    {quiz.questions.length} Qs · -0.25
+                                  </span>
+                                </div>
+                                {quiz.courseTitle && (
+                                  <div className="mt-1.5 text-[10px] font-bold text-primary truncate">
+                                    {quiz.courseTitle}
+                                  </div>
+                                )}
+                                <h3 className="mt-0.5 font-display text-sm font-bold text-foreground leading-snug">
+                                  {lang === "bn" ? quiz.titleBn : quiz.titleEn}
+                                </h3>
+                                {quiz.instructorName && (
+                                  <p className="mt-1 text-[11px] text-muted-foreground">
+                                    Faculty: {quiz.instructorName}
+                                  </p>
+                                )}
+                              </div>
+
+                              <button
+                                type="button"
+                                disabled={isStartingPractice}
+                                onClick={() => handleStartSelfPractice(quiz)}
+                                className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary/10 border border-primary/30 py-2 text-xs font-extrabold text-primary hover:bg-primary hover:text-primary-foreground transition disabled:opacity-50"
+                              >
+                                <Play className="h-3.5 w-3.5 fill-current" />
+                                <span>{lang === "bn" ? "অনুশীলন শুরু করুন" : "Start Practice Exam"}</span>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>

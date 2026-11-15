@@ -5,7 +5,7 @@ import { Footer } from "@/components/layout/Footer";
 import { CertificateDesignerStudio } from "@/components/admin/CertificateDesignerStudio";
 import { useAuth } from "@/lib/auth-context";
 import { useLanguage } from "@/lib/i18n";
-import { db, DbSalesLead, DbTransaction } from "@/lib/db";
+import { db, DbSalesLead, DbTransaction, isCoursePrivate } from "@/lib/db";
 import { gameEngine } from "@/lib/game-engine";
 import { serverGetActiveRooms } from "@/lib/server-session";
 import {
@@ -114,6 +114,7 @@ function SuperAdminPage() {
   const [courseDescEn, setCourseDescEn] = useState("");
   const [courseCategory, setCourseCategory] = useState("Civil Service & Training");
   const [courseIcon, setCourseIcon] = useState("🎯");
+  const [courseIsPrivate, setCourseIsPrivate] = useState<boolean>(true);
   const [selectedCourseInstructors, setSelectedCourseInstructors] = useState<string[]>([
     "usr-instructor-1",
   ]);
@@ -236,6 +237,7 @@ function SuperAdminPage() {
       color: "from-emerald-500/20 to-teal-500/20",
       instructorIds: selectedCourseInstructors,
       instructorNames: instructorObjs.map((i) => i.name),
+      isPrivate: courseIsPrivate,
       status: "active",
       createdAt: new Date().toISOString(),
     };
@@ -255,9 +257,10 @@ function SuperAdminPage() {
     setCourseTitleEn("");
     setCourseTitleBn("");
     setCourseDescEn("");
+    setCourseIsPrivate(true);
     refreshAll();
     showNotice(
-      `Saved course "${courseObj.code} — ${courseObj.titleEn}" with ${instructorObjs.length} instructor(s).`,
+      `Saved course "${courseObj.code} — ${courseObj.titleEn}" (${courseObj.isPrivate ? "Private · Live Exam Only" : "Public Self-Practice"}) with ${instructorObjs.length} instructor(s).`,
     );
   };
 
@@ -269,7 +272,19 @@ function SuperAdminPage() {
     setCourseDescEn(c.descriptionEn);
     setCourseCategory(c.categoryEn || "BCS / Job");
     setCourseIcon(c.icon || "🎯");
+    setCourseIsPrivate(isCoursePrivate(c));
     setSelectedCourseInstructors(c.instructorIds || []);
+  };
+
+  const handleToggleCoursePrivacy = (c: Course) => {
+    const nextPrivate = !isCoursePrivate(c);
+    db.saveCourse({ ...c, isPrivate: nextPrivate });
+    refreshAll();
+    showNotice(
+      `"${c.code} — ${c.titleEn}" is now ${
+        nextPrivate ? "PRIVATE (Live Exam Only)" : "PUBLIC (Self-Practice Enabled)"
+      }.`,
+    );
   };
 
   // Create Sequential Quiz (Quiz 1, Quiz 2, Quiz 3...) under a Course
@@ -938,6 +953,7 @@ function SuperAdminPage() {
                       setCourseTitleEn("");
                       setCourseTitleBn("");
                       setCourseDescEn("");
+                      setCourseIsPrivate(true);
                     }}
                     className="text-xs font-bold text-muted-foreground hover:text-foreground"
                   >
@@ -1048,6 +1064,23 @@ function SuperAdminPage() {
                   </div>
                 </div>
 
+                <label className="flex items-start gap-2.5 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={courseIsPrivate}
+                    onChange={(e) => setCourseIsPrivate(e.target.checked)}
+                    className="mt-0.5 rounded border-border text-primary focus:ring-primary"
+                  />
+                  <div className="text-xs leading-snug">
+                    <div className="font-bold text-foreground">
+                      🔒 Private Course (Live Exam Only — Disable Public Self-Practice)
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      Students cannot self-practice or view questions in public vault; quizzes are unlocked only when an Admin or Instructor starts a live exam room.
+                    </div>
+                  </div>
+                </label>
+
                 <button
                   type="submit"
                   className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3 text-xs font-extrabold text-primary-foreground shadow-sm hover:bg-primary/90 transition"
@@ -1066,6 +1099,7 @@ function SuperAdminPage() {
                 const courseQuizzes = quizzes
                   .filter((q) => q.courseId === course.id)
                   .sort((a, b) => (a.quizNumber || 99) - (b.quizNumber || 99));
+                const coursePrivate = isCoursePrivate(course);
 
                 return (
                   <div
@@ -1080,6 +1114,22 @@ function SuperAdminPage() {
                           </span>
                           <span className="text-xs font-semibold text-muted-foreground">
                             {course.categoryEn}
+                          </span>
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-bold ${
+                              coursePrivate
+                                ? "border-amber-500/40 bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                                : "border-emerald-500/40 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                            }`}
+                          >
+                            {coursePrivate ? (
+                              <>
+                                <Lock className="h-2.5 w-2.5" />
+                                <span>Private · Live Exam Only</span>
+                              </>
+                            ) : (
+                              <span>Public Self-Practice</span>
+                            )}
                           </span>
                         </div>
                         <h3 className="font-display text-xl font-black text-foreground">
@@ -1112,6 +1162,23 @@ function SuperAdminPage() {
                         >
                           <Plus className="h-3.5 w-3.5" />
                           <span>Add Quiz #{courseQuizzes.length + 1}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleCoursePrivacy(course)}
+                          className={`inline-flex items-center gap-1 rounded-xl border px-3 py-2 text-xs font-bold transition ${
+                            coursePrivate
+                              ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-300 hover:bg-amber-500/20"
+                              : "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20"
+                          }`}
+                          title={
+                            coursePrivate
+                              ? "Currently locked to Live Exam Only. Click to enable Public Self-Practice."
+                              : "Currently open for Public Self-Practice. Click to lock to Live Exam Only."
+                          }
+                        >
+                          <Lock className="h-3 w-3" />
+                          <span>{coursePrivate ? "Unlock Practice" : "Lock Live Only"}</span>
                         </button>
                         <button
                           type="button"

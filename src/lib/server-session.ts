@@ -26,7 +26,12 @@ import {
   READY_MADE_PACKS,
   SAMPLE_ROSTER,
 } from "./mock-data";
-import { normalizeBdPhone, normalizeRollToken } from "./sanjibon-seed-data";
+import {
+  isCoursePrivate,
+  isQuizPrivate,
+  normalizeBdPhone,
+  normalizeRollToken,
+} from "./sanjibon-seed-data";
 import {
   canActorMutateStoreAction,
   generateHostToken,
@@ -117,6 +122,7 @@ type ServerLiveSession = GameSession & {
   updatedAt: number;
   countdownStartedAt?: number | undefined;
   hostToken?: string | undefined;
+  isSelfPractice?: boolean | undefined;
   fullQuiz?: Quiz | undefined;
   cachedTop5?: Participant[] | undefined;
   cachedSanitizedQuestion?: Question | undefined;
@@ -273,12 +279,22 @@ export function mergeSeededStoreData<
 
   const courses = [...current.courses];
   for (const defCourse of DEFAULT_COURSES) {
-    if (!courses.some((c) => c.id === defCourse.id)) {
+    const existingIdx = courses.findIndex((c) => c.id === defCourse.id);
+    if (existingIdx === -1) {
       if (defCourse.id === "course-sanjibon-ai-dm") {
         courses.unshift(defCourse);
       } else {
         courses.push(defCourse);
       }
+    } else if (courses[existingIdx]) {
+      const existingCourse = courses[existingIdx]!;
+      courses[existingIdx] = {
+        ...existingCourse,
+        isPrivate:
+          typeof existingCourse.isPrivate === "boolean"
+            ? existingCourse.isPrivate
+            : isCoursePrivate(defCourse),
+      };
     }
   }
 
@@ -975,7 +991,9 @@ export const serverGetBootstrapData = createServerFn({ method: "GET" }).handler(
     roster: isStaff ? store.roster : [],
     courses: store.courses,
     users: isStaff ? store.users.map(sanitizeUserForClient) : [],
-    customQuizzes: store.customQuizzes,
+    customQuizzes: isStaff
+      ? store.customQuizzes
+      : store.customQuizzes.filter((q) => !isQuizPrivate(q, store.courses)),
     examSessions: store.examSessions,
     examResults: isStaff ? store.examResults : [],
     certificates: store.certificates,
@@ -2446,7 +2464,7 @@ export const serverGetActiveRooms = createServerFn({ method: "GET" }).handler(as
   const sessions = getLiveSessions();
   const cutoff = Date.now() - 4 * 3600 * 1000;
   const activeRooms = Object.values(sessions)
-    .filter((s) => s.updatedAt >= cutoff && s.phase !== "podium")
+    .filter((s) => s.updatedAt >= cutoff && s.phase !== "podium" && !s.isSelfPractice)
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, 12)
     .map((s) => ({
@@ -2479,12 +2497,31 @@ export const serverCreateSession = createServerFn({ method: "POST" })
       enforceFullscreen?: boolean | undefined;
       blockCopyPaste?: boolean | undefined;
       maxProctorViolations?: number | undefined;
+      isSelfPractice?: boolean | undefined;
     }) => data,
   )
   .handler(async ({ data }) => {
     const sessions = getLiveSessions();
     const store = getStore();
     const actor = await getActorFromRequest();
+    const isStaff = !!actor && (actor.role === "admin" || actor.role === "instructor");
+
+    const authoritativeQuiz =
+      store.customQuizzes.find((q) => q.id === data.quiz?.id || q.slug === data.quiz?.slug) ||
+      READY_MADE_PACKS.find((q) => q.id === data.quiz?.id || q.slug === data.quiz?.slug) ||
+      data.quiz;
+    const quizIsPrivate =
+      isQuizPrivate(authoritativeQuiz, store.courses) || isQuizPrivate(data.quiz, store.courses);
+
+    if (!isStaff && (quizIsPrivate || !data.isSelfPractice)) {
+      return {
+        success: false,
+        error:
+          "Private course examinations can only be started by an authenticated Admin or Instructor.",
+        session: null,
+        hostToken: undefined,
+      };
+    }
 
     // Purge stale sessions older than 12 hours
     const cutoff = Date.now() - 12 * 3600 * 1000;
@@ -2496,12 +2533,7 @@ export const serverCreateSession = createServerFn({ method: "POST" })
     }
 
     // Only authenticated staff persist new quizzes into server customQuizzes
-    if (
-      actor &&
-      (actor.role === "admin" || actor.role === "instructor") &&
-      data.quiz &&
-      !READY_MADE_PACKS.some((p) => p.id === data.quiz.id)
-    ) {
+    if (isStaff && data.quiz && !READY_MADE_PACKS.some((p) => p.id === data.quiz.id)) {
       const idx = store.customQuizzes.findIndex((q) => q.id === data.quiz.id);
       if (idx >= 0) store.customQuizzes[idx] = data.quiz;
       else store.customQuizzes.unshift(data.quiz);
@@ -2539,6 +2571,7 @@ export const serverCreateSession = createServerFn({ method: "POST" })
       quizTitleBn: data.quiz.titleBn,
       hostId: actor?.id || `host-${now}`,
       hostToken,
+      isSelfPractice: !!data.isSelfPractice,
       phase: "lobby",
       currentQuestionIndex: -1,
       questionStartTime: 0,

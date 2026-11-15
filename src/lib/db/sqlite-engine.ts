@@ -100,6 +100,7 @@ class SQLiteEngine {
         color TEXT,
         instructorIdsJson TEXT,
         instructorNamesJson TEXT,
+        isPrivate INTEGER DEFAULT 1,
         status TEXT,
         createdAt TEXT
       );
@@ -130,6 +131,7 @@ class SQLiteEngine {
         icon TEXT,
         questionsJson TEXT,
         isTemplate INTEGER DEFAULT 0,
+        isPrivate INTEGER DEFAULT 1,
         createdAt TEXT
       );
 
@@ -283,6 +285,8 @@ class SQLiteEngine {
       "ALTER TABLE quizzes ADD COLUMN quizNumber INTEGER",
       "ALTER TABLE quizzes ADD COLUMN instructorId TEXT",
       "ALTER TABLE quizzes ADD COLUMN instructorName TEXT",
+      "ALTER TABLE quizzes ADD COLUMN isPrivate INTEGER",
+      "ALTER TABLE courses ADD COLUMN isPrivate INTEGER",
       "ALTER TABLE users ADD COLUMN institution TEXT",
       "ALTER TABLE users ADD COLUMN designation TEXT",
       "ALTER TABLE users ADD COLUMN plan TEXT",

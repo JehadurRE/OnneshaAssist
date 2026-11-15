@@ -50,6 +50,8 @@ import {
   SANJIBON_QUIZZES,
   SANJIBON_REGIONS,
   SANJIBON_ROSTER,
+  isCoursePrivate,
+  isQuizPrivate,
   normalizeBdPhone,
   normalizeRollToken,
 } from "../sanjibon-seed-data";
@@ -851,5 +853,31 @@ describe("SQLite batch persistence & post-exam session recording performance", (
         (globalThis as Record<string, unknown>)["localStorage"] = origLocalStorage;
       }
     }
+  });
+});
+
+describe("course & quiz privacy access control helpers", () => {
+  it("marks Sanjibon course and all 11 Sanjibon quizzes private while keeping public demo course open", () => {
+    expect(isCoursePrivate(SANJIBON_COURSE)).toBe(true);
+    expect(SANJIBON_QUIZZES.length).toBe(11);
+    expect(SANJIBON_QUIZZES.every((q) => isQuizPrivate(q, DEFAULT_COURSES))).toBe(true);
+
+    const demoCourse = DEFAULT_COURSES.find((c) => c.id === "course-bcs-foundation");
+    expect(isCoursePrivate(demoCourse)).toBe(false);
+    const demoPack = READY_MADE_PACKS.find((q) => q.id === "pack-bcs-gk")!;
+    expect(isQuizPrivate(demoPack, DEFAULT_COURSES)).toBe(false);
+  });
+
+  it("propagates course isPrivate toggles immediately to all child quizzes", () => {
+    const toggledPublicCourses: Course[] = DEFAULT_COURSES.map((c) =>
+      c.id === "course-sanjibon-ai-dm" ? { ...c, isPrivate: false } : c,
+    );
+    expect(SANJIBON_QUIZZES.every((q) => !isQuizPrivate(q, toggledPublicCourses))).toBe(true);
+
+    const toggledPrivateCourses: Course[] = DEFAULT_COURSES.map((c) =>
+      c.id === "course-bcs-foundation" ? { ...c, isPrivate: true } : c,
+    );
+    const demoPack = READY_MADE_PACKS.find((q) => q.id === "pack-bcs-gk")!;
+    expect(isQuizPrivate(demoPack, toggledPrivateCourses)).toBe(true);
   });
 });

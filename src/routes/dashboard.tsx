@@ -19,7 +19,7 @@ import {
   ExamResultRecord,
   Region,
 } from "@/lib/types";
-import { db, DbSmsLog, DbTransaction, formatDeterministicCertNumber } from "@/lib/db";
+import { db, DbSmsLog, DbTransaction, formatDeterministicCertNumber, isQuizPrivate } from "@/lib/db";
 import { computeTotalQuizMarks } from "@/lib/scoring";
 import { gameEngine } from "@/lib/game-engine";
 import { serverGetActiveRooms } from "@/lib/server-session";
@@ -1625,11 +1625,17 @@ function DashboardPage() {
                     >
                       <div>
                         <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-2xl">{quiz.icon}</span>
                             {quiz.quizNumber && (
                               <span className="rounded-lg border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-black uppercase text-primary">
                                 Quiz #{quiz.quizNumber}
+                              </span>
+                            )}
+                            {isQuizPrivate(quiz, courses) && (
+                              <span className="inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                                <Lock className="h-2.5 w-2.5" />
+                                <span>Live Exam Only</span>
                               </span>
                             )}
                           </div>

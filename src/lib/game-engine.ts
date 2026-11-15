@@ -376,28 +376,35 @@ class RealtimeGameEngine {
     quiz: Quiz,
     isFormal = true,
     allowedRegionId = 'all',
-    allowedRegionName = 'All Regions (National)'
+    allowedRegionName = 'All Regions (National)',
+    isSelfPractice = false
   ): Promise<GameSession> {
-    try {
-      const res = await serverCreateSession({
-        data: {
-          quiz,
-          isFormal,
-          allowedRegionId,
-          allowedRegionName,
-        },
-      });
-      if (res.success && res.session) {
-        if (res.hostToken) {
-          this.saveStoredHostToken(res.session.pin, res.hostToken);
-        }
-        this.cacheSessionLocally(res.session);
-        this.startPolling(res.session.pin, 'host');
-        return res.session;
-      }
-    } catch (err) {
-      console.warn('Server createSession fallback:', err);
+    const res = await serverCreateSession({
+      data: {
+        quiz,
+        isFormal,
+        allowedRegionId,
+        allowedRegionName,
+        isSelfPractice,
+      },
+    }).catch((err) => {
+      console.warn('Server createSession notice:', err);
+      return null;
+    });
+
+    if (res && !res.success && res.error) {
+      throw new Error(res.error);
     }
+
+    if (res && res.success && res.session) {
+      if (res.hostToken) {
+        this.saveStoredHostToken(res.session.pin, res.hostToken);
+      }
+      this.cacheSessionLocally(res.session);
+      this.startPolling(res.session.pin, 'host');
+      return res.session;
+    }
+
     return this.createSession(quiz, isFormal, allowedRegionId, allowedRegionName);
   }
 

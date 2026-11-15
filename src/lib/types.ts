@@ -49,6 +49,7 @@ export interface Course {
   color?: string | undefined;
   instructorIds: string[];
   instructorNames: string[];
+  isPrivate?: boolean | undefined;
   status?: "active" | "archived" | string | undefined;
   createdAt: string;
 }
@@ -90,6 +91,7 @@ export interface Quiz {
   instructorId?: string | undefined;
   instructorName?: string | undefined;
   isTemplate?: boolean | undefined;
+  isPrivate?: boolean | undefined;
   totalTimeSec?: number | undefined;
   tags?: string[] | undefined;
   createdAt?: string | undefined;
