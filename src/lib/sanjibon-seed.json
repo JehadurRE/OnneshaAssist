@@ -3079,6 +3079,813 @@
   ],
   "quizzes": [
     {
+      "id": "quiz-sanjibon-s00-baseline",
+      "slug": "sanjibon-baseline-diagnostic-assessment",
+      "courseId": "course-sanjibon-ai-dm",
+      "courseTitle": "Applied Artificial Intelligence & Autonomous Workflows for Digital Marketing Freelancers",
+      "quizNumber": 0,
+      "instructorId": "usr-instructor-1",
+      "instructorName": "Md. Jehad (Lead Instructor · Cloud Connect AI Limited)",
+      "icon": "🧭",
+      "titleEn": "Baseline Assessment (Pre-Test) — Trainee Digital Marketing & AI Readiness Check (20 MCQs)",
+      "titleBn": "প্রারম্ভিক মূল্যায়ন কুইজ (Pre-Test) — প্রশিক্ষণার্থীদের বর্তমান ডিজিটাল মার্কেটিং ও এআই ধারণা যাচাই (২০টি MCQ)",
+      "descriptionEn": "Beginning diagnostic assessment (20 MCQs) conducted at the start of Session 00/01 to measure each trainee's current baseline across digital literacy, Facebook/social commerce, basic AI & prompting awareness, visual/video sense, websites, and freelancing readiness.",
+      "descriptionBn": "প্রশিক্ষণের শুরুতে প্রশিক্ষণার্থীদের বর্তমান জ্ঞান ও দক্ষতার অবস্থা বোঝার জন্য ২০টি বহুনির্বাচনী প্রশ্নের প্রারম্ভিক যাচাই পরীক্ষা (ডিজিটাল স্বাক্ষরতা, ফেসবুক মার্কেটিং, এআই ধারণা, ডিজাইন, ওয়েবসাইট ও ফ্রিল্যান্সিং প্রস্তুতি)।",
+      "categoryEn": "Baseline Diagnostic & Applied AI",
+      "categoryBn": "প্রারম্ভিক মূল্যায়ন ও প্রয়োগিক এআই",
+      "color": "from-sky-500/20 to-indigo-500/20",
+      "tags": [
+        "Sanjibon",
+        "Baseline",
+        "Pre-Test",
+        "Diagnostic",
+        "20 MCQs"
+      ],
+      "createdAt": "2026-11-15T08:00:00Z",
+      "questions": [
+        {
+          "id": "sj-s00-q01",
+          "textEn": "Which single account lets you log into Google Drive, Google Sheets, and Google Docs together?",
+          "textBn": "কোন একটি অ্যাকাউন্ট দিয়ে Google Drive, Google Sheets এবং Google Docs-এ একসাথে প্রবেশ করা যায়?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Digital Literacy",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "A TikTok account",
+              "textBn": "একটি টিকটক অ্যাকাউন্ট"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "A Windows Bluetooth PIN",
+              "textBn": "একটি উইন্ডোজ ব্লুটুথ পিন"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "A Google (Gmail) account",
+              "textBn": "একটি Google (Gmail) অ্যাকাউন্ট",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-4",
+              "textEn": "A mobile recharge voucher",
+              "textBn": "একটি মোবাইল রিচার্জ ভাউচার"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-3"
+          ],
+          "explanationEn": "A standard Google (Gmail) account gives unified access to Drive, Docs, Sheets, and Slides.",
+          "explanationBn": "একটি Google (Gmail) অ্যাকাউন্ট থাকলেই Google Drive, Docs ও Sheets-এ লগইন করা যায়।"
+        },
+        {
+          "id": "sj-s00-q02",
+          "textEn": "When saving a marketing poster or product photo to post on Facebook, which file formats are image files?",
+          "textBn": "ফেসবুকে মার্কেটিং পোস্টার বা পণ্যের ছবি আপলোড করার জন্য নিচের কোনগুলো ইমেজ বা ছবি ফাইল ফরম্যাট?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "File Formats",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": ".jpg or .png",
+              "textBn": ".jpg বা .png",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-2",
+              "textEn": ".mp3 or .wav",
+              "textBn": ".mp3 বা .wav"
+            },
+            {
+              "id": "opt-3",
+              "textEn": ".xlsx or .csv",
+              "textBn": ".xlsx বা .csv"
+            },
+            {
+              "id": "opt-4",
+              "textEn": ".exe or .bat",
+              "textBn": ".exe বা .bat"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-1"
+          ],
+          "explanationEn": "JPG and PNG are standard web image formats used for banners, posters, and product photos.",
+          "explanationBn": ".jpg ও .png হলো ওয়েব ও ফেসবুকের জন্য প্রচলিত ছবি ফাইল ফরম্যাট।"
+        },
+        {
+          "id": "sj-s00-q03",
+          "textEn": "Which type of personal or client information should you NEVER paste into a public AI chatbot?",
+          "textBn": "নিচের কোন ধরনের ব্যক্তিগত বা ক্লায়েন্টের তথ্য কখনোই পাবলিক এআই চ্যাটবটে পেস্ট করা উচিত নয়?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Cyber Safety",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "A general product description for shoes",
+              "textBn": "জুতার একটি সাধারণ পণ্যের বিবরণ"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Sample blog topic ideas",
+              "textBn": "ব্লগ লেখার সাধারণ বিষয়বস্তু"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Public holiday greeting wishes",
+              "textBn": "সরকারি ছুটির শুভেচ্ছা বার্তা"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "NID numbers, bank PINs, passwords, or private client phone lists",
+              "textBn": "জাতীয় পরিচয়পত্র (NID) নম্বর, ব্যাংক পিন, পাসওয়ার্ড বা ব্যক্তিগত ক্লায়েন্ট ফোন তালিকা",
+              "isCorrect": true
+            }
+          ],
+          "correctOptionIds": [
+            "opt-4"
+          ],
+          "explanationEn": "Confidential identity, banking credentials, and private customer records must never be exposed to AI tools.",
+          "explanationBn": "NID, পাসওয়ার্ড, ব্যাংক তথ্য বা গোপনীয় ক্রেতার ডেটা কখনো এআই চ্যাটে দেওয়া নিরাপদ নয়।"
+        },
+        {
+          "id": "sj-s00-q04",
+          "textEn": "Which keyboard shortcut copies selected text on Windows so you can paste it elsewhere?",
+          "textBn": "উইন্ডোজে নির্বাচিত লেখা কপি (Copy) করে অন্য কোথাও পেস্ট করার জন্য কোন কিবোর্ড শর্টকাট ব্যবহৃত হয়?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Computer Basics",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Ctrl + P",
+              "textBn": "Ctrl + P"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Ctrl + C",
+              "textBn": "Ctrl + C",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Ctrl + Z",
+              "textBn": "Ctrl + Z"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Alt + F4",
+              "textBn": "Alt + F4"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-2"
+          ],
+          "explanationEn": "Ctrl + C copies the selected text or item; Ctrl + V pastes it.",
+          "explanationBn": "Ctrl + C দিয়ে লেখা বা তথ্য কপি করা হয় এবং Ctrl + V দিয়ে পেস্ট করা হয়।"
+        },
+        {
+          "id": "sj-s00-q05",
+          "textEn": "To run paid Facebook ads and build a trusted online shop, what should a business create?",
+          "textBn": "ফেসবুকে পেইড বিজ্ঞাপন চালাতে এবং নির্ভরযোগ্য অনলাইন শপ গড়তে একটি ব্যবসার কী খোলা উচিত?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Social Commerce",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "A Facebook Business Page (separate from a personal profile)",
+              "textBn": "একটি Facebook Business Page (ব্যক্তিগত প্রোফাইল থেকে আলাদা)",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Only a private WhatsApp group",
+              "textBn": "শুধুমাত্র একটি প্রাইভেট হোয়াটসঅ্যাপ গ্রুপ"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Ten duplicate personal profiles",
+              "textBn": "দশটি ডুপ্লিকেট ব্যক্তিগত প্রোফাইল"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "A desktop Notepad file",
+              "textBn": "একটি ডেস্কটপ নোটপ্যাড ফাইল"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-1"
+          ],
+          "explanationEn": "Facebook Business Pages provide Page Insights, Messenger automation, Meta Business Suite, and ad running permissions.",
+          "explanationBn": "Facebook Business Page-এর মাধ্যমে বিজ্ঞাপন চালানো, পেজ ইনসাইটস দেখা এবং ব্যবসায়িক বিশ্বাসযোগ্যতা তৈরি করা যায়।"
+        },
+        {
+          "id": "sj-s00-q06",
+          "textEn": "In digital marketing, what does 'Target Audience' mean?",
+          "textBn": "ডিজিটাল মার্কেটিং-এ 'Target Audience' (টার্গেট অডিয়েন্স) বলতে কী বোঝায়?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Marketing Fundamentals",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Every single person in the world with a phone",
+              "textBn": "বিশ্বে মোবাইল থাকা প্রতিটি মানুষ"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Only rival shop owners selling the same product",
+              "textBn": "একই পণ্য বিক্রি করা শুধু প্রতিদ্বন্দ্বী দোকানি"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "The specific group of people most likely to want and buy your product",
+              "textBn": "নির্দিষ্ট যে শ্রেণির মানুষের আপনার পণ্যটি পছন্দ করার ও কেনার সম্ভাবনা সবচেয়ে বেশি",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-4",
+              "textEn": "People whose internet connection is offline",
+              "textBn": "যাদের ইন্টারনেট সংযোগ বন্ধ থাকে"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-3"
+          ],
+          "explanationEn": "Defining age, location, interests, and buying need stops wasted ad spend on uninterested viewers.",
+          "explanationBn": "বয়স, এলাকা ও প্রয়োজন অনুযায়ী সঠিক ক্রেতাগোষ্ঠী নির্ধারণ করলে বিজ্ঞাপনের খরচ অপচয় হয় না।"
+        },
+        {
+          "id": "sj-s00-q07",
+          "textEn": "On Bangladeshi online shops, what does 'COD' mean during order checkout?",
+          "textBn": "বাংলাদেশের অনলাইন শপে অর্ডার নেওয়ার সময় 'COD' বলতে কী বোঝায়?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Bangladesh E-Commerce",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Cost of Design",
+              "textBn": "কস্ট অব ডিজাইন"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Cancel On Demand",
+              "textBn": "ক্যানসেল অন ডিমান্ড"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Coupon Or Discount",
+              "textBn": "কুপন অর ডিসকাউন্ট"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Cash on Delivery (paying when the courier hands over the parcel)",
+              "textBn": "ক্যাশ অন ডেলিভারি (কুরিয়ার পার্সেল হাতে দেওয়ার সময় টাকা পরিশোধ)",
+              "isCorrect": true
+            }
+          ],
+          "correctOptionIds": [
+            "opt-4"
+          ],
+          "explanationEn": "Cash on Delivery (COD) is the most common payment method in Bangladesh's e-commerce and F-commerce orders.",
+          "explanationBn": "বাংলাদেশে এফ-কমার্স ও ই-কমার্সে হাতে পণ্য পেয়ে টাকা পরিশোধের পদ্ধতিই Cash on Delivery (COD)।"
+        },
+        {
+          "id": "sj-s00-q08",
+          "textEn": "Why do marketers add a clear button like 'Send Message' or 'Order Now' (CTA) to an ad post?",
+          "textBn": "একটি বিজ্ঞাপনে বা পোস্টে 'Send Message' বা 'Order Now'-এর মতো স্পষ্ট বাটন (CTA) কেন দেওয়া হয়?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Call To Action",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "To hide the product price forever",
+              "textBn": "পণ্যের দাম চিরতরে লুকিয়ে রাখার জন্য"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "To guide interested viewers on the exact next step to inquire or buy",
+              "textBn": "আগ্রহী ক্রেতাকে প্রশ্ন করতে বা অর্ডার করতে পরবর্তী সঠিক ধাপটি সহজে দেখিয়ে দেওয়ার জন্য",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-3",
+              "textEn": "To delete comments automatically",
+              "textBn": "কমেন্ট স্বয়ংক্রিয়ভাবে মুছে ফেলার জন্য"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "To slow down the phone browser",
+              "textBn": "ফোনের ব্রাউজার স্লো করার জন্য"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-2"
+          ],
+          "explanationEn": "A Call to Action removes friction so interested customers immediately know how to message or order.",
+          "explanationBn": "সুস্পষ্ট Call To Action থাকলে ক্রেতা সহজেই বুঝতে পারেন কীভাবে ইনবক্স বা অর্ডার করতে হবে।"
+        },
+        {
+          "id": "sj-s00-q09",
+          "textEn": "How can digital marketers practically use tools like ChatGPT or Google Gemini in daily work?",
+          "textBn": "ডিজিটাল মার্কেটাররা দৈনন্দিন কাজে ChatGPT বা Google Gemini-র মতো এআই টুল কীভাবে ব্যবহার করতে পারেন?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "AI Awareness",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "To repair broken laptop screens physically",
+              "textBn": "ল্যাপটপের ভাঙা স্ক্রিন হাতে মেরামত করতে"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "To courier physical parcels to Bogura",
+              "textBn": "বগুড়ায় সরাসরি পার্সেল কুরিয়ার করতে"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "To draft Bangla/English captions, brainstorm ad hooks, translate, and plan content faster",
+              "textBn": "বাংলা/ইংরেজি ক্যাপশন খসড়া, বিজ্ঞাপনের আইডিয়া, অনুবাদ ও কনটেন্ট প্ল্যান দ্রুত তৈরি করতে",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-4",
+              "textEn": "To increase battery percentage without charging",
+              "textBn": "চার্জার ছাড়াই মোবাইলের ব্যাটারি বাড়াতে"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-3"
+          ],
+          "explanationEn": "Generative AI acts as a 24/7 writing, brainstorming, research, and structuring assistant.",
+          "explanationBn": "জেনারেটিভ এআই লেখা, অনুবাদ, ক্যাম্পেইন আইডিয়া ও পরিকল্পনা তৈরিতে দ্রুত সহায়ক হিসেবে কাজ করে।"
+        },
+        {
+          "id": "sj-s00-q10",
+          "textEn": "When working with an AI chatbot, what is a 'Prompt'?",
+          "textBn": "এআই চ্যাটবট ব্যবহারের সময় 'Prompt' (প্রম্পট) বলতে কী বোঝায়?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Prompt Basics",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "The instruction, question, or context you type so the AI knows what to produce",
+              "textBn": "এআই-কে দিয়ে কোনো কাজ করানোর জন্য আপনি যে নির্দেশনা বা প্রশ্ন লিখে দেন",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-2",
+              "textEn": "The power cable connected to a router",
+              "textBn": "রাউটারের সাথে লাগানো পাওয়ার কেবল"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "A paid Facebook Page boost receipt",
+              "textBn": "ফেসবুক পেজ বুস্ট করার রসিদ"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "The phone's lock-screen wallpaper",
+              "textBn": "ফোনের লক-স্ক্রিন ওয়ালপেপার"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-1"
+          ],
+          "explanationEn": "A prompt is the input instruction that guides the AI model's output.",
+          "explanationBn": "আপনি এআই-কে যে লিখিত নির্দেশনা বা প্রশ্ন দেন, সেটিই প্রম্পট।"
+        },
+        {
+          "id": "sj-s00-q11",
+          "textEn": "Why does telling AI your product details, buyer type, and desired word length give a much better caption?",
+          "textBn": "প্রম্পটে পণ্যের বিবরণ, ক্রেতার ধরন ও লেখার দৈর্ঘ্য উল্লেখ করলে এআই কেন অনেক ভালো ক্যাপশন দেয়?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Prompt Clarity",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Because longer text makes Wi-Fi faster",
+              "textBn": "বেশি লেখা লিখলে ওয়াই-ফাই স্পিড বেড়ে যায়"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Because AI ignores short words completely",
+              "textBn": "এআই ছোট শব্দ একদম পড়তে পারে না"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Because Facebook requires 5,000 hashtags per post",
+              "textBn": "ফেসবুকে প্রতি পোস্টে ৫,০০০ হ্যাশট্যাগ বাধ্যতামূলক"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Because specific instructions keep AI focused instead of writing vague, generic text",
+              "textBn": "নির্দিষ্ট তথ্য দিলে এআই অনুমান নির্ভর সাধারণ কথা না লিখে লক্ষ্যভিত্তিক ও কার্যকর লেখা দেয়",
+              "isCorrect": true
+            }
+          ],
+          "correctOptionIds": [
+            "opt-4"
+          ],
+          "explanationEn": "Clear context (what, who, goal, tone, format) transforms generic answers into usable marketing copy.",
+          "explanationBn": "সঠিক প্রেক্ষাপট ও নির্দেশনা দিলে এআই সাধারণ কথার বদলে কাজের উপযোগী নির্ভুল মার্কেটিং লেখা তৈরি করে।"
+        },
+        {
+          "id": "sj-s00-q12",
+          "textEn": "If an AI assistant writes market statistics, medical benefits, or product prices for a client post, what should you ALWAYS do before publishing?",
+          "textBn": "কোনো ক্লায়েন্টের পোস্টের জন্য এআই যদি বাজারের পরিসংখ্যান, স্বাস্থ্যগুণ বা দাম লিখে দেয়, তবে পাবলিশ করার আগে আপনার কী করা বাধ্যতামূলক?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "AI Fact-Checking",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Publish immediately without reading a word",
+              "textBn": "এক শব্দও না পড়েই সাথে সাথে পাবলিশ করা"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Verify and fact-check the claims yourself because AI can invent incorrect facts",
+              "textBn": "তথ্যগুলো নিজে যাচাই (Fact-check) করা, কারণ এআই আত্মবিশ্বাসের সাথে ভুল তথ্যও বানিয়ে লিখতে পারে",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Delete the Page logo first",
+              "textBn": "প্রথমেই পেজের লোগো মুছে ফেলা"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Turn off spelling in Bengali and English",
+              "textBn": "বাংলা ও ইংরেজি বানান দেখা বন্ধ করা"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-2"
+          ],
+          "explanationEn": "AI models predict plausible words and can fabricate statistics; human verification protects brand trust.",
+          "explanationBn": "এআই কখনো কখনো ভুল বা কাল্পনিক তথ্য বানাতে পারে; তাই প্রকাশের আগে মানুষ হিসেবে যাচাই করা অপরিহার্য।"
+        },
+        {
+          "id": "sj-s00-q13",
+          "textEn": "Which beginner-friendly online design platform is widely used to make social media posters, YouTube thumbnails, and ad banners using templates?",
+          "textBn": "টেমপ্লেট ব্যবহার করে সহজে সোশ্যাল মিডিয়া পোস্টার, ইউটিউব থাম্বনেইল ও বিজ্ঞাপনের ব্যানার তৈরির জন্য নিচের কোন অনলাইন টুলটি সবচেয়ে বেশি জনপ্রিয়?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Visual Design Tools",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Windows Calculator",
+              "textBn": "উইন্ডোজ ক্যালকুলেটর"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Microsoft Paint DOS",
+              "textBn": "এমএস-ডস"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Canva",
+              "textBn": "Canva (ক্যানভা)",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Command Prompt",
+              "textBn": "কমান্ড প্রম্পট"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-3"
+          ],
+          "explanationEn": "Canva lets marketers customize sizes, fonts, Bangla/English headlines, and templates rapidly.",
+          "explanationBn": "Canva-র রেডিমেড টেমপ্লেট দিয়ে খুব দ্রুত পেশাদার পোস্টার, থাম্বনেইল ও অ্যাড ব্যানার ডিজাইন করা যায়।"
+        },
+        {
+          "id": "sj-s00-q14",
+          "textEn": "What is the main problem if you place thin light-grey text over a bright white product photo on an ad banner?",
+          "textBn": "বিজ্ঞাপনের ব্যানারে উজ্জ্বল সাদা পণ্যের ছবির ওপর হালকা ধূসর রঙের চিকন ফন্টে লেখা বসালে মূল সমস্যা কী হবে?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Design Readability",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Low color contrast makes the offer hard or impossible to read on mobile screens",
+              "textBn": "কালার কনট্রাস্ট কম থাকায় মোবাইল স্ক্রিনে লেখা পড়া কঠিন বা অস্পষ্ট হয়ে যাবে",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-2",
+              "textEn": "The ad budget becomes completely free",
+              "textBn": "বিজ্ঞাপনের খরচ পুরোপুরি ফ্রি হয়ে যাবে"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "The photo automatically turns into a video",
+              "textBn": "ছবিটি স্বয়ংক্রিয়ভাবে ভিডিওতে রূপান্তরিত হবে"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Customer phone batteries charge faster",
+              "textBn": "ক্রেতার ফোনের ব্যাটারি দ্রুত চার্জ হবে"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-1"
+          ],
+          "explanationEn": "Strong foreground-to-background contrast ensures headline offers are readable in 1 second on phones.",
+          "explanationBn": "লেখা ও ব্যাকগ্রাউন্ডের মধ্যে পর্যাপ্ত কনট্রাস্ট না থাকলে ব্যস্ত মোবাইল ব্যবহারকারীরা লেখাটি পড়তেই পারবেন না।"
+        },
+        {
+          "id": "sj-s00-q15",
+          "textEn": "Which video aspect ratio fills a smartphone screen vertically for Facebook Reels, Instagram Reels, and TikTok?",
+          "textBn": "Facebook Reels, Instagram Reels এবং TikTok-এ পুরো মোবাইল স্ক্রিন জুড়ে দেখানোর জন্য কোন ভিডিও অনুপাত (Aspect Ratio) সঠিক?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Short Video Format",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Ultra-wide 21:9 cinema",
+              "textBn": "আল্ট্রা-ওয়াইড ২১:৯ সিনেমা"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Landscape 16:9 TV",
+              "textBn": "ল্যান্ডস্কেপ ১৬:৯ টিভি"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Tiny passport 3:2 print",
+              "textBn": "ছোট পাসপোর্ট ৩:২ প্রিন্ট"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Vertical 9:16",
+              "textBn": "ভার্টিক্যাল ৯:১৬ (Vertical 9:16)",
+              "isCorrect": true
+            }
+          ],
+          "correctOptionIds": [
+            "opt-4"
+          ],
+          "explanationEn": "Vertical 9:16 (e.g., 1080x1920 px) fills modern smartphone screens edge-to-edge in Reels and Shorts.",
+          "explanationBn": "৯:১৬ (যেমন ১০৮০×১৯২০ পিক্সেল) ভার্টিক্যাল ভিডিও মোবাইলের সম্পূর্ণ স্ক্রিন জুড়ে আকর্ষণীয়ভাবে দেখায়।"
+        },
+        {
+          "id": "sj-s00-q16",
+          "textEn": "Why do successful marketing Reels focus heavily on the first 3 seconds of the video?",
+          "textBn": "সফল মার্কেটিং রিলস বা শর্ট ভিডিওতে প্রথম ৩ সেকেন্ডের ওপর এত বেশি গুরুত্ব দেওয়া হয় কেন?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Video Hook",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Because videos cannot play audio after 5 seconds",
+              "textBn": "কারণ ৫ সেকেন্ড পর ভিডিওতে শব্দ চলে না"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Because viewers scroll fast, so a strong opening hook stops them from skipping",
+              "textBn": "কারণ দর্শক দ্রুত স্ক্রল করেন; প্রথম ৩ সেকেন্ড আকর্ষণীয় না হলে তারা ভিডিও ছেড়ে চলে যান",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Because Facebook deletes videos shorter than 1 hour",
+              "textBn": "কারণ ১ ঘণ্টার কম ভিডিও ফেসবুক মুছে দেয়"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Because cameras need 3 seconds to cool down",
+              "textBn": "কারণ ক্যামেরা ঠান্ডা হতে ৩ সেকেন্ড সময় নেয়"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-2"
+          ],
+          "explanationEn": "A strong visual or verbal hook in the first 3 seconds boosts retention and lowers cost per view.",
+          "explanationBn": "প্রথম ৩ সেকেন্ডে আকর্ষণীয় হুক না থাকলে দর্শক স্ক্রল করে চলে যান এবং রিচ কমে যায়।"
+        },
+        {
+          "id": "sj-s00-q17",
+          "textEn": "Besides running a Facebook Page, what is a major benefit of having your own business website?",
+          "textBn": "ফেসবুক পেজের পাশাপাশি একটি ব্যবসার নিজস্ব ওয়েবসাইট থাকার বড় সুবিধা কী?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Web Presence",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "You own your online storefront and can rank on Google Search without relying solely on one social app",
+              "textBn": "আপনার নিজস্ব ব্র্যান্ড প্ল্যাটফর্ম তৈরি হয় এবং কেবল একটি অ্যাপের ওপর নির্ভর না করে Google Search-এও ক্রেতা পাওয়া যায়",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Websites never need any product photos or prices",
+              "textBn": "ওয়েবসাইটে কখনো পণ্যের ছবি বা দাম লাগে না"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "A website automatically cooks and delivers food",
+              "textBn": "ওয়েবসাইট নিজে থেকেই খাবার রান্না করে ডেলিভারি দেয়"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "It disables all customers from calling you",
+              "textBn": "এটি সব ক্রেতার ফোন কল বন্ধ করে দেয়"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-1"
+          ],
+          "explanationEn": "A website acts as a permanent, searchable digital headquarters and checkout destination you control.",
+          "explanationBn": "ওয়েবসাইট আপনার নিজের নিয়ন্ত্রণে থাকা স্থায়ী ডিজিটাল শোরুম, যা গুগল সার্চ ও ব্র্যান্ড আস্থা দুটোই বাড়ায়।"
+        },
+        {
+          "id": "sj-s00-q18",
+          "textEn": "Which free cloud spreadsheet tool is ideal for logging daily customer orders, phone numbers, and COD delivery status?",
+          "textBn": "প্রতিদিনের ক্রেতার অর্ডার, ফোন নম্বর এবং COD ডেলিভারি স্ট্যাটাস সাজিয়ে রাখার জন্য কোন ফ্রি ক্লাউড স্প্রেডশিট টুলটি সবচেয়ে কার্যকর?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Operations & Tracking",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Spotify Music",
+              "textBn": "স্পটিফাই মিউজিক"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Adobe Premiere Pro",
+              "textBn": "অ্যাডোবি প্রিমিয়ার প্রো"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Google Sheets",
+              "textBn": "Google Sheets (গুগল শিটস)",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-4",
+              "textEn": "VLC Media Player",
+              "textBn": "ভিএলসি মিডিয়া প্লেয়ার"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-3"
+          ],
+          "explanationEn": "Google Sheets saves structured order rows in the cloud so teams and automations can update them together.",
+          "explanationBn": "Google Sheets-এ অনলাইনে টেবিল আকারে অর্ডার, ফোন নম্বর ও ডেলিভারি অবস্থা সংরক্ষণ ও আপডেট করা সহজ।"
+        },
+        {
+          "id": "sj-s00-q19",
+          "textEn": "How does a simple Facebook Messenger auto-reply or chatbot help a small online shop owner?",
+          "textBn": "একটি সাধারণ Facebook Messenger অটো-রিপ্লাই বা চ্যাটবট কীভাবে একজন ক্ষুদ্র অনলাইন ব্যবসায়ীর উপকার করে?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Basic Automation",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "It physically packs cardboard boxes",
+              "textBn": "এটি হাতে কার্টন বক্স প্যাকিং করে দেয়"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "It deletes the customer's Messenger account",
+              "textBn": "এটি ক্রেতার মেসেঞ্জার অ্যাকাউন্ট মুছে দেয়"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "It turns off internet connection at night",
+              "textBn": "এটি রাতে ইন্টারনেট সংযোগ বন্ধ করে দেয়"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "It sends instant 24/7 answers on prices, sizes, and delivery charges even when the owner is busy or asleep",
+              "textBn": "মালিক ব্যস্ত বা ঘুমিয়ে থাকলেও ২৪/৭ সাথে সাথে দাম, সাইজ ও ডেলিভারি চার্জের তথ্য জানিয়ে দেয়",
+              "isCorrect": true
+            }
+          ],
+          "correctOptionIds": [
+            "opt-4"
+          ],
+          "explanationEn": "Instant automated replies capture late-night and peak-hour buyers before they message a competitor.",
+          "explanationBn": "তাৎক্ষণিক অটো-রিপ্লাই ক্রেতাকে ধরে রাখে—ফলে মালিক ব্যস্ত থাকলেও সম্ভাব্য অর্ডার হাতছাড়া হয় না।"
+        },
+        {
+          "id": "sj-s00-q20",
+          "textEn": "What helps a beginner digital marketing freelancer win their first local or international (Fiverr/Upwork) client most effectively?",
+          "textBn": "নতুন ডিজিটাল মার্কেটিং ফ্রিল্যান্সারের প্রথম লোকাল বা আন্তর্জাতিক (Fiverr/Upwork) কাজ পেতে নিচের কোনটি সবচেয়ে বেশি সাহায্য করে?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Freelancing Readiness",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Copying someone else's fake bio word-for-word",
+              "textBn": "অন্যের প্রোফাইল লেখা হুবহু নকল করা"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Showing real sample work (a portfolio) and communicating clearly how you solve the client's problem",
+              "textBn": "বাস্তব কাজের নমুনা (Portfolio) দেখানো এবং ক্লায়েন্টের সমস্যা কীভাবে সমাধান করবেন তা স্পষ্টভাবে বোঝানো",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Refusing to send replies for 5 days",
+              "textBn": "৫ দিন কোনো রিপ্লাই না দেওয়া"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Promising guaranteed #1 sales within 5 minutes",
+              "textBn": "৫ মিনিটেই #১ বিক্রির অবাস্তব গ্যারান্টি দেওয়া"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-2"
+          ],
+          "explanationEn": "Clients hire proof of skill and clarity: real AI-assisted ad samples, mini case studies, and honest communication.",
+          "explanationBn": "অবাস্তব গ্যারান্টি বা কপি করা প্রোফাইল নয়—নিজের করা কাজের নমুনা (Portfolio) ও স্পষ্ট যোগাযোগই ক্লায়েন্টের আস্থা জিততে সাহায্য করে।"
+        }
+      ]
+    },
+    {
       "id": "quiz-sanjibon-s01",
       "slug": "sanjibon-session-01-prompting",
       "courseId": "course-sanjibon-ai-dm",

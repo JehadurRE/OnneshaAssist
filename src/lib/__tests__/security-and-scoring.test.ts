@@ -606,8 +606,8 @@ describe("certificate designer branding, themes, Bangladesh map & multi-signator
   });
 });
 
-describe("Sanjibon Batch-04 seed curriculum, 10 quizzes & 228 trainees roster", () => {
-  it("seeds the official course, 11 training centres, 10 quizzes (120 questions), and all 228 enrolled trainees", () => {
+describe("Sanjibon Batch-04 seed curriculum, 11 quizzes & 228 trainees roster", () => {
+  it("seeds the official course, 11 training centres, 11 quizzes (140 questions incl. 20-MCQ baseline), and all 228 enrolled trainees", () => {
     expect(SANJIBON_COURSE.id).toBe("course-sanjibon-ai-dm");
     expect(DEFAULT_COURSES.some((c) => c.id === "course-sanjibon-ai-dm")).toBe(true);
 
@@ -622,7 +622,7 @@ describe("Sanjibon Batch-04 seed curriculum, 10 quizzes & 228 trainees roster", 
     const std11Digits = SANJIBON_ROSTER.filter((s) => /^01\d{9}$/.test(s.phone || ""));
     expect(std11Digits.length).toBeGreaterThanOrEqual(226);
 
-    expect(SANJIBON_QUIZZES).toHaveLength(10);
+    expect(SANJIBON_QUIZZES).toHaveLength(11);
     let totalQuestions = 0;
     for (const qz of SANJIBON_QUIZZES) {
       expect(qz.courseId).toBe("course-sanjibon-ai-dm");
@@ -634,8 +634,12 @@ describe("Sanjibon Batch-04 seed curriculum, 10 quizzes & 228 trainees roster", 
         expect(question.options.some((o) => o.id === corr && o.isCorrect)).toBe(true);
       }
     }
-    expect(totalQuestions).toBe(120);
-    expect(SANJIBON_QUIZZES[9]?.questions).toHaveLength(30);
+    expect(totalQuestions).toBe(140);
+    expect(SANJIBON_QUIZZES[0]?.id).toBe("quiz-sanjibon-s00-baseline");
+    expect(SANJIBON_QUIZZES[0]?.quizNumber).toBe(0);
+    expect(SANJIBON_QUIZZES[0]?.questions).toHaveLength(20);
+    expect(SANJIBON_QUIZZES[10]?.id).toBe("quiz-sanjibon-s10-final");
+    expect(SANJIBON_QUIZZES[10]?.questions).toHaveLength(30);
   });
 
   it("normalizes BD phone formats and resolves candidates by mobile, roll, serial+centre, and email", () => {
