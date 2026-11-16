@@ -20,7 +20,9 @@ export const PinInput: React.FC<PinInputProps> = ({
   className = '',
 }) => {
   const inputsRef = useRef<(HTMLInputElement | null)[]>([]);
-  const [digits, setDigits] = useState<string[]>(Array(length).fill(''));
+  const [digits, setDigits] = useState<string[]>(() =>
+    Array.from({ length }, (_, i) => value[i] || ''),
+  );
 
   useEffect(() => {
     const chars = value.slice(0, length).split('');

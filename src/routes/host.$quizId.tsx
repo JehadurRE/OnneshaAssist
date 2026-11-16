@@ -15,6 +15,7 @@ import { db } from "@/lib/db";
 import { sqliteEngine } from "@/lib/db/sqlite-engine";
 import { GameSession } from "@/lib/types";
 import { resolveStartCountdownSec, splitBetweenQuestionDelays } from "@/lib/scoring";
+import { coercePinSearchParam, coerceSearchString } from "@/lib/utils";
 import { Lock, RotateCcw, ShieldAlert } from "lucide-react";
 
 interface HostSearch {
@@ -27,13 +28,11 @@ interface HostSearch {
 
 export const Route = createFileRoute("/host/$quizId")({
   validateSearch: (search: Record<string, unknown>): HostSearch => ({
-    pin: typeof search["pin"] === "string" ? search["pin"] : undefined,
-    retakeSessionId:
-      typeof search["retakeSessionId"] === "string" ? search["retakeSessionId"] : undefined,
-    regionId: typeof search["regionId"] === "string" ? search["regionId"] : undefined,
-    skipCompleted:
-      typeof search["skipCompleted"] === "string" ? search["skipCompleted"] : undefined,
-    minAnswers: typeof search["minAnswers"] === "string" ? search["minAnswers"] : undefined,
+    pin: coercePinSearchParam(search["pin"] ?? search["PIN"]),
+    retakeSessionId: coerceSearchString(search["retakeSessionId"]),
+    regionId: coerceSearchString(search["regionId"]),
+    skipCompleted: coerceSearchString(search["skipCompleted"]),
+    minAnswers: coerceSearchString(search["minAnswers"]),
   }),
   head: () => ({
     meta: [

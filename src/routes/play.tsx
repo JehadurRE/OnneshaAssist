@@ -23,6 +23,7 @@ import {
   resolveStartCountdownSec,
 } from "@/lib/scoring";
 import { serverGetActiveRooms, serverVerifyCertificate } from "@/lib/server-session";
+import { coercePinSearchParam, coerceSearchString } from "@/lib/utils";
 import { READY_MADE_PACKS } from "@/lib/mock-data";
 import { CertificateData, Course, GameSession, Participant, Question, Quiz } from "@/lib/types";
 import {
@@ -68,8 +69,8 @@ interface ActiveRoomSummary {
 export const Route = createFileRoute("/play")({
   validateSearch: (search: Record<string, unknown>): PlaySearch => {
     return {
-      pin: typeof search["pin"] === "string" ? search["pin"] : undefined,
-      practice: typeof search["practice"] === "string" ? search["practice"] : undefined,
+      pin: coercePinSearchParam(search["pin"] ?? search["PIN"]),
+      practice: coerceSearchString(search["practice"]),
     };
   },
   head: () => ({
@@ -254,9 +255,11 @@ function PlayPage() {
     }
   }, [session?.pin, session?.phase, session?.currentQuestion?.id, participant?.id]);
 
-  // Load session if PIN in URL search
+  // Load session and sync visual PIN input if PIN is in URL search
   useEffect(() => {
-    if (search.pin && search.pin.length === 6) {
+    if (!search.pin) return;
+    setPin(search.pin);
+    if (search.pin.length === 6) {
       handleCheckPin(search.pin);
     }
   }, [search.pin]);

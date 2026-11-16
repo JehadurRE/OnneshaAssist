@@ -38,6 +38,7 @@ import {
   mergeRetakeExamResults,
   resolveRetakeMinCompletedAnswers,
 } from "../retake-utils";
+import { coercePinSearchParam, coerceSearchString } from "../utils";
 import {
   CERTIFICATE_THEME_PRESETS,
   DEFAULT_BRANDING_SETTINGS,
@@ -2789,5 +2790,25 @@ describe("supplementary retake diagnostics, completion exclusion & result mergin
       { retakeMinCompletedAnswers: 3 },
     );
     expect(patched.retakeMinCompletedAnswers).toBe(3);
+  });
+});
+
+describe("URL query search coercion for ?pin= and host retake params", () => {
+  it("preserves numeric JSON-parsed PINs like ?pin=408756 and leading-zero string PINs", () => {
+    expect(coercePinSearchParam(408756)).toBe("408756");
+    expect(coercePinSearchParam("408756")).toBe("408756");
+    expect(coercePinSearchParam("048756")).toBe("048756");
+    expect(coercePinSearchParam(" 408-756 ")).toBe("408756");
+    expect(coercePinSearchParam("")).toBeUndefined();
+    expect(coercePinSearchParam("abc")).toBeUndefined();
+    expect(coercePinSearchParam(undefined)).toBeUndefined();
+  });
+
+  it("preserves numeric/boolean JSON-parsed query params for host settings and practice mode", () => {
+    expect(coerceSearchString(3)).toBe("3");
+    expect(coerceSearchString(true)).toBe("true");
+    expect(coerceSearchString("  sanjibon-q2  ")).toBe("sanjibon-q2");
+    expect(coerceSearchString("   ")).toBeUndefined();
+    expect(coerceSearchString(undefined)).toBeUndefined();
   });
 });
