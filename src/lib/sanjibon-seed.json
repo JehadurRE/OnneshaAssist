@@ -94,8 +94,8 @@
     "code": "AI-DM-04",
     "titleEn": "Applied Artificial Intelligence & Autonomous Workflows for Digital Marketing Freelancers",
     "titleBn": "প্রয়োগিক এআই ও অটোনমাস ওয়ার্কফ্লো — ডিজিটাল মার্কেটিং ফ্রিল্যান্সার প্রশিক্ষণ (সঞ্জীবন প্রকল্প ব্যাচ-০৪)",
-    "descriptionEn": "5-day (30-hour, 10-session) intensive curriculum by Bangladesh Ansar & VDP (Sanjibon Project) & Cloud Connect AI Limited covering CLEAR prompt engineering, AI market research, SLABC product photography, Canva ad banners, neural Bangla video ads, PAS/AIDA copywriting, no-code websites, Netlify hosting & SEO, Voiceflow chatbots, and Make.com lead automation.",
-    "descriptionBn": "বাংলাদেশ আনসার ও ভিডিপি (সঞ্জীবন প্রকল্প) ও ক্লাউড কানেক্ট এআই লিমিটেড আয়োজিত ৫ দিনব্যাপী (৩০ ঘণ্টা, ১০টি সেশন) নিবিড় প্রশিক্ষণ—CLEAR প্রম্পট ইঞ্জিনিয়ারিং, এআই মার্কেট রিসার্চ, প্রোডাক্ট ফটোগ্রাফি, Canva ব্যানার, বাংলা এআই ভিডিও অ্যাড, PAS/AIDA কপিরাইটিং, নো-কোড ওয়েবসাইট, SEO ও ওয়েব হোস্টিং, ২৪/৭ চ্যাটবট এবং Make.com অটোমেশন।",
+    "descriptionEn": "5-day (30-hour) intensive curriculum by Bangladesh Ansar & VDP (Sanjibon Project) & Cloud Connect AI Limited covering CLEAR prompt engineering, AI market research, hands-on AI product photography, 5-slide carousels & Gemini + Canva Magic Layers, neural Bangla video ads, PAS/AIDA copywriting, no-code websites, Netlify hosting & SEO, Voiceflow chatbots, and Make.com lead automation.",
+    "descriptionBn": "বাংলাদেশ আনসার ও ভিডিপি (সঞ্জীবন প্রকল্প) ও ক্লাউড কানেক্ট এআই লিমিটেড আয়োজিত ৫ দিনব্যাপী (৩০ ঘণ্টা) নিবিড় প্রশিক্ষণ—CLEAR প্রম্পট ইঞ্জিনিয়ারিং, এআই মার্কেট রিসার্চ, এআই প্রোডাক্ট ফটোগ্রাফি ও ৫-স্লাইড ক্যারোজাল + Canva Magic Layers, বাংলা এআই ভিডিও অ্যাড, PAS/AIDA কপিরাইটিং, নো-কোড ওয়েবসাইট, SEO ও ওয়েব হোস্টিং, ২৪/৭ চ্যাটবট এবং Make.com অটোমেশন।",
     "categoryEn": "Applied AI & Digital Marketing",
     "categoryBn": "প্রয়োগিক এআই ও ডিজিটাল মার্কেটিং",
     "icon": "🤖",
@@ -4727,828 +4727,803 @@
       "instructorId": "usr-instructor-1",
       "instructorName": "Md. Jehad (Lead Instructor · Cloud Connect AI Limited)",
       "icon": "📸",
-      "titleEn": "Quiz 3 (Session 03) — Day 1 Review & AI Product Photography (SLABC, Aspect Ratios)",
-      "titleBn": "কুইজ ০৩ (সেশন ০৩) — ১ম দিনের পুনরালোচনা ও প্রোডাক্ট ফটোগ্রাফি (SLABC ও রেশিও)",
-      "descriptionEn": "Day 2 Morning quiz reviewing Day 1 fundamentals alongside SLABC AI product photography, Aspect Ratios (1:1, 9:16, 16:9), text-free generation, and shot types.",
-      "descriptionBn": "২য় দিন সকালের ওয়ার্ম-আপ কুইজ: CLEAR সূত্র, হ্যালুসিনেশন ও মার্কেট গ্যাপ পুনরালোচনা এবং এআই প্রোডাক্ট ফটোগ্রাফি ও আসপেক্ট রেশিও।",
-      "categoryEn": "Applied AI & Digital Marketing",
-      "categoryBn": "প্রয়োগিক এআই ও ডিজিটাল মার্কেটিং",
+      "titleEn": "Quiz 3 (Session 03) — AI Product Photography, 5-Slide Carousels & Gemini + Canva Magic Layers (20 Qs)",
+      "titleBn": "কুইজ ০৩ (সেশন ০৩) — এআই প্রোডাক্ট ফটো, ৫-স্লাইড ক্যারোজাল ও Gemini + Canva এডিটেবল ডিজাইন (২০টি প্রশ্ন)",
+      "descriptionEn": "Combined Session 03 & 04 hands-on assessment (20 MCQs) directly from Session 3 Final Slide: 7-Part Prompt Formula, 6 Photo Styles, 6 Camera Angles, Lenses (24mm–200mm), Lighting & Rim Light, Aspect Ratios (1:1 vs 4:5), Reference Continuity, 5-Slide Honey Carousel, Gemini + @Canva Magic Layers, One-Line Fixes, and Assignment Checklist.",
+      "descriptionBn": "সেশন ০৩ ও ০৪-এর সমন্বিত হাতে-কলমে মূল্যায়ন (২০টি MCQ): ৭ প্রশ্নের প্রম্পট ফর্মুলা, ৬টি ফটো স্টাইল, ৬টি ক্যামেরা অ্যাঙ্গেল, লেন্স (24mm–200mm), আলো ও রিম লাইট, আসপেক্ট রেশিও (1:1 বনাম 4:5), রেফারেন্স স্টুডিও শট, ৫-স্লাইডের মধু সচেতনতা ক্যারোজাল, Gemini + @Canva Magic Layers, সাধারণ ভুল সংশোধন ও অ্যাসাইনমেন্ট চেকলিস্ট।",
+      "categoryEn": "AI Photography & Canva Design",
+      "categoryBn": "এআই ফটোগ্রাফি ও Canva ডিজাইন",
       "color": "from-amber-500/20 to-orange-500/20",
       "tags": [
         "Sanjibon",
         "Session 03",
+        "Combined 3 & 4",
         "Product Photography",
-        "SLABC",
-        "Aspect Ratio"
+        "Carousel",
+        "Gemini Canva",
+        "20 Questions"
       ],
       "createdAt": "2026-11-16T09:00:00Z",
       "questions": [
         {
           "id": "sj-s03-q01",
-          "textEn": "In the CLEAR AI prompting formula, what do C and R stand for?",
-          "textBn": "এআই প্রম্পটের CLEAR সূত্রে C এবং R বলতে কী বোঝায়?",
+          "textEn": "In the Live Demo comparing a 4-word prompt ('Make a photo of honey') vs a Pro prompt, why did the outputs differ dramatically using the exact same AI tool?",
+          "textBn": "লাইভ ডেমোতে একই এআই টুলে 'মধুর একটা ছবি বানাও' (৪ শব্দ) এবং প্রো প্রম্পটের ফলাফল এত আলাদা হওয়ার মূল কারণ কী?",
           "type": "single_mcq",
           "timeLimitSec": 25,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "Day 1 Review",
-          "difficulty": "medium",
+          "category": "Prompt Craft & Demo",
+          "difficulty": "easy",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "Color and Ratio",
-              "textBn": "Color ও Ratio"
+              "textEn": "Free accounts always generate blurry low-res photos unless upgraded",
+              "textBn": "ফ্রি অ্যাকাউন্টে সবসময় ঝাপসা ছবি আসে"
             },
             {
               "id": "opt-2",
-              "textEn": "Context and Restrictions / Review",
-              "textBn": "Context (প্রেক্ষাপট) ও Restrictions (সীমাবদ্ধতা/যাচাই)",
+              "textEn": "With a short prompt, AI guesses jar, lighting, angle, and background on its own; detailing each element gives exact product control",
+              "textBn": "ছোট প্রম্পটে এআই নিজে থেকে জার, আলো ও ব্যাকগ্রাউন্ড ধরে নেয়; প্রতিটি অংশ নির্দিষ্ট করে দিলে কাঙ্ক্ষিত ফল পাওয়া যায়",
               "isCorrect": true
             },
             {
               "id": "opt-3",
-              "textEn": "Copy and Repeat",
-              "textBn": "Copy ও Repeat"
+              "textEn": "Gemini only supports 4-word prompts while ChatGPT supports long prompts",
+              "textBn": "Gemini শুধু ৪ শব্দের প্রম্পট বোঝে, বড় প্রম্পট নয়"
             },
             {
               "id": "opt-4",
-              "textEn": "Code and Run",
-              "textBn": "Code ও Run"
+              "textEn": "The AI tool automatically fetches your Daraz product listing photo",
+              "textBn": "এআই টুল নিজেই Daraz থেকে আপনার পণ্যের ছবি নিয়ে আসে"
             }
           ],
           "correctOptionIds": [
             "opt-2"
           ],
-          "explanationEn": "Context establishes the background while Restrictions / Review keep facts grounded and accurate.",
-          "explanationBn": "CLEAR সূত্রে C হলো প্রেক্ষাপট (Context) এবং R হলো সীমাবদ্ধতা ও তথ্য যাচাই (Restrictions / Review)।"
+          "explanationEn": "The core takeaway from Slide 3: the difference comes from the prompt, not the tool—detailed product, lighting, background, and lens details stop AI from guessing.",
+          "explanationBn": "মূল কথা: পার্থক্যটা টুলের না, প্রম্পটের—জার, আলো, ব্যাকগ্রাউন্ড ও লেন্স নিজে বলে দিলে এআই অনুমান করার সুযোগ পায় না।"
         },
         {
           "id": "sj-s03-q02",
-          "textEn": "What is it called when an AI chat gives fabricated numbers or false information instead of real facts?",
-          "textBn": "এআই চ্যাটে সঠিক তথ্য পাওয়ার বদলে যদি কাল্পনিক সংখ্যা বা ভুয়া তথ্য দেয়, তাকে কী বলে?",
+          "textEn": "According to the 7-Question Product Prompt Formula taught in Session 3, which components belong in a complete product photo prompt?",
+          "textBn": "সেশন ৩-এ শেখানো ৭টি প্রশ্নের প্রোডাক্ট প্রম্পট ফর্মুলা অনুযায়ী সম্পূর্ণ প্রম্পটে কোন ৭টি অংশ থাকে?",
           "type": "single_mcq",
           "timeLimitSec": 25,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "AI Concepts",
+          "category": "Prompt Formula",
           "difficulty": "medium",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "Hallucination",
-              "textBn": "Hallucination",
+              "textEn": "Product, Details, Background, Lighting, Camera (Angle + Lens), Style & Mood, and Format + Rules",
+              "textBn": "পণ্য, ডিটেইল, ব্যাকগ্রাউন্ড, লাইটিং, ক্যামেরা (অ্যাঙ্গেল+লেন্স), স্টাইল ও মুড এবং সাইজ ও নিয়ম",
               "isCorrect": true
             },
             {
               "id": "opt-2",
-              "textEn": "Optimization",
-              "textBn": "Optimization"
+              "textEn": "Brand Logo, Discount Badge, Phone Number, Price, Font Size, Margin, and Layer Lock",
+              "textBn": "ব্র্যান্ড লোগো, ডিসকাউন্ট ব্যাজ, ফোন নম্বর, দাম, ফন্ট সাইজ, মার্জিন এবং লেয়ার লক"
             },
             {
               "id": "opt-3",
-              "textEn": "Rendering",
-              "textBn": "Rendering"
+              "textEn": "Headline, Subheadline, Hashtags, Audio Track, Subtitles, CTA, and UTM Link",
+              "textBn": "হেডলাইন, সাব-হেডলাইন, হ্যাশট্যাগ, অডিও ট্র্যাক, সাবটাইটেল, CTA এবং UTM লিংক"
             },
             {
               "id": "opt-4",
-              "textEn": "Hosting",
-              "textBn": "Hosting"
+              "textEn": "Tool Name, Pixel DPI, File Extension, ZIP Compression, and Upload Folder",
+              "textBn": "টুলের নাম, পিক্সেল DPI, ফাইল এক্সটেনশন, ZIP ও আপলোড ফোল্ডার"
             }
           ],
           "correctOptionIds": [
             "opt-1"
           ],
-          "explanationEn": "Hallucination refers to confident-sounding but fabricated outputs generated by AI.",
-          "explanationBn": "এআই যখন নিজে থেকে ভুয়া সংখ্যা বা মিথ্যা তথ্য তৈরি করে দেয়, তাকে Hallucination বলে।"
+          "explanationEn": "The 7-Question formula expands SLABC into: Product, Details, Background, Lighting, Camera (Angle + Lens), Style & Mood, and Format + Rules.",
+          "explanationBn": "৭ প্রশ্নের ফর্মুলা: ১. পণ্য, ২. ডিটেইল, ৩. ব্যাকগ্রাউন্ড, ৪. লাইটিং, ৫. ক্যামেরা (অ্যাঙ্গেল ও লেন্স), ৬. স্টাইল ও মুড, ৭. সাইজ ও নিয়ম।"
         },
         {
           "id": "sj-s03-q03",
-          "textEn": "Why do we configure Custom AI Helper / System Instructions in an AI chat?",
-          "textBn": "কোন কারণে আমরা এআই চ্যাটে Custom AI Helper / System Instructions ব্যবহার করি?",
+          "textEn": "What language and formatting tip does the Prompt Formula slide recommend for Bangladeshi entrepreneurs writing prompts?",
+          "textBn": "প্রম্পট লেখার সময় ভাষা ও ফরম্যাটিং সম্পর্কে স্লাইডে কোন কার্যকর টিপসটি দেওয়া হয়েছে?",
           "type": "single_mcq",
           "timeLimitSec": 25,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "Workflow Efficiency",
-          "difficulty": "medium",
+          "category": "Prompt Formula",
+          "difficulty": "easy",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "To speed up broadband internet",
-              "textBn": "ইন্টারনেটের গতি বাড়াতে"
+              "textEn": "Never use Bangla words anywhere—even product names must be in French",
+              "textBn": "প্রম্পটে কোনোভাবেই বাংলা শব্দ ব্যবহার করা যাবে না"
             },
             {
               "id": "opt-2",
-              "textEn": "To get a permanent assistant without retyping brand identity and rules each chat",
-              "textBn": "প্রতিবার একই ব্র্যান্ড পরিচিতি ও নিয়ম না লিখে স্থায়ী সহকারী পেতে",
-              "isCorrect": true
+              "textEn": "Paste your entire product price list and customer phone numbers into the image prompt",
+              "textBn": "ইমেজ প্রম্পটে পণ্যের পুরো মূল্য তালিকা ও ফোন নম্বর লিখে দিন"
             },
             {
               "id": "opt-3",
-              "textEn": "To delete saved photos",
-              "textBn": "ফটো ডিলিট করতে"
+              "textEn": "Write the prompt naturally in Bangla, put key technical terms in English brackets (e.g., soft diffused daylight), and forbid embedded text/watermarks",
+              "textBn": "প্রম্পট বাংলাতেই লিখুন, জরুরি টেকনিক্যাল টার্ম ব্র্যাকেটে ইংরেজিতে দিন এবং ছবিতে বাড়তি লেখা বা ওয়াটারমার্ক না রাখতে বলুন",
+              "isCorrect": true
             },
             {
               "id": "opt-4",
-              "textEn": "To reduce electricity consumption",
-              "textBn": "বিদ্যুৎ বাঁচাতে"
+              "textEn": "Only write hashtags like #honey #photo instead of full sentences",
+              "textBn": "বাক্যের বদলে শুধু #honey #photo হ্যাশট্যাগ লিখুন"
             }
           ],
           "correctOptionIds": [
-            "opt-2"
+            "opt-3"
           ],
-          "explanationEn": "System Instructions persist your brand persona, tone, and rules across every prompt in that workspace.",
-          "explanationBn": "System Instructions একবার সেট করলে প্রতিবার নতুন করে ব্র্যান্ড ও নিয়ম লিখতে হয় না।"
+          "explanationEn": "Slides 5–6 recommend writing prompts in clear Bangla with key photography terms in English brackets and ending with 'no text or watermarks'.",
+          "explanationBn": "টিপস: প্রম্পট বাংলাতেই লিখুন, দরকারি টেকনিক্যাল টার্ম ব্র্যাকেটে ইংরেজিতে দিন এবং শেষে 'কোনো লেখা বা ওয়াটারমার্ক নয়' উল্লেখ করুন।"
         },
         {
           "id": "sj-s03-q04",
-          "textEn": "By analyzing negative customer reviews of competitors, what do we primarily uncover?",
-          "textBn": "প্রতিযোগী পণ্যের নেগেটিভ ক্রেতা রিভিউ বিশ্লেষণ করে আমরা মূলত কী খুঁজে পাই?",
+          "textEn": "Among the 6 Product Photo Styles, which combination best matches a Daraz/e-commerce catalog listing vs a premium luxury gift look?",
+          "textBn": "প্রোডাক্ট ফটোর ৬টি স্টাইলের মধ্যে Daraz/ওয়েবসাইট ক্যাটালগ বনাম দামি গিফট/লাক্সারি লুকের জন্য কোন দুটো উপযুক্ত?",
           "type": "single_mcq",
           "timeLimitSec": 25,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "Market Research",
-          "difficulty": "medium",
+          "category": "Photo Styles",
+          "difficulty": "easy",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "The customer's bank balance",
-              "textBn": "ক্রেতার ব্যাংক ব্যালেন্স"
+              "textEn": "Creative Splash for Daraz and Morning Breakfast Lifestyle for Luxury Gifts",
+              "textBn": "Daraz-এর জন্য স্প্ল্যাশ এবং গিফটের জন্য নাস্তার টেবিল লাইফস্টাইল"
             },
             {
               "id": "opt-2",
-              "textEn": "Market Gap (Unmet needs and improvement opportunities)",
-              "textBn": "Market Gap (বাজারে সমাধানের সুযোগ)",
-              "isCorrect": true
+              "textEn": "Amateurs' Smartphone Kitchen Photo for Daraz and Black Marble for E-Commerce",
+              "textBn": "Daraz-এর জন্য এলোমেলো কিচেন শট এবং ই-কমার্সের জন্য কালো মার্বেল"
             },
             {
               "id": "opt-3",
-              "textEn": "Only delivery rider names",
-              "textBn": "কেবল ডেলিভারি ম্যানের নাম"
+              "textEn": "Top-Down Flat Lay for Daraz and Pastel Cream Podium for Recipes",
+              "textBn": "Daraz-এর জন্য ফ্ল্যাট লে এবং রেসিপির জন্য প্যাস্টেল পোডিয়াম"
             },
             {
               "id": "opt-4",
-              "textEn": "Website color codes",
-              "textBn": "ওয়েবসাইটের রঙ"
+              "textEn": "E-Commerce Pure White Background with soft even studio lighting for Daraz/catalogs, and Dark Black Marble with Rim Light for luxury/gift items",
+              "textBn": "Daraz ও ক্যাটালগের জন্য সাদা ব্যাকগ্রাউন্ড (সমান স্টুডিও আলো) এবং দামি গিফট পণ্যের জন্য কালো মার্বেল ও রিম লাইট (Luxury/Dark)",
+              "isCorrect": true
             }
           ],
           "correctOptionIds": [
-            "opt-2"
+            "opt-4"
           ],
-          "explanationEn": "Negative reviews expose frustrations that existing sellers overlook, showing where you can win.",
-          "explanationBn": "নেগেটিভ রিভিউ থেকে বোঝা যায় বাজারে কোন চাহিদা অপূর্ণ রয়েছে—এটিই আপনার Market Gap।"
+          "explanationEn": "Slide 8 assigns E-Commerce Pure White Background to Daraz/website catalogs, and Luxury Dark Marble with golden rim light to premium gifts.",
+          "explanationBn": "স্লাইড ৮ অনুযায়ী: Daraz/ক্যাটালগের জন্য 'ই-কমার্স / সাদা' (pure white background) এবং গিফট বা দামি পণ্যের জন্য 'লাক্সারি / ডার্ক' (কালো মার্বেল + রিম লাইট)।"
         },
         {
           "id": "sj-s03-q05",
-          "textEn": "For Sundarbans honey, what is 'leak-proof glass jar with collection date certificate' an example of?",
-          "textBn": "সুন্দরবনের মধুর ক্ষেত্রে 'লিক-প্রুফ কাঁচের জার ও সংগ্রহের তারিখ সনদ' কিসের উদাহরণ?",
+          "textEn": "Which product photography style arranges surrounding props neatly from directly overhead (top-down) and is ideal for Instagram combo offers?",
+          "textBn": "ওপর থেকে (top-down) চারপাশে প্রপস সাজিয়ে কোন স্টাইলের ছবি তোলা হয়, যা ইনস্টাগ্রাম ও কম্বো অফারে দারুণ কাজ করে?",
           "type": "single_mcq",
           "timeLimitSec": 25,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "USP",
-          "difficulty": "medium",
+          "category": "Photo Styles",
+          "difficulty": "easy",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "Border margin",
-              "textBn": "বর্ডার মার্জিন"
+              "textEn": "Low-Key Dramatic Spotlight",
+              "textBn": "ড্রামাটিক লো-কি স্পটলাইট"
             },
             {
               "id": "opt-2",
-              "textEn": "USP (Unique Selling Proposition)",
-              "textBn": "USP (অনন্য বিক্রয় বৈশিষ্ট্য)",
+              "textEn": "Flat Lay (top-down)",
+              "textBn": "ফ্ল্যাট লে (Flat Lay / ওপর থেকে)",
               "isCorrect": true
             },
             {
               "id": "opt-3",
-              "textEn": "Programming language",
-              "textBn": "কোডিং ল্যাঙ্গুয়েজ"
+              "textEn": "First-Person Handheld POV",
+              "textBn": "হাতে ধরা POV শট"
             },
             {
               "id": "opt-4",
-              "textEn": "Video subtitle",
-              "textBn": "ভিডিও ক্যাপশন"
+              "textEn": "Telephoto Outdoor Compression",
+              "textBn": "টেলিফটো আউটডোর শট"
             }
           ],
           "correctOptionIds": [
             "opt-2"
           ],
-          "explanationEn": "Tangible trust elements that differentiate your offering from ordinary sellers form your USP.",
-          "explanationBn": "প্রতিযোগীর থেকে আলাদা এবং ক্রেতার ভরসা বাড়ানো এই বিশেষ সুবিধাটি হলো USP।"
+          "explanationEn": "Slide 8 & 16 teach Flat Lay (top-down with props like honeycomb, lemon slices, honey dipper, green leaves) for Instagram and combo offers.",
+          "explanationBn": "ওপর থেকে (top-down) চারপাশে প্রপস গুছিয়ে সাজানো 'ফ্ল্যাট লে' স্টাইল ইনস্টাগ্রাম ও কম্বো অফারের জন্য দারুণ উপযোগী।"
         },
         {
           "id": "sj-s03-q06",
-          "textEn": "When generating an accurate table with AI, what is important to include in the prompt?",
-          "textBn": "এআই দিয়ে একটি নির্ভুল টেবিল তৈরি করতে চাইলে প্রম্পটে কোনটি উল্লেখ করা জরুরি?",
+          "textEn": "In the 6 Camera Angles guide, which angle/shot should you choose to prove product purity and authenticity—such as thick honey bubbles or fabric weave?",
+          "textBn": "মধু যে খাঁটি বা কাপড়ের বুনন যে ভালো—তা কাছের টেক্সচার দেখিয়ে প্রমাণ করতে কোন ক্যামেরা অ্যাঙ্গেল/শট ব্যবহার করা হয়?",
           "type": "single_mcq",
           "timeLimitSec": 25,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "Table Prompting",
-          "difficulty": "medium",
+          "category": "Camera Angles",
+          "difficulty": "easy",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "Number of columns/rows, language, and output format",
-              "textBn": "কলাম ও সারির সংখ্যা, ভাষা ও ফরম্যাট",
+              "textEn": "Extreme Macro Close-Up",
+              "textBn": "ম্যাক্রো (Macro close-up / একদম কাছ থেকে)",
               "isCorrect": true
             },
             {
               "id": "opt-2",
-              "textEn": "Just 1 random word",
-              "textBn": "কেবল ১টি শব্দ"
+              "textEn": "24mm Wide Shop Overview",
+              "textBn": "24mm ওয়াইড শপ ভিউ"
             },
             {
               "id": "opt-3",
-              "textEn": "Computer hardware model",
-              "textBn": "কম্পিউটারের মডেল"
+              "textEn": "Low-Angle Hero Look",
+              "textBn": "নিচ থেকে লো অ্যাঙ্গেল শট"
             },
             {
               "id": "opt-4",
-              "textEn": "Screen pixel resolution",
-              "textBn": "ছবির পিক্সেল"
+              "textEn": "45-Degree Three-Quarter View",
+              "textBn": "৪৫ ডিগ্রি থ্রি-কোয়ার্টার ভিউ"
             }
           ],
           "correctOptionIds": [
             "opt-1"
           ],
-          "explanationEn": "Explicitly naming column headers, language, and formatting rules produces clean, predictable tables.",
-          "explanationBn": "কলামের সংখ্যা, নাম, ভাষা ও ফরম্যাট উল্লেখ করলে এআই নির্ভুল টেবিল তৈরি করে দেয়।"
+          "explanationEn": "Slide 9 explicitly states: to prove honey purity through texture and tiny bubbles, choose a Macro close-up shot.",
+          "explanationBn": "স্লাইড ৯: মধু যে খাঁটি বা পণ্যের আসল টেক্সচার বোঝাতে 'ম্যাক্রো (একদম কাছ থেকে)' শট সবচেয়ে কার্যকর।"
         },
         {
           "id": "sj-s03-q07",
-          "textEn": "Why should Bangla promotional text NOT be generated directly inside an AI image generator?",
-          "textBn": "ইমেজ জেনারেটরে প্রোডাক্ট ছবি তৈরির সময় কেন বাংলা লেখা ছবির ভেতরে জেনারেট করা উচিত নয়?",
+          "textEn": "Comparing the 6 Camera Angles, what distinct benefit does a Low-Angle shot provide vs a Handheld (First-Person POV) shot?",
+          "textBn": "৬টি ক্যামেরা অ্যাঙ্গেলের মধ্যে 'লো অ্যাঙ্গেল' এবং 'হাতে ধরা (POV)' শটের আলাদা ভূমিকা কী?",
           "type": "single_mcq",
           "timeLimitSec": 25,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "AI Image Rules",
+          "category": "Camera Angles",
           "difficulty": "medium",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "Because image colors spoil",
-              "textBn": "রঙ নষ্ট হয়"
+              "textEn": "Low-angle hides the label completely; POV removes the background totally",
+              "textBn": "লো অ্যাঙ্গেল লেবেল লুকিয়ে রাখে; POV ব্যাকগ্রাউন্ড পুরোপুরি সরিয়ে দেয়"
             },
             {
               "id": "opt-2",
-              "textEn": "Image generators distort Bangla conjunct letters; generate clean photos first and add text in Canva",
-              "textBn": "ইমেজ এআই বাংলা যুক্তবর্ণ বিকৃত করে; তাই পরিষ্কার ছবি বানিয়ে Canva-তে টেক্সট বসাতে হয়",
+              "textEn": "Low-angle shows flat combos; POV creates a 300mm zoom silhouette",
+              "textBn": "লো অ্যাঙ্গেল কম্বো দেখায়; POV ৩০০ মিমি জুম সিলুয়েট তৈরি করে"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Low-angle makes the product look taller, larger, and premium; Handheld POV lets buyers judge realistic physical size",
+              "textBn": "লো অ্যাঙ্গেল পণ্যকে বড় ও দামি দেখায়; আর হাতে ধরা POV শটে পণ্যের আসল সাইজ বাস্তবভাবে বোঝা যায়",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Both are only used for top-down studio white background catalogs",
+              "textBn": "দুটোই শুধু ওপর থেকে সাদা ব্যাকগ্রাউন্ড ক্যাটালগের জন্য ব্যবহৃত হয়"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-3"
+          ],
+          "explanationEn": "Slide 9: Low-angle makes the product look grand and expensive, whereas First-Person POV (handheld) realistically communicates true size.",
+          "explanationBn": "লো অ্যাঙ্গেল পণ্যকে বড় ও দামি হিসেবে উপস্থাপন করে, আর হাতে ধরা POV শট ক্রেতাকে পণ্যের প্রকৃত সাইজ বুঝতে সাহায্য করে।"
+        },
+        {
+          "id": "sj-s03-q08",
+          "textEn": "How does increasing camera focal length (mm) from 24mm toward 85mm–100mm affect a product photograph?",
+          "textBn": "প্রোডাক্ট ছবির প্রম্পটে লেন্সের mm 24mm থেকে বাড়িয়ে 85mm বা 100mm করলে ছবিতে কী পরিবর্তন ঘটে?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Camera Lenses",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "It widens the room to capture the entire store and keeps every distant object sharply focused",
+              "textBn": "দৃশ্য অনেক চওড়া হয়ে পুরো দোকান দেখা যায় ও পেছনটা সম্পূর্ণ পরিষ্কার থাকে"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "The field of view narrows and the background blurs softly (bokeh), isolating the hero product (85mm) or extreme close texture (100mm macro)",
+              "textBn": "দৃশ্য তত সরু হয় এবং পেছনটা নরম ঝাপসা (bokeh) হয়—ফলে 85mm হিরো শটে এবং 100mm ম্যাক্রো টেক্সচারে পণ্য দারুণ ফুটে ওঠে",
               "isCorrect": true
             },
             {
               "id": "opt-3",
-              "textEn": "The file refuses to open",
-              "textBn": "ফাইল ওপেন হয় না"
+              "textEn": "It automatically converts aspect ratio from 1:1 to 16:9",
+              "textBn": "এটি স্বয়ংক্রিয়ভাবে ছবির সাইজ 1:1 থেকে 16:9 করে দেয়"
             },
             {
               "id": "opt-4",
-              "textEn": "It finishes too quickly",
-              "textBn": "সময় কম লাগে"
+              "textEn": "It turns lighting into dramatic low-key spotlights automatically",
+              "textBn": "এটি আলোকে সরাসরি ড্রামাটিক লো-কি স্পটলাইটে বদলে দেয়"
             }
           ],
           "correctOptionIds": [
             "opt-2"
           ],
-          "explanationEn": "Always enforce the Text-Free Rule ('no text, no watermark') in AI image prompts and typeset Bangla cleanly in Canva.",
-          "explanationBn": "এআই ইমেজ টুলে বাংলা বানান ও যুক্তবর্ণ ভেঙে যায়; তাই আগে পরিষ্কার ছবি বানিয়ে Canva-তে বাংলা টেক্সট বসাতে হয়।"
+          "explanationEn": "Slide 10: Higher mm narrows the frame and deepens background blur (bokeh). Hero product shots typically use 50mm or 85mm, while macro uses 100mm.",
+          "explanationBn": "স্লাইড ১০: mm যত বাড়ে, দৃশ্য তত সরু হয় আর পেছনটা তত ঝাপসা (bokeh) হয়। হিরো শটে 50mm বা 85mm এবং ম্যাক্রোতে 100mm সেরা।"
         },
         {
-          "id": "sj-s03-q08",
-          "textEn": "Which aspect ratio is most suitable for Facebook Story and Instagram Reels?",
-          "textBn": "Facebook Story ও Reels-এর জন্য কোন আসপেক্ট রেশিও সবচেয়ে উপযুক্ত?",
+          "id": "sj-s03-q09",
+          "textEn": "To make a glass jar of honey glow warmly from within and highlight shimmering edges, which lighting type is best?",
+          "textBn": "কাঁচের জার ও ভেতরের সোনালি মধুকে ভেতর থেকে জ্বলজ্বলে ও ঝলমলে করে ফুটিয়ে তুলতে কোন ধরনের আলো সবচেয়ে সেরা?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Lighting & Mood",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "High-Key flat over-lighting from all angles",
+              "textBn": "চারদিক থেকে হাই-কি ফ্ল্যাট আলো"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Dim bluish tube light from a kitchen ceiling",
+              "textBn": "রান্নাঘরের হলদে-নীল টিউবলাইট"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Unfiltered harsh camera flash directly from the front",
+              "textBn": "সামনে থেকে সরাসরি কড়া ফ্ল্যাশ লাইট"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Backlight / Rim light positioned behind the glass jar",
+              "textBn": "ব্যাকলাইট / রিম লাইট (পেছন থেকে আসা আলো)",
+              "isCorrect": true
+            }
+          ],
+          "correctOptionIds": [
+            "opt-4"
+          ],
+          "explanationEn": "Slide 11 emphasizes that Backlight / Rim light shines from behind to make translucent liquids like honey glow and create golden rim highlights along glass.",
+          "explanationBn": "স্লাইড ১১-এ জোর দেওয়া হয়েছে: কাঁচের জার বা তরল পণ্যে পেছন থেকে আলো (Backlight / Rim light) দিলে ভেতরটা জ্বলজ্বল করে।"
+        },
+        {
+          "id": "sj-s03-q10",
+          "textEn": "Why does Slide 12 stress choosing and writing the target aspect ratio (e.g., 1:1, 4:5, 9:16, 16:9) at the end of your prompt BEFORE generating?",
+          "textBn": "স্লাইড ১২ অনুযায়ী, ছবি বানানোর আগেই প্রম্পটের শেষে সাইজ/রেশিও (1:1, 4:5, 9:16, 16:9) উল্লেখ করা জরুরি কেন?",
           "type": "single_mcq",
           "timeLimitSec": 25,
           "points": 1000,
           "negativeMarks": 0,
           "category": "Aspect Ratios",
-          "difficulty": "medium",
+          "difficulty": "easy",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "16:9",
-              "textBn": "16:9"
-            },
-            {
-              "id": "opt-2",
-              "textEn": "9:16",
-              "textBn": "9:16",
-              "isCorrect": true
-            },
-            {
-              "id": "opt-3",
-              "textEn": "4:3",
-              "textBn": "4:3"
-            },
-            {
-              "id": "opt-4",
-              "textEn": "21:9",
-              "textBn": "21:9"
-            }
-          ],
-          "correctOptionIds": [
-            "opt-2"
-          ],
-          "explanationEn": "Vertical full-screen mobile Story and Reels placements require the 9:16 portrait aspect ratio.",
-          "explanationBn": "মোবাইলের পূর্ণ স্ক্রিনে Story ও Reels দেখানোর জন্য উল্লম্ব 9:16 আসপেক্ট রেশিও ব্যবহার করা হয়।"
-        },
-        {
-          "id": "sj-s03-q09",
-          "textEn": "Why do we place the product on one side when generating a 16:9 Website Hero Banner image?",
-          "textBn": "ওয়েবসাইটের Hero Banner (16:9) বানানোর সময় পণ্যকে ছবির এক পাশে রাখার কারণ কী?",
-          "type": "single_mcq",
-          "timeLimitSec": 25,
-          "points": 1000,
-          "negativeMarks": 0,
-          "category": "Hero Composition",
-          "difficulty": "medium",
-          "options": [
-            {
-              "id": "opt-1",
-              "textEn": "To keep clean negative space on the opposite side for headline text and CTA buttons",
-              "textBn": "অন্য পাশে ওয়েবসাইটের শিরোনাম ও কল-টু-অ্যাকশন বোতাম স্পষ্টভাবে বসানোর জন্য",
+              "textEn": "Because cropping a generated image afterward often cuts off parts of your product",
+              "textBn": "কারণ পরে ছবি কাটতে (crop করতে) গেলে অনেক সময় পণ্যের অংশও কেটে যায়",
               "isCorrect": true
             },
             {
               "id": "opt-2",
-              "textEn": "To show only half the image",
-              "textBn": "ছবি অর্ধেক দেখানোর জন্য"
+              "textEn": "Because AI only accepts prompts that end with two numbers separated by a colon",
+              "textBn": "কারণ কোলনসহ দুটি সংখ্যা না লিখলে এআই ছবি তৈরিই করে না"
             },
             {
               "id": "opt-3",
-              "textEn": "To save computer RAM",
-              "textBn": "মেমোরি বাঁচাতে"
+              "textEn": "Because 16:9 always crops out watermarks automatically",
+              "textBn": "কারণ 16:9 লিখলে ওয়াটারমার্ক নিজে থেকেই মুছে যায়"
             },
             {
               "id": "opt-4",
-              "textEn": "To make lighting darker",
-              "textBn": "আলো কমাতে"
+              "textEn": "Because ratios lock Canva text layers permanently",
+              "textBn": "কারণ আসপেক্ট রেশিও Canva-র টেক্সট লেয়ার লক করে রাখে"
             }
           ],
           "correctOptionIds": [
             "opt-1"
           ],
-          "explanationEn": "Rule-of-thirds composition creates clean negative space so headlines and CTA buttons remain highly readable.",
-          "explanationBn": "এক পাশে ফাঁকা জায়গা (Negative Space) রাখলে ওয়েবসাইটের হেডলাইন ও অর্ডার বাটন পরিষ্কারভাবে বসানো যায়।"
+          "explanationEn": "Slide 12 rule: 'Decide where the photo goes first and write the size at the end of the prompt—cropping later often cuts off the product.'",
+          "explanationBn": "আগে ঠিক করুন ছবি কোথায় যাবে এবং প্রম্পটের শেষে সাইজ লিখে দিন—পরে কাটতে গেলে পণ্যও কেটে যায়।"
         },
         {
-          "id": "sj-s03-q10",
-          "textEn": "Which camera shot is used to highlight fabric weave, honey texture, or close product details?",
-          "textBn": "প্রোডাক্টের সুতা, দানাদার ভাব বা খাবারের আসল মান কাছ থেকে দেখাতে কোন ক্যামেরা শট ব্যবহার করা হয়?",
+          "id": "sj-s03-q11",
+          "textEn": "Which aspect ratio is highlighted for multi-slide social Carousels and Promo Offer Posts because it claims more mobile screen area?",
+          "textBn": "মোবাইল ফিডের স্ক্রিনে বেশি জায়গা দখল করে বলে ক্যারোজাল এবং অফার পোস্টের জন্য কোন সাইজ/রেশিও ব্যবহার করতে বলা হয়েছে?",
           "type": "single_mcq",
           "timeLimitSec": 25,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "Camera Shots",
-          "difficulty": "medium",
+          "category": "Aspect Ratios",
+          "difficulty": "easy",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "Wide Aerial Shot",
-              "textBn": "Wide Aerial Shot"
+              "textEn": "16:9 Wide Banner",
+              "textBn": "16:9 ওয়াইড ব্যানার"
             },
             {
               "id": "opt-2",
-              "textEn": "Macro Close-up Shot",
-              "textBn": "Macro Close-up Shot",
+              "textEn": "4:5 Portrait",
+              "textBn": "4:5 পোর্ট্রেট",
               "isCorrect": true
             },
             {
               "id": "opt-3",
-              "textEn": "Panoramic Shot",
-              "textBn": "Panoramic Shot"
+              "textEn": "9:16 Reels Vertical",
+              "textBn": "9:16 ভার্টিক্যাল"
             },
             {
               "id": "opt-4",
-              "textEn": "Fisheye Shot",
-              "textBn": "Fisheye Shot"
+              "textEn": "2:1 Ultrawide Strip",
+              "textBn": "2:1 আল্ট্রাওয়াইড"
             }
           ],
           "correctOptionIds": [
             "opt-2"
           ],
-          "explanationEn": "A Macro Close-up Shot reveals fine texture and craftsmanship that builds quality confidence.",
-          "explanationBn": "পণ্য ও উপকরণের সূক্ষ্ম মান বা বুনন খুব কাছ থেকে ফুটিয়ে তুলতে Macro Close-up Shot ব্যবহার করা হয়।"
-        }
-      ]
-    },
-    {
-      "id": "quiz-sanjibon-s04",
-      "slug": "sanjibon-session-04-ad-banners",
-      "courseId": "course-sanjibon-ai-dm",
-      "courseTitle": "Applied Artificial Intelligence & Autonomous Workflows for Digital Marketing Freelancers",
-      "quizNumber": 4,
-      "instructorId": "usr-instructor-1",
-      "instructorName": "Md. Jehad (Lead Instructor · Cloud Connect AI Limited)",
-      "icon": "🎨",
-      "titleEn": "Quiz 4 (Session 04) — Social Media & Google Display Banners (Canva Layers)",
-      "titleBn": "কুইজ ০৪ (সেশন ০৪) — সোশ্যাল মিডিয়া ও ডিসপ্লে অ্যাড ব্যানার ডিজাইন (Canva Layers)",
-      "descriptionEn": "Day 2 Afternoon quiz on visual hierarchy, color contrast, 4:5 mobile feed advantage, Canva Layers lock, Dark Gradient overlays, Story Safe Zones, and Brand Consistency.",
-      "descriptionBn": "২য় দিন বিকালের সেশনের ওপর ব্যানার হায়ারার্কি, কন্ট্রাস্ট, ৪:৫ সাইজ, Canva Layers, Safe Zone এবং Brand Consistency নিয়ে ১০টি প্রশ্ন।",
-      "categoryEn": "Applied AI & Digital Marketing",
-      "categoryBn": "প্রয়োগিক এআই ও ডিজিটাল মার্কেটিং",
-      "color": "from-violet-500/20 to-purple-500/20",
-      "tags": [
-        "Sanjibon",
-        "Session 04",
-        "Canva",
-        "Ad Banner",
-        "Visual Hierarchy"
-      ],
-      "createdAt": "2026-11-16T14:00:00Z",
-      "questions": [
+          "explanationEn": "Slide 12 highlights 4:5 Portrait in green: ideal for Facebook/Instagram carousels & feed offer posts because it covers more vertical mobile screen space than 1:1.",
+          "explanationBn": "স্লাইড ১২: ক্যারোজাল ও ফিড অফার পোস্টের জন্য 4:5 পোর্ট্রেট সেরা, কারণ এটি মোবাইলের স্ক্রিনে 1:1-এর চেয়ে বেশি জায়গা পায়।"
+        },
         {
-          "id": "sj-s04-q01",
-          "textEn": "Which element should normally occupy the most prominent space in an effective ad banner?",
-          "textBn": "একটি ভালো বিজ্ঞাপন ব্যানারে সাধারণত সবচেয়ে বেশি জায়গা কোন অংশটির থাকা উচিত?",
+          "id": "sj-s03-q12",
+          "textEn": "In Lab 1 (running the same Pro Hero prompt on both ChatGPT and Gemini), how should you pick the winning image?",
+          "textBn": "ল্যাব ১-এ একই প্রো হিরো প্রম্পট ChatGPT ও Gemini দুটোতেই চালিয়ে সেরা ছবিটি কীভাবে বাছাই করবেন?",
           "type": "single_mcq",
           "timeLimitSec": 25,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "Visual Hierarchy",
-          "difficulty": "medium",
+          "category": "AI Tool Lab",
+          "difficulty": "easy",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "Long paragraphs of text",
-              "textBn": "দীর্ঘ অনুচ্ছেদ"
+              "textEn": "Always blindly accept ChatGPT's first image without checking product details",
+              "textBn": "চোখ বন্ধ করে সবসময় ChatGPT-র প্রথম ছবিটাই নিয়ে নেবেন"
             },
             {
               "id": "opt-2",
-              "textEn": "A clear product photo and main headline hook",
-              "textBn": "পরিষ্কার প্রোডাক্ট ছবি ও মূল হুক",
-              "isCorrect": true
+              "textEn": "Combine half of ChatGPT's jar and half of Gemini's jar in MS Paint",
+              "textBn": "দুই টুলের ছবির অর্ধেক করে MS Paint-এ জুড়ে দেবেন"
             },
             {
               "id": "opt-3",
-              "textEn": "Seller's personal biography",
-              "textBn": "বিক্রেতার ব্যক্তিগত জীবনবৃত্তান্ত"
+              "textEn": "Compare jar shape, ribbon/twine accuracy, and natural lighting side-by-side—keep whichever rendered the product truest, or retry in the other tool",
+              "textBn": "জার, ফিতা, সুতা ও আলোর স্বাভাবিকতা পাশাপাশি মিলিয়ে যেটায় পণ্য সবচেয়ে ঠিকঠাক এসেছে সেটা রাখুন, না হলে অন্যটায় আবার চেষ্টা করুন",
+              "isCorrect": true
             },
             {
               "id": "opt-4",
-              "textEn": "20 unrelated colorful icons",
-              "textBn": "২০টি আলাদা রঙের আইকন"
+              "textEn": "Reject both unless Bangla promo text appears inside the jar label",
+              "textBn": "জারের লেবেলে বাংলা অফার লেখা না এলে দুটোই বাতিল করে দেবেন"
             }
           ],
           "correctOptionIds": [
-            "opt-2"
+            "opt-3"
           ],
-          "explanationEn": "A crisp product hero visual plus a concise hook grabs attention in less than a second while scrolling.",
-          "explanationBn": "স্ক্রল থামাতে ব্যানারে পরিষ্কার প্রোডাক্ট ছবি ও সংক্ষিপ্ত মূল হুকই সবচেয়ে বড় অংশ জুড়ে থাকা উচিত।"
+          "explanationEn": "Slide 14: No single tool wins every time—compare product accuracy, lighting, and prompt adherence side-by-side and choose the truest result.",
+          "explanationBn": "সবসময় একটা টুলই জিতবে এমন নয়—জার, ফিতা, সুতা ও আলো মিলিয়ে যেটায় পণ্য সবচেয়ে ঠিকঠাক এসেছে সেটি রাখুন।"
         },
         {
-          "id": "sj-s04-q02",
-          "textEn": "What problem occurs if a banner lacks proper color contrast between background and text?",
-          "textBn": "ব্যানারে রঙের বৈপরীত্য (Contrast) ঠিক না থাকলে কী সমস্যা হয়?",
+          "id": "sj-s03-q13",
+          "textEn": "When uploading a real smartphone photo (Lab 2) to upgrade it into a clean studio backdrop shot, what is the #1 non-negotiable line in the prompt?",
+          "textBn": "ল্যাব ২-এ সাধারণ মোবাইলে তোলা ছবি আপলোড করে স্টুডিও শট বানাতে চাইলে প্রম্পটের সবচেয়ে গুরুত্বপূর্ণ এক লাইন নির্দেশনা কী?",
           "type": "single_mcq",
           "timeLimitSec": 25,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "Design Contrast",
+          "category": "Reference Consistency",
           "difficulty": "medium",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "Viewers cannot clearly read text on the photo and scroll past immediately",
-              "textBn": "ক্রেতা ছবির ওপর লেখা স্পষ্টভাবে পড়তে পারেন না ও স্ক্রল করে চলে যান",
+              "textEn": "'Keep the product completely identical (shape, lid, ribbon, color, size); only change the background and lighting'",
+              "textBn": "'পণ্যটা হুবহু একই রাখো (আকার, ঢাকনা, ফিতা, রং ও সাইজ কিছুই বদলাবে না); শুধু ব্যাকগ্রাউন্ড ও আলো বদলাও'",
               "isCorrect": true
             },
             {
               "id": "opt-2",
-              "textEn": "The computer freezes",
-              "textBn": "কম্পিউটার হ্যাং হয়"
+              "textEn": "'Redesign the bottle into a brand-new luxury perfume bottle'",
+              "textBn": "'পুরো বোতলটা বদলে একটি আধুনিক পারফিউমের বোতল বানিয়ে দাও'"
             },
             {
               "id": "opt-3",
-              "textEn": "Product cost increases automatically",
-              "textBn": "পণ্যের দাম বেড়ে যায়"
+              "textEn": "'Crop 50% closer until only the background table cloth remains visible'",
+              "textBn": "'৫০% জুম করে শুধু পেছনের টেবিলক্লথ দেখাও'"
             },
             {
               "id": "opt-4",
-              "textEn": "Internet becomes slower",
-              "textBn": "ইন্টারনেট স্লো হয়"
+              "textEn": "'Cover the product with a giant red 50% OFF Bangla badge inside AI'",
+              "textBn": "'এআই দিয়েই পণ্যের ওপরে বড় করে বাংলা অফার ব্যাজ বসিয়ে দাও'"
             }
           ],
           "correctOptionIds": [
             "opt-1"
           ],
-          "explanationEn": "Low contrast hides your message; strong light-on-dark or dark-on-light contrast keeps copy effortlessly legible.",
-          "explanationBn": "কন্ট্রাস্ট ঠিক না থাকলে ছবির ওপর লেখা পড়া যায় না, ফলে ক্রেতা বিজ্ঞাপন না দেখেই স্ক্রল করে চলে যান।"
+          "explanationEn": "Slide 15: 'The real secret is in one line: Keep the product completely identical—then write only what you want changed (background/lighting).'",
+          "explanationBn": "স্লাইড ১৫: আসল কথা এই এক লাইনে—'পণ্যটা হুবহু একই রাখো', এরপর শুধু লিখুন ব্যাকগ্রাউন্ড বা আলোয় কী বদলাতে চান।"
         },
         {
-          "id": "sj-s04-q03",
-          "textEn": "Why is a 4:5 (1080×1350) banner popular instead of 1:1 for Facebook and Instagram mobile feeds?",
-          "textBn": "Facebook ও Instagram-এর মোবাইল ফিডে 1:1-এর বদলে 4:5 (1080×1350) ব্যানার জনপ্রিয় কেন?",
+          "id": "sj-s03-q14",
+          "textEn": "How do you generate 4 essential styles or 5 camera angles (Front, 45°, Top-down, Low-angle, Macro) of the exact same jar without the packaging morphing?",
+          "textBn": "একই পণ্যের জারের আকার ও ফিতা না বদলিয়ে ৪টি স্টাইল বা ৫টি ক্যামেরা অ্যাঙ্গেল (ফ্রন্ট, ৪৫°, টপ-ডাউন, লো অ্যাঙ্গেল, ম্যাক্রো) পাওয়ার কৌশল কী?",
           "type": "single_mcq",
           "timeLimitSec": 25,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "Feed Sizes",
+          "category": "Reference Consistency",
           "difficulty": "medium",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "Only because file size in MB is bigger",
-              "textBn": "এটি ফাইল সাইজে বড়"
+              "textEn": "Open 5 brand-new incognito chats with different random prompts each time",
+              "textBn": "প্রতিবার আলাদা ৫টি নতুন চ্যাটে গিয়ে ভিন্ন প্রম্পট চালানো"
             },
             {
               "id": "opt-2",
-              "textEn": "It occupies significantly more vertical screen space on smartphones",
-              "textBn": "মোবাইল স্ক্রিনে এটি তুলনামূলক বেশি জায়গা জুড়ে দেখায়",
+              "textEn": "Generate a 16:9 collage first and zoom in with screenshots",
+              "textBn": "প্রথমে একটি 16:9 কোলাজ বানিয়ে স্ক্রিনশট কেটে নেওয়া"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Leave the product details out so AI improvises variation",
+              "textBn": "পণ্যের বিবরণ বাদ দিয়ে এআইকে ইচ্ছামতো বৈচিত্র্য আনতে দেওয়া"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Upload/create the reference product once and ask sequentially inside the SAME chat thread, changing only style or angle per turn",
+              "textBn": "একই চ্যাটে থেকে ধাপে ধাপে পরপর শুধু স্টাইল বা অ্যাঙ্গেলের নির্দেশনা বদলানো, যাতে জার ও সাজসজ্জা অভিন্ন থাকে",
+              "isCorrect": true
+            }
+          ],
+          "correctOptionIds": [
+            "opt-4"
+          ],
+          "explanationEn": "Slides 16–17: Staying in the same chat thread after setting your reference product preserves the exact jar, ribbon, and lighting across styles & angles.",
+          "explanationBn": "একই চ্যাটে পরপর স্টাইল বা অ্যাঙ্গেল চাইলে জার, ফিতা ও আলো বদলায় না এবং সব শটে পণ্যের ধারাবাহিকতা বজায় থাকে।"
+        },
+        {
+          "id": "sj-s03-q15",
+          "textEn": "When generating an entire 5-slide educational Carousel in a single AI prompt (Slides 19–20), which practice keeps all 5 slides visually cohesive?",
+          "textBn": "এক প্রম্পটে ৫ স্লাইডের ক্যারোজাল তৈরি করার সময় (স্লাইড ১৯–২০) সবকটি স্লাইডে দৃশ্যমান সামঞ্জস্য রাখতে কোন নিয়মটি মানতে হয়?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Carousel Design",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Use 5 completely different product colors and random aspect ratios per slide",
+              "textBn": "প্রতি স্লাইডে পণ্যের রং ও আসপেক্ট রেশিও আলাদা রাখা"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Define one shared style, lighting & palette (Warm Amber, Deep Green, Cream) first, number Slides 1–5 on separate lines with quoted headlines, and specify 4:5 size keeping text clear of the product",
+              "textBn": "শুরুতে অভিন্ন স্টাইল, সোনালি আলো ও রঙের প্যালেট (Warm Amber, Deep Green, Cream) উল্লেখ করে স্লাইড ১–৫ আলাদা লাইনে কোট করা হেডলাইনসহ 4:5 সাইজ দেওয়া",
               "isCorrect": true
             },
             {
               "id": "opt-3",
-              "textEn": "Text cannot be written on 1:1 images",
-              "textBn": "এতে লেখা যায় না"
+              "textEn": "Place headlines right over the center of the honey jar label",
+              "textBn": "হেডলাইন সবসময় জারের মাঝখানে পণ্যের ওপর বসানো"
             },
             {
               "id": "opt-4",
-              "textEn": "It only works on laptops",
-              "textBn": "এটি কেবল ল্যাপটপে চলে"
+              "textEn": "Include large page numbers '1/5, 2/5' and extra body paragraphs on every photo",
+              "textBn": "প্রতিটি ছবির ভেতর বড় স্লাইড নম্বর ও পুরো অনুচ্ছেদ লিখে দেওয়া"
             }
           ],
           "correctOptionIds": [
             "opt-2"
           ],
-          "explanationEn": "A taller 4:5 portrait frame captures more viewport real estate on mobile phones, holding viewer focus longer.",
-          "explanationBn": "মোবাইল স্ক্রিনে 4:5 ব্যানার বেশি জায়গা জুড়ে দেখায় বলে ক্রেতার মনোযোগ ধরে রাখতে বেশি কার্যকর।"
+          "explanationEn": "Slide 19 teaches defining shared palette (Warm Amber, Deep Green, Cream), consistent golden lighting, numbered 1–5 slide scenes/headlines on separate lines, and 4:5 portrait size without covering the product.",
+          "explanationBn": "স্লাইড ১৯: স্টাইল, রঙের প্যালেট (উষ্ণ অ্যাম্বার, গাঢ় সবুজ, ক্রিম) ও নরম সোনালি আলো একবার বলে দিয়ে স্লাইড ১ থেকে ৫ আলাদা লাইনে কোট করা হেডলাইনসহ 4:5 সাইজে লিখতে হয়।"
         },
         {
-          "id": "sj-s04-q04",
-          "textEn": "What is the primary purpose of a CTA (Call-to-Action) button on an ad banner?",
-          "textBn": "একটি ব্যানারে CTA (Call-to-Action) বাটনের মূল কাজ কী?",
+          "id": "sj-s03-q16",
+          "textEn": "In the 5-Slide Honey Awareness Carousel taught in Session 3, what safe health practices are highlighted for Slide 2 and Slide 3?",
+          "textBn": "ক্লাসের ৫-স্লাইড মধু সচেতনতা ক্যারোজালে স্লাইড ২ ও স্লাইড ৩-এ কোন সঠিক স্বাস্থ্য সতর্কতার বার্তা রাখা হয়েছে?",
           "type": "single_mcq",
           "timeLimitSec": 25,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "CTA Button",
+          "category": "Carousel Case Study",
+          "difficulty": "easy",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Boil honey at 100°C and feed daily to 3-month-old babies",
+              "textBn": "ফুটন্ত পানিতে মধু ফোটানো এবং ৩ মাসের শিশুকে প্রতিদিন খাওয়ানো"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Store honey directly beside the kitchen stove in open bowls",
+              "textBn": "চুলার পাশে খোলা বাটিতে মধু সংরক্ষণ করা"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Mix honey in lukewarm water instead of boiling water (Slide 2), and NEVER give honey to infants under 1 year old (Slide 3, WHO botulism guideline)",
+              "textBn": "ফুটন্ত নয় কুসুম গরম পানিতে মধু মেশান (স্লাইড ২) এবং ১ বছরের কম বয়সী শিশুকে মধু দেবেন না (স্লাইড ৩, WHO/শিশু বিশেষজ্ঞ নির্দেশনা)",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Mix honey with cold ice cubes and put in direct afternoon sunlight",
+              "textBn": "বরফ পানিতে মিশিয়ে কড়া রোদে রেখে দেওয়া"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-3"
+          ],
+          "explanationEn": "Slide 20 explicitly notes safe medical facts: mix in lukewarm rather than boiling water, store sealed away from heat/sun, and never give honey to children under 1 year due to infant botulism risk.",
+          "explanationBn": "স্লাইড ২০: কুসুম গরম পানিতে মধু মেশানো নিরাপদ এবং ১ বছরের কম বয়সী শিশুকে মধু না দেওয়ার পরামর্শ WHO ও শিশু বিশেষজ্ঞরা দেন (বটুলিজমের ঝুঁকি)।"
+        },
+        {
+          "id": "sj-s03-q17",
+          "textEn": "After generating your 4:5 Promo Offer Post (e.g., '25% ছাড়' badge) in Gemini with Canva Connected App enabled, what exact English command turns it into an editable Canva design?",
+          "textBn": "Gemini-তে কানেক্টেড Canva অ্যাপ চালু রেখে 4:5 অফার পোস্ট তৈরির পর একই চ্যাটে কোন ইংরেজি কমান্ড লিখে ছবিটিকে Canva-তে এডিটেবল করতে হয়?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Gemini + @Canva Workflow",
+          "difficulty": "easy",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "@Canva delete watermark and download ZIP",
+              "textBn": "@Canva delete watermark and download ZIP"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "@Gemini export raw vector SVG now",
+              "textBn": "@Gemini export raw vector SVG now"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "/convert-to-photoshop psd layers",
+              "textBn": "/convert-to-photoshop psd layers"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "@Canva make this image editable (or upload to Canva and run Magic Layers if needed)",
+              "textBn": "@Canva make this image editable (আর অপশন না এলে ডাউনলোড করে Canva-তে Magic Layers)",
+              "isCorrect": true
+            }
+          ],
+          "correctOptionIds": [
+            "opt-4"
+          ],
+          "explanationEn": "Slide 22 specifies writing the English command '@Canva make this image editable' directly in the same Gemini chat (with Canva Magic Layers upload as the reliable backup).",
+          "explanationBn": "স্লাইড ২২: একই চ্যাটে ইংরেজিতে লিখতে হবে '@Canva make this image editable'—ব্যাকআপ হিসেবে ছবি ডাউনলোড করে Canva-তে Magic Layers চালানো যায়।"
+        },
+        {
+          "id": "sj-s03-q18",
+          "textEn": "Inside Canva, how does Magic Layers help fix mangled/broken Bangla headlines on an AI-generated offer banner?",
+          "textBn": "Canva-র Magic Layers ব্যবহার করে এআই ছবিতে ভেঙে যাওয়া বাংলা লেখা কীভাবে নিখুঁতভাবে ঠিক করা হয়?",
+          "type": "single_mcq",
+          "timeLimitSec": 25,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Canva Magic Layers",
           "difficulty": "medium",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "Clearly tell buyers the next action (e.g., 'Order Now', 'Inbox Us')",
-              "textBn": "ক্রেতাকে স্পষ্টভাবে পরবর্তী ধাপ জানানো (যেমন: 'অর্ডার করুন', 'ইনবক্স করুন')",
+              "textEn": "Magic Layers splits the single flat image into separate editable layers (headline, badge, product, background) so you can fix Bangla text using Noto Sans Bengali or Hind Siliguri, adjust prices/logos, and resize",
+              "textBn": "Magic Layers পুরো ছবিকে আলাদা আলাদা লেয়ারে (হেডলাইন, ব্যাজ, পণ্য, ব্যাকগ্রাউন্ড) ভাগ করে দেয়—ফলে Noto Sans Bengali বা Hind Siliguri ফন্টে বাংলা লেখা ঠিক করা, দাম/লোগো বসানো ও রিসাইজ করা সহজ হয়",
               "isCorrect": true
             },
             {
               "id": "opt-2",
-              "textEn": "Reduce aesthetic quality of the banner",
-              "textBn": "ব্যানারের সৌন্দর্য কমানো"
+              "textEn": "It blurs out the broken text until nobody can read it",
+              "textBn": "এটি ভাঙা লেখাটা ঝাপসা করে ঢেকে দেয়"
             },
             {
               "id": "opt-3",
-              "textEn": "Delete background photos",
-              "textBn": "ছবি ডিলিট করা"
+              "textEn": "It automatically rewrites Bangla headlines into binary machine code",
+              "textBn": "এটি বাংলা হেডলাইনকে বাইনারি কোডে রূপান্তর করে"
             },
             {
               "id": "opt-4",
-              "textEn": "Hide the brand logo",
-              "textBn": "লোগো লুকানো"
+              "textEn": "It merges all elements back into an uneditable JPEG thumbnail",
+              "textBn": "এটি সব লেয়ার মিলিয়ে আবার এডিট-অযোগ্য ফ্ল্যাট ছবিতে পরিণত করে"
             }
           ],
           "correctOptionIds": [
             "opt-1"
           ],
-          "explanationEn": "A bright, clear CTA removes hesitation and directs interested viewers straight to ordering or messaging.",
-          "explanationBn": "ক্রেতা ব্যানার দেখার পর ঠিক কী করবেন (অর্ডার বা ইনবক্স) তা স্পষ্টভাবে জানাতেই CTA বাটন ব্যবহৃত হয়।"
+          "explanationEn": "Slide 23: Magic Layers breaks a flat banner into editable text boxes, badges, product cutouts, and background layers so you can cleanly type real Bangla text in Noto Sans Bengali or Hind Siliguri, update prices/logos, and resize to 1:1, 4:5, or 9:16.",
+          "explanationBn": "স্লাইড ২৩: Magic Layers এক ছবি থেকে হেডলাইন, ব্যাজ, পণ্য ও ব্যাকগ্রাউন্ড আলাদা লেয়ার বানায়—তখন Noto Sans Bengali বা Hind Siliguri ফন্টে ভাঙা বাংলা ঠিক করা ও 1:1, 4:5 বা 9:16-এ রিসাইজ করা যায়।"
         },
         {
-          "id": "sj-s04-q05",
-          "textEn": "Why should the entire product description NOT be crammed into an ad banner image?",
-          "textBn": "বিজ্ঞাপন ব্যানারে পণ্যের সমস্ত বিস্তারিত বর্ণনা লেখা উচিত নয় কেন?",
+          "id": "sj-s03-q19",
+          "textEn": "Under '4 Common Mistakes & One-Line Fixes' (Slide 24), if an AI honey jar looks artificially glossy like plastic OR gets cropped at the frame edge, what should you do?",
+          "textBn": "স্লাইড ২৪ ('৪টা কমন ভুল, আর এক লাইনে সমাধান') অনুযায়ী মধু/কাঁচ প্লাস্টিকের মতো অতিরিক্ত চকচকে হলে বা পণ্য কেটে গেলে সমাধান কী?",
           "type": "single_mcq",
           "timeLimitSec": 25,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "Banner Simplicity",
+          "category": "Troubleshooting & Fixes",
           "difficulty": "medium",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "It clutters the banner and hurts readability; full details belong in the post caption",
-              "textBn": "এতে ব্যানার ঘিঞ্জি ও অপাঠ্য হয়ে যায়; বিস্তারিত বিবরণ পোস্টের ক্যাপশনে থাকে",
-              "isCorrect": true
+              "textEn": "Start a completely new account and repeat 20 prompts from zero",
+              "textBn": "নতুন অ্যাকাউন্ট খুলে শূন্য থেকে আবার ২০ বার প্রম্পট দিন"
             },
             {
               "id": "opt-2",
-              "textEn": "Fonts are unavailable",
-              "textBn": "ফন্ট পাওয়া যায় না"
+              "textEn": "Tell the AI to erase the product jar completely",
+              "textBn": "এআইকে পুরো প্রোডাক্ট জারটাই মুছে ফেলতে বলুন"
             },
             {
               "id": "opt-3",
-              "textEn": "Canva forbids long text",
-              "textBn": "ক্যানভা অনুমতি দেয় না"
+              "textEn": "Reply inside the SAME chat with a targeted fix: 'reduce the plastic shine and soften highlights' or 'zoom out slightly so the whole product is visible'",
+              "textBn": "পুরো ছবি আবার না বানিয়ে একই চ্যাটে এক লাইনে বলুন—'প্লাস্টিকের মতো চকচকে ভাবটা কমাও, হাইলাইট নরম রাখো' বা 'একটু জুম আউট করো যাতে পুরো পণ্য দেখা যায়'",
+              "isCorrect": true
             },
             {
               "id": "opt-4",
-              "textEn": "Image colors turn pure black",
-              "textBn": "ছবির রঙ কালো হয়"
+              "textEn": "Stretch the cropped photo diagonally inside MS Word",
+              "textBn": "কাটা পড়া ছবি MS Word-এ টেনে বড় করে দিন"
             }
           ],
           "correctOptionIds": [
-            "opt-1"
+            "opt-3"
           ],
-          "explanationEn": "Visuals stop the scroll with 1 clear promise; detailed specifications belong in the accompanying ad copy.",
-          "explanationBn": "ব্যানারে বেশি লেখা থাকলে তা দেখতে ঘিঞ্জি হয় ও কেউ পড়তে চায় না; বিস্তারিত তথ্য পোস্টের ক্যাপশনে থাকবে।"
+          "explanationEn": "Slide 24 teaches 4 one-line in-chat fixes without restarting: blank broken text for Canva, reduce plastic shine, keep reference jar identical, and zoom out to leave breathing space.",
+          "explanationBn": "স্লাইড ২৪: পুরো ছবি আবার বানানোর দরকার নেই—একই চ্যাটে 'প্লাস্টিকের মতো চকচকে ভাবটা কমাও' বা 'একটু জুম আউট করো' বললেই ঠিক হয়।"
         },
         {
-          "id": "sj-s04-q06",
-          "textEn": "What is the biggest advantage of using Position → Layers in Canva?",
-          "textBn": "Canva-তে Position → Layers প্যানেল ব্যবহার করার সবচেয়ে বড় সুবিধা কী?",
+          "id": "sj-s03-q20",
+          "textEn": "For the Session 3 Assignment (Slide 25), what deliverables and exact filename convention must trainees submit on the LMS?",
+          "textBn": "সেশন ৩-এর অ্যাসাইনমেন্ট (স্লাইড ২৫) অনুযায়ী LMS-এ জমা দেওয়ার জন্য কী কী ফাইল বানাতে হবে এবং ফাইলের নামের ফরম্যাট কী হবে?",
           "type": "single_mcq",
           "timeLimitSec": 25,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "Canva Layers",
-          "difficulty": "medium",
+          "category": "Assignment & Quality Gate",
+          "difficulty": "easy",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "It makes internet free",
-              "textBn": "ইন্টারনেট ফ্রি হয়"
+              "textEn": "Only 1 unedited raw mobile screenshot named final123.jpg",
+              "textBn": "শুধুমাত্র ১টি আন-এডিটেড মোবাইল স্ক্রিনশট (নাম: final123.jpg)"
             },
             {
               "id": "opt-2",
-              "textEn": "You can independently control, reorder, and lock backgrounds, shadows, and text layers",
-              "textBn": "নিচে-ওপরে থাকা ছবি, শ্যাডো ও টেক্সট আলাদাভাবে নিয়ন্ত্রণ ও লক (Lock) করা যায়",
+              "textEn": "5 product photos (hero, white, lifestyle, flat lay, macro) + 1 five-slide 4:5 carousel + 1 editable offer post, named as product_style_size (e.g., honey_white_1x1.png) with zero broken text or watermarks",
+              "textBn": "৫টি প্রোডাক্ট ছবি (হিরো, সাদা, লাইফস্টাইল, ফ্ল্যাট লে, ম্যাক্রো) + ১টি ৫-স্লাইড (4:5) ক্যারোজাল + ১টি এডিটেবল অফার পোস্ট; নাম: পণ্য_স্টাইল_সাইজ (যেমন honey_white_1x1.png) এবং ভাঙা লেখা বা ওয়াটারমার্কহীন",
               "isCorrect": true
             },
             {
               "id": "opt-3",
-              "textEn": "It auto-creates full movies",
-              "textBn": "অটোমেটিক ভিডিও বানায়"
+              "textEn": "30 PDF slides with no aspect ratio control",
+              "textBn": "কোনো সাইজ নিয়ম ছাড়াই ৩০টি PDF স্লাইড"
             },
             {
               "id": "opt-4",
-              "textEn": "It records microphone voice",
-              "textBn": "ভয়েস রেকর্ড করে"
+              "textEn": "Only Canva template links without exporting PNG/JPG images",
+              "textBn": "PNG বা JPG ডাউনলোড না করেই শুধু এলোমেলো লিংক জমা দেওয়া"
             }
           ],
           "correctOptionIds": [
             "opt-2"
           ],
-          "explanationEn": "The Layers panel stops overlapping elements from interfering when selecting or editing foreground text.",
-          "explanationBn": "Layers প্যানেলের মাধ্যমে ব্যাকগ্রাউন্ড লক করে ছবি, গ্রেডিয়েন্ট ও টেক্সট স্তরগুলো সহজে নিয়ন্ত্রণ করা যায়।"
-        },
-        {
-          "id": "sj-s04-q07",
-          "textEn": "What is the best technique to make white Bangla headline text stand out cleanly over a photo?",
-          "textBn": "ছবির ওপর সাদা রঙের বাংলা লেখা ফুটিয়ে তুলতে সবচেয়ে কার্যকর উপায় কোনটি?",
-          "type": "single_mcq",
-          "timeLimitSec": 25,
-          "points": 1000,
-          "negativeMarks": 0,
-          "category": "Typography Readability",
-          "difficulty": "medium",
-          "options": [
-            {
-              "id": "opt-1",
-              "textEn": "Place a subtle Dark Gradient / Overlay layer right between the photo and the text",
-              "textBn": "ছবির ঠিক ওপরে ও লেখার নিচে হালকা Dark Gradient / Overlay বসানো",
-              "isCorrect": true
-            },
-            {
-              "id": "opt-2",
-              "textEn": "Reduce font size to 5 pt",
-              "textBn": "ফন্ট সাইজ ৫ pt করা"
-            },
-            {
-              "id": "opt-3",
-              "textEn": "Remove all text entirely",
-              "textBn": "লেখা সরিয়ে ফেলা"
-            },
-            {
-              "id": "opt-4",
-              "textEn": "Paint the background white",
-              "textBn": "ব্যাকগ্রাউন্ড সাদা করা"
-            }
-          ],
-          "correctOptionIds": [
-            "opt-1"
-          ],
-          "explanationEn": "A dark semi-transparent gradient behind white headlines guarantees contrast without hiding the product.",
-          "explanationBn": "ছবি ও লেখার মাঝখানে হালকা Dark Gradient বা Overlay দিলে সাদা বাংলা লেখা ঝকঝকে ও স্পষ্টভাবে ফুটে ওঠে।"
-        },
-        {
-          "id": "sj-s04-q08",
-          "textEn": "Why do we leave ~250px top and ~300px bottom empty margins when designing an Instagram/FB Story (1080×1920)?",
-          "textBn": "Instagram/Facebook Story (1080×1920) ডিজাইন করার সময় ওপরের ২৫০ px এবং নিচের ৩০০ px ফাঁকা রাখার কারণ কী?",
-          "type": "single_mcq",
-          "timeLimitSec": 25,
-          "points": 1000,
-          "negativeMarks": 0,
-          "category": "Safe Zones",
-          "difficulty": "medium",
-          "options": [
-            {
-              "id": "opt-1",
-              "textEn": "To save printer paper",
-              "textBn": "কাগজ সাশ্রয়"
-            },
-            {
-              "id": "opt-2",
-              "textEn": "So the platform's profile header and bottom reply/CTA bar do not cover text",
-              "textBn": "প্ল্যাটফর্মের প্রোফাইল আইকন ও রিপ্লাই বক্সের নিচে লেখা যেন ঢেকে না যায়",
-              "isCorrect": true
-            },
-            {
-              "id": "opt-3",
-              "textEn": "To make photos smaller",
-              "textBn": "ছবি ছোট করতে"
-            },
-            {
-              "id": "opt-4",
-              "textEn": "To save digital colors",
-              "textBn": "রং বাঁচাতে"
-            }
-          ],
-          "correctOptionIds": [
-            "opt-2"
-          ],
-          "explanationEn": "Story interfaces overlay profile icons on top and reply/swipe-up bars at the bottom; Safe Zones protect your message.",
-          "explanationBn": "স্টোরির ওপরে প্রোফাইল নাম ও নিচে রিপ্লাই/বাটন থাকে—সেফ জোন না মানলে জরুরি লেখা ঢেকে যায়।"
-        },
-        {
-          "id": "sj-s04-q09",
-          "textEn": "What layout works best for a compact 300×250 Google Display ad banner?",
-          "textBn": "Google Display-এর 300×250 ছোট ব্যানারে কেমন ডিজাইন সবচেয়ে ভালো কাজ করে?",
-          "type": "single_mcq",
-          "timeLimitSec": 25,
-          "points": 1000,
-          "negativeMarks": 0,
-          "category": "Google Display Ads",
-          "difficulty": "medium",
-          "options": [
-            {
-              "id": "opt-1",
-              "textEn": "Six long paragraphs",
-              "textBn": "৬ অনুচ্ছেদের লেখা"
-            },
-            {
-              "id": "opt-2",
-              "textEn": "Brand logo, crisp product photo, 3–5 word offer hook, and clear CTA button",
-              "textBn": "লোগো, পরিষ্কার ছবি, ৩–৫ শব্দের অফার ও স্পষ্ট CTA বাটন",
-              "isCorrect": true
-            },
-            {
-              "id": "opt-3",
-              "textEn": "15 overlapping photos together",
-              "textBn": "১৫টি ছবি একসাথে"
-            },
-            {
-              "id": "opt-4",
-              "textEn": "An empty blank rectangle",
-              "textBn": "কেবল একটি খালি বাক্স"
-            }
-          ],
-          "correctOptionIds": [
-            "opt-2"
-          ],
-          "explanationEn": "Small display slots need instant clarity: logo + hero visual + punchy 3–5 word hook + contrasting CTA.",
-          "explanationBn": "ছোট ডিসপ্লে ব্যানারে শুধু লোগো, পরিষ্কার ছবি, ৩–৫ শব্দের মূল অফার ও উজ্জ্বল CTA বাটনই সবচেয়ে ভালো কাজ করে।"
-        },
-        {
-          "id": "sj-s04-q10",
-          "textEn": "What is achieved by using the same font family, color palette, and logo placement across all 6 banners?",
-          "textBn": "একই ব্র্যান্ডের ৬টি ব্যানারে একই ফন্ট, একই রঙের প্যালেট ও এক লোগো ব্যবহার করলে কী তৈরি হয়?",
-          "type": "single_mcq",
-          "timeLimitSec": 25,
-          "points": 1000,
-          "negativeMarks": 0,
-          "category": "Brand Identity",
-          "difficulty": "medium",
-          "options": [
-            {
-              "id": "opt-1",
-              "textEn": "Brand Consistency (a recognizable, trustworthy professional look)",
-              "textBn": "Brand Consistency (ব্র্যান্ডের পেশাদার ও বিশ্বস্ত পরিচিতি)",
-              "isCorrect": true
-            },
-            {
-              "id": "opt-2",
-              "textEn": "Text overflow errors",
-              "textBn": "টেক্সট ওভারফ্লো"
-            },
-            {
-              "id": "opt-3",
-              "textEn": "Computer memory errors",
-              "textBn": "মেমোরি এরর"
-            },
-            {
-              "id": "opt-4",
-              "textEn": "Automatic ad rejection",
-              "textBn": "বিজ্ঞাপন বাতিল"
-            }
-          ],
-          "correctOptionIds": [
-            "opt-1"
-          ],
-          "explanationEn": "Visual consistency makes customers immediately recognize your brand across feeds, stories, and websites.",
-          "explanationBn": "সব ডিজাইনে এক রং, ফন্ট ও লোগো ব্যবহার করলে ক্রেতার মনে ব্র্যান্ড সম্পর্কে স্থায়ী আস্থা তৈরি হয় (Brand Consistency)।"
+          "explanationEn": "Slide 25 requires 5 product photos + 1 five-slide 4:5 carousel + 1 Gemini-to-Canva editable offer post, named cleanly as <product>_<style>_<size> (e.g., honey_white_1x1.png), checking accuracy, no broken text, no plastic shine, full visibility, proper ratio, and no watermarks.",
+          "explanationBn": "স্লাইড ২৫: ৫টি প্রোডাক্ট ছবি + ১টি ৫-স্লাইড ক্যারোজাল + ১টি এডিটেবল অফার পোস্ট; ফাইলের নাম: পণ্য_স্টাইল_সাইজ (যেমন honey_white_1x1.png) এবং জমা দেওয়ার আগে পণ্যের আকার, সঠিক সাইজ, ভাঙা লেখা ও ওয়াটারমার্ক না থাকা যাচাই করতে হবে।"
         }
       ]
     },

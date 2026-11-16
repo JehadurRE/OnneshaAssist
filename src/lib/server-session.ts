@@ -40,6 +40,7 @@ import {
   isQuizPrivate,
   normalizeBdPhone,
   normalizeRollToken,
+  SANJIBON_COURSE,
 } from "./sanjibon-seed-data";
 import {
   canActorMutateStoreAction,
@@ -136,6 +137,7 @@ interface PersistentStoreData {
   revokedCertificateArchive?: Record<string, CertificateData> | undefined;
   purgedSampleData?: boolean | undefined;
   purgedUnder50Initial?: boolean | undefined;
+  migratedSanjibonS03V2?: boolean | undefined;
   ledgerCheckpoints: LedgerOtsCheckpoint[];
   transactions: ServerTransactionRecord[];
   smsLogs: ServerSmsLogRecord[];
@@ -361,6 +363,42 @@ export function mergeSeededStoreData<
 }
 
 /**
+ * One-time curriculum migration merging Quiz 4 into the 20-question Quiz 3 (Session 03 Final Slide):
+ * removes any stale persisted override for quiz-sanjibon-s03 / quiz-sanjibon-s04 so the updated
+ * canonical READY_MADE_PACKS definition is served cleanly, while keeping all user quizzes & results.
+ */
+export function migrateSanjibonQ3MergeInStore<
+  T extends {
+    courses: Course[];
+    customQuizzes: Quiz[];
+  },
+>(store: T): { removedQuizOverrides: number; updatedCourseDesc: boolean } {
+  const beforeLen = store.customQuizzes.length;
+  store.customQuizzes = store.customQuizzes.filter(
+    (q) => q.id !== "quiz-sanjibon-s03" && q.id !== "quiz-sanjibon-s04",
+  );
+  const removedQuizOverrides = beforeLen - store.customQuizzes.length;
+
+  let updatedCourseDesc = false;
+  const courseIdx = store.courses.findIndex((c) => c.id === SANJIBON_COURSE.id);
+  if (courseIdx >= 0 && store.courses[courseIdx]) {
+    const cur = store.courses[courseIdx]!;
+    if (
+      cur.descriptionEn !== SANJIBON_COURSE.descriptionEn ||
+      cur.descriptionBn !== SANJIBON_COURSE.descriptionBn
+    ) {
+      store.courses[courseIdx] = {
+        ...cur,
+        descriptionEn: SANJIBON_COURSE.descriptionEn,
+        descriptionBn: SANJIBON_COURSE.descriptionBn,
+      };
+      updatedCourseDesc = true;
+    }
+  }
+  return { removedQuizOverrides, updatedCourseDesc };
+}
+
+/**
  * Resolves a trainee from the roster by normalized BD mobile number (full or trailing digits),
  * exact/case-insensitive Roll Number (`JHN-01` / `jhn01`), centre-scoped serial (`1` + regionId),
  * or registered email address.
@@ -467,6 +505,7 @@ function loadInitialStore(): PersistentStoreData {
             revokedCertificateArchive: parsed.revokedCertificateArchive || {},
             purgedSampleData: purged,
             purgedUnder50Initial: !!parsed.purgedUnder50Initial,
+            migratedSanjibonS03V2: !!parsed.migratedSanjibonS03V2,
             ledgerCheckpoints: parsed.ledgerCheckpoints || [],
             transactions: parsed.transactions || [],
             smsLogs: parsed.smsLogs || [],
@@ -500,6 +539,7 @@ function loadInitialStore(): PersistentStoreData {
     revokedCertificateArchive: {},
     purgedSampleData: false,
     purgedUnder50Initial: true,
+    migratedSanjibonS03V2: true,
     ledgerCheckpoints: [],
     transactions: [],
     smsLogs: [],
@@ -523,6 +563,14 @@ function getStore(): PersistentStoreData {
       }
       console.info(
         `[OnneshaServerStore] Initial <50 examinee purge completed: sessions=${summary.removedSessions}, results=${summary.removedResults}, certs=${summary.removedCertificates}, revoked=${summary.removedRevokedCerts}, sms=${summary.removedSmsLogs}, live=${summary.removedLiveSessions}, keptSessions=${summary.keptSessions}`,
+      );
+    }
+    if (!loaded.migratedSanjibonS03V2) {
+      const mig = migrateSanjibonQ3MergeInStore(loaded);
+      loaded.migratedSanjibonS03V2 = true;
+      scheduleDiskPersist();
+      console.info(
+        `[OnneshaServerStore] Sanjibon Quiz 3+4 merge migration completed: removedOverrides=${mig.removedQuizOverrides}, updatedCourse=${mig.updatedCourseDesc}`,
       );
     }
   }

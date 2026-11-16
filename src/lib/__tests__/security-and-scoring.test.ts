@@ -65,6 +65,7 @@ import {
   GameSession,
   ManagedUser,
   Question,
+  Quiz,
   Region,
   RosterStudent,
 } from "../types";
@@ -89,6 +90,7 @@ import {
   isCertificateRevoked,
   isQuestionSubmissionClosed,
   mergeSeededStoreData,
+  migrateSanjibonQ3MergeInStore,
   resolveSignupRoleForActor,
   restoreCertificateInStore,
   sanitizeLookupCandidate,
@@ -693,8 +695,8 @@ describe("certificate designer branding, themes, Bangladesh map & multi-signator
   });
 });
 
-describe("Sanjibon Batch-04 seed curriculum, 11 quizzes & 228 trainees roster", () => {
-  it("seeds the official course, 11 training centres, 11 quizzes (140 questions incl. 20-MCQ baseline), and all 228 enrolled trainees", () => {
+describe("Sanjibon Batch-04 seed curriculum, 10 quizzes & 228 trainees roster", () => {
+  it("seeds the official course, 11 training centres, 10 quizzes (20-Q merged Session 03+04 Quiz 3, Quiz 5-10 intact, 140 Qs total), and all 228 trainees", () => {
     expect(SANJIBON_COURSE.id).toBe("course-sanjibon-ai-dm");
     expect(DEFAULT_COURSES.some((c) => c.id === "course-sanjibon-ai-dm")).toBe(true);
 
@@ -709,7 +711,7 @@ describe("Sanjibon Batch-04 seed curriculum, 11 quizzes & 228 trainees roster", 
     const std11Digits = SANJIBON_ROSTER.filter((s) => /^01\d{9}$/.test(s.phone || ""));
     expect(std11Digits.length).toBeGreaterThanOrEqual(226);
 
-    expect(SANJIBON_QUIZZES).toHaveLength(11);
+    expect(SANJIBON_QUIZZES).toHaveLength(10);
     let totalQuestions = 0;
     for (const qz of SANJIBON_QUIZZES) {
       expect(qz.courseId).toBe("course-sanjibon-ai-dm");
@@ -725,8 +727,29 @@ describe("Sanjibon Batch-04 seed curriculum, 11 quizzes & 228 trainees roster", 
     expect(SANJIBON_QUIZZES[0]?.id).toBe("quiz-sanjibon-s00-baseline");
     expect(SANJIBON_QUIZZES[0]?.quizNumber).toBe(0);
     expect(SANJIBON_QUIZZES[0]?.questions).toHaveLength(20);
-    expect(SANJIBON_QUIZZES[10]?.id).toBe("quiz-sanjibon-s10-final");
-    expect(SANJIBON_QUIZZES[10]?.questions).toHaveLength(30);
+    expect(SANJIBON_QUIZZES[3]?.id).toBe("quiz-sanjibon-s03");
+    expect(SANJIBON_QUIZZES[3]?.quizNumber).toBe(3);
+    expect(SANJIBON_QUIZZES[3]?.questions).toHaveLength(20);
+    expect(SANJIBON_QUIZZES.some((q) => q.id === "quiz-sanjibon-s04")).toBe(false);
+    expect(SANJIBON_QUIZZES[4]?.quizNumber).toBe(5);
+    expect(SANJIBON_QUIZZES[9]?.id).toBe("quiz-sanjibon-s10-final");
+    expect(SANJIBON_QUIZZES[9]?.quizNumber).toBe(10);
+    expect(SANJIBON_QUIZZES[9]?.questions).toHaveLength(30);
+
+    // Ensure one-time server store migration removes stale s03/s04 overrides while keeping custom quizzes
+    const mockStore = {
+      courses: [{ ...SANJIBON_COURSE, descriptionEn: "stale desc", descriptionBn: "পুরোনো" }],
+      customQuizzes: [
+        { id: "quiz-sanjibon-s03" } as Quiz,
+        { id: "quiz-sanjibon-s04" } as Quiz,
+        { id: "custom-org-quiz" } as Quiz,
+      ],
+    };
+    const mig = migrateSanjibonQ3MergeInStore(mockStore);
+    expect(mig.removedQuizOverrides).toBe(2);
+    expect(mig.updatedCourseDesc).toBe(true);
+    expect(mockStore.customQuizzes.map((q) => q.id)).toEqual(["custom-org-quiz"]);
+    expect(mockStore.courses[0]?.descriptionEn).toBe(SANJIBON_COURSE.descriptionEn);
   });
 
   it("normalizes BD phone formats and resolves candidates by mobile, roll, serial+centre, and email", () => {
@@ -932,9 +955,9 @@ describe("SQLite batch persistence & post-exam session recording performance", (
 });
 
 describe("course & quiz privacy access control helpers", () => {
-  it("marks Sanjibon course and all 11 Sanjibon quizzes private while keeping public demo course open", () => {
+  it("marks Sanjibon course and all 10 Sanjibon quizzes private while keeping public demo course open", () => {
     expect(isCoursePrivate(SANJIBON_COURSE)).toBe(true);
-    expect(SANJIBON_QUIZZES.length).toBe(11);
+    expect(SANJIBON_QUIZZES.length).toBe(10);
     expect(SANJIBON_QUIZZES.every((q) => isQuizPrivate(q, DEFAULT_COURSES))).toBe(true);
 
     const demoCourse = DEFAULT_COURSES.find((c) => c.id === "course-bcs-foundation");
