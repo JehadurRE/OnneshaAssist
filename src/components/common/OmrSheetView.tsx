@@ -24,7 +24,7 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import onnesha from "@/assets/onnesha.jpg.asset.json";
+import { OnneshaLogo } from "@/components/common/OnneshaLogo";
 
 interface OmrSheetViewProps {
   quiz: Quiz;
@@ -485,8 +485,8 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
         <div className="space-y-6">
           {/* Header Banner */}
           <div className="flex items-center justify-between border-b-2 border-black pb-4">
-            <div className="flex items-center gap-2">
-              <img src={onnesha.url} alt="Onnesha" className="h-12 object-contain" />
+            <div className="flex items-center gap-2.5">
+              <OnneshaLogo variant="print" size="md" showArenaBadge={false} />
               {branding.showPartnerLogo && branding.partnerLogoUrl && (
                 <img
                   src={branding.partnerLogoUrl}

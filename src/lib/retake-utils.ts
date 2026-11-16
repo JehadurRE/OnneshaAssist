@@ -6,7 +6,9 @@ export interface CompletedOriginalIndex {
   completedByRoll: Map<string, ExamResultRecord>;
   completedByPhone: Map<string, ExamResultRecord>;
   zeroAttemptCount: number;
+  partialBelowThresholdCount: number;
   completedCount: number;
+  minCompletedAnswers: number;
 }
 
 export interface RegionRetakeDiagnostic {
@@ -15,6 +17,7 @@ export interface RegionRetakeDiagnostic {
   regionNameBn: string;
   completedCount: number;
   zeroAttemptCount: number;
+  partialBelowThresholdCount: number;
   missingRosterCount: number;
   eligibleRetakeCount: number;
 }
@@ -22,11 +25,19 @@ export interface RegionRetakeDiagnostic {
 export interface SessionRetakeDiagnostics {
   sessionId: string;
   originPin: string;
+  minCompletedAnswers: number;
   completedCount: number;
   zeroAttemptCount: number;
+  partialBelowThresholdCount: number;
   missingRosterCount: number;
   totalEligibleRetakeCount: number;
   regionBreakdown: RegionRetakeDiagnostic[];
+}
+
+export function resolveRetakeMinCompletedAnswers(value?: unknown): number {
+  const num = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(num)) return 1;
+  return Math.max(1, Math.min(500, Math.round(num)));
 }
 
 export function normalizeMatchRoll(roll?: string): string {
@@ -39,41 +50,57 @@ export function normalizeMatchPhone(phone?: string): string {
 }
 
 /**
- * Determines whether an exam result reflects actual question submissions
- * rather than a passive join with zero answered questions.
+ * Counts how many questions an exam result actually submitted
+ * from either graded counts or serialized answer entries.
  */
-export function hasResultSubmittedAnswers(
+export function getResultSubmittedAnswersCount(
   result: Pick<ExamResultRecord, "correctCount" | "incorrectCount" | "answersJson">,
-): boolean {
-  if ((result.correctCount || 0) + (result.incorrectCount || 0) > 0) {
-    return true;
-  }
+): number {
+  const gradedCount = Math.max(0, (result.correctCount || 0) + (result.incorrectCount || 0));
+  let jsonCount = 0;
   if (result.answersJson && result.answersJson.trim().length > 2) {
     try {
       const parsed = JSON.parse(result.answersJson) as Record<string, unknown>;
-      return !!parsed && typeof parsed === "object" && Object.keys(parsed).length > 0;
+      if (parsed && typeof parsed === "object") {
+        jsonCount = Object.keys(parsed).length;
+      }
     } catch {
-      return false;
+      jsonCount = 0;
     }
   }
-  return false;
+  return Math.max(gradedCount, jsonCount);
 }
 
 /**
- * Indexes examinees who already submitted >= 1 answer in a prior ExamSessionRecord
+ * Determines whether an exam result meets the minimum submitted answer count
+ * required to treat an examinee as having completed the exam.
+ */
+export function hasResultSubmittedAnswers(
+  result: Pick<ExamResultRecord, "correctCount" | "incorrectCount" | "answersJson">,
+  minCompletedAnswers = 1,
+): boolean {
+  const threshold = resolveRetakeMinCompletedAnswers(minCompletedAnswers);
+  return getResultSubmittedAnswersCount(result) >= threshold;
+}
+
+/**
+ * Indexes examinees who submitted >= minCompletedAnswers in a prior ExamSessionRecord
  * so supplementary / makeup runs can skip completed candidates cleanly.
  */
 export function buildOriginalCompletionIndex(
   examResults: ExamResultRecord[],
   retakeForSessionId?: string,
   retakeOriginPin?: string,
+  minCompletedAnswers = 1,
 ): CompletedOriginalIndex {
+  const threshold = resolveRetakeMinCompletedAnswers(minCompletedAnswers);
   const completedRolls = new Set<string>();
   const completedPhones = new Set<string>();
   const completedByRoll = new Map<string, ExamResultRecord>();
   const completedByPhone = new Map<string, ExamResultRecord>();
   let completedCount = 0;
   let zeroAttemptCount = 0;
+  let partialBelowThresholdCount = 0;
 
   if (!retakeForSessionId && !retakeOriginPin) {
     return {
@@ -82,7 +109,9 @@ export function buildOriginalCompletionIndex(
       completedByRoll,
       completedByPhone,
       zeroAttemptCount,
+      partialBelowThresholdCount,
       completedCount,
+      minCompletedAnswers: threshold,
     };
   }
 
@@ -94,7 +123,8 @@ export function buildOriginalCompletionIndex(
     if (!matchesSession) continue;
     if ((r.participantId || "").startsWith("bot-")) continue;
 
-    if (hasResultSubmittedAnswers(r)) {
+    const submitted = getResultSubmittedAnswersCount(r);
+    if (submitted >= threshold) {
       completedCount++;
       const rollKey = normalizeMatchRoll(r.rollNumber);
       const phoneKey = normalizeMatchPhone(r.phone);
@@ -106,8 +136,10 @@ export function buildOriginalCompletionIndex(
         completedPhones.add(phoneKey);
         if (!completedByPhone.has(phoneKey)) completedByPhone.set(phoneKey, r);
       }
-    } else {
+    } else if (submitted === 0) {
       zeroAttemptCount++;
+    } else {
+      partialBelowThresholdCount++;
     }
   }
 
@@ -117,7 +149,9 @@ export function buildOriginalCompletionIndex(
     completedByRoll,
     completedByPhone,
     zeroAttemptCount,
+    partialBelowThresholdCount,
     completedCount,
+    minCompletedAnswers: threshold,
   };
 }
 
@@ -137,32 +171,39 @@ export function findCompletedMatchInIndex(
 }
 
 /**
- * Computes per-region completion vs zero-attempt vs unrecorded roster diagnostics
- * for any recorded ExamSessionRecord.
+ * Computes per-region completion vs zero-attempt / partial vs unrecorded roster diagnostics
+ * for any recorded ExamSessionRecord using the configured minimum answer threshold.
  */
 export function computeSessionRetakeDiagnostics(params: {
   session: ExamSessionRecord;
   examResults: ExamResultRecord[];
   roster: RosterStudent[];
   regions: Region[];
+  minCompletedAnswers?: number | undefined;
 }): SessionRetakeDiagnostics {
-  const { session, examResults, roster, regions } = params;
+  const { session, examResults, roster, regions, minCompletedAnswers } = params;
+  const threshold = resolveRetakeMinCompletedAnswers(minCompletedAnswers);
   const sessionResults = examResults.filter(
     (r) =>
       !(r.participantId || "").startsWith("bot-") &&
       (r.sessionId === session.id || r.pin === session.pin),
   );
 
-  const index = buildOriginalCompletionIndex(sessionResults, session.id, session.pin);
-  const zeroByRoll = new Set<string>();
-  const zeroByPhone = new Set<string>();
+  const index = buildOriginalCompletionIndex(
+    sessionResults,
+    session.id,
+    session.pin,
+    threshold,
+  );
+  const nonCompletedByRoll = new Set<string>();
+  const nonCompletedByPhone = new Set<string>();
 
   for (const r of sessionResults) {
-    if (!hasResultSubmittedAnswers(r)) {
+    if (!hasResultSubmittedAnswers(r, threshold)) {
       const rk = normalizeMatchRoll(r.rollNumber);
       const pk = normalizeMatchPhone(r.phone);
-      if (rk) zeroByRoll.add(rk);
-      if (pk.length >= 6) zeroByPhone.add(pk);
+      if (rk) nonCompletedByRoll.add(rk);
+      if (pk.length >= 6) nonCompletedByPhone.add(pk);
     }
   }
 
@@ -179,6 +220,7 @@ export function computeSessionRetakeDiagnostics(params: {
       regionNameBn: regObj?.nameBn || regObj?.nameEn || regName || id,
       completedCount: 0,
       zeroAttemptCount: 0,
+      partialBelowThresholdCount: 0,
       missingRosterCount: 0,
       eligibleRetakeCount: 0,
     };
@@ -192,10 +234,14 @@ export function computeSessionRetakeDiagnostics(params: {
 
   for (const r of sessionResults) {
     const diag = ensureRegionDiag(r.regionId || "reg-dhaka", r.regionName);
-    if (hasResultSubmittedAnswers(r)) {
+    const submitted = getResultSubmittedAnswersCount(r);
+    if (submitted >= threshold) {
       diag.completedCount++;
-    } else {
+    } else if (submitted === 0) {
       diag.zeroAttemptCount++;
+      diag.eligibleRetakeCount++;
+    } else {
+      diag.partialBelowThresholdCount++;
       diag.eligibleRetakeCount++;
     }
   }
@@ -207,9 +253,9 @@ export function computeSessionRetakeDiagnostics(params: {
       (rk && index.completedRolls.has(rk)) || (pk.length >= 6 && index.completedPhones.has(pk));
     if (alreadyCompleted) continue;
 
-    const alreadyCountedAsZero =
-      (rk && zeroByRoll.has(rk)) || (pk.length >= 6 && zeroByPhone.has(pk));
-    if (alreadyCountedAsZero) continue;
+    const alreadyCountedAsNonCompleted =
+      (rk && nonCompletedByRoll.has(rk)) || (pk.length >= 6 && nonCompletedByPhone.has(pk));
+    if (alreadyCountedAsNonCompleted) continue;
 
     const studentKey = rk || pk || student.id;
     missingOverall.add(studentKey);
@@ -222,11 +268,12 @@ export function computeSessionRetakeDiagnostics(params: {
     (d) =>
       d.completedCount > 0 ||
       d.zeroAttemptCount > 0 ||
+      d.partialBelowThresholdCount > 0 ||
       d.missingRosterCount > 0,
   );
   regionBreakdown.sort(
     (a, b) =>
-      b.zeroAttemptCount - a.zeroAttemptCount ||
+      b.zeroAttemptCount + b.partialBelowThresholdCount - (a.zeroAttemptCount + a.partialBelowThresholdCount) ||
       b.eligibleRetakeCount - a.eligibleRetakeCount ||
       b.completedCount - a.completedCount,
   );
@@ -234,10 +281,13 @@ export function computeSessionRetakeDiagnostics(params: {
   return {
     sessionId: session.id,
     originPin: session.pin,
+    minCompletedAnswers: threshold,
     completedCount: index.completedCount,
     zeroAttemptCount: index.zeroAttemptCount,
+    partialBelowThresholdCount: index.partialBelowThresholdCount,
     missingRosterCount: missingOverall.size,
-    totalEligibleRetakeCount: index.zeroAttemptCount + missingOverall.size,
+    totalEligibleRetakeCount:
+      index.zeroAttemptCount + index.partialBelowThresholdCount + missingOverall.size,
     regionBreakdown,
   };
 }

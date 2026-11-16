@@ -33,8 +33,10 @@ import {
   buildOriginalCompletionIndex,
   computeSessionRetakeDiagnostics,
   findCompletedMatchInIndex,
+  getResultSubmittedAnswersCount,
   hasResultSubmittedAnswers,
   mergeRetakeExamResults,
+  resolveRetakeMinCompletedAnswers,
 } from "../retake-utils";
 import {
   CERTIFICATE_THEME_PRESETS,
@@ -2670,5 +2672,122 @@ describe("supplementary retake diagnostics, completion exclusion & result mergin
 
     expect(retakeDirSylhetOnly.success).toBe(true);
     expect(retakeDirSylhetOnly.candidates.map((c) => c.rollNumber)).toEqual(["ONN-102"]);
+  });
+
+  it("supports configurable minimum submitted answer thresholds (2, 3+) in retake diagnostics & exclusion", () => {
+    expect(resolveRetakeMinCompletedAnswers(undefined)).toBe(1);
+    expect(resolveRetakeMinCompletedAnswers(0)).toBe(1);
+    expect(resolveRetakeMinCompletedAnswers(2)).toBe(2);
+    expect(resolveRetakeMinCompletedAnswers(3.6)).toBe(4);
+
+    const partialDhakaResult: ExamResultRecord = {
+      id: "res-554433-ONN104",
+      sessionId: "es-exam2",
+      pin: "554433",
+      participantId: "p-4",
+      rollNumber: "ONN-104",
+      name: "Disconnected After 2 Qs",
+      phone: "01744444444",
+      regionId: "reg-dhaka",
+      regionName: "Dhaka",
+      score: 180,
+      rank: 3,
+      correctCount: 2,
+      incorrectCount: 0,
+      unattemptedCount: 8,
+      accuracyPct: 20,
+      passed: false,
+      answersJson: "{}",
+      createdAt: "2026-11-15T10:21:00.000Z",
+    };
+
+    expect(getResultSubmittedAnswersCount(partialDhakaResult)).toBe(2);
+    expect(hasResultSubmittedAnswers(partialDhakaResult, 2)).toBe(true);
+    expect(hasResultSubmittedAnswers(partialDhakaResult, 3)).toBe(false);
+
+    const extendedRoster: RosterStudent[] = [
+      ...roster,
+      {
+        id: "st-4",
+        rollNumber: "ONN-104",
+        name: "Disconnected After 2 Qs",
+        phone: "01744444444",
+        regionId: "reg-dhaka",
+        regionName: "Dhaka",
+      },
+    ];
+
+    // With threshold = 2: ONN-104 (2 answers) and ONN-101 (10 answers) are completed
+    const diagMin2 = computeSessionRetakeDiagnostics({
+      session: origSession,
+      examResults: [completedDhakaResult, zeroAttemptSylhetResult, partialDhakaResult],
+      roster: extendedRoster,
+      regions,
+      minCompletedAnswers: 2,
+    });
+    expect(diagMin2.minCompletedAnswers).toBe(2);
+    expect(diagMin2.completedCount).toBe(2);
+    expect(diagMin2.zeroAttemptCount).toBe(1);
+    expect(diagMin2.partialBelowThresholdCount).toBe(0);
+    expect(diagMin2.missingRosterCount).toBe(1);
+    expect(diagMin2.totalEligibleRetakeCount).toBe(2);
+
+    // With threshold = 3: ONN-104 (2 < 3) moves into partialBelowThresholdCount and becomes retake-eligible
+    const diagMin3 = computeSessionRetakeDiagnostics({
+      session: origSession,
+      examResults: [completedDhakaResult, zeroAttemptSylhetResult, partialDhakaResult],
+      roster: extendedRoster,
+      regions,
+      minCompletedAnswers: 3,
+    });
+    expect(diagMin3.minCompletedAnswers).toBe(3);
+    expect(diagMin3.completedCount).toBe(1);
+    expect(diagMin3.zeroAttemptCount).toBe(1);
+    expect(diagMin3.partialBelowThresholdCount).toBe(1);
+    expect(diagMin3.missingRosterCount).toBe(1);
+    expect(diagMin3.totalEligibleRetakeCount).toBe(3);
+
+    const dirMin3 = buildJoinDirectoryForSession({
+      roster: extendedRoster,
+      regions,
+      examResults: [completedDhakaResult, zeroAttemptSylhetResult, partialDhakaResult],
+      session: {
+        phase: "lobby",
+        isSelfPractice: false,
+        settings: {
+          speedBonus: true,
+          negativeMarking: 0,
+          shuffleQuestions: false,
+          shuffleOptions: false,
+          soundEnabled: true,
+          musicEnabled: true,
+          isFormalAssessment: true,
+          requireRollNumber: true,
+          allowedRegionId: "all",
+          allowedRegionName: "All Regions",
+          retakeForSessionId: "es-exam2",
+          retakeOriginPin: "554433",
+          retakeSkipCompleted: true,
+          retakeMinCompletedAnswers: 3,
+        },
+        participants: {},
+      },
+    });
+    expect(dirMin3.candidates.map((c) => c.rollNumber)).toEqual(["ONN-102", "ONN-103", "ONN-104"]);
+
+    const patched = mergeSessionSettingsPatch(
+      {
+        speedBonus: true,
+        negativeMarking: 0.25,
+        shuffleQuestions: false,
+        shuffleOptions: false,
+        soundEnabled: true,
+        musicEnabled: true,
+        isFormalAssessment: true,
+        requireRollNumber: true,
+      },
+      { retakeMinCompletedAnswers: 3 },
+    );
+    expect(patched.retakeMinCompletedAnswers).toBe(3);
   });
 });

@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useLanguage } from "@/lib/i18n";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
-import onnesha from "@/assets/onnesha.jpg.asset.json";
+import { OnneshaLogo } from "@/components/common/OnneshaLogo";
 import {
   AlertCircle,
   Building2,
@@ -72,7 +72,7 @@ function SignupPage() {
         <div className="w-full max-w-lg bento-card p-6 sm:p-10 shadow-glow">
           {/* Brand Header */}
           <div className="text-center">
-            <img src={onnesha.url} alt="Onnesha" className="h-11 mx-auto rounded-lg object-contain mb-3" />
+            <OnneshaLogo variant="default" size="lg" className="mx-auto mb-3 justify-center" />
             <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-primary mb-2">
               <ShieldCheck className="h-3 w-3" />
               <span>{lang === "bn" ? "পরীক্ষার্থী পোর্টাল" : "Candidate Registration"}</span>

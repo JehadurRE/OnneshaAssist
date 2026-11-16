@@ -113,22 +113,48 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
               </div>
             </div>
             {onUpdateSettings && (
-              <button
-                type="button"
-                onClick={() =>
-                  onUpdateSettings({
-                    retakeSkipCompleted: !(session.settings.retakeSkipCompleted ?? true),
-                  })
-                }
-                className={`rounded-xl border px-3 py-1.5 text-[11px] font-extrabold transition cursor-pointer ${
-                  (session.settings.retakeSkipCompleted ?? true)
-                    ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                    : "border-border bg-background text-muted-foreground"
-                }`}
-              >
-                Skip Already Completed:{" "}
-                {(session.settings.retakeSkipCompleted ?? true) ? "ON" : "OFF"}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdateSettings({
+                      retakeSkipCompleted: !(session.settings.retakeSkipCompleted ?? true),
+                    })
+                  }
+                  className={`rounded-xl border px-3 py-1.5 text-[11px] font-extrabold transition cursor-pointer ${
+                    (session.settings.retakeSkipCompleted ?? true)
+                      ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                      : "border-border bg-background text-muted-foreground"
+                  }`}
+                >
+                  Skip Already Completed:{" "}
+                  {(session.settings.retakeSkipCompleted ?? true) ? "ON" : "OFF"}
+                </button>
+                {(session.settings.retakeSkipCompleted ?? true) && (
+                  <div
+                    className="flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-background px-2.5 py-1 text-[11px] font-bold"
+                    title="Minimum submitted answers in the original exam required to treat an examinee as completed and skip them"
+                  >
+                    <span className="text-muted-foreground">Min Ans &ge;</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={500}
+                      aria-label="Minimum completed submitted answers"
+                      value={session.settings.retakeMinCompletedAnswers ?? 1}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        onUpdateSettings({
+                          retakeMinCompletedAnswers: Number.isFinite(val)
+                            ? Math.max(1, Math.min(500, val))
+                            : 1,
+                        });
+                      }}
+                      className="w-12 bg-transparent font-mono font-black text-foreground text-center outline-none"
+                    />
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}

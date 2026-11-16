@@ -1349,6 +1349,13 @@ export async function downloadOmrSheetPdf(params: {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
+  const [omrLeftLogo, omrPartnerLogo] = await Promise.all([
+    loadImageSafe(branding?.leftLogoUrl || onnesha.url),
+    branding?.showPartnerLogo && branding.partnerLogoUrl
+      ? loadImageSafe(branding.partnerLogoUrl)
+      : Promise.resolve(null),
+  ]);
+
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, W, H);
 
@@ -1364,6 +1371,14 @@ export async function downloadOmrSheetPdf(params: {
   ctx.strokeStyle = "#0f172a";
   ctx.lineWidth = 4;
   ctx.strokeRect(115, 110, W - 230, H - 220);
+
+  // Brand Crests (kept clear of optical timing marks & centered titles)
+  if (omrLeftLogo) {
+    drawContainedImage(ctx, omrLeftLogo, 148, 128, 118, 118, "left");
+  }
+  if (omrPartnerLogo) {
+    drawContainedImage(ctx, omrPartnerLogo, W - 148 - 135, 128, 135, 118, "right");
+  }
 
   // Header
   ctx.textAlign = "center";
@@ -1576,19 +1591,34 @@ function drawGazetteHeader(params: {
   const headerMinBottom = topY + 118;
 
   // 1. Left Logos Zone (Onnesha + optional Partner Co-brand)
+  const hasCustomLeftLogo = Boolean((branding?.leftLogoUrl || "").trim());
   if (onneshaLogo && partnerLogo) {
-    drawContainedImage(ctx, onneshaLogo, M, topY + 12, 114, 84, "left");
-    drawContainedImage(ctx, partnerLogo, M + 124, topY + 12, 120, 84, "left");
+    drawContainedImage(ctx, onneshaLogo, M, topY + 12, 86, 84, "left");
+    drawContainedImage(ctx, partnerLogo, M + 96, topY + 12, 148, 84, "left");
+  } else if (onneshaLogo && !hasCustomLeftLogo) {
+    drawContainedImage(ctx, onneshaLogo, M, topY + 14, 80, 80, "left");
+    ctx.save();
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#0f172a";
+    ctx.font = `900 22px ${GAZETTE_SANS_FONT}`;
+    ctx.fillText("ONNESHA", M + 90, topY + 42);
+    ctx.fillStyle = "#0369a1";
+    ctx.font = `700 18px ${GAZETTE_SANS_FONT}`;
+    ctx.fillText("অন্বেষা", M + 90, topY + 69);
+    ctx.restore();
   } else if (onneshaLogo) {
     drawContainedImage(ctx, onneshaLogo, M, topY + 10, 175, 88, "left");
   } else if (partnerLogo) {
     drawContainedImage(ctx, partnerLogo, M, topY + 10, 175, 88, "left");
   } else {
+    ctx.save();
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#047857";
     ctx.font = `900 28px ${GAZETTE_SANS_FONT}`;
     ctx.fillText("ONNESHA", M, topY + 54);
+    ctx.restore();
   }
 
   // 2. Right Bordered Metadata Card

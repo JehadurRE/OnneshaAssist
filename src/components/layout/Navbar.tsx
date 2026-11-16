@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { useLanguage } from '@/lib/i18n';
 import { useAuth } from '@/lib/auth-context';
 import { LanguageToggle } from '@/components/common/LanguageToggle';
+import { OnneshaLogo } from '@/components/common/OnneshaLogo';
 import { useBranding } from '@/hooks/use-branding';
 import {
   Award,
@@ -55,62 +56,30 @@ export const Navbar: React.FC = () => {
       <header className="sticky top-0 z-40 w-full border-b border-border/80 bg-background/90 backdrop-blur-xl transition-colors">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-5 sm:px-8">
           {/* 1. Left Brand Lockup & Optional Joint Partner Logo */}
-          <Link to="/" className="flex items-center gap-2.5 shrink-0 group">
-            <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-xs transition-transform group-hover:scale-105">
-              <svg
-                viewBox="0 0 36 36"
-                fill="none"
-                className="h-5 w-5"
-                aria-hidden="true"
-              >
-                <circle
-                  cx="18"
-                  cy="18"
-                  r="11"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeDasharray="48 16"
+          <Link to="/" className="flex items-center gap-2 shrink-0 group">
+            <OnneshaLogo
+              variant="default"
+              size="md"
+              subtitle={
+                branding.showPartnerLogo && branding.partnerName
+                  ? `× ${branding.partnerName}`
+                  : "Regional Assessment System"
+              }
+              className="transition-transform group-hover:scale-[1.02]"
+            />
+
+            {branding.showPartnerLogo && branding.partnerLogoUrl && (
+              <>
+                <span className="text-muted-foreground/50 font-mono text-xs font-bold pl-1">
+                  ×
+                </span>
+                <img
+                  src={branding.partnerLogoUrl}
+                  alt={branding.partnerName || 'Joint Partner'}
+                  className="h-8 max-w-[100px] rounded object-contain"
                 />
-                <circle cx="18" cy="18" r="4" fill="currentColor" />
-              </svg>
-              <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-emerald-500" />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <div className="flex flex-col">
-                <div className="flex items-center gap-1.5 leading-none">
-                  <span className="font-display text-base sm:text-lg font-black tracking-tight text-foreground">
-                    Onnesha
-                  </span>
-                  <span className="rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-primary">
-                    Arena
-                  </span>
-                </div>
-                {branding.showPartnerLogo && branding.partnerName ? (
-                  <span className="mt-0.5 text-[10px] font-medium text-muted-foreground hidden sm:inline truncate max-w-[160px]">
-                    × {branding.partnerName}
-                  </span>
-                ) : (
-                  <span className="mt-0.5 text-[10px] font-medium text-muted-foreground hidden xl:inline">
-                    Regional Assessment System
-                  </span>
-                )}
-              </div>
-
-              {branding.showPartnerLogo && branding.partnerLogoUrl && (
-                <>
-                  <span className="text-muted-foreground/50 font-mono text-xs font-bold pl-1">
-                    ×
-                  </span>
-                  <img
-                    src={branding.partnerLogoUrl}
-                    alt={branding.partnerName || 'Joint Partner'}
-                    className="h-8 max-w-[100px] rounded object-contain"
-                  />
-                </>
-              )}
-            </div>
+              </>
+            )}
           </Link>
 
           {/* 2. Center Desktop Navigation */}

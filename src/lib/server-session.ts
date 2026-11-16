@@ -23,8 +23,10 @@ import { purgeUnderThresholdExamsInStore, type PurgeExamSummary } from "./exam-p
 import {
   buildOriginalCompletionIndex,
   findCompletedMatchInIndex,
+  getResultSubmittedAnswersCount,
   mergeRetakeExamResults,
   normalizeMatchRoll,
+  resolveRetakeMinCompletedAnswers,
 } from "./retake-utils";
 import {
   DEFAULT_COURSES,
@@ -3138,11 +3140,15 @@ export function buildJoinDirectoryForSession(params: {
     !!session.settings?.retakeForSessionId &&
     session.settings?.retakeSkipCompleted !== false &&
     Array.isArray(examResults);
+  const minCompletedAnswers = resolveRetakeMinCompletedAnswers(
+    session.settings?.retakeMinCompletedAnswers,
+  );
   const compIdx = skipCompletedRetake
     ? buildOriginalCompletionIndex(
         examResults!,
         session.settings.retakeForSessionId,
         session.settings.retakeOriginPin,
+        minCompletedAnswers,
       )
     : null;
 
@@ -3301,19 +3307,24 @@ export const serverLookupCandidateByNumber = createServerFn({ method: "GET" })
     }
 
     if (session?.settings?.retakeForSessionId && session.settings.retakeSkipCompleted !== false) {
+      const minCompletedAnswers = resolveRetakeMinCompletedAnswers(
+        session.settings.retakeMinCompletedAnswers,
+      );
       const compIdx = buildOriginalCompletionIndex(
         store.examResults,
         session.settings.retakeForSessionId,
         session.settings.retakeOriginPin,
+        minCompletedAnswers,
       );
       const completedRes = findCompletedMatchInIndex(compIdx, {
         rollNumber: matched.rollNumber,
         phone: matched.phone || matched.guardianPhone,
       });
       if (completedRes) {
+        const answeredCount = getResultSubmittedAnswersCount(completedRes);
         return {
           success: false,
-          error: `Already Completed: ${matched.name} (${matched.rollNumber}) already answered ${(completedRes.correctCount || 0) + (completedRes.incorrectCount || 0)} question(s) in the original exam (PIN ${session.settings.retakeOriginPin || ""}, Score: ${completedRes.score}). No retake is needed — your existing score is preserved.`,
+          error: `Already Completed: ${matched.name} (${matched.rollNumber}) already submitted ${answeredCount} question(s) (threshold >= ${minCompletedAnswers}) in the original exam (PIN ${session.settings.retakeOriginPin || ""}, Score: ${completedRes.score}). No retake is needed — your existing score is preserved.`,
         };
       }
     }
@@ -3361,6 +3372,7 @@ export const serverCreateSession = createServerFn({ method: "POST" })
       isSelfPractice?: boolean | undefined;
       retakeForSessionId?: string | undefined;
       retakeSkipCompleted?: boolean | undefined;
+      retakeMinCompletedAnswers?: number | undefined;
     }) => data,
   )
   .handler(async ({ data }) => {
@@ -3528,6 +3540,9 @@ export const serverCreateSession = createServerFn({ method: "POST" })
               retakeForSessionId: origSessionForRetake.id,
               retakeOriginPin: origSessionForRetake.pin,
               retakeSkipCompleted: data.retakeSkipCompleted ?? true,
+              retakeMinCompletedAnswers: resolveRetakeMinCompletedAnswers(
+                data.retakeMinCompletedAnswers,
+              ),
             }
           : {}),
       },
@@ -3829,26 +3844,30 @@ export const serverJoinSession = createServerFn({ method: "POST" })
       };
     }
 
-    // 2b. Retake Guard: Skip examinees who already submitted >= 1 answer in the original exam
+    // 2b. Retake Guard: Skip examinees who already submitted >= configured minimum answers in the original exam
     if (
       session.settings.retakeForSessionId &&
       session.settings.retakeSkipCompleted !== false
     ) {
+      const minCompletedAnswers = resolveRetakeMinCompletedAnswers(
+        session.settings.retakeMinCompletedAnswers,
+      );
       const compIdx = buildOriginalCompletionIndex(
         store.examResults,
         session.settings.retakeForSessionId,
         session.settings.retakeOriginPin,
+        minCompletedAnswers,
       );
       const completedMatch = findCompletedMatchInIndex(compIdx, {
         rollNumber: incoming.rollNumber,
         phone: incoming.phone || data.verificationNumber,
       });
       if (completedMatch) {
+        const answeredCount = getResultSubmittedAnswersCount(completedMatch);
         return {
           success: false,
           code: "ALREADY_COMPLETED_ORIGINAL",
-          error:
-            "You already completed and submitted answers in the original examination. Your original merit score and certificate remain valid; this supplementary room is only for examinees from affected centers or with zero submitted answers.",
+          error: `You already completed ${answeredCount} question(s) (minimum completion threshold: ${minCompletedAnswers}) in the original examination. Your original merit score and certificate remain valid; this supplementary room is only for examinees from affected centers or below the threshold.`,
         };
       }
     }

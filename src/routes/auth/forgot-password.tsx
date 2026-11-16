@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useLanguage } from "@/lib/i18n";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
-import onnesha from "@/assets/onnesha.jpg.asset.json";
+import { OnneshaLogo } from "@/components/common/OnneshaLogo";
 import { ArrowLeft, KeyRound, Mail, Phone, ShieldCheck } from "lucide-react";
 
 export const Route = createFileRoute("/auth/forgot-password")({
@@ -28,7 +28,7 @@ function ForgotPasswordPage() {
       <main className="flex-1 flex items-center justify-center px-4 sm:px-6 py-12">
         <div className="w-full max-w-md bento-card p-6 sm:p-8 shadow-glow space-y-5">
           <div className="text-center">
-            <img src={onnesha.url} alt="Onnesha" className="h-11 mx-auto rounded-lg object-contain mb-3" />
+            <OnneshaLogo variant="default" size="lg" className="mx-auto mb-3 justify-center" />
             <h1 className="font-display text-2xl font-black text-foreground tracking-tight">
               {lang === "bn" ? "পাসওয়ার্ড পুনরুদ্ধার নীতি" : "Verified Account Recovery"}
             </h1>

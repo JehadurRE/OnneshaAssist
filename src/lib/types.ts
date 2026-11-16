@@ -178,6 +178,7 @@ export interface GameSettings {
   passThresholdPct?: number | undefined;
   retakeForSessionId?: string | undefined;
   retakeSkipCompleted?: boolean | undefined;
+  retakeMinCompletedAnswers?: number | undefined;
   retakeOriginPin?: string | undefined;
 }
 

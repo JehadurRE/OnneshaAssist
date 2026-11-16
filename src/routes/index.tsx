@@ -10,7 +10,7 @@ import { READY_MADE_PACKS } from "@/lib/mock-data";
 import { db, isQuizPrivate } from "@/lib/db";
 import { audioEngine } from "@/lib/audio-engine";
 import { ExamResultRecord, Quiz, RosterStudent } from "@/lib/types";
-import onnesha from "@/assets/onnesha.jpg.asset.json";
+import { OnneshaLogo } from "@/components/common/OnneshaLogo";
 import {
   Activity,
   ArrowRight,
@@ -233,11 +233,7 @@ const DEMO_PREVIEW_CANDIDATES = [
 
                 {branding.showPartnerLogo && branding.partnerLogoUrl && (
                   <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-1 text-xs font-semibold text-foreground shadow-xs">
-                    <img
-                      src={onnesha.url}
-                      alt="Onnesha"
-                      className="h-4 w-auto rounded-xs object-contain"
-                    />
+                    <OnneshaLogo variant="compact" size="xs" showBengali={false} />
                     <span className="text-muted-foreground font-mono text-[10px]">×</span>
                     <img
                       src={branding.partnerLogoUrl}

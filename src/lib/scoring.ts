@@ -435,6 +435,16 @@ export function mergeSessionSettingsPatch(
   if ("retakeSkipCompleted" in patch && typeof patch.retakeSkipCompleted === "boolean") {
     next.retakeSkipCompleted = patch.retakeSkipCompleted;
   }
+  if (
+    "retakeMinCompletedAnswers" in patch &&
+    typeof patch.retakeMinCompletedAnswers === "number" &&
+    Number.isFinite(patch.retakeMinCompletedAnswers)
+  ) {
+    next.retakeMinCompletedAnswers = Math.max(
+      1,
+      Math.min(500, Math.round(patch.retakeMinCompletedAnswers)),
+    );
+  }
 
   return next;
 }

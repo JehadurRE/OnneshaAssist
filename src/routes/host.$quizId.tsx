@@ -22,6 +22,7 @@ interface HostSearch {
   retakeSessionId?: string | undefined;
   regionId?: string | undefined;
   skipCompleted?: string | undefined;
+  minAnswers?: string | undefined;
 }
 
 export const Route = createFileRoute("/host/$quizId")({
@@ -32,6 +33,7 @@ export const Route = createFileRoute("/host/$quizId")({
     regionId: typeof search["regionId"] === "string" ? search["regionId"] : undefined,
     skipCompleted:
       typeof search["skipCompleted"] === "string" ? search["skipCompleted"] : undefined,
+    minAnswers: typeof search["minAnswers"] === "string" ? search["minAnswers"] : undefined,
   }),
   head: () => ({
     meta: [
@@ -49,6 +51,7 @@ function HostPage() {
     retakeSessionId,
     regionId: requestedRegionId,
     skipCompleted: requestedSkipCompleted,
+    minAnswers: requestedMinAnswers,
   } = Route.useSearch();
   const navigate = useNavigate();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
@@ -160,6 +163,11 @@ function HostPage() {
           ? `${matchedReg.nameEn} (${matchedReg.nameBn})`
           : "All Regions (National)";
         const skipCompletedFlag = requestedSkipCompleted === "0" ? false : true;
+        const parsedMinAns = requestedMinAnswers ? parseInt(requestedMinAnswers, 10) : NaN;
+        const minCompletedAnswersVal =
+          Number.isFinite(parsedMinAns) && parsedMinAns >= 1
+            ? Math.min(500, Math.round(parsedMinAns))
+            : 1;
 
         const newSession = await gameEngine.createSessionAsync(
           quiz,
@@ -171,6 +179,7 @@ function HostPage() {
             ? {
                 retakeForSessionId: retakeSessionId,
                 retakeSkipCompleted: skipCompletedFlag,
+                retakeMinCompletedAnswers: minCompletedAnswersVal,
               }
             : undefined,
         );

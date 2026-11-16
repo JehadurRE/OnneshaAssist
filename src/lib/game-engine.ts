@@ -512,6 +512,7 @@ class RealtimeGameEngine {
     options?: {
       retakeForSessionId?: string | undefined;
       retakeSkipCompleted?: boolean | undefined;
+      retakeMinCompletedAnswers?: number | undefined;
     },
   ): GameSession {
     const pin = Math.floor(100000 + Math.random() * 900000).toString();
@@ -544,6 +545,9 @@ class RealtimeGameEngine {
         ...(typeof options?.retakeSkipCompleted === 'boolean'
           ? { retakeSkipCompleted: options.retakeSkipCompleted }
           : {}),
+        ...(typeof options?.retakeMinCompletedAnswers === 'number'
+          ? { retakeMinCompletedAnswers: options.retakeMinCompletedAnswers }
+          : {}),
       },
       participants: {},
       totalQuestions: quiz.questions.length,
@@ -568,6 +572,7 @@ class RealtimeGameEngine {
     options?: {
       retakeForSessionId?: string | undefined;
       retakeSkipCompleted?: boolean | undefined;
+      retakeMinCompletedAnswers?: number | undefined;
     },
   ): Promise<GameSession> {
     const res = await serverCreateSession({
@@ -580,6 +585,9 @@ class RealtimeGameEngine {
         ...(options?.retakeForSessionId ? { retakeForSessionId: options.retakeForSessionId } : {}),
         ...(typeof options?.retakeSkipCompleted === 'boolean'
           ? { retakeSkipCompleted: options.retakeSkipCompleted }
+          : {}),
+        ...(typeof options?.retakeMinCompletedAnswers === 'number'
+          ? { retakeMinCompletedAnswers: options.retakeMinCompletedAnswers }
           : {}),
       },
     }).catch((err) => {

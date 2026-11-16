@@ -29,6 +29,7 @@ import {
 } from "@/lib/db";
 import { computeTotalQuizMarks, isPassingScore, resolvePassThresholdPct } from "@/lib/scoring";
 import { computeSessionRetakeDiagnostics } from "@/lib/retake-utils";
+import { OnneshaLogo } from "@/components/common/OnneshaLogo";
 import { gameEngine } from "@/lib/game-engine";
 import { serverGetActiveRooms } from "@/lib/server-session";
 import { SmsGateway } from "@/lib/sms-gateway";
@@ -136,6 +137,7 @@ function DashboardPage() {
   const [selectedSessionId, setSelectedSessionId] = useState<string>("all");
   const [selectedResultsRegionId, setSelectedResultsRegionId] = useState<string>("all");
   const [retakeSkipCompleted, setRetakeSkipCompleted] = useState<boolean>(true);
+  const [retakeMinAnswers, setRetakeMinAnswers] = useState<number>(1);
 
   const [showAiModal, setShowAiModal] = useState(false);
   const [selectedQuizForOmr, setSelectedQuizForOmr] = useState<Quiz | null>(null);
@@ -329,8 +331,9 @@ function DashboardPage() {
       examResults,
       roster,
       regions,
+      minCompletedAnswers: retakeMinAnswers,
     });
-  }, [selectedExamSession, examResults, roster, regions]);
+  }, [selectedExamSession, examResults, roster, regions, retakeMinAnswers]);
 
   // New / Edit Quiz Builder State
   const [editingQuizId, setEditingQuizId] = useState<string | null>(null);
@@ -2264,11 +2267,19 @@ function DashboardPage() {
 
                   <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
                     <span className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-emerald-700 dark:text-emerald-300">
-                      Completed: {selectedSessionRetakeDiag.completedCount}
+                      Completed (&ge;{retakeMinAnswers} ans):{" "}
+                      {selectedSessionRetakeDiag.completedCount}
                     </span>
                     <span className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-rose-700 dark:text-rose-300">
                       0-Attempt Stuck: {selectedSessionRetakeDiag.zeroAttemptCount}
                     </span>
+                    {(retakeMinAnswers > 1 ||
+                      selectedSessionRetakeDiag.partialBelowThresholdCount > 0) && (
+                      <span className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-amber-800 dark:text-amber-300">
+                        Partial (&lt;{retakeMinAnswers} ans):{" "}
+                        {selectedSessionRetakeDiag.partialBelowThresholdCount}
+                      </span>
+                    )}
                     <span className="rounded-xl border border-border bg-card px-3 py-1.5 text-foreground">
                       Roster Missing: {selectedSessionRetakeDiag.missingRosterCount}
                     </span>
@@ -2302,7 +2313,8 @@ function DashboardPage() {
                       </button>
                       {selectedSessionRetakeDiag.regionBreakdown.map((reg) => {
                         const isSelected = selectedResultsRegionId === reg.regionId;
-                        const hasIssues = reg.zeroAttemptCount > 0;
+                        const hasIssues =
+                          reg.zeroAttemptCount > 0 || reg.partialBelowThresholdCount > 0;
                         return (
                           <button
                             key={reg.regionId}
@@ -2328,8 +2340,11 @@ function DashboardPage() {
                                     : "bg-muted text-muted-foreground"
                               }`}
                             >
-                              0-att: {reg.zeroAttemptCount} · miss: {reg.missingRosterCount} · done:{" "}
-                              {reg.completedCount}
+                              0-att: {reg.zeroAttemptCount}
+                              {reg.partialBelowThresholdCount > 0
+                                ? ` · <${retakeMinAnswers}: ${reg.partialBelowThresholdCount}`
+                                : ""}{" "}
+                              · miss: {reg.missingRosterCount} · done: {reg.completedCount}
                             </span>
                           </button>
                         );
@@ -2338,19 +2353,59 @@ function DashboardPage() {
                   </div>
                 )}
 
-                <div className="flex flex-col gap-3 border-t border-amber-300/60 dark:border-amber-500/30 pt-3.5 sm:flex-row sm:items-center sm:justify-between">
-                  <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-foreground">
-                    <input
-                      type="checkbox"
-                      checked={retakeSkipCompleted}
-                      onChange={(e) => setRetakeSkipCompleted(e.target.checked)}
-                      className="h-4 w-4 rounded border-border text-amber-600 focus:ring-amber-500"
-                    />
-                    <span>
-                      Skip examinees who already completed (&ge;1 submitted answer) &amp; merge
-                      retake scores into original merit list
-                    </span>
-                  </label>
+                <div className="flex flex-col gap-3 border-t border-amber-300/60 dark:border-amber-500/30 pt-3.5 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-foreground">
+                      <input
+                        type="checkbox"
+                        checked={retakeSkipCompleted}
+                        onChange={(e) => setRetakeSkipCompleted(e.target.checked)}
+                        className="h-4 w-4 rounded border-border text-amber-600 focus:ring-amber-500"
+                      />
+                      <span>
+                        Skip examinees who already completed (&ge;{retakeMinAnswers} submitted{" "}
+                        {retakeMinAnswers === 1 ? "answer" : "answers"}) &amp; merge retake scores
+                        into original merit list
+                      </span>
+                    </label>
+
+                    {retakeSkipCompleted && (
+                      <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-amber-400/50 bg-background/80 px-2.5 py-1 text-xs">
+                        <span className="text-[11px] font-bold text-muted-foreground">
+                          Min Submitted:
+                        </span>
+                        {[1, 2, 3, 5].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setRetakeMinAnswers(preset)}
+                            className={`rounded-lg px-2 py-0.5 font-mono text-[11px] font-bold transition ${
+                              retakeMinAnswers === preset
+                                ? "bg-amber-600 text-white shadow-xs"
+                                : "bg-muted text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            &ge;{preset}
+                          </button>
+                        ))}
+                        <input
+                          type="number"
+                          min={1}
+                          max={500}
+                          aria-label="Custom minimum completed answers"
+                          value={retakeMinAnswers}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setRetakeMinAnswers(
+                              Number.isFinite(val) ? Math.max(1, Math.min(500, val)) : 1,
+                            );
+                          }}
+                          className="w-12 rounded-lg border border-border bg-card px-1.5 py-0.5 text-center font-mono text-[11px] font-bold text-foreground outline-none focus:border-amber-500"
+                          title="Custom minimum submitted answers threshold"
+                        />
+                      </div>
+                    )}
+                  </div>
 
                   <button
                     type="button"
@@ -2362,10 +2417,11 @@ function DashboardPage() {
                           retakeSessionId: selectedExamSession.id,
                           regionId: selectedResultsRegionId,
                           skipCompleted: retakeSkipCompleted ? "1" : "0",
+                          minAnswers: String(retakeMinAnswers),
                         },
                       })
                     }
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-amber-700"
+                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-amber-700"
                   >
                     <RotateCcw className="h-4 w-4" />
                     {selectedResultsRegionId === "all"
@@ -2903,9 +2959,7 @@ function DashboardPage() {
                           Live Co-Brand Preview:
                         </span>
                         <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-1.5">
-                          <span className="font-display text-xs font-black text-foreground">
-                            Onnesha
-                          </span>
+                          <OnneshaLogo variant="compact" size="xs" />
                           <span className="text-muted-foreground font-mono text-xs">×</span>
                           <img
                             src={partnerLogoUrl}

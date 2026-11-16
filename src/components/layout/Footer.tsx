@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { useLanguage } from '@/lib/i18n';
 import { useBranding } from '@/hooks/use-branding';
 import ccai from '@/assets/ccai.png.asset.json';
-import onnesha from '@/assets/onnesha.jpg.asset.json';
+import { OnneshaLogo } from '@/components/common/OnneshaLogo';
 import { ShieldCheck, Code, Sparkles, Smartphone } from 'lucide-react';
 
 export const Footer: React.FC = () => {
@@ -16,8 +16,8 @@ export const Footer: React.FC = () => {
         <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-5">
           {/* Brand Col */}
           <div className="lg:col-span-2 space-y-4">
-            <div className="flex items-center gap-3">
-              <img src={onnesha.url} alt="Onnesha LMS" className="h-9 rounded-md object-contain" />
+            <div className="flex flex-wrap items-center gap-3">
+              <OnneshaLogo variant="default" size="md" />
               {branding.showPartnerLogo && branding.partnerLogoUrl && (
                 <>
                   <span className="text-muted-foreground font-mono text-xs font-bold">×</span>

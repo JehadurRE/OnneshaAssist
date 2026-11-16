@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import ccai from "@/assets/ccai.png.asset.json";
-import onnesha from "@/assets/onnesha.jpg.asset.json";
+import { OnneshaLogo } from "@/components/common/OnneshaLogo";
 import { useBranding } from "@/hooks/use-branding";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
@@ -92,7 +92,7 @@ function TimerPage() {
         {!isFullscreen && (
           <div className="w-full flex flex-wrap items-center justify-between gap-4 border-b border-border/80 pb-4">
             <div className="flex items-center gap-3">
-              <img src={onnesha.url} alt="Onnesha LMS" className="h-9 rounded-md object-contain" />
+              <OnneshaLogo variant="default" size="md" />
               {branding.showPartnerLogo && branding.partnerLogoUrl && (
                 <>
                   <span className="text-muted-foreground font-mono text-xs font-bold">×</span>
