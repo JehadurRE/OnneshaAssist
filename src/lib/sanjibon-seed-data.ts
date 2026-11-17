@@ -22,7 +22,7 @@ export const SANJIBON_COURSE: Course = {
 /** All 228 enrolled trainees across the 11 Sanjibon training centres. */
 export const SANJIBON_ROSTER: RosterStudent[] = seedPayload.roster;
 
-/** All 11 curriculum quizzes (Baseline + Quiz 1-2 + 20-Q Quiz 3 + 10-Q Hard Quiz 4 + Quiz 5-10 = 150 questions). */
+/** All 11 curriculum quizzes (Baseline + Quiz 1-2 + 20-Q Quiz 3 + 10-Q Hard Quiz 4 + 15-Q Quiz 5 + Quiz 6-10 = 155 questions). */
 export const SANJIBON_QUIZZES: Quiz[] = seedPayload.quizzes.map((q) => ({
   ...q,
   isPrivate: true,

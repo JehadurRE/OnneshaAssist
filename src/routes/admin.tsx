@@ -1461,10 +1461,14 @@ function SuperAdminPage() {
                                     {!q.isTemplate && (
                                       <button
                                         type="button"
-                                        onClick={() => {
-                                          db.deleteCustomQuiz(q.id);
+                                        onClick={async () => {
+                                          const res = await db.deleteCustomQuiz(q.id);
                                           refreshAll();
-                                          showNotice(`Deleted quiz "${q.titleEn}".`);
+                                          showNotice(
+                                            res.success
+                                              ? `Deleted quiz "${q.titleEn}".`
+                                              : res.error || "Could not delete quiz.",
+                                          );
                                         }}
                                         className="rounded p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
                                         title="Delete Quiz"

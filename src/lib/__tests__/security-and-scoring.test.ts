@@ -84,13 +84,16 @@ import {
   applyPauseGameToSession,
   applyResumeGameToSession,
   buildJoinDirectoryForSession,
+  clearDeletedQuizTokensInStore,
   deleteCertificateInStore,
+  deleteQuizInStore,
   filterActiveRoomsFromSessions,
   findRosterCandidate,
   isCertificateRevoked,
   isQuestionSubmissionClosed,
   mergeSeededStoreData,
   migrateSanjibonQ3MergeInStore,
+  migrateSanjibonQ5ExactInStore,
   resolveSignupRoleForActor,
   restoreCertificateInStore,
   sanitizeLookupCandidate,
@@ -98,6 +101,8 @@ import {
   syncUserCoursesInStore,
   upsertManagedUserInStore,
 } from "../server-session";
+import { generateQuizWithAi, getAiCredits } from "../ai-generator";
+import { normalizeGeneratedQuizPayload, stripMarkdownJsonFence } from "../ai-quiz-core";
 import { sqliteEngine } from "../db/sqlite-engine";
 import { db } from "../db";
 
@@ -723,7 +728,7 @@ describe("Sanjibon Batch-04 seed curriculum, 10 quizzes & 228 trainees roster", 
         expect(question.options.some((o) => o.id === corr && o.isCorrect)).toBe(true);
       }
     }
-    expect(totalQuestions).toBe(150);
+    expect(totalQuestions).toBe(155);
     expect(SANJIBON_QUIZZES[0]?.id).toBe("quiz-sanjibon-s00-baseline");
     expect(SANJIBON_QUIZZES[0]?.quizNumber).toBe(0);
     expect(SANJIBON_QUIZZES[0]?.questions).toHaveLength(20);
@@ -735,24 +740,35 @@ describe("Sanjibon Batch-04 seed curriculum, 10 quizzes & 228 trainees roster", 
     expect(quiz4?.quizNumber).toBe(4);
     expect(quiz4?.questions).toHaveLength(10);
     expect(quiz4?.questions.every((q) => q.difficulty === "hard")).toBe(true);
-    expect(SANJIBON_QUIZZES[5]?.quizNumber).toBe(5);
+    const quiz5 = SANJIBON_QUIZZES[5];
+    expect(quiz5?.id).toBe("quiz-sanjibon-s05");
+    expect(quiz5?.quizNumber).toBe(5);
+    expect(quiz5?.questions).toHaveLength(15);
+    expect(quiz5?.questions[0]?.textBn).toContain("Google AI Studio");
+    expect(quiz5?.questions[14]?.textBn).toContain("AI Video Production Consultant");
+    expect(quiz5?.questions.every((q) => q.correctOptionIds[0] === "opt-2")).toBe(true);
     expect(SANJIBON_QUIZZES[10]?.id).toBe("quiz-sanjibon-s10-final");
     expect(SANJIBON_QUIZZES[10]?.quizNumber).toBe(10);
     expect(SANJIBON_QUIZZES[10]?.questions).toHaveLength(30);
 
-    // Ensure one-time server store migration removes stale s03/s04 overrides while keeping custom quizzes
+    // Ensure one-time server store migrations clear stale s03/s04/s05 overrides while keeping custom quizzes
     const mockStore = {
       courses: [{ ...SANJIBON_COURSE, descriptionEn: "stale desc", descriptionBn: "পুরোনো" }],
       customQuizzes: [
         { id: "quiz-sanjibon-s03" } as Quiz,
         { id: "quiz-sanjibon-s04" } as Quiz,
+        { id: "quiz-sanjibon-s05" } as Quiz,
         { id: "custom-org-quiz" } as Quiz,
       ],
+      deletedQuizIds: ["quiz-sanjibon-s05"],
     };
     const mig = migrateSanjibonQ3MergeInStore(mockStore);
     expect(mig.removedQuizOverrides).toBe(2);
     expect(mig.updatedCourseDesc).toBe(true);
+    const mig5 = migrateSanjibonQ5ExactInStore(mockStore);
+    expect(mig5.removedQ5Override).toBe(true);
     expect(mockStore.customQuizzes.map((q) => q.id)).toEqual(["custom-org-quiz"]);
+    expect(mockStore.deletedQuizIds).toEqual([]);
     expect(mockStore.courses[0]?.descriptionEn).toBe(SANJIBON_COURSE.descriptionEn);
   });
 
@@ -2837,5 +2853,117 @@ describe("URL query search coercion for ?pin= and host retake params", () => {
     expect(coerceSearchString("  sanjibon-q2  ")).toBe("sanjibon-q2");
     expect(coerceSearchString("   ")).toBeUndefined();
     expect(coerceSearchString(undefined)).toBeUndefined();
+  });
+});
+
+describe("dashboard quiz deletion persistence and real AI generation (no dummy fallback)", () => {
+  it("permanently tombstones deleted seeded quizzes on both server store and client db", async () => {
+    const builtInTarget = SANJIBON_QUIZZES.find((q) => q.id === "quiz-sanjibon-s05")!;
+    const storeState = {
+      customQuizzes: [{ ...builtInTarget } as Quiz, { id: "my-custom", slug: "my-custom" } as Quiz],
+      deletedQuizIds: [] as string[],
+    };
+
+    deleteQuizInStore(storeState, builtInTarget.id, SANJIBON_QUIZZES);
+    expect(storeState.customQuizzes.some((q) => q.id === builtInTarget.id)).toBe(false);
+    expect(storeState.deletedQuizIds).toContain(builtInTarget.id);
+    expect(storeState.deletedQuizIds).toContain(builtInTarget.slug);
+
+    // Re-saving clears tombstone tokens cleanly
+    clearDeletedQuizTokensInStore(storeState, builtInTarget);
+    expect(storeState.deletedQuizIds).toEqual([]);
+
+    // Client DB deletion keeps built-in READY_MADE_PACKS removed in db.getQuizzes() & db.getQuizBySlug()
+    const origWindow = (globalThis as Record<string, unknown>)["window"];
+    const origLocalStorage = (globalThis as Record<string, unknown>)["localStorage"];
+    const memStorage: Record<string, string> = {};
+    const lsMock = {
+      getItem: (k: string) => (k in memStorage ? memStorage[k]! : null),
+      setItem: (k: string, v: string) => {
+        memStorage[k] = String(v);
+      },
+      removeItem: (k: string) => {
+        delete memStorage[k];
+      },
+    };
+    (globalThis as Record<string, unknown>)["window"] = { location: { origin: "http://localhost" } };
+    (globalThis as Record<string, unknown>)["localStorage"] = lsMock;
+
+    try {
+      await sqliteEngine.ready();
+      expect(db.getQuizzes().some((q) => q.id === "quiz-sanjibon-s05")).toBe(true);
+      await db.deleteCustomQuiz("quiz-sanjibon-s05");
+      expect(db.getQuizzes().some((q) => q.id === "quiz-sanjibon-s05")).toBe(false);
+      expect(db.getQuizBySlug("sanjibon-session-05-video-ads")).toBeUndefined();
+      // Re-saving restores visibility cleanly
+      db.saveCustomQuiz(builtInTarget);
+      expect(db.getQuizzes().some((q) => q.id === "quiz-sanjibon-s05")).toBe(true);
+    } finally {
+      sqliteEngine.run("DELETE FROM quizzes");
+      if (origWindow === undefined) {
+        delete (globalThis as Record<string, unknown>)["window"];
+      } else {
+        (globalThis as Record<string, unknown>)["window"] = origWindow;
+      }
+      if (origLocalStorage === undefined) {
+        delete (globalThis as Record<string, unknown>)["localStorage"];
+      } else {
+        (globalThis as Record<string, unknown>)["localStorage"] = origLocalStorage;
+      }
+    }
+  });
+
+  it("refuses off-topic dummy generation without a Gemini key and parses fenced AI payloads cleanly", async () => {
+    const origWindow = (globalThis as Record<string, unknown>)["window"];
+    const origLocalStorage = (globalThis as Record<string, unknown>)["localStorage"];
+    const memStorage: Record<string, string> = { onnesha_ai_credits: "50" };
+    const lsMock = {
+      getItem: (k: string) => (k in memStorage ? memStorage[k]! : null),
+      setItem: (k: string, v: string) => {
+        memStorage[k] = String(v);
+      },
+      removeItem: (k: string) => {
+        delete memStorage[k];
+      },
+    };
+    (globalThis as Record<string, unknown>)["window"] = {};
+    (globalThis as Record<string, unknown>)["localStorage"] = lsMock;
+
+    try {
+      await expect(
+        generateQuizWithAi({
+          topic: "Google Flow Veo 3.1 Lite Video Ads",
+          questionCount: 5,
+          language: "both",
+          difficulty: "hard",
+          category: "AI Video",
+        }),
+      ).rejects.toThrow(/Gemini API key/i);
+      // Must NOT charge AI credit when key is missing / generation did not run
+      expect(getAiCredits()).toBe(50);
+
+      const fenced = '```json\n{"titleEn":"Flow Test","titleBn":"ফ্লো টেস্ট","questions":[{"type":"single_mcq","textEn":"Start Frame?","textBn":"স্টার্ট ফ্রেম?","options":[{"textEn":"A","textBn":"ক","isCorrect":false},{"textEn":"B","textBn":"খ","isCorrect":true}]}]}\n```';
+      const cleaned = stripMarkdownJsonFence(fenced);
+      const quiz = normalizeGeneratedQuizPayload(JSON.parse(cleaned), {
+        topic: "Google Flow",
+        questionCount: 1,
+        difficulty: "hard",
+        category: "AI Video",
+        questionStyleMode: "single_mcq",
+      });
+      expect(quiz.questions).toHaveLength(1);
+      expect(quiz.questions[0]?.correctOptionIds).toEqual([quiz.questions[0]?.options[1]?.id]);
+    } finally {
+      if (origWindow === undefined) {
+        delete (globalThis as Record<string, unknown>)["window"];
+      } else {
+        (globalThis as Record<string, unknown>)["window"] = origWindow;
+      }
+      if (origLocalStorage === undefined) {
+        delete (globalThis as Record<string, unknown>)["localStorage"];
+      } else {
+        (globalThis as Record<string, unknown>)["localStorage"] = origLocalStorage;
+      }
+    }
   });
 });

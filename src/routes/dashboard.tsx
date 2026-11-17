@@ -735,10 +735,11 @@ function DashboardPage() {
     reader.readAsDataURL(file);
   };
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     if (typeof window !== "undefined") {
-      localStorage.setItem("onnesha_gemini_key", geminiApiKey.trim());
+      const cleanGeminiKey = geminiApiKey.trim();
+      localStorage.setItem("onnesha_gemini_key", cleanGeminiKey);
       localStorage.setItem("onnesha_sms_token", smsToken.trim());
       updateProfile({
         name: instructorNameInput,
@@ -753,8 +754,9 @@ function DashboardPage() {
           partnerLogoUrl: partnerLogoUrl.trim(),
           institutionTitle: institutionNameInput.trim() || "Onnesha Assessment Arena",
         });
+        await db.saveServerAiKey(cleanGeminiKey);
         setSettingsSavedMsg(
-          "✓ Studio credentials, Joint Partner Logo, and institutional branding saved to server.",
+          "✓ Studio credentials, AI API key, Joint Partner Logo, and institutional branding saved to server.",
         );
       } else {
         setSettingsSavedMsg(
@@ -1687,16 +1689,18 @@ function DashboardPage() {
                             {canDeleteQuiz && (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  db.deleteCustomQuiz(quiz.id);
+                                onClick={async () => {
+                                  const res = await db.deleteCustomQuiz(quiz.id);
                                   setQuizzes(db.getQuizzes());
                                   setSmsSuccessMsg(
-                                    `✓ Deleted "${quiz.titleEn}" from server database.`,
+                                    res.success
+                                      ? `✓ Deleted "${quiz.titleEn}" from server database.`
+                                      : `⚠ Could not delete "${quiz.titleEn}": ${res.error || "Permission denied"}`,
                                   );
-                                  setTimeout(() => setSmsSuccessMsg(null), 3500);
+                                  setTimeout(() => setSmsSuccessMsg(null), 4000);
                                 }}
                                 className="rounded-lg p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
-                                title="Delete custom quiz"
+                                title="Delete quiz"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </button>

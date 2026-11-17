@@ -5949,416 +5949,614 @@
       "id": "quiz-sanjibon-s05",
       "slug": "sanjibon-session-05-video-ads",
       "courseId": "course-sanjibon-ai-dm",
-      "courseTitle": "Applied Artificial Intelligence & Autonomous Workflows for Digital Marketing Freelancers",
+      "courseTitle": "Applied AI & Autonomous Workflows — Digital Marketing Freelancer Training (Batch-04)",
       "quizNumber": 5,
       "instructorId": "usr-instructor-1",
-      "instructorName": "Md. Jehad (Lead Instructor · Cloud Connect AI Limited)",
+      "instructorName": "Course Instructor",
       "icon": "🎬",
-      "titleEn": "Quiz 5 (Session 05) — Short Video Ads, Script Word Count & Bangla Voiceover",
-      "titleBn": "কুইজ ০৫ (সেশন ০৫) — শর্ট ভিডিও বিজ্ঞাপন, বাংলা ভয়েসওভার ও ২য় দিনের পুনরালোচনা",
-      "descriptionEn": "Day 3 Morning quiz reviewing SLABC, Canva Layers & Safe Zones, plus first 3-second Hook, 55–65 word script limit, Clipchamp Bangla neural voices, audio ducking & subtitles.",
-      "descriptionBn": "৩য় দিন সকালের ওয়ার্ম-আপ কুইজ: SLABC, সেফ জোন, প্রথম ৩ সেকেন্ডের হুক, ৫৫–৬৫ শব্দের স্ক্রিপ্ট, Clipchamp বাংলা ভয়েসওভার ও ক্যাপশন।",
-      "categoryEn": "Applied AI & Digital Marketing",
-      "categoryBn": "প্রয়োগিক এআই ও ডিজিটাল মার্কেটিং",
-      "color": "from-rose-500/20 to-pink-500/20",
+      "titleEn": "Quiz 5 (Session 05–06) — AI Video Ads (Google Flow / Veo 3.1 Lite), AI Studio TTS, CapCut & Verification (15 Qs)",
+      "titleBn": "কুইজ ০৫ (সেশন ০৫–০৬) — Google Flow (Veo 3.1 Lite), Google AI Studio ভয়েস, CapCut, Suno ও যাচাইকরণ (১৫টি প্রশ্ন)",
+      "descriptionEn": "15-question assessment covering Google AI Studio Bangla TTS & phonetic fixes, Google Flow Start Frame continuity, Veo 3.1 Lite credit math, CapCut 9:16 1080p 30fps workflow, Suno AI direction, Gemini Voice/Video evidence checking, and Consultant System Instructions.",
+      "descriptionBn": "Google AI Studio বাংলা ভয়েস ও ধ্বনিগত সংশোধন, Google Flow ও Veo 3.1 Lite ক্রেডিট হিসাব, Start Frame ধারাবাহিকতা, CapCut 9:16 1080p 30fps এডিটিং, Suno AI মিউজিক এবং Gemini ভয়েস/ভিডিও তথ্য যাচাইকরণের ১৫টি প্রশ্ন।",
+      "categoryEn": "AI Video Production & Audio",
+      "categoryBn": "এআই ভিডিও বিজ্ঞাপন ও ভয়েস",
+      "color": "from-indigo-500/20 to-cyan-500/20",
       "tags": [
         "Sanjibon",
-        "Session 05",
-        "Video Ads",
-        "Clipchamp",
-        "Voiceover"
+        "Quiz 5",
+        "Session 06",
+        "Google Flow",
+        "AI Studio",
+        "CapCut",
+        "Suno AI",
+        "15 Questions"
       ],
       "createdAt": "2026-11-17T09:00:00Z",
       "questions": [
         {
           "id": "sj-s05-q01",
-          "textEn": "In the SLABC AI product photography formula, what do 'L' and 'A' represent?",
-          "textBn": "এআই দিয়ে স্টুডিও প্রোডাক্ট ছবি তৈরির SLABC সূত্রে L ও A বলতে কী বোঝায়?",
+          "textEn": "After generating a Bangla voiceover in Google AI Studio, one specific brand name is mispronounced while the rest of the audio is accurate. What is the most effective fix?",
+          "textBn": "Google AI Studio ব্যবহার করে বাংলা ভয়েসওভার তৈরি করার পর দেখা গেল একটি নির্দিষ্ট ব্র্যান্ডের নামের উচ্চারণ ভুল হচ্ছে, কিন্তু বাকি পুরো ভয়েসওভার ঠিক আছে। এক্ষেত্রে সবচেয়ে কার্যকর সমাধান কোনটি?",
           "type": "single_mcq",
-          "timeLimitSec": 25,
+          "timeLimitSec": 30,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "SLABC Formula",
+          "category": "Google AI Studio Voiceover",
           "difficulty": "medium",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "Logo and App",
-              "textBn": "Logo ও App"
+              "textEn": "Change the entire voice model and regenerate all audio from scratch.",
+              "textBn": "সম্পূর্ণ ভয়েস মডেল পরিবর্তন করে নতুন করে পুরো অডিও তৈরি করা।"
             },
             {
               "id": "opt-2",
-              "textEn": "Lighting and Camera Angle",
-              "textBn": "Lighting (আলো) ও Angle (ক্যামেরা কোণ)",
+              "textEn": "Respell the mispronounced brand name phonetically (syllable by syllable as spoken) and regenerate.",
+              "textBn": "ভুল উচ্চারণ হওয়া শব্দটি উচ্চারণ অনুযায়ী ভেঙে বা ধ্বনিগতভাবে লিখে পুনরায় জেনারেট করা।",
               "isCorrect": true
             },
             {
               "id": "opt-3",
-              "textEn": "Link and Audio",
-              "textBn": "Link ও Audio"
+              "textEn": "Increase the speaking speed of the voiceover.",
+              "textBn": "ভয়েসওভারের স্পিড বাড়িয়ে দেওয়া।"
             },
             {
               "id": "opt-4",
-              "textEn": "List and Ad",
-              "textBn": "List ও Ad"
+              "textEn": "Move it into CapCut and apply an audio transition.",
+              "textBn": "CapCut-এ নিয়ে অডিও ট্রানজিশন ব্যবহার করা।"
             }
           ],
           "correctOptionIds": [
             "opt-2"
           ],
-          "explanationEn": "SLABC stands for Subject, Lighting, Angle, Background, and Composition.",
-          "explanationBn": "SLABC সূত্রে S=Subject, L=Lighting (আলো), A=Angle (ক্যামেরা কোণ), B=Background এবং C=Composition।"
+          "explanationEn": "Breaking and spelling the difficult brand name phonetically guides Google AI Studio TTS to pronounce it accurately without discarding the rest of the script.",
+          "explanationBn": "নির্দিষ্ট ব্র্যান্ড বা বিদেশি শব্দ ভুল উচ্চারিত হলে পুরো মডেল না বদলে শব্দটি বাংলা ধ্বনিগত বা উচ্চারণ অনুযায়ী ভেঙে লিখে দিলে AI সঠিক উচ্চারণ করে।"
         },
         {
           "id": "sj-s05-q02",
-          "textEn": "Why is one side intentionally left uncluttered when creating a 16:9 website hero banner image?",
-          "textBn": "ওয়েবসাইটের 16:9 হিরো ব্যানারের জন্য ছবি বানানোর সময় কেন একটি পাশ ফাঁকা রাখা হয়?",
+          "textEn": "You need to produce a 4-scene product video ad using Google Flow while keeping product shape, color, and design identical across all scenes. Which workflow works best?",
+          "textBn": "Google Flow ব্যবহার করে চারটি দৃশ্যের একটি পণ্যের বিজ্ঞাপন তৈরি করতে হবে। প্রতিটি দৃশ্যে যেন পণ্যের আকার, রং ও ডিজাইন একই থাকে, সেজন্য কোন পদ্ধতিটি সবচেয়ে উপযুক্ত?",
           "type": "single_mcq",
-          "timeLimitSec": 25,
+          "timeLimitSec": 30,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "Hero Composition",
+          "category": "Google Flow Continuity",
           "difficulty": "medium",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "To place the website headline and order button cleanly on that space",
-              "textBn": "ক্যানভা বা ওয়েবসাইটে শিরোনাম ও অর্ডার বাটন স্পষ্টভাবে বসানোর জন্য",
-              "isCorrect": true
+              "textEn": "Generate all 4 scenes independently from scratch using Text-to-Video.",
+              "textBn": "প্রতিটি দৃশ্য আলাদাভাবে Text to Video দিয়ে তৈরি করা।"
             },
             {
               "id": "opt-2",
-              "textEn": "To cut image megabytes in half",
-              "textBn": "ছবির মেগাবাইট কমানোর জন্য"
+              "textEn": "Create Scene 1 with Text-to-Video, then use the final frame of each previous scene as the Start Frame for the next scene.",
+              "textBn": "প্রথম দৃশ্য Text to Video দিয়ে তৈরি করে পরবর্তী প্রতিটি দৃশ্যের জন্য আগের দৃশ্যের শেষ ফ্রেমকে Start Frame হিসেবে ব্যবহার করা।",
+              "isCorrect": true
             },
             {
               "id": "opt-3",
-              "textEn": "No functional reason",
-              "textBn": "কেবল ডিজাইনের জন্য"
+              "textEn": "Reuse the first frame of Scene 1 for every remaining scene.",
+              "textBn": "প্রথম দৃশ্যের প্রথম ফ্রেম দিয়ে বাকি সব দৃশ্য তৈরি করা।"
             },
             {
               "id": "opt-4",
-              "textEn": "For paper printing margins",
-              "textBn": "প্রিন্ট করার জন্য"
+              "textEn": "Generate four unrelated still images separately and stitch them in CapCut.",
+              "textBn": "চারটি দৃশ্যের ছবি আলাদাভাবে তৈরি করে সরাসরি CapCut-এ যুক্ত করা।"
             }
           ],
           "correctOptionIds": [
-            "opt-1"
+            "opt-2"
           ],
-          "explanationEn": "Leaving clean negative space keeps text headlines legible over the hero background across desktop and mobile.",
-          "explanationBn": "ফাঁকা অংশে ওয়েবসাইটের মূল শিরোনাম ও CTA বাটন বসানো হলে লেখা সহজে পড়া যায়।"
+          "explanationEn": "Chaining each new scene from the prior clip's ending frame as its Start Frame preserves visual continuity and identical product appearance.",
+          "explanationBn": "আগের দৃশ্যের শেষ ফ্রেমকে পরবর্তী দৃশ্যের Start Frame হিসেবে ব্যবহার করলে পণ্যের আকার, রং ও দৃশ্যের ধারাবাহিকতা অটুট থাকে।"
         },
         {
           "id": "sj-s05-q03",
-          "textEn": "How do you prevent the background photo from accidentally moving while editing text in Canva?",
-          "textBn": "Canva-তে নিচের ব্যাকগ্রাউন্ড ছবিটি কাজের সময় যেন সরে না যায়, সেজন্য কী করতে হয়?",
+          "textEn": "A trainee generates four 8-second video clips using Veo 3.1 Lite at 10 credits per clip. Out of a daily allowance of 50 credits, how many credits remain?",
+          "textBn": "একজন প্রশিক্ষণার্থী Veo 3.1 Lite ব্যবহার করে ৮ সেকেন্ডের চারটি ভিডিও ক্লিপ তৈরি করলেন। প্রতিটি ক্লিপ তৈরিতে ১০ ক্রেডিট খরচ হলে, দৈনিক ৫০ ক্রেডিটের মধ্যে কত ক্রেডিট অবশিষ্ট থাকবে?",
           "type": "single_mcq",
-          "timeLimitSec": 25,
+          "timeLimitSec": 30,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "Canva Editing",
+          "category": "Veo 3.1 Lite Credits",
           "difficulty": "medium",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "Delete the background image",
-              "textBn": "ছবি ডিলিট করতে হয়"
+              "textEn": "5 credits",
+              "textBn": "৫ ক্রেডিট"
             },
             {
               "id": "opt-2",
-              "textEn": "Lock the image layer from the Layers panel (🔒)",
-              "textBn": "Layers প্যানেল থেকে ছবিটি Lock (🔒) করতে হয়",
+              "textEn": "10 credits",
+              "textBn": "১০ ক্রেডিট",
               "isCorrect": true
             },
             {
               "id": "opt-3",
-              "textEn": "Shrink font sizes",
-              "textBn": "ফন্ট ছোট করতে হয়"
+              "textEn": "15 credits",
+              "textBn": "১৫ ক্রেডিট"
             },
             {
               "id": "opt-4",
-              "textEn": "Zoom browser out completely",
-              "textBn": "জুম আউট করতে হয়"
+              "textEn": "20 credits",
+              "textBn": "২০ ক্রেডিট"
             }
           ],
           "correctOptionIds": [
             "opt-2"
           ],
-          "explanationEn": "Locking the background layer freezes its position while you adjust foreground headlines and badges.",
-          "explanationBn": "Layers প্যানেলে ব্যাকগ্রাউন্ড লেয়ারটি Lock করলে কাজের সময় তা আর নড়েচড়ে না।"
+          "explanationEn": "4 clips × 10 credits = 40 credits used, leaving 50 − 40 = 10 remaining daily credits.",
+          "explanationBn": "৪টি ক্লিপ × ১০ ক্রেডিট = ৪০ ক্রেডিট খরচ; তাই দৈনিক ৫০ ক্রেডিট থেকে ৫০ − ৪০ = ১০ ক্রেডিট অবশিষ্ট থাকবে।"
         },
         {
           "id": "sj-s05-q04",
-          "textEn": "Why do we keep the bottom 300px free of critical text in 9:16 Instagram/Facebook Story ads?",
-          "textBn": "Instagram ও Facebook-এর 9:16 স্টোরি অ্যাডে নিচের ৩০০ পিক্সেল জায়গা ফাঁকা রাখা হয় কেন?",
+          "textEn": "Scene 2 starts with an abrupt visual jump even after supplying the previous scene's final frame as Start Frame. Which prompt instruction solves this best?",
+          "textBn": "আপনার দ্বিতীয় দৃশ্যটি আগের দৃশ্যের শেষ ফ্রেম ব্যবহার করেও হঠাৎ পরিবর্তিত হয়ে শুরু হচ্ছে। এই সমস্যা সমাধানে কোন নির্দেশনাটি সবচেয়ে কার্যকর?",
           "type": "single_mcq",
-          "timeLimitSec": 25,
+          "timeLimitSec": 30,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "Safe Zones",
+          "category": "Scene Transition Control",
           "difficulty": "medium",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "So the app's Reply bar and CTA button do not cover your text",
-              "textBn": "যেন অ্যাপের Reply বক্স ও বাটনের নিচে লেখা ঢেকে না যায়",
-              "isCorrect": true
+              "textEn": "Increase camera motion speed immediately to create a new transition.",
+              "textBn": "ক্যামেরার মুভমেন্ট বাড়িয়ে নতুন ট্রানজিশন তৈরি করা।"
             },
             {
               "id": "opt-2",
-              "textEn": "Only to look artistic",
-              "textBn": "কেবল দেখতে সুন্দর লাগে"
+              "textEn": "Hold the Start Frame's exact camera angle, lighting, and framing unchanged for the first 1 second before beginning slow movement.",
+              "textBn": "প্রথম এক সেকেন্ডে Start Frame-এর ক্যামেরা অ্যাঙ্গেল, আলো ও ফ্রেমিং অপরিবর্তিত রেখে এরপর ধীরে মুভমেন্ট শুরু করা।",
+              "isCorrect": true
             },
             {
               "id": "opt-3",
-              "textEn": "Because screens turn black there",
-              "textBn": "স্ক্রিন কালো থাকে"
+              "textEn": "Replace the entire background setting immediately at frame zero.",
+              "textBn": "সম্পূর্ণ ব্যাকগ্রাউন্ড পরিবর্তন করা।"
             },
             {
               "id": "opt-4",
-              "textEn": "Otherwise video stops playing",
-              "textBn": "ভিডিও চলে না"
+              "textEn": "Write 'Dissolve Transition' inside the Flow prompt.",
+              "textBn": "Flow-এর প্রম্পটে Dissolve Transition যুক্ত করা।"
             }
           ],
           "correctOptionIds": [
-            "opt-1"
+            "opt-2"
           ],
-          "explanationEn": "Interactive story controls sit at the bottom ~300px and overlap any text placed too low.",
-          "explanationBn": "স্টোরির নিচে মেসেজ/রিপ্লাই বাটন থাকায় ওই অংশে কোনো অফার বা নাম্বার রাখলে তা ঢেকে যায়।"
+          "explanationEn": "Anchoring the Start Frame's framing, angle, and lighting unchanged during the first second before initiating subtle camera motion prevents abrupt scene jumps.",
+          "explanationBn": "প্রথম ১ সেকেন্ডে Start Frame-এর অ্যাঙ্গেল, আলো ও ফ্রেমিং স্থির রেখে তারপর ধীরে মুভমেন্ট শুরু করলে দৃশ্যের আকস্মিক জাম্প বন্ধ হয়।"
         },
         {
           "id": "sj-s05-q05",
-          "textEn": "Which 4 components are essential inside a 300×250 Google Display ad banner?",
-          "textBn": "Google Display-এর 300×250 ব্যানারে কয়টি জিনিস থাকা সবচেয়ে জরুরি?",
+          "textEn": "According to Session 06 training, which export and editing workflow is correct for assembling four AI-generated clips into a 15–20 second ad?",
+          "textBn": "Session 06-এর প্রশিক্ষণ অনুযায়ী চারটি AI-জেনারেটেড ক্লিপ যুক্ত করে ১৫–২০ সেকেন্ডের একটি বিজ্ঞাপন তৈরি করতে কোন সেটিংসটি সঠিক?",
           "type": "single_mcq",
-          "timeLimitSec": 25,
+          "timeLimitSec": 30,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "Google Display",
+          "category": "Session 06 Export Specs",
           "difficulty": "medium",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "A 20-line essay",
-              "textBn": "২০ লাইনের প্রবন্ধ"
+              "textEn": "16:9, 60fps, 4K with every scene generated via standalone Text-to-Video.",
+              "textBn": "16:9, 60fps, 4K এবং প্রতিটি দৃশ্য Text to Video।"
             },
             {
               "id": "opt-2",
-              "textEn": "Logo, clear product image, brief offer hook, and bright CTA button",
-              "textBn": "লোগো, পণ্যের ছবি, সংক্ষিপ্ত অফার হুক ও উজ্জ্বল CTA বাটন",
+              "textEn": "9:16, 1080p, 30fps MP4 edited across the four clips in CapCut.",
+              "textBn": "9:16, 1080p, 30fps, MP4 এবং CapCut-এ চারটি ক্লিপ এডিট করা।",
               "isCorrect": true
             },
             {
               "id": "opt-3",
-              "textEn": "Only plain white background",
-              "textBn": "কেবল সাদা রঙ"
+              "textEn": "1:1, 24fps, MP3 edited directly in Google AI Studio.",
+              "textBn": "1:1, 24fps, MP3 এবং Google AI Studio-তে এডিট করা।"
             },
             {
               "id": "opt-4",
-              "textEn": "5 embedded video players",
-              "textBn": "৫টি ভিন্ন ভিডিও"
+              "textEn": "9:16, 720p, 60fps with all editing transitions created inside Flow.",
+              "textBn": "9:16, 720p, 60fps এবং সব ট্রানজিশন Flow-তে তৈরি করা।"
             }
           ],
           "correctOptionIds": [
             "opt-2"
           ],
-          "explanationEn": "Compact display sizes perform best with Logo + Visual + Short Hook + Contrasting CTA.",
-          "explanationBn": "ছোট সাইজের ব্যানারে শুধু লোগো, পণ্যের ছবি, ছোট অফার হুক ও স্পষ্ট CTA বাটন রাখা উচিত।"
+          "explanationEn": "Vertical short video ads use 9:16 aspect ratio, 1080p resolution, 30fps MP4 format, assembled and polished in CapCut.",
+          "explanationBn": "শর্ট সোশ্যাল ভিডিও বিজ্ঞাপনের জন্য আদর্শ সেটিংস হলো 9:16 ভার্টিক্যাল ফরম্যাট, 1080p রেজল্যুশন, 30fps, MP4 এবং CapCut-এ চূড়ান্ত এডিটিং।"
         },
         {
           "id": "sj-s05-q06",
-          "textEn": "What is the primary job of the first 3 seconds of a short video advertisement?",
-          "textBn": "শর্ট ভিডিও বিজ্ঞাপনের প্রথম ৩ সেকেন্ডের কাজ কী?",
+          "textEn": "A round perfume bottle becomes elongated with a changed cap design in the subsequent scene. Which prompt rule best reduces this shape/design mutation?",
+          "textBn": "একটি দৃশ্যে পারফিউমের বোতল গোলাকার, কিন্তু পরবর্তী দৃশ্যে সেটি লম্বাটে হয়ে যাচ্ছে এবং ঢাকনার ডিজাইনও বদলে যাচ্ছে। এই সমস্যা কমাতে কোন প্রম্পটটি সবচেয়ে উপযুক্ত?",
           "type": "single_mcq",
-          "timeLimitSec": 25,
+          "timeLimitSec": 30,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "Video Hooks",
+          "category": "Product Invariance Prompting",
           "difficulty": "medium",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "Narrate the company's founding history",
-              "textBn": "কেবল ব্র্যান্ডের ইতিহাস বলা"
+              "textEn": "Spin the camera rapidly around the bottle.",
+              "textBn": "ক্যামেরা দ্রুত বোতলের চারপাশে ঘুরবে।"
             },
             {
               "id": "opt-2",
-              "textEn": "Stop viewers from scrolling with a strong hook",
-              "textBn": "শক্তিশালী হুক দিয়ে দর্শকের স্ক্রল থামানো",
+              "textEn": "Keep the product shape, color, and cap strictly identical throughout the entire video; change only camera motion or surrounding environment.",
+              "textBn": "পুরো ভিডিওতে পণ্যের আকার, রং ও ঢাকনা হুবহু একই থাকবে; শুধু ক্যামেরা বা আশপাশের পরিবেশ পরিবর্তিত হবে।",
               "isCorrect": true
             },
             {
               "id": "opt-3",
-              "textEn": "Discount prices automatically",
-              "textBn": "দাম কমানো"
+              "textEn": "Redesign the bottle shape to match the second scene.",
+              "textBn": "দ্বিতীয় দৃশ্যের সঙ্গে মিলিয়ে বোতলটি নতুনভাবে ডিজাইন করা হবে।"
             },
             {
               "id": "opt-4",
-              "textEn": "Say goodbye right away",
-              "textBn": "বিদায় জানানো"
+              "textEn": "Add even more intricate background room descriptions.",
+              "textBn": "প্রম্পটে আরও বেশি ব্যাকগ্রাউন্ডের বিবরণ যোগ করা হবে।"
             }
           ],
           "correctOptionIds": [
             "opt-2"
           ],
-          "explanationEn": "Viewers decide within 3 seconds whether to keep watching Reels/Shorts or swipe away.",
-          "explanationBn": "প্রথম ৩ সেকেন্ডে চমকপ্রদ প্রশ্ন বা সমস্যার কথা না বললে দর্শক ভিডিও না দেখেই স্ক্রল করে চলে যান।"
+          "explanationEn": "Explicitly locking the product's physical geometry, color, and cap while limiting variation strictly to camera or environment prevents product mutation.",
+          "explanationBn": "প্রম্পটে পণ্যের আকার, রং ও ঢাকনা হুবহু অপরিবর্তিত রাখার স্পষ্ট নির্দেশ দিলে এবং শুধু ক্যামেরা বা পরিবেশ বদলাতে বললে পণ্যের বিকৃতি কমে।"
         },
         {
           "id": "sj-s05-q07",
-          "textEn": "What is the ideal word count range for a natural 25–30 second Bangla voiceover video script?",
-          "textBn": "২৫–৩০ সেকেন্ডের বাংলা ভিডিও অ্যাডের স্ক্রিপ্ট সাধারণত কত শব্দের মধ্যে রাখা উত্তম?",
+          "textEn": "In Google AI Studio's Generate Speech tool, what is the proper way to control both what is spoken and how the voice sounds?",
+          "textBn": "Google AI Studio-তে Generate Speech ব্যবহার করে একই সঙ্গে কথার বিষয়বস্তু এবং কণ্ঠের ধরন নিয়ন্ত্রণ করতে হলে কোন পদ্ধতিটি সঠিক?",
           "type": "single_mcq",
-          "timeLimitSec": 25,
+          "timeLimitSec": 30,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "Script Timing",
+          "category": "AI Studio Style Control",
           "difficulty": "medium",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "300–400 words",
-              "textBn": "৩০০–৪০০ শব্দ"
+              "textEn": "Mix the delivery cues and script together inside a single text box.",
+              "textBn": "মূল স্ক্রিপ্ট ও ভয়েস স্টাইল একই ইনপুট বক্সে লেখা।"
             },
             {
               "id": "opt-2",
-              "textEn": "55–65 words",
-              "textBn": "৫৫–৬৫ শব্দ",
+              "textEn": "Enter the spoken script in the main text box and write tone/voice direction separately in the Style/Instructions box.",
+              "textBn": "মূল স্ক্রিপ্ট মূল টেক্সট বক্সে এবং কণ্ঠের ধরন ও বলার নির্দেশনা আলাদা Style/Instructions বক্সে লেখা।",
               "isCorrect": true
             },
             {
               "id": "opt-3",
-              "textEn": "5–7 words",
-              "textBn": "৫–৭ শব্দ"
+              "textEn": "Write voice instructions in CapCut and scripts in Google Flow.",
+              "textBn": "ভয়েস স্টাইল CapCut-এ এবং স্ক্রিপ্ট Google Flow-তে লেখা।"
             },
             {
               "id": "opt-4",
-              "textEn": "1,000 words",
-              "textBn": "১০০০ শব্দ"
+              "textEn": "Switch to a completely different voice model for every sentence.",
+              "textBn": "প্রতিটি বাক্যের জন্য আলাদা ভয়েস মডেল ব্যবহার করা।"
             }
           ],
           "correctOptionIds": [
             "opt-2"
           ],
-          "explanationEn": "Speaking clearly in Bangla averages ~2 words per second, making 55–65 words ideal for 25–30 seconds.",
-          "explanationBn": "প্রাকৃতিক গতিতে বাংলা ভয়েসওভারে প্রতি সেকেন্ডে প্রায় ২টি শব্দ থাকে, তাই ২৫–৩০ সেকেন্ডের জন্য ৫৫–৬৫ শব্দ আদর্শ।"
+          "explanationEn": "Separating spoken copy (main text field) from vocal tone/pacing cues (Style/Instructions field) prevents the model from speaking stage directions aloud.",
+          "explanationBn": "মূল টেক্সট বক্সে শুধু পাঠ্য স্ক্রিপ্ট এবং Style/Instructions বক্সে কণ্ঠের আবেগ ও বলার ধরন আলাদাভাবে লিখলে TTS নির্দেশনা পড়ে ফেলে না।"
         },
         {
           "id": "sj-s05-q08",
-          "textEn": "Which free tool provides natural Bangladeshi Bangla neural voices (Pradeep / Nabanita) with no credit card needed?",
-          "textBn": "সম্পূর্ণ ফ্রিতে অবিকল বাংলাদেশের স্বাভাবিক উচ্চারণে (Pradeep / Nabanita) বাংলা এআই ভয়েসওভার বানানোর সহজ টুল কোনটি?",
+          "textEn": "When combining 4 AI scenes, Bangla voiceover, captions, and background music in CapCut, which editing sequence is most effective?",
+          "textBn": "CapCut-এ চারটি দৃশ্য, বাংলা ভয়েসওভার, ক্যাপশন ও ব্যাকগ্রাউন্ড মিউজিক যুক্ত করে বিজ্ঞাপন তৈরির ক্ষেত্রে কোন কাজের ধারাবাহিকতাটি সবচেয়ে উপযুক্ত?",
           "type": "single_mcq",
-          "timeLimitSec": 25,
+          "timeLimitSec": 30,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "Bangla AI Voice",
+          "category": "CapCut Post-Production Order",
           "difficulty": "medium",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "Notepad",
-              "textBn": "Notepad"
+              "textEn": "Drop music first and place raw unedited clips without trimming.",
+              "textBn": "প্রথমে মিউজিক যুক্ত করে কোনো কাটছাঁট ছাড়াই ভিডিও বসানো।"
             },
             {
               "id": "opt-2",
-              "textEn": "Microsoft Clipchamp (Bangla - Bangladesh)",
-              "textBn": "Microsoft Clipchamp (Bangla - Bangladesh)",
+              "textEn": "Arrange clips, trim excess footage, add clean transitions, sync voiceover, add Bangla captions, insert end-card, and balance music volume.",
+              "textBn": "দৃশ্যগুলো সাজানো, অপ্রয়োজনীয় অংশ কাটা, ট্রানজিশন, ভয়েসওভার, বাংলা ক্যাপশন, এন্ড কার্ড এবং মিউজিকের ভলিউম সমন্বয় করা।",
               "isCorrect": true
             },
             {
               "id": "opt-3",
-              "textEn": "MS Excel",
-              "textBn": "Excel"
+              "textEn": "Export each scene separately and assemble inside Google AI Studio.",
+              "textBn": "প্রতিটি দৃশ্য আলাদাভাবে এক্সপোর্ট করে Google AI Studio-তে যুক্ত করা।"
             },
             {
               "id": "opt-4",
-              "textEn": "MS Paint",
-              "textBn": "Paint"
+              "textEn": "Apply only auto transitions while leaving raw clip audio untouched.",
+              "textBn": "শুধু অটো ট্রানজিশন ব্যবহার করে মূল অডিও অপরিবর্তিত রাখা।"
             }
           ],
           "correctOptionIds": [
             "opt-2"
           ],
-          "explanationEn": "Microsoft Clipchamp's Text-to-Speech includes free high-clarity Bangla (Bangladesh) neural voices: Pradeep and Nabanita.",
-          "explanationBn": "Microsoft Clipchamp-এ সম্পূর্ণ বিনামূল্যে Pradeep ও Nabanita নামে চমৎকার বাংলাদেশি বাংলা ভয়েস পাওয়া যায়।"
+          "explanationEn": "A disciplined edit flows from story timeline assembly and trimming -> transitions -> voiceover & captions -> CTA end-card -> audio mixing/ducking.",
+          "explanationBn": "প্রথমে স্টোরি অনুযায়ী ক্লিপ সাজিয়ে অপ্রয়োজনীয় অংশ কেটে ট্রানজিশন দিন, এরপর ভয়েসওভার, বাংলা ক্যাপশন, এন্ড কার্ড এবং শেষে মিউজিক ভলিউম ব্যালান্স করতে হয়।"
         },
         {
           "id": "sj-s05-q09",
-          "textEn": "What volume level should background music be kept at so the video voiceover stays crystal clear?",
-          "textBn": "ভিডিও বিজ্ঞাপনে ভয়েসওভার স্পষ্ট রাখতে ব্যাকগ্রাউন্ড মিউজিকের সাউন্ড লেভেল সাধারণত কেমন হওয়া উচিত?",
+          "textEn": "Before publishing an AI video ad, which four quality checkpoints from Session 06 are most critical to verify?",
+          "textBn": "একটি বিজ্ঞাপন প্রকাশের আগে Session 06 অনুযায়ী কোন চারটি বিষয় যাচাই করা সবচেয়ে গুরুত্বপূর্ণ?",
           "type": "single_mcq",
-          "timeLimitSec": 25,
+          "timeLimitSec": 30,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "Audio Mixing",
+          "category": "Pre-Publish Video QA",
           "difficulty": "medium",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "100% full volume",
-              "textBn": "১০০% ভলিউম"
+              "textEn": "Only file size and resolution.",
+              "textBn": "শুধু রেজল্যুশন ও ফাইলের আকার।"
             },
             {
               "id": "opt-2",
-              "textEn": "10%–15% (gentle undertone behind narration)",
-              "textBn": "১০%–১৫% (খুব হালকা, কথার নিচে)",
+              "textEn": "First 2-second hook, scene continuity, product consistency, and overall visual cleanliness free of glitched text or unnatural motion.",
+              "textBn": "প্রথম দুই সেকেন্ডের হুক, দৃশ্যের ধারাবাহিকতা, পণ্যের সামঞ্জস্য এবং অস্বাভাবিক লেখা বা নড়াচড়াসহ ভিডিওর পরিচ্ছন্নতা।",
               "isCorrect": true
             },
             {
               "id": "opt-3",
-              "textEn": "Twice as loud as the voice",
-              "textBn": "ভয়েসের দ্বিগুণ"
+              "textEn": "Only whether the music track is royalty-free.",
+              "textBn": "শুধু মিউজিক কপিরাইটমুক্ত কি না।"
             },
             {
               "id": "opt-4",
-              "textEn": "Loud music with no speech",
-              "textBn": "কোনো কথা ছাড়াই উচ্চ শব্দ"
+              "textEn": "Only whether the end-card logo appears.",
+              "textBn": "শুধু এন্ড কার্ড ও লোগো আছে কি না।"
             }
           ],
           "correctOptionIds": [
             "opt-2"
           ],
-          "explanationEn": "Ducking music down to 10%–15% (-20 dB) ensures the spoken offer and CTA are never drowned out.",
-          "explanationBn": "মিউজিক ১০%–১৫% লেভেলে রাখলে ক্রেতা কোনো ঝামেলা ছাড়াই কণ্ঠস্বর স্পষ্টভাবে শুনতে পারেন।"
+          "explanationEn": "Pre-publish QA checks opening hook strength (first 2s), smooth inter-scene continuity, invariant product identity, and absence of AI artifacts or garbled text.",
+          "explanationBn": "প্রকাশের আগে ২-সেকেন্ডের হুক, দৃশ্যের ধারাবাহিকতা, সব ক্লিপে পণ্যের মিল এবং ভাঙা লেখা বা অদ্ভুত AI বিকৃতি না থাকা নিশ্চিত করতে হয়।"
         },
         {
           "id": "sj-s05-q10",
-          "textEn": "Why is adding on-screen subtitles/captions essential on Reels and TikTok video ads?",
-          "textBn": "Reels ও TikTok-এ ভিডিও ক্যাপশন/সাবটাইটেল রাখা জরুরি কেন?",
+          "textEn": "You generated four 8-second clips (32s total), yet the final video ad must stay between 15 and 20 seconds. What is the smartest editing decision?",
+          "textBn": "আপনি চারটি ৮ সেকেন্ডের ভিডিও ক্লিপ তৈরি করেছেন। কিন্তু চূড়ান্ত বিজ্ঞাপনের দৈর্ঘ্য ১৫–২০ সেকেন্ডের মধ্যে রাখতে হবে। এক্ষেত্রে সবচেয়ে যুক্তিসংগত সিদ্ধান্ত কোনটি?",
           "type": "single_mcq",
-          "timeLimitSec": 25,
+          "timeLimitSec": 30,
           "points": 1000,
           "negativeMarks": 0,
-          "category": "Video Captions",
+          "category": "Pacing & Clip Selection",
           "difficulty": "medium",
           "options": [
             {
               "id": "opt-1",
-              "textEn": "Many viewers watch videos on mute; captions keep them engaged and communicate the offer",
-              "textBn": "কারণ অনেক দর্শক শব্দ বন্ধ (Mute) করেই ভিডিও দেখেন এবং ক্যাপশন মনোযোগ ধরে রাখে",
-              "isCorrect": true
+              "textEn": "Include all 8 full seconds of every generated clip regardless of pacing.",
+              "textBn": "তৈরি করা প্রতিটি ক্লিপের সম্পূর্ণ দৈর্ঘ্য ব্যবহার করা বাধ্যতামূলক।"
             },
             {
               "id": "opt-2",
-              "textEn": "To save broadband data",
-              "textBn": "ইন্টারনেট বাঁচাতে"
+              "textEn": "Select only the strongest 3.5–5 seconds from each clip and trim weak frames out in CapCut.",
+              "textBn": "প্রতিটি দৃশ্য থেকে সবচেয়ে কার্যকর অংশ নির্বাচন করে CapCut-এ অপ্রয়োজনীয় অংশ কেটে ফেলা।",
+              "isCorrect": true
             },
             {
               "id": "opt-3",
-              "textEn": "To erase the voiceover track",
-              "textBn": "অডিও ডিলিট করতে"
+              "textEn": "Slow down playback speed across all four clips.",
+              "textBn": "চারটি দৃশ্যের গতি কমিয়ে পুরো ভিডিও দীর্ঘ করা।"
             },
             {
               "id": "opt-4",
-              "textEn": "Only to teach English grammar",
-              "textBn": "শুধুমাত্র ইংরেজি শেখাতে"
+              "textEn": "Blindly regenerate every scene as 4-second clips without inspecting existing footage.",
+              "textBn": "কোনো পর্যালোচনা ছাড়াই প্রতিটি দৃশ্য পুনরায় ৪ সেকেন্ডে তৈরি করা।"
             }
           ],
           "correctOptionIds": [
-            "opt-1"
+            "opt-2"
           ],
-          "explanationEn": "Bold captions let commuters or silent scrollers understand the product hook even with sound turned off.",
-          "explanationBn": "অনেক ব্যবহারকারী সাউন্ড মিউট রেখে রিলস দেখেন—তাই ক্যাপশন থাকলে শব্দ ছাড়াও বার্তা পৌঁছে যায়।"
+          "explanationEn": "Selecting the cleanest, highest-impact segment of each 8s AI clip and trimming slack frames tightens ad pacing to fit 15–20 seconds cleanly.",
+          "explanationBn": "৮ সেকেন্ডের ক্লিপের সেরা ও বিকৃতিমুক্ত অংশটুকু (প্রায় ৩.৫–৫ সেকেন্ড) রেখে বাকি দুর্বল ফ্রেম কেটে দিলে পেসিং দ্রুত হয় এবং ১৫–২০ সেকেন্ডের আদর্শ দৈর্ঘ্য মেলে।"
+        },
+        {
+          "id": "sj-s05-q11",
+          "textEn": "When composing a complete custom track using Suno AI, which level of prompting gives the highest creative control?",
+          "textBn": "Suno AI ব্যবহার করে একটি সম্পূর্ণ গান তৈরি করতে চাইলে কোন ধরনের নির্দেশনা দিলে সৃজনশীল নিয়ন্ত্রণ সবচেয়ে বেশি পাওয়া যায়?",
+          "type": "single_mcq",
+          "timeLimitSec": 30,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Suno AI Music Direction",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Enter only a song title and leave everything else blank.",
+              "textBn": "শুধু গানের নাম লিখে বাকি সবকিছু AI-এর ওপর ছেড়ে দেওয়া।"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Specify lyrics/theme, Genre, Mood, Vocal Characteristics, Instrumentation, and Musical Structure (Verse/Chorus/Bridge).",
+              "textBn": "গানের কথা বা বিষয়বস্তু, Genre, Mood, Vocal Characteristics, Instrumentation এবং Musical Structure নির্দিষ্ট করে দেওয়া।",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Specify only song duration and file format.",
+              "textBn": "শুধু গানের দৈর্ঘ্য ও ফাইল ফরম্যাট নির্ধারণ করা।"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Upload an unrelated photo without stating purpose.",
+              "textBn": "গানের উদ্দেশ্য না জানিয়ে একটি এলোমেলো ছবি আপলোড করা।"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-2"
+          ],
+          "explanationEn": "Detailing lyrics/theme, genre, mood, vocal style, instrumentation, and structural tags gives Suno AI precise musical direction.",
+          "explanationBn": "Suno AI-তে লিরিক্স/বিষয়বস্তু, Genre, Mood, ভোকালের ধরন, বাদ্যযন্ত্র এবং গানের কাঠামো (Structure) উল্লেখ করলে পেশাদার মানের নিয়ন্ত্রণ পাওয়া যায়।"
+        },
+        {
+          "id": "sj-s05-q12",
+          "textEn": "What is the most effective way to explore and master a complex subject using Gemini's Conversational Voice feature?",
+          "textBn": "Gemini-এর Conversational Voice Feature ব্যবহার করে একটি জটিল বিষয় সম্পর্কে জানতে চাইলে কোন পদ্ধতিটি সবচেয়ে কার্যকর?",
+          "type": "single_mcq",
+          "timeLimitSec": 30,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Gemini Conversational Voice",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Ask one massive prompt and treat the very first spoken reply as final.",
+              "textBn": "একটি বড় প্রশ্ন করে প্রথম উত্তরটিই চূড়ান্ত হিসেবে গ্রহণ করা।"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Ask iterative follow-up questions, probe unclear points for deeper explanation, challenge reasoning, and steer the conversation purposefully.",
+              "textBn": "ধাপে ধাপে Follow-up Question করা, অস্পষ্ট বিষয় ব্যাখ্যা করতে বলা, যুক্তি যাচাই করা এবং আলোচনাকে নির্দিষ্ট দিকে এগিয়ে নেওয়া।",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Avoid follow-up questions because voice chats have zero context memory.",
+              "textBn": "Follow-up Question এড়িয়ে চলা, কারণ AI আগের কথার প্রসঙ্গ বুঝতে পারে না।"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Use the Voice feature strictly as a one-way text reader.",
+              "textBn": "Voice Feature শুধু Text-to-Speech-এর জন্য ব্যবহার করা।"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-2"
+          ],
+          "explanationEn": "Iterative dialogue—asking follow-ups, requesting clarification, and probing logic within live voice context—unlocks real understanding.",
+          "explanationBn": "ভয়েস কনভার্সেশনের আসল শক্তি হলো ধাপে ধাপে পাল্টা প্রশ্ন (Follow-up), ব্যাখ্যা চাওয়া ও যুক্তি যাচাইয়ের মাধ্যমে আলোচনাকে গভীর করা।"
+        },
+        {
+          "id": "sj-s05-q13",
+          "textEn": "You paste a YouTube video link into Gemini asking how it was produced without having watched the entire video yourself. Which approach is most reliable?",
+          "textBn": "আপনি Gemini-কে একটি YouTube ভিডিওর লিংক দিয়ে ভিডিওটি কীভাবে তৈরি করা হয়েছে তা জানতে চাইলেন, কিন্তু নিজে সম্পূর্ণ ভিডিওটি দেখেননি। এক্ষেত্রে সবচেয়ে নির্ভরযোগ্য পদ্ধতি কোনটি?",
+          "type": "single_mcq",
+          "timeLimitSec": 30,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "AI Video URL Verification",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Assume Gemini inspected every frame and can certify every production technique with 100% certainty.",
+              "textBn": "ধরে নেওয়া যে Gemini ভিডিওটির প্রতিটি ফ্রেম দেখেছে এবং সব প্রোডাকশন টেকনিক নিশ্চিতভাবে শনাক্ত করতে পারবে।"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Ask Gemini to analyze only accessible evidence from the video, state its limitations clearly, and separate confirmed facts from inferences.",
+              "textBn": "Gemini-কে ভিডিও থেকে অ্যাক্সেসযোগ্য তথ্য বিশ্লেষণ করতে বলা, প্রমাণ ও সীমাবদ্ধতা চিহ্নিত করতে বলা এবং নিশ্চিত তথ্য ও অনুমানের মধ্যে পার্থক্য করতে বলা।",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Ask Gemini to regenerate the exact video automatically with no instructions.",
+              "textBn": "কোনো অতিরিক্ত নির্দেশনা ছাড়াই Gemini-কে সম্পূর্ণ ভিডিওটি পুনরায় তৈরি করতে বলা।"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Accept every speculative production guess Gemini outputs as verified fact.",
+              "textBn": "Gemini-এর প্রতিটি প্রযুক্তিগত ব্যাখ্যাকে যাচাইকৃত সত্য হিসেবে গ্রহণ করা।"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-2"
+          ],
+          "explanationEn": "Instructing the model to cite accessible evidence, disclose visibility limits, and separate verified observations from guesses prevents false certainty.",
+          "explanationBn": "AI-কে ভিডিওর অ্যাক্সেসযোগ্য প্রমাণ, নিজের সীমাবদ্ধতা এবং নিশ্চিত তথ্য বনাম অনুমান আলাদা করে জানাতে বললে ভুল তথ্য থেকে সুরক্ষা পাওয়া যায়।"
+        },
+        {
+          "id": "sj-s05-q14",
+          "textEn": "You ask multiple AI platforms a technical question; three give the same claim without any primary citation. What should you do next?",
+          "textBn": "আপনি একটি প্রযুক্তিগত তথ্য সম্পর্কে একাধিক AI প্ল্যাটফর্মকে প্রশ্ন করলেন। তিনটি প্ল্যাটফর্ম একই উত্তর দিল, কিন্তু কোনো নির্ভরযোগ্য সোর্স দিল না। এখন আপনার করণীয় কী?",
+          "type": "single_mcq",
+          "timeLimitSec": 30,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Cross-Model Verification",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Treat the claim as verified truth simply because three AI models agreed.",
+              "textBn": "তিনটি AI একই উত্তর দিয়েছে বলে তথ্যটি নিশ্চিতভাবে সঠিক ধরে নেওয়া।"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Demand primary sources, inspect underlying evidence against authoritative documentation, and distinguish original facts from echoed claims.",
+              "textBn": "মূল সোর্স চাইতে হবে, প্রমাণ যাচাই করতে হবে, নির্ভরযোগ্য রেফারেন্সের সঙ্গে মিলিয়ে দেখতে হবে এবং প্রাথমিক তথ্য ও পুনরাবৃত্ত দাবির মধ্যে পার্থক্য করতে হবে।",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Poll five more chatbots and accept whichever claim wins majority vote.",
+              "textBn": "আরও পাঁচটি AI প্ল্যাটফর্মে একই প্রশ্ন করে সংখ্যাগরিষ্ঠ উত্তর গ্রহণ করা।"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Assume any answer containing technical jargon is automatically factual.",
+              "textBn": "উত্তরে প্রযুক্তিগত শব্দ থাকলেই সেটিকে সঠিক ধরে নেওয়া।"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-2"
+          ],
+          "explanationEn": "Agreement across models can simply echo common training misconceptions—only checking primary documentation and cited evidence verifies technical accuracy.",
+          "explanationBn": "একাধিক AI একই কথা বললেও সেটি প্রশিক্ষণ ডাটার পুনরাবৃত্তি (Echo) হতে পারে; তাই মূল অফিসিয়াল ডকুমেন্টেশন ও সোর্স মিলিয়ে যাচাই করা বাধ্যতামূলক।"
+        },
+        {
+          "id": "sj-s05-q15",
+          "textEn": "You want Gemini to consistently act as an expert AI Video Production Consultant who evaluates prompts, spots video continuity flaws, and gives structured feedback. Which instruction setup works best?",
+          "textBn": "আপনি চান Gemini সব সময় একজন বিশেষজ্ঞ AI Video Production Consultant হিসেবে কাজ করুক, যিনি প্রম্পট মূল্যায়ন করবেন, ভিডিওর অসামঞ্জস্য শনাক্ত করবেন এবং কাঠামোবদ্ধ পরামর্শ দেবেন। কোন নির্দেশনাটি সবচেয়ে কার্যকর?",
+          "type": "single_mcq",
+          "timeLimitSec": 30,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Consultant System Persona",
+          "difficulty": "medium",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Only ask Gemini to reply in a polite professional tone.",
+              "textBn": "Gemini-কে শুধু Professional Tone-এ উত্তর দিতে বলা।"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Explicitly define Persona, Expertise, Role, Objectives, Constraints, Evaluation Criteria, and Expected Response Format.",
+              "textBn": "তার Persona, Expertise, Role, Objectives, Constraints, Evaluation Criteria এবং Expected Response Format নির্দিষ্ট করে দেওয়া।",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Name one famous film director and ask it to imitate everything intuitively.",
+              "textBn": "শুধু একজন বিখ্যাত চলচ্চিত্র নির্মাতার নাম দিয়ে তার সম্পূর্ণ বিচারবুদ্ধি অনুকরণ করতে বলা।"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Tell it simply to write longer responses to every prompt.",
+              "textBn": "সব প্রশ্নের উত্তর দীর্ঘ করে দিতে বলা।"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-2"
+          ],
+          "explanationEn": "Reliable expert assistant behavior requires explicit System Instructions defining Persona, Domain Expertise, Role, Objectives, Constraints, Evaluation Rubric, and Output Schema.",
+          "explanationBn": "স্থায়ী কনসালট্যান্ট আচরণের জন্য Persona, দক্ষতা, ভূমিকা, লক্ষ্য, সীমাবদ্ধতা, মূল্যায়নের মানদণ্ড ও আউটপুট ফরম্যাট—সবকিছু স্পষ্টভাবে সংজ্ঞায়িত করতে হয়।"
         }
       ]
     },

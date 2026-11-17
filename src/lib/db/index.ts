@@ -493,6 +493,10 @@ class OnneshaDatabase {
       if (Array.isArray(res.courses)) this.setStorage("courses", res.courses);
       if (Array.isArray(res.users)) this.setStorage("users", res.users);
       if (Array.isArray(res.customQuizzes)) this.setStorage("custom_quizzes", res.customQuizzes);
+      if (Array.isArray(res.deletedQuizIds)) this.setStorage("deleted_quiz_ids", res.deletedQuizIds);
+      if (typeof res.hasServerGeminiKey === "boolean") {
+        this.setStorage("has_server_gemini_key", res.hasServerGeminiKey);
+      }
       if (Array.isArray(res.examSessions)) this.setStorage("exam_sessions", res.examSessions);
       if (Array.isArray(res.examResults)) this.setStorage("exam_results", res.examResults);
       if (Array.isArray(res.certificates)) this.setStorage("certificates", res.certificates);
@@ -949,36 +953,76 @@ class OnneshaDatabase {
       };
     };
 
+    const deletedSet = this.getDeletedQuizIds();
+    const isNotDeleted = (q: Pick<Quiz, "id" | "slug">) =>
+      !deletedSet.has(q.id) && (!q.slug || !deletedSet.has(q.slug));
+
     const sqliteRows = sqliteEngine.query<any>("SELECT * FROM quizzes ORDER BY createdAt DESC");
     if (sqliteRows.length > 0) {
-      const customQuizzes: Quiz[] = sqliteRows.map(mapRow);
+      const customQuizzes: Quiz[] = sqliteRows.map(mapRow).filter(isNotDeleted);
       const customIds = new Set(customQuizzes.map((q) => q.id));
-      const remainingPacks = READY_MADE_PACKS.filter((p) => !customIds.has(p.id)).map((p) => ({
+      const remainingPacks = READY_MADE_PACKS.filter(
+        (p) => !customIds.has(p.id) && isNotDeleted(p),
+      ).map((p) => ({
         ...p,
         isPrivate: isQuizPrivate(p, courses),
       }));
       return [...customQuizzes, ...remainingPacks];
     }
 
-    const custom = this.getStorage<Quiz[]>("custom_quizzes", []).map((q) => ({
-      ...q,
-      isPrivate: isQuizPrivate(q, courses),
-    }));
+    const custom = this.getStorage<Quiz[]>("custom_quizzes", [])
+      .filter(isNotDeleted)
+      .map((q) => ({
+        ...q,
+        isPrivate: isQuizPrivate(q, courses),
+      }));
     const customIds = new Set(custom.map((q) => q.id));
-    const remainingPacks = READY_MADE_PACKS.filter((p) => !customIds.has(p.id)).map((p) => ({
+    const remainingPacks = READY_MADE_PACKS.filter(
+      (p) => !customIds.has(p.id) && isNotDeleted(p),
+    ).map((p) => ({
       ...p,
       isPrivate: isQuizPrivate(p, courses),
     }));
     return [...custom, ...remainingPacks];
   }
 
+  getDeletedQuizIds(): Set<string> {
+    return new Set(this.getStorage<string[]>("deleted_quiz_ids", []));
+  }
+
+  hasServerGeminiKey(): boolean {
+    return Boolean(this.getStorage<boolean>("has_server_gemini_key", false));
+  }
+
+  async saveServerAiKey(geminiApiKey: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const res = await serverAdminMutateStore({
+        data: { action: "update_ai_settings", geminiApiKey },
+      });
+      if (!res?.success) {
+        return { success: false, error: res?.error || "Failed to save Gemini API key." };
+      }
+      if (typeof res.hasServerGeminiKey === "boolean") {
+        this.setStorage("has_server_gemini_key", res.hasServerGeminiKey);
+      }
+      this.notifyListeners();
+      return { success: true };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : "Failed to save AI configuration.",
+      };
+    }
+  }
+
   getQuizBySlug(slug: string): Quiz | undefined {
     const courses = this.getCourses();
+    const deletedSet = this.getDeletedQuizIds();
     const row = sqliteEngine.queryOne<any>("SELECT * FROM quizzes WHERE slug = ? OR id = ?", [
       slug,
       slug,
     ]);
-    if (row) {
+    if (row && !deletedSet.has(row.id) && (!row.slug || !deletedSet.has(row.slug))) {
       const baseQuiz: Quiz = {
         id: row.id,
         slug: row.slug,
@@ -1015,6 +1059,11 @@ class OnneshaDatabase {
       isPrivate: resolvedPrivate,
     };
 
+    const nextDeleted = Array.from(this.getDeletedQuizIds()).filter(
+      (tok) => tok !== normalizedQuiz.id && (!normalizedQuiz.slug || tok !== normalizedQuiz.slug),
+    );
+    this.setStorage("deleted_quiz_ids", nextDeleted);
+
     sqliteEngine.run(
       "INSERT OR REPLACE INTO quizzes (id, slug, courseId, courseTitle, quizNumber, instructorId, instructorName, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, questionsJson, isTemplate, isPrivate, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
@@ -1050,22 +1099,103 @@ class OnneshaDatabase {
     }
     this.setStorage("custom_quizzes", custom);
 
-    serverAdminMutateStore({ data: { action: "save_quiz", quiz: normalizedQuiz } }).catch((err) =>
-      console.warn("Quiz server sync notice:", err),
-    );
+    serverAdminMutateStore({ data: { action: "save_quiz", quiz: normalizedQuiz } })
+      .then((res) => {
+        if (res?.success && Array.isArray(res.deletedQuizIds)) {
+          this.setStorage("deleted_quiz_ids", res.deletedQuizIds);
+          this.notifyListeners();
+        }
+      })
+      .catch((err) => console.warn("Quiz server sync notice:", err));
     this.notifyListeners();
   }
 
-  deleteCustomQuiz(id: string): void {
-    sqliteEngine.run("DELETE FROM quizzes WHERE id = ? OR slug = ?", [id, id]);
-    const custom = this.getStorage<Quiz[]>("custom_quizzes", []);
-    const filtered = custom.filter((q) => q.id !== id);
-    this.setStorage("custom_quizzes", filtered);
+  async deleteCustomQuiz(id: string): Promise<{ success: boolean; error?: string }> {
+    const cleanId = (id || "").trim();
+    if (!cleanId) return { success: false, error: "Quiz ID is missing." };
 
-    serverAdminMutateStore({ data: { action: "delete_quiz", quizId: id } }).catch((err) =>
-      console.warn("Quiz delete sync notice:", err),
+    const prevCustom = this.getStorage<Quiz[]>("custom_quizzes", []);
+    const prevDeleted = this.getStorage<string[]>("deleted_quiz_ids", []);
+    const prevSqliteRow = sqliteEngine.queryOne<any>("SELECT * FROM quizzes WHERE id = ? OR slug = ?", [
+      cleanId,
+      cleanId,
+    ]);
+
+    const tokens = new Set<string>([cleanId]);
+    const matchedCustom = prevCustom.find((q) => q.id === cleanId || q.slug === cleanId);
+    if (matchedCustom) {
+      tokens.add(matchedCustom.id);
+      if (matchedCustom.slug) tokens.add(matchedCustom.slug);
+    }
+    const matchedPack = READY_MADE_PACKS.find((q) => q.id === cleanId || q.slug === cleanId);
+    if (matchedPack) {
+      tokens.add(matchedPack.id);
+      if (matchedPack.slug) tokens.add(matchedPack.slug);
+    }
+
+    const nextDeletedSet = new Set(prevDeleted);
+    for (const tok of tokens) {
+      if (READY_MADE_PACKS.some((p) => p.id === tok || p.slug === tok)) {
+        nextDeletedSet.add(tok);
+      }
+    }
+
+    sqliteEngine.run("DELETE FROM quizzes WHERE id = ? OR slug = ?", [cleanId, cleanId]);
+    const filteredCustom = prevCustom.filter(
+      (q) => !tokens.has(q.id) && (!q.slug || !tokens.has(q.slug)),
     );
+    this.setStorage("custom_quizzes", filteredCustom);
+    this.setStorage("deleted_quiz_ids", Array.from(nextDeletedSet));
     this.notifyListeners();
+
+    try {
+      const res = await serverAdminMutateStore({ data: { action: "delete_quiz", quizId: cleanId } });
+      if (res && !res.success) {
+        // Revert optimistic deletion if server denied permission
+        this.setStorage("custom_quizzes", prevCustom);
+        this.setStorage("deleted_quiz_ids", prevDeleted);
+        if (prevSqliteRow) {
+          sqliteEngine.run(
+            "INSERT OR REPLACE INTO quizzes (id, slug, courseId, courseTitle, quizNumber, instructorId, instructorName, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, questionsJson, isTemplate, isPrivate, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+              prevSqliteRow.id,
+              prevSqliteRow.slug,
+              prevSqliteRow.courseId || "",
+              prevSqliteRow.courseTitle || "",
+              prevSqliteRow.quizNumber || 1,
+              prevSqliteRow.instructorId || "",
+              prevSqliteRow.instructorName || "",
+              prevSqliteRow.titleEn,
+              prevSqliteRow.titleBn,
+              prevSqliteRow.descriptionEn,
+              prevSqliteRow.descriptionBn,
+              prevSqliteRow.categoryEn,
+              prevSqliteRow.categoryBn,
+              prevSqliteRow.icon || "🎯",
+              prevSqliteRow.questionsJson || "[]",
+              prevSqliteRow.isTemplate ? 1 : 0,
+              prevSqliteRow.isPrivate ? 1 : 0,
+              prevSqliteRow.createdAt || new Date().toISOString(),
+            ],
+          );
+        }
+        this.notifyListeners();
+        return { success: false, error: res.error || "Could not delete quiz from server." };
+      }
+      if (res?.success) {
+        if (Array.isArray(res.customQuizzes)) {
+          this.setStorage("custom_quizzes", res.customQuizzes);
+        }
+        if (Array.isArray(res.deletedQuizIds)) {
+          this.setStorage("deleted_quiz_ids", res.deletedQuizIds);
+        }
+        this.notifyListeners();
+      }
+      return { success: true };
+    } catch (err) {
+      console.warn("Quiz delete sync notice:", err);
+      return { success: true };
+    }
   }
 
   // ---------------- ROSTER & STUDENTS REPOSITORY (SQLite + Server) ----------------

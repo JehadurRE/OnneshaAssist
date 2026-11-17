@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { useLanguage } from "@/lib/i18n";
-import { generateQuizWithAi, getAiCredits } from "@/lib/ai-generator";
+import { generateQuizWithAi, getAiCredits, getStoredLocalGeminiKey } from "@/lib/ai-generator";
+import { serverGetAiGeneratorStatus } from "@/lib/server-session";
 import { Course, Quiz } from "@/lib/types";
 import { db } from "@/lib/db";
 import { useAuth } from "@/lib/auth-context";
-import { Layers, Loader2, Sparkles, Wand2, X, Zap } from "lucide-react";
+import { CheckCircle2, KeyRound, Layers, Loader2, Sparkles, Wand2, X, Zap } from "lucide-react";
 
 interface AiQuizModalProps {
   isOpen: boolean;
@@ -34,10 +35,32 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState<string>("");
   const [genError, setGenError] = useState<string | null>(null);
+  const [hasServerKey, setHasServerKey] = useState<boolean>(() => db.hasServerGeminiKey());
+  const [apiKeyInput, setApiKeyInput] = useState<string>("");
+  const [showKeyInput, setShowKeyInput] = useState<boolean>(false);
+  const [saveKeyServerWide, setSaveKeyServerWide] = useState<boolean>(true);
 
   useEffect(() => {
     if (!isOpen) return;
     setGenError(null);
+    const localKey = getStoredLocalGeminiKey() || "";
+    setApiKeyInput(localKey);
+    let active = true;
+    serverGetAiGeneratorStatus()
+      .then((res) => {
+        if (!active) return;
+        const srv = Boolean(res?.hasKey);
+        setHasServerKey(srv);
+        if (!srv && !localKey) {
+          setShowKeyInput(true);
+        }
+      })
+      .catch(() => {
+        if (active && !db.hasServerGeminiKey() && !localKey) {
+          setShowKeyInput(true);
+        }
+      });
+
     const allCourses = db.getCourses();
     const isAdmin = user?.role === "admin";
     const assignedSet = new Set(user?.assignedCourseIds || []);
@@ -61,6 +84,9 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
       const nextNum = courseQuizzes.reduce((max, q) => Math.max(max, q.quizNumber || 0), 0) + 1;
       setQuizNumber(nextNum);
     }
+    return () => {
+      active = false;
+    };
   }, [isOpen, defaultCourseId, user?.role, user?.id, user?.assignedCourseIds]);
 
   const handleCourseChange = (cid: string) => {
@@ -75,6 +101,8 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
 
   const credits = getAiCredits();
   const activeCourse = courses.find((c) => c.id === selectedCourseId);
+  const trimmedKeyInput = apiKeyInput.trim();
+  const isAiReady = hasServerKey || trimmedKeyInput.length >= 10;
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,11 +112,19 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
     setIsGenerating(true);
     setGenerationStep(
       lang === "bn"
-        ? "মডেল পেপার, ৪ ধরনের প্রশ্ন ও ব্যাখ্যা তৈরি করা হচ্ছে..."
-        : "Synthesizing bilingual questions, options, and answer keys...",
+        ? "Gemini AI দিয়ে মৌলিক দ্বিভাষিক প্রশ্ন, অপশন ও ব্যাখ্যা তৈরি হচ্ছে..."
+        : "Synthesizing live bilingual questions, options, and answer explanations with Gemini...",
     );
 
     try {
+      if (trimmedKeyInput.length >= 10 && typeof window !== "undefined") {
+        localStorage.setItem("onnesha_gemini_key", trimmedKeyInput);
+        if (user?.role === "admin" && saveKeyServerWide) {
+          const savedRes = await db.saveServerAiKey(trimmedKeyInput);
+          if (savedRes.success) setHasServerKey(true);
+        }
+      }
+
       const generated = await generateQuizWithAi({
         topic: topic.trim(),
         sourceText: sourceText.trim() || undefined,
@@ -102,17 +138,21 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
         instructorId: user?.id || "usr-instructor-1",
         instructorName: user?.name || "Course Instructor",
         questionStyleMode,
+        ...(trimmedKeyInput.length >= 10 ? { apiKey: trimmedKeyInput } : {}),
       });
       setIsGenerating(false);
       onQuizGenerated(generated);
       onClose();
     } catch (err) {
       console.error("Quiz generation error:", err);
-      setGenError(
+      const errMsg =
         err instanceof Error
           ? err.message
-          : "Failed to generate exam paper. Check API settings or try again.",
-      );
+          : "Failed to generate exam paper. Check Gemini API settings or try again.";
+      setGenError(errMsg);
+      if (errMsg.toLowerCase().includes("api key")) {
+        setShowKeyInput(true);
+      }
       setIsGenerating(false);
     }
   };
@@ -154,7 +194,84 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
         </div>
 
         {/* Form */}
-        <form onSubmit={handleGenerate} className="mt-6 space-y-4">
+        <form onSubmit={handleGenerate} className="mt-5 space-y-4">
+          {/* Live Gemini Engine Status + Inline API Key Setup */}
+          <div
+            className={`rounded-2xl border p-3 text-xs ${
+              isAiReady
+                ? "border-emerald-500/30 bg-emerald-500/5"
+                : "border-amber-500/40 bg-amber-500/10"
+            }`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 font-bold">
+                {isAiReady ? (
+                  <>
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                    <span className="text-emerald-700 dark:text-emerald-300">
+                      {hasServerKey
+                        ? lang === "bn"
+                          ? "লাইভ Gemini AI সার্ভার সংযুক্ত (Ready)"
+                          : "Live Gemini AI Connected (Server Ready)"
+                        : lang === "bn"
+                          ? "স্থানীয় Gemini API Key সক্রিয়"
+                          : "Live Gemini AI Connected (Local Key Active)"}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <KeyRound className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span className="text-amber-700 dark:text-amber-300">
+                      {lang === "bn"
+                        ? "AI প্রশ্ন তৈরির জন্য Gemini API Key প্রয়োজন"
+                        : "Gemini API Key Required for Real AI Generation"}
+                    </span>
+                  </>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowKeyInput((v) => !v)}
+                className="font-mono text-[11px] font-bold text-primary hover:underline"
+              >
+                {showKeyInput
+                  ? "Hide Key"
+                  : isAiReady
+                    ? "Change API Key"
+                    : "Enter Key"}
+              </button>
+            </div>
+
+            {(showKeyInput || !isAiReady) && (
+              <div className="mt-2.5 space-y-2 border-t border-border/50 pt-2.5">
+                <input
+                  type="password"
+                  disabled={isGenerating}
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  placeholder="Paste Google AI Studio key (AIza...) — free at aistudio.google.com/apikey"
+                  className="w-full rounded-xl border border-border bg-card px-3 py-2 font-mono text-xs text-foreground outline-none focus:border-primary"
+                />
+                {user?.role === "admin" && (
+                  <label className="flex items-center gap-2 text-[11px] text-muted-foreground cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={saveKeyServerWide}
+                      onChange={(e) => setSaveKeyServerWide(e.target.checked)}
+                      className="rounded border-border"
+                    />
+                    <span>
+                      {lang === "bn"
+                        ? "সব প্রশিক্ষকের জন্য সার্ভারে সংরক্ষণ করুন"
+                        : "Save key on server for all instructors (Super Admin)"}
+                    </span>
+                  </label>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Course & Quiz Number Assignment */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-2xl border border-border bg-background/60 p-3.5">
             <div className="sm:col-span-2">

@@ -213,6 +213,7 @@ const ADMIN_ONLY_MUTATIONS = new Set<string>([
   "delete_certificate",
   "restore_certificate",
   "update_branding",
+  "update_ai_settings",
   "import_store_backup",
   "purge_dummy_data",
   "purge_under_50_sessions",

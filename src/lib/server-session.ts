@@ -13,13 +13,13 @@ import {
   ParticipantAnswer,
   ProctorIncidentRecord,
   Question,
-  QuestionType,
   Quiz,
   Region,
   RosterStudent,
 } from "./types";
 import { DEFAULT_BRANDING_SETTINGS, mergeBrandingSettings } from "./branding";
 import { purgeUnderThresholdExamsInStore, type PurgeExamSummary } from "./exam-purge";
+import { generateQuizViaGeminiRest, resolveEnvGeminiApiKey } from "./ai-quiz-core";
 import {
   buildOriginalCompletionIndex,
   findCompletedMatchInIndex,
@@ -130,6 +130,7 @@ interface PersistentStoreData {
   courses: Course[];
   users: ManagedUser[];
   customQuizzes: Quiz[];
+  deletedQuizIds?: string[] | undefined;
   examSessions: ExamSessionRecord[];
   examResults: ExamResultRecord[];
   certificates: CertificateData[];
@@ -138,6 +139,8 @@ interface PersistentStoreData {
   purgedSampleData?: boolean | undefined;
   purgedUnder50Initial?: boolean | undefined;
   migratedSanjibonS03V2?: boolean | undefined;
+  migratedSanjibonS05V4?: boolean | undefined;
+  serverGeminiApiKey?: string | undefined;
   ledgerCheckpoints: LedgerOtsCheckpoint[];
   transactions: ServerTransactionRecord[];
   smsLogs: ServerSmsLogRecord[];
@@ -399,6 +402,81 @@ export function migrateSanjibonQ3MergeInStore<
 }
 
 /**
+ * One-time migration refreshing Quiz 5 (`quiz-sanjibon-s05`) with the exact 15 Session 05-06
+ * video-production items while preserving all custom quizzes and past exam results.
+ */
+export function migrateSanjibonQ5ExactInStore<
+  T extends {
+    customQuizzes: Quiz[];
+    deletedQuizIds?: string[] | undefined;
+  },
+>(store: T): { removedQ5Override: boolean } {
+  const before = store.customQuizzes.length;
+  store.customQuizzes = store.customQuizzes.filter((q) => q.id !== "quiz-sanjibon-s05");
+  if (Array.isArray(store.deletedQuizIds)) {
+    store.deletedQuizIds = store.deletedQuizIds.filter(
+      (tok) => tok !== "quiz-sanjibon-s05" && tok !== "sanjibon-session-05-video-ads",
+    );
+  }
+  return { removedQ5Override: store.customQuizzes.length < before };
+}
+
+export function deleteQuizInStore<
+  T extends {
+    customQuizzes: Quiz[];
+    deletedQuizIds?: string[] | undefined;
+  },
+>(store: T, quizIdOrSlug: string, builtInPacks: Quiz[] = READY_MADE_PACKS): boolean {
+  const key = (quizIdOrSlug || "").trim();
+  if (!key) return false;
+  const tokensToTombstone = new Set<string>([key]);
+  const matchedCustom = store.customQuizzes.find((q) => q.id === key || q.slug === key);
+  if (matchedCustom) {
+    tokensToTombstone.add(matchedCustom.id);
+    if (matchedCustom.slug) tokensToTombstone.add(matchedCustom.slug);
+  }
+  const matchedPack = builtInPacks.find((q) => q.id === key || q.slug === key);
+  if (matchedPack) {
+    tokensToTombstone.add(matchedPack.id);
+    if (matchedPack.slug) tokensToTombstone.add(matchedPack.slug);
+  }
+
+  store.customQuizzes = store.customQuizzes.filter(
+    (q) => !tokensToTombstone.has(q.id) && (!q.slug || !tokensToTombstone.has(q.slug)),
+  );
+  const existingDeleted = new Set(store.deletedQuizIds || []);
+  for (const tok of tokensToTombstone) {
+    if (builtInPacks.some((p) => p.id === tok || p.slug === tok)) {
+      existingDeleted.add(tok);
+    }
+  }
+  store.deletedQuizIds = Array.from(existingDeleted);
+  return true;
+}
+
+export function clearDeletedQuizTokensInStore<
+  T extends { deletedQuizIds?: string[] | undefined },
+>(store: T, quiz: Pick<Quiz, "id" | "slug">): void {
+  if (!Array.isArray(store.deletedQuizIds) || store.deletedQuizIds.length === 0) return;
+  store.deletedQuizIds = store.deletedQuizIds.filter(
+    (tok) => tok !== quiz.id && (!quiz.slug || tok !== quiz.slug),
+  );
+}
+
+export function resolveServerGeminiApiKey(
+  store: Pick<PersistentStoreData, "serverGeminiApiKey">,
+  clientOverride?: string,
+): { apiKey?: string; source: "client" | "server" | "env" | "none" } {
+  const clientKey = (clientOverride || "").trim();
+  if (clientKey.length >= 10) return { apiKey: clientKey, source: "client" };
+  const storedKey = (store.serverGeminiApiKey || "").trim();
+  if (storedKey.length >= 10) return { apiKey: storedKey, source: "server" };
+  const envKey = resolveEnvGeminiApiKey();
+  if (envKey) return { apiKey: envKey, source: "env" };
+  return { source: "none" };
+}
+
+/**
  * Resolves a trainee from the roster by normalized BD mobile number (full or trailing digits),
  * exact/case-insensitive Roll Number (`JHN-01` / `jhn01`), centre-scoped serial (`1` + regionId),
  * or registered email address.
@@ -498,6 +576,7 @@ function loadInitialStore(): PersistentStoreData {
             courses: purged ? parsed.courses || [] : parsed.courses?.length ? parsed.courses : [...DEFAULT_COURSES],
             users: ensureDefaultUsers(parsed.users),
             customQuizzes: parsed.customQuizzes || [],
+            deletedQuizIds: parsed.deletedQuizIds || [],
             examSessions: parsed.examSessions || [],
             examResults: cleanedResults,
             certificates: parsed.certificates || [],
@@ -506,6 +585,8 @@ function loadInitialStore(): PersistentStoreData {
             purgedSampleData: purged,
             purgedUnder50Initial: !!parsed.purgedUnder50Initial,
             migratedSanjibonS03V2: !!parsed.migratedSanjibonS03V2,
+            migratedSanjibonS05V4: !!parsed.migratedSanjibonS05V4,
+            serverGeminiApiKey: parsed.serverGeminiApiKey,
             ledgerCheckpoints: parsed.ledgerCheckpoints || [],
             transactions: parsed.transactions || [],
             smsLogs: parsed.smsLogs || [],
@@ -532,6 +613,7 @@ function loadInitialStore(): PersistentStoreData {
     courses: [...DEFAULT_COURSES],
     users: ensureDefaultUsers([]),
     customQuizzes: [],
+    deletedQuizIds: [],
     examSessions: [],
     examResults: [],
     certificates: [],
@@ -540,6 +622,7 @@ function loadInitialStore(): PersistentStoreData {
     purgedSampleData: false,
     purgedUnder50Initial: true,
     migratedSanjibonS03V2: true,
+    migratedSanjibonS05V4: true,
     ledgerCheckpoints: [],
     transactions: [],
     smsLogs: [],
@@ -571,6 +654,14 @@ function getStore(): PersistentStoreData {
       scheduleDiskPersist();
       console.info(
         `[OnneshaServerStore] Sanjibon Quiz 3+4 merge migration completed: removedOverrides=${mig.removedQuizOverrides}, updatedCourse=${mig.updatedCourseDesc}`,
+      );
+    }
+    if (!loaded.migratedSanjibonS05V4) {
+      const mig5 = migrateSanjibonQ5ExactInStore(loaded);
+      loaded.migratedSanjibonS05V4 = true;
+      scheduleDiskPersist();
+      console.info(
+        `[OnneshaServerStore] Sanjibon Quiz 5 exact 15-Q migration completed: removedQ5Override=${mig5.removedQ5Override}`,
       );
     }
   }
@@ -1546,6 +1637,8 @@ export const serverGetBootstrapData = createServerFn({ method: "GET" }).handler(
     customQuizzes: isStaff
       ? store.customQuizzes
       : store.customQuizzes.filter((q) => !isQuizPrivate(q, store.courses)),
+    deletedQuizIds: store.deletedQuizIds || [],
+    hasServerGeminiKey: isStaff ? resolveServerGeminiApiKey(store).source !== "none" : false,
     examSessions: isStaff ? store.examSessions : [],
     examResults: isStaff ? store.examResults : [],
     certificates: isStaff ? store.certificates : [],
@@ -1942,6 +2035,19 @@ export const serverSendGuardianSms = createServerFn({ method: "POST" })
     };
   });
 
+export const serverGetAiGeneratorStatus = createServerFn({ method: "GET" }).handler(async () => {
+  const actor = await getActorFromRequest();
+  if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+    return { hasKey: false, source: "none" as const };
+  }
+  const store = getStore();
+  const resolved = resolveServerGeminiApiKey(store);
+  return {
+    hasKey: resolved.source !== "none",
+    source: resolved.source === "client" ? ("none" as const) : resolved.source,
+  };
+});
+
 export const serverGenerateQuizWithAi = createServerFn({ method: "POST" })
   .validator(
     (data: {
@@ -1954,6 +2060,7 @@ export const serverGenerateQuizWithAi = createServerFn({ method: "POST" })
       courseTitle?: string | undefined;
       quizNumber?: number | undefined;
       questionStyleMode?: "mixed_all_4" | "single_mcq" | undefined;
+      clientApiKey?: string | undefined;
     }) => data,
   )
   .handler(async ({ data }) => {
@@ -1962,13 +2069,12 @@ export const serverGenerateQuizWithAi = createServerFn({ method: "POST" })
       return { success: false, quiz: null, error: "Instructor or Admin login required." };
     }
 
-    const apiKey =
-      typeof process !== "undefined" ? process.env["GEMINI_API_KEY"]?.trim() : undefined;
-    if (!apiKey || apiKey.length < 10) {
+    const store = getStore();
+    const { apiKey } = resolveServerGeminiApiKey(store, data.clientApiKey);
+    if (!apiKey) {
       return { success: false, quiz: null, error: "GEMINI_API_KEY not configured on server" };
     }
 
-    const store = getStore();
     const userIdx = store.users.findIndex((u) => u.id === actor.id);
     const currentCredits = userIdx >= 0 ? (store.users[userIdx]?.aiCredits ?? 50) : 50;
     if (currentCredits <= 0) {
@@ -1997,187 +2103,32 @@ export const serverGenerateQuizWithAi = createServerFn({ method: "POST" })
       }
     };
 
-    const count = Math.min(20, Math.max(3, data.questionCount || 5));
-    const styleMode = data.questionStyleMode || "mixed_all_4";
-    const styleInstructions =
-      styleMode === "mixed_all_4"
-        ? `Include a balanced mix of question types: "single_mcq" (4 options, 1 correct), "true_false" (2 options: True/সত্য and False/মিথ্যা), "multi_mcq" (4 options, 2 or 3 correct), and "written" (options: [], acceptedAnswers: ["answer in English", "বাংলায় উত্তর"]).`
-        : `All questions must be "single_mcq" with 4 options and 1 correct option.`;
-
-    const prompt = `You are an expert exam paper setter for competitive examinations in Bangladesh (BCS, Bank Jobs, Cadet Colleges, University Admission).
-Generate an official ${count}-question assessment on the topic: "${data.topic}".
-Course context: "${data.courseTitle || data.category}".
-Additional syllabus text: "${data.sourceText || "Standard BCS & Institutional Syllabus"}".
-Difficulty: ${data.difficulty}. Language requirement: bilingual English and Bengali.
-${styleInstructions}
-
-Return ONLY a valid JSON object matching this exact schema:
-{
-  "titleEn": "string",
-  "titleBn": "string",
-  "descriptionEn": "string",
-  "descriptionBn": "string",
-  "categoryEn": "string",
-  "categoryBn": "string",
-  "questions": [
-    {
-      "type": "single_mcq" | "true_false" | "multi_mcq" | "written",
-      "textEn": "Question in English",
-      "textBn": "বাংলায় প্রশ্ন",
-      "options": [
-        { "textEn": "Option A in English", "textBn": "অপশন ক", "isCorrect": true },
-        { "textEn": "Option B in English", "textBn": "অপশন খ", "isCorrect": false }
-      ],
-      "acceptedAnswers": ["exact short answer EN", "সংক্ষিপ্ত উত্তর"],
-      "explanationEn": "Explanation in English",
-      "explanationBn": "বাংলায় বিস্তারিত ব্যাখ্যা"
-    }
-  ]
-}`;
-
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              responseMimeType: "application/json",
-              temperature: 0.25,
-            },
-          }),
-        },
-      );
-
-      if (!response.ok) {
-        refundReservedCredit();
-        return { success: false, quiz: null, error: `Gemini API HTTP ${response.status}` };
-      }
-      const payload = (await response.json()) as {
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-      };
-      const rawJsonText = payload.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawJsonText) {
-        refundReservedCredit();
-        return { success: false, quiz: null, error: "Empty Gemini response" };
-      }
-
-      const parsed = JSON.parse(rawJsonText) as {
-        titleEn?: string;
-        titleBn?: string;
-        descriptionEn?: string;
-        descriptionBn?: string;
-        categoryEn?: string;
-        categoryBn?: string;
-        questions?: Array<{
-          type?: string;
-          textEn?: string;
-          textBn?: string;
-          options?: Array<{ textEn?: string; textBn?: string; isCorrect?: boolean }>;
-          acceptedAnswers?: string[];
-          explanationEn?: string;
-          explanationBn?: string;
-        }>;
-      };
-
-      const id = `ai-quiz-${Date.now()}`;
-      const slug = `ai-${data.topic
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .slice(0, 25)}-${Date.now() % 10000}`;
-
-      const questions: Question[] = (parsed.questions || []).map((q, idx) => {
-        const qId = `q-ai-${idx + 1}-${Date.now() % 10000}`;
-        const qType: QuestionType =
-          q.type === "true_false" || q.type === "multi_mcq" || q.type === "written"
-            ? q.type
-            : "single_mcq";
-
-        if (qType === "written") {
-          const accepted =
-            Array.isArray(q.acceptedAnswers) && q.acceptedAnswers.length > 0
-              ? q.acceptedAnswers.map((a) => String(a).trim()).filter(Boolean)
-              : ["1971", "১৯৭১"];
-          return {
-            id: qId,
-            textEn: q.textEn || `${data.topic} Short Answer #${idx + 1}`,
-            textBn: q.textBn || `${data.topic} সংক্ষিপ্ত প্রশ্ন #${idx + 1}`,
-            type: "written",
-            timeLimitSec: 30,
-            points: 1000,
-            negativeMarks: 0,
-            options: [],
-            correctOptionIds: [],
-            acceptedAnswers: accepted,
-            explanationEn: q.explanationEn,
-            explanationBn: q.explanationBn,
-            category: data.category,
-            difficulty: data.difficulty,
-          };
-        }
-
-        const options = (q.options || []).map((opt, optIdx) => ({
-          id: `o-${qId}-${optIdx + 1}`,
-          textEn: opt.textEn || `Option ${optIdx + 1}`,
-          textBn: opt.textBn || `অপশন ${optIdx + 1}`,
-          isCorrect: !!opt.isCorrect,
-        }));
-        const correctOptionIds = options.filter((o) => o.isCorrect).map((o) => o.id);
-        if (correctOptionIds.length === 0 && options[0]) {
-          options[0].isCorrect = true;
-          correctOptionIds.push(options[0].id);
-        }
-
-        return {
-          id: qId,
-          textEn: q.textEn || `${data.topic} Question #${idx + 1}`,
-          textBn: q.textBn || `${data.topic} প্রশ্ন #${idx + 1}`,
-          type: qType,
-          timeLimitSec: qType === "multi_mcq" ? 25 : 20,
-          points: 1000,
-          negativeMarks: 0.25,
-          options,
-          correctOptionIds,
-          explanationEn: q.explanationEn,
-          explanationBn: q.explanationBn,
-          category: data.category,
-          difficulty: data.difficulty,
-        };
-      });
-
-      const quiz: Quiz = {
-        id,
-        slug,
+      const quiz = await generateQuizViaGeminiRest(apiKey, {
+        topic: data.topic,
+        sourceText: data.sourceText,
+        questionCount: data.questionCount,
+        difficulty: data.difficulty,
+        category: data.category,
         courseId: data.courseId,
         courseTitle: data.courseTitle,
         quizNumber: data.quizNumber,
         instructorId: actor.id,
         instructorName: actor.name,
-        icon: "✨",
-        titleEn: parsed.titleEn || `${data.topic} (${data.difficulty.toUpperCase()})`,
-        titleBn: parsed.titleBn || `${data.topic} (এআই মডেল টেস্ট)`,
-        descriptionEn: parsed.descriptionEn || `AI synthesized assessment on ${data.topic}.`,
-        descriptionBn: parsed.descriptionBn || `${data.topic} বিষয়ের ওপর নির্মিত এআই মূল্যায়ন।`,
-        categoryEn: parsed.categoryEn || data.category || "General",
-        categoryBn: parsed.categoryBn || "সাধারণ",
-        color: "from-violet-500/20 to-fuchsia-500/20",
-        tags: ["AI Studio", data.difficulty, data.category],
-        questions,
-        author: actor.name,
-        isTemplate: false,
-        createdAt: new Date().toISOString(),
-      };
+        questionStyleMode: data.questionStyleMode,
+      });
+      quiz.author = actor.name;
 
       return {
         success: true,
         quiz,
         remainingCredits: nextCredits,
       };
-    } catch {
+    } catch (err) {
       refundReservedCredit();
-      return { success: false, quiz: null, error: "Gemini synthesis error" };
+      const message =
+        err instanceof Error && err.message ? err.message : "Gemini synthesis failed.";
+      return { success: false, quiz: null, error: message };
     }
   });
 
@@ -2641,12 +2592,14 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
         | "delete_certificate"
         | "restore_certificate"
         | "update_branding"
+        | "update_ai_settings"
         | "update_sales_lead"
         | "update_transaction"
         | "import_store_backup"
         | "purge_dummy_data"
         | "purge_under_50_sessions";
       minExaminees?: number | undefined;
+      geminiApiKey?: string | undefined;
       region?: Region | undefined;
       regionId?: string | undefined;
       student?: RosterStudent | undefined;
@@ -2674,22 +2627,26 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
     let issuedCertificate: CertificateData | undefined;
     let purgeSummary: PurgeExamSummary | undefined;
 
-    const targetCustomQuiz =
-      data.action === "delete_quiz" && data.quizId
-        ? store.customQuizzes.find((q) => q.id === data.quizId || q.slug === data.quizId)
-        : data.action === "save_quiz" && data.quiz
-          ? store.customQuizzes.find((q) => q.id === data.quiz!.id || q.slug === data.quiz!.slug)
+    const quizLookupKey =
+      data.action === "delete_quiz"
+        ? data.quizId
+        : data.action === "save_quiz"
+          ? data.quiz?.id || data.quiz?.slug
           : undefined;
-    const collidesWithTemplate =
-      data.action === "save_quiz" && data.quiz
-        ? READY_MADE_PACKS.some((q) => q.id === data.quiz!.id || q.slug === data.quiz!.slug)
-        : false;
+    const targetCustomQuiz = quizLookupKey
+      ? store.customQuizzes.find((q) => q.id === quizLookupKey || q.slug === quizLookupKey)
+      : undefined;
+    const targetReadyQuiz =
+      !targetCustomQuiz && quizLookupKey
+        ? READY_MADE_PACKS.find((q) => q.id === quizLookupKey || q.slug === quizLookupKey)
+        : undefined;
+    const effectiveTargetQuiz = targetCustomQuiz || targetReadyQuiz;
 
     const perm = canActorMutateStoreAction(
       actor ? { id: actor.id, role: actor.role } : null,
       data.action,
-      targetCustomQuiz ? targetCustomQuiz.instructorId || "usr-super-admin" : undefined,
-      collidesWithTemplate || targetCustomQuiz?.isTemplate,
+      effectiveTargetQuiz ? effectiveTargetQuiz.instructorId || "usr-super-admin" : undefined,
+      effectiveTargetQuiz?.isTemplate,
     );
     if (!perm.allowed) {
       return {
@@ -2874,15 +2831,13 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
           } else {
             store.customQuizzes.unshift(quizRecord);
           }
+          clearDeletedQuizTokensInStore(store, quizRecord);
           scheduleDiskPersist();
         }
         break;
       }
       case "delete_quiz": {
-        if (data.quizId) {
-          store.customQuizzes = store.customQuizzes.filter(
-            (q) => q.id !== data.quizId && q.slug !== data.quizId,
-          );
+        if (data.quizId && deleteQuizInStore(store, data.quizId, READY_MADE_PACKS)) {
           scheduleDiskPersist();
         }
         break;
@@ -3117,6 +3072,14 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
         );
         break;
       }
+      case "update_ai_settings": {
+        if (typeof data.geminiApiKey === "string") {
+          const clean = data.geminiApiKey.trim();
+          store.serverGeminiApiKey = clean.length >= 10 ? clean : undefined;
+          scheduleDiskPersist();
+        }
+        break;
+      }
     }
 
     return {
@@ -3126,6 +3089,8 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
       courses: store.courses,
       users: store.users.map(sanitizeUserForClient),
       customQuizzes: store.customQuizzes,
+      deletedQuizIds: store.deletedQuizIds || [],
+      hasServerGeminiKey: resolveServerGeminiApiKey(store).source !== "none",
       branding: store.branding,
       salesLeads: actor?.role === "admin" ? store.salesLeads : [],
       transactions: actor?.role === "admin" ? store.transactions : [],
@@ -3442,9 +3407,15 @@ export const serverCreateSession = createServerFn({ method: "POST" })
       };
     }
 
+    const deletedIdsSet = new Set(store.deletedQuizIds || []);
     const authoritativeQuiz =
       store.customQuizzes.find((q) => q.id === data.quiz?.id || q.slug === data.quiz?.slug) ||
-      READY_MADE_PACKS.find((q) => q.id === data.quiz?.id || q.slug === data.quiz?.slug) ||
+      READY_MADE_PACKS.find(
+        (q) =>
+          !deletedIdsSet.has(q.id) &&
+          !deletedIdsSet.has(q.slug) &&
+          (q.id === data.quiz?.id || q.slug === data.quiz?.slug),
+      ) ||
       (origSessionForRetake
         ? store.customQuizzes.find(
             (q) => q.id === origSessionForRetake.quizId || q.slug === origSessionForRetake.quizId,
