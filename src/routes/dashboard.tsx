@@ -554,10 +554,16 @@ function DashboardPage() {
     setTimeout(() => setSmsSuccessMsg(null), 4000);
   };
 
-  const handleDeleteRegion = (regId: string) => {
-    db.deleteRegion(regId);
+  const handleDeleteRegion = async (regId: string) => {
+    const res = await db.deleteRegion(regId);
     setRegions(db.getRegions());
-    if (selectedRosterRegionId === regId) setSelectedRosterRegionId("all");
+    if (res.success && selectedRosterRegionId === regId) {
+      setSelectedRosterRegionId("all");
+    }
+    if (!res.success) {
+      setSmsSuccessMsg(res.error || "Could not delete region from server.");
+      setTimeout(() => setSmsSuccessMsg(null), 4000);
+    }
   };
 
   const handleAddStudent = (e: React.FormEvent) => {

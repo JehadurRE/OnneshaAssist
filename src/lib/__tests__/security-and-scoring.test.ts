@@ -15,6 +15,7 @@ import {
   clampPassThresholdPct,
   compareParticipantsByMerit,
   computeParticipantAccuracyPct,
+  computeParticipantTotalScore,
   computeParticipantTotalTimeSec,
   computeSpeedBonusPct,
   computeTotalQuizMarks,
@@ -81,12 +82,14 @@ import {
   normalizeRollToken,
 } from "../sanjibon-seed-data";
 import {
+  applyBetweenPhasePause,
   applyPauseGameToSession,
   applyResumeGameToSession,
   buildJoinDirectoryForSession,
   clearDeletedQuizTokensInStore,
   deleteCertificateInStore,
   deleteQuizInStore,
+  enterBetweenPhase,
   filterActiveRoomsFromSessions,
   findRosterCandidate,
   handlePublicStandardEndpoint,
@@ -100,12 +103,13 @@ import {
   sanitizeLookupCandidate,
   syncCourseInstructorsInStore,
   syncUserCoursesInStore,
+  transitionBetweenPhaseIfDue,
   upsertManagedUserInStore,
 } from "../server-session";
 import { generateQuizWithAi, getAiCredits } from "../ai-generator";
 import { normalizeGeneratedQuizPayload, stripMarkdownJsonFence } from "../ai-quiz-core";
 import { sqliteEngine } from "../db/sqlite-engine";
-import { db } from "../db";
+import { db, formatDeterministicCertNumber } from "../db";
 
 describe("server-security: password hashing & user sanitization", () => {
   it("hashes passwords with unique per-user scrypt salts and verifies cleanly", () => {
@@ -3019,5 +3023,200 @@ describe("dashboard quiz deletion persistence and real AI generation (no dummy f
       new Request("https://arena.onnesha.courses/api/v1/certificates/ONN-0000-NONE"),
     );
     expect(missingCertRes?.status).toBe(404);
+  });
+});
+
+describe("live exam hardening: commutative negative marking, deadline guard, pause-between & retake cert PIN", () => {
+  it("computes cumulative score order-independently under negative marking", () => {
+    const q1Wrong = {
+      questionId: "q1",
+      selectedOptionIds: ["b"],
+      isCorrect: false,
+      timeTakenSec: 5,
+      pointsAwarded: -250,
+      streakCount: 0,
+      answeredAt: 1000,
+    };
+    const q2Right = {
+      questionId: "q2",
+      selectedOptionIds: ["a"],
+      isCorrect: true,
+      timeTakenSec: 2,
+      pointsAwarded: 1000,
+      streakCount: 1,
+      answeredAt: 2000,
+    };
+
+    const scoreWrongThenRight = computeParticipantTotalScore({ q1: q1Wrong, q2: q2Right });
+    const scoreRightThenWrong = computeParticipantTotalScore({ q2: q2Right, q1: q1Wrong });
+    expect(scoreWrongThenRight).toBe(750);
+    expect(scoreRightThenWrong).toBe(750);
+
+    // Total never drops below 0 even if all answers are negative
+    expect(computeParticipantTotalScore({ q1: q1Wrong })).toBe(0);
+  });
+
+  it("rejects question submissions after deadline or outside question phase unless paused", () => {
+    const q1: Question = {
+      id: "q-deadline-1",
+      textEn: "Sample",
+      textBn: "নমুনা",
+      type: "single_mcq",
+      timeLimitSec: 20,
+      points: 1000,
+      options: [{ id: "o1", textEn: "A", textBn: "ক" }],
+      correctOptionIds: ["o1"],
+    };
+
+    expect(
+      isQuestionSubmissionClosed(
+        { phase: "question", currentQuestion: q1, questionEndTime: 30_000 },
+        "q-deadline-1",
+        31_500,
+      ),
+    ).toBe(false);
+    expect(
+      isQuestionSubmissionClosed(
+        { phase: "question", currentQuestion: q1, questionEndTime: 30_000 },
+        "q-deadline-1",
+        32_600,
+      ),
+    ).toBe(true);
+    expect(
+      isQuestionSubmissionClosed(
+        { phase: "question", currentQuestion: q1, questionEndTime: 30_000, pausedAt: 25_000 },
+        "q-deadline-1",
+        60_000,
+      ),
+    ).toBe(false);
+    expect(
+      isQuestionSubmissionClosed({ phase: "lobby", currentQuestion: q1 }, "q-deadline-1", 10_000),
+    ).toBe(true);
+    expect(
+      isQuestionSubmissionClosed({ phase: "podium", currentQuestion: q1 }, "q-deadline-1", 10_000),
+    ).toBe(true);
+  });
+
+  it("pauses and resumes between-question auto-advance without server poll override", () => {
+    const q1: Question = {
+      id: "q-between-1",
+      textEn: "Q1",
+      textBn: "প্রশ্ন ১",
+      type: "single_mcq",
+      timeLimitSec: 20,
+      points: 1000,
+      options: [
+        { id: "o1", textEn: "A", textBn: "ক" },
+        { id: "o2", textEn: "B", textBn: "খ" },
+      ],
+      correctOptionIds: ["o1"],
+    };
+    const q2: Question = {
+      id: "q-between-2",
+      textEn: "Q2",
+      textBn: "প্রশ্ন ২",
+      type: "single_mcq",
+      timeLimitSec: 20,
+      points: 1000,
+      options: [
+        { id: "o1", textEn: "A", textBn: "ক" },
+        { id: "o2", textEn: "B", textBn: "খ" },
+      ],
+      correctOptionIds: ["o2"],
+    };
+
+    const session: Parameters<typeof transitionBetweenPhaseIfDue>[0] = {
+      pin: "778899",
+      quizId: "quiz-between",
+      quizTitleEn: "Between Timing Quiz",
+      quizTitleBn: "বিটুইন টাইমিং",
+      hostId: "host-1",
+      phase: "question",
+      currentQuestionIndex: 0,
+      currentQuestion: q1,
+      questionStartTime: 10_000,
+      questionEndTime: 30_000,
+      settings: {
+        timePerQuestion: 20,
+        betweenQuestionSec: 10,
+        speedBonus: true,
+        negativeMarking: 0,
+        shuffleQuestions: false,
+        shuffleOptions: false,
+        soundEnabled: true,
+        musicEnabled: true,
+        isFormalAssessment: true,
+        requireRollNumber: false,
+      },
+      participants: {},
+      createdAt: 5_000,
+      updatedAt: 5_000,
+      totalQuestions: 2,
+    };
+
+    const dummyStore: Parameters<typeof transitionBetweenPhaseIfDue>[1] = {
+      regions: [...DEFAULT_REGIONS],
+      roster: [],
+      courses: [...DEFAULT_COURSES],
+      users: [],
+      customQuizzes: [
+        {
+          id: "quiz-between",
+          slug: "quiz-between",
+          titleEn: "Between Timing Quiz",
+          titleBn: "বিটুইন টাইমিং",
+          descriptionEn: "",
+          descriptionBn: "",
+          categoryEn: "Test",
+          categoryBn: "টেস্ট",
+          icon: "🎯",
+          questions: [q1, q2],
+        },
+      ],
+      examSessions: [],
+      examResults: [],
+      certificates: [],
+      smsLogs: [],
+      branding: { ...DEFAULT_BRANDING_SETTINGS },
+      salesLeads: [],
+      transactions: [],
+      ledgerCheckpoints: [],
+      updatedAt: 5_000,
+    };
+
+    // Entering chart phase sets 5s countdown (half of 10s betweenQuestionSec)
+    enterBetweenPhase(session, "chart", 30_000);
+    expect(session.phase).toBe("chart");
+    expect(session.phaseEndsAt).toBe(35_000);
+
+    // Pausing saves remaining ~3s and blocks server polls from advancing even after t=50_000
+    expect(applyBetweenPhasePause(session, true, 32_000)).toBe(true);
+    expect(session.autoAdvancePaused).toBe(true);
+    expect(session.betweenPausedRemainingMs).toBe(3_000);
+    expect(session.phaseEndsAt).toBeUndefined();
+    expect(transitionBetweenPhaseIfDue(session, dummyStore, 50_000)).toBe(false);
+    expect(session.phase).toBe("chart");
+
+    // Resuming restores the saved 3s remaining, then poll past deadline moves to leaderboard
+    expect(applyBetweenPhasePause(session, false, 50_000)).toBe(true);
+    expect(session.autoAdvancePaused).toBeUndefined();
+    expect(session.phaseEndsAt).toBe(53_000);
+    expect(transitionBetweenPhaseIfDue(session, dummyStore, 53_000)).toBe(true);
+    expect(session.phase).toBe("leaderboard");
+    expect(session.phaseEndsAt).toBe(58_000);
+
+    // Poll past leaderboard deadline advances to Q2 cleanly
+    expect(transitionBetweenPhaseIfDue(session, dummyStore, 58_000)).toBe(true);
+    expect(session.phase).toBe("question");
+    expect(session.currentQuestionIndex).toBe(1);
+    expect(session.currentQuestion?.id).toBe("q-between-2");
+  });
+
+  it("derives identical deterministic certificate numbers for retake sessions via retakeOriginPin", () => {
+    const origCert = formatDeterministicCertNumber("554433", "ROLL-105", 1);
+    const retakeOriginPin = "554433";
+    const retakeSessionPin = "998877";
+    const resolvedPin = retakeOriginPin || retakeSessionPin;
+    expect(formatDeterministicCertNumber(resolvedPin, "ROLL-105", 1)).toBe(origCert);
   });
 });

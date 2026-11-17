@@ -449,3 +449,19 @@ export function mergeSessionSettingsPatch(
 
   return next;
 }
+
+/**
+ * Recomputes a participant's cumulative live score across all submitted answers.
+ * Clamping only the final total at 0 guarantees negative-marking is order-independent.
+ */
+export function computeParticipantTotalScore(answers: Participant["answers"] | undefined): number {
+  const sum = Object.values(answers || {}).reduce(
+    (acc, ans) =>
+      acc +
+      (typeof ans?.pointsAwarded === "number" && Number.isFinite(ans.pointsAwarded)
+        ? ans.pointsAwarded
+        : 0),
+    0,
+  );
+  return Math.max(0, sum);
+}

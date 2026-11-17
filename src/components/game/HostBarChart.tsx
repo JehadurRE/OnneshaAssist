@@ -9,6 +9,7 @@ interface HostBarChartProps {
   question: Question;
   onNext: () => void;
   autoAdvanceSec?: number | undefined;
+  onToggleAutoPause?: ((paused: boolean) => void) | undefined;
 }
 
 const BAR_STYLES = [
@@ -43,9 +44,10 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
   question,
   onNext,
   autoAdvanceSec,
+  onToggleAutoPause,
 }) => {
   const { lang, t } = useLanguage();
-  const [autoPaused, setAutoPaused] = useState(false);
+  const [autoPaused, setAutoPaused] = useState<boolean>(Boolean(session.autoAdvancePaused));
   const [autoLeft, setAutoLeft] = useState<number>(
     autoAdvanceSec && autoAdvanceSec > 0 ? autoAdvanceSec : 0,
   );
@@ -53,7 +55,10 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
   onNextRef.current = onNext;
 
   useEffect(() => {
-    setAutoPaused(false);
+    setAutoPaused(Boolean(session.autoAdvancePaused));
+  }, [session.autoAdvancePaused]);
+
+  useEffect(() => {
     setAutoLeft(autoAdvanceSec && autoAdvanceSec > 0 ? autoAdvanceSec : 0);
   }, [question.id, autoAdvanceSec]);
 
@@ -122,7 +127,11 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
           {autoAdvanceSec && autoAdvanceSec > 0 && (
             <button
               type="button"
-              onClick={() => setAutoPaused((p) => !p)}
+              onClick={() => {
+                const next = !autoPaused;
+                setAutoPaused(next);
+                onToggleAutoPause?.(next);
+              }}
               className="flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-mono font-bold text-foreground hover:bg-accent"
               title={autoPaused ? "Resume auto-advance" : "Pause auto-advance"}
             >

@@ -85,7 +85,8 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
     if (!player) return;
     const { accuracyPct, passed } = getPlayerEval(player);
     if (!passed) return;
-    const certNo = formatDeterministicCertNumber(session.pin, player.rollNumber, rank);
+    const certOriginPin = session.settings?.retakeOriginPin || session.pin;
+    const certNo = formatDeterministicCertNumber(certOriginPin, player.rollNumber, rank);
     const existingSealed = db.getCertificateById(certNo);
     if (existingSealed) {
       setSelectedCert(existingSealed);

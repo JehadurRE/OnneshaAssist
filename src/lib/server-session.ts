@@ -59,6 +59,7 @@ import {
 import {
   compareParticipantsByMerit,
   computeParticipantAccuracyPct,
+  computeParticipantTotalScore,
   computeParticipantTotalTimeSec,
   computeTotalQuizMarks,
   evaluateQuestionAnswer,
@@ -1047,13 +1048,115 @@ export function restoreCertificateInStore(
 }
 
 export function isQuestionSubmissionClosed(
-  session: Pick<GameSession, "phase" | "currentQuestion">,
+  session: Pick<GameSession, "phase" | "currentQuestion" | "pausedAt"> &
+    Partial<Pick<GameSession, "questionEndTime">>,
   questionId: string,
+  now = Date.now(),
 ): boolean {
-  return (
+  if (
+    session.phase === "lobby" ||
+    session.phase === "countdown" ||
+    session.phase === "podium" ||
+    session.phase === "finished"
+  ) {
+    return true;
+  }
+  if (
     (session.phase === "chart" || session.phase === "leaderboard") &&
     session.currentQuestion?.id === questionId
-  );
+  ) {
+    return true;
+  }
+  if (
+    session.phase === "question" &&
+    session.currentQuestion?.id === questionId &&
+    !session.pausedAt &&
+    typeof session.questionEndTime === "number" &&
+    session.questionEndTime > 0 &&
+    now > session.questionEndTime + 2500
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function applyBetweenPhasePause(
+  session: Pick<
+    GameSession,
+    | "phase"
+    | "phaseEndsAt"
+    | "autoAdvancePaused"
+    | "betweenPausedRemainingMs"
+    | "settings"
+    | "updatedAt"
+  >,
+  paused: boolean,
+  now = Date.now(),
+): boolean {
+  if (session.phase !== "chart" && session.phase !== "leaderboard") return false;
+  if (paused) {
+    if (session.autoAdvancePaused) return false;
+    session.autoAdvancePaused = true;
+    session.betweenPausedRemainingMs =
+      typeof session.phaseEndsAt === "number" && session.phaseEndsAt > now
+        ? session.phaseEndsAt - now
+        : undefined;
+    session.phaseEndsAt = undefined;
+    session.updatedAt = now;
+    return true;
+  }
+  if (!session.autoAdvancePaused) return false;
+  session.autoAdvancePaused = undefined;
+  if (
+    typeof session.betweenPausedRemainingMs === "number" &&
+    session.betweenPausedRemainingMs > 0
+  ) {
+    session.phaseEndsAt = now + session.betweenPausedRemainingMs;
+  } else {
+    const delays = splitBetweenQuestionDelays(session.settings?.betweenQuestionSec);
+    const sec = session.phase === "chart" ? delays.chartSec : delays.leaderboardSec;
+    session.phaseEndsAt = delays.enabled && sec > 0 ? now + sec * 1000 : undefined;
+  }
+  session.betweenPausedRemainingMs = undefined;
+  session.updatedAt = now;
+  return true;
+}
+
+export function enterBetweenPhase(
+  session: ServerLiveSession,
+  targetPhase: "chart" | "leaderboard",
+  now = Date.now(),
+): void {
+  const delays = splitBetweenQuestionDelays(session.settings.betweenQuestionSec);
+  const sec = targetPhase === "chart" ? delays.chartSec : delays.leaderboardSec;
+  session.pausedAt = undefined;
+  session.phase = targetPhase;
+  session.autoAdvancePaused = undefined;
+  session.betweenPausedRemainingMs = undefined;
+  session.phaseEndsAt = delays.enabled && sec > 0 ? now + sec * 1000 : undefined;
+  recalculateSessionMetrics(session);
+}
+
+export function transitionBetweenPhaseIfDue(
+  session: ServerLiveSession,
+  store: PersistentStoreData,
+  now = Date.now(),
+): boolean {
+  if (session.autoAdvancePaused || !session.phaseEndsAt || now < session.phaseEndsAt - 150) {
+    return false;
+  }
+  if (session.phase === "chart") {
+    enterBetweenPhase(session, "leaderboard", now);
+    return true;
+  }
+  if (session.phase === "leaderboard") {
+    session.phaseEndsAt = undefined;
+    session.autoAdvancePaused = undefined;
+    session.betweenPausedRemainingMs = undefined;
+    advanceSessionToQuestion(session, store);
+    return true;
+  }
+  return false;
 }
 
 export function applyPauseGameToSession(session: ServerLiveSession, now = Date.now()): boolean {
@@ -1565,6 +1668,8 @@ function advanceSessionToQuestion(
   const now = Date.now();
   session.phase = "question";
   session.phaseEndsAt = undefined;
+  session.autoAdvancePaused = undefined;
+  session.betweenPausedRemainingMs = undefined;
   session.currentQuestionIndex = idx;
   session.currentQuestion = effectiveQuestion;
   session.pausedAt = undefined;
@@ -1615,7 +1720,7 @@ function advanceSessionToQuestion(
       streakCount: graded.newStreak,
       answeredAt: now,
     };
-    p.score = Math.max(0, p.score + graded.pointsAwarded);
+    p.score = computeParticipantTotalScore(p.answers);
     p.streak = graded.newStreak;
   });
   recalculateSessionMetrics(session);
@@ -3841,24 +3946,7 @@ export const serverGetSession = createServerFn({ method: "GET" })
         advanceSessionToQuestion(session, store, 0);
         scheduleLiveSessionsPersist();
       }
-    } else if (
-      session.phase === "chart" &&
-      session.phaseEndsAt &&
-      Date.now() >= session.phaseEndsAt - 150
-    ) {
-      const delays = splitBetweenQuestionDelays(session.settings.betweenQuestionSec);
-      const lbSec = delays.enabled ? delays.leaderboardSec : 0;
-      session.phase = "leaderboard";
-      session.phaseEndsAt = lbSec > 0 ? Date.now() + lbSec * 1000 : undefined;
-      recalculateSessionMetrics(session);
-      scheduleLiveSessionsPersist();
-    } else if (
-      session.phase === "leaderboard" &&
-      session.phaseEndsAt &&
-      Date.now() >= session.phaseEndsAt - 150
-    ) {
-      session.phaseEndsAt = undefined;
-      advanceSessionToQuestion(session, store);
+    } else if (transitionBetweenPhaseIfDue(session, store)) {
       scheduleLiveSessionsPersist();
     }
 
@@ -4331,7 +4419,7 @@ export const serverSubmitAnswer = createServerFn({ method: "POST" })
     };
 
     p.answers[data.questionId] = answerRecord;
-    p.score = Math.max(0, p.score + graded.pointsAwarded);
+    p.score = computeParticipantTotalScore(p.answers);
     p.streak = graded.newStreak;
     p.lastActive = Date.now();
 
@@ -4422,6 +4510,8 @@ export const serverHostControl = createServerFn({ method: "POST" })
         | "show_leaderboard"
         | "pause_game"
         | "resume_game"
+        | "pause_between"
+        | "resume_between"
         | "end_game"
         | "close_room"
         | "kick_player"
@@ -4471,33 +4561,41 @@ export const serverHostControl = createServerFn({ method: "POST" })
         break;
       }
       case "next_question": {
+        if (session.phase === "podium" || session.phase === "finished") {
+          break;
+        }
         if (
           typeof data.questionIndex === "number" &&
-          data.questionIndex === 0 &&
-          session.currentQuestionIndex >= 0
+          data.questionIndex <= session.currentQuestionIndex
         ) {
           break;
         }
         session.pausedAt = undefined;
+        session.autoAdvancePaused = undefined;
+        session.betweenPausedRemainingMs = undefined;
         advanceSessionToQuestion(session, store, data.questionIndex);
         break;
       }
       case "show_chart": {
-        session.pausedAt = undefined;
-        session.phase = "chart";
-        const delays = splitBetweenQuestionDelays(session.settings.betweenQuestionSec);
-        const chartSec = delays.enabled ? delays.chartSec : 0;
-        session.phaseEndsAt = chartSec > 0 ? Date.now() + chartSec * 1000 : undefined;
-        recalculateSessionMetrics(session);
+        if (
+          session.phase === "chart" ||
+          session.phase === "podium" ||
+          session.phase === "finished"
+        ) {
+          break;
+        }
+        enterBetweenPhase(session, "chart");
         break;
       }
       case "show_leaderboard": {
-        session.pausedAt = undefined;
-        session.phase = "leaderboard";
-        const delays = splitBetweenQuestionDelays(session.settings.betweenQuestionSec);
-        const lbSec = delays.enabled ? delays.leaderboardSec : 0;
-        session.phaseEndsAt = lbSec > 0 ? Date.now() + lbSec * 1000 : undefined;
-        recalculateSessionMetrics(session);
+        if (
+          session.phase === "leaderboard" ||
+          session.phase === "podium" ||
+          session.phase === "finished"
+        ) {
+          break;
+        }
+        enterBetweenPhase(session, "leaderboard");
         break;
       }
       case "pause_game": {
@@ -4508,8 +4606,18 @@ export const serverHostControl = createServerFn({ method: "POST" })
         applyResumeGameToSession(session);
         break;
       }
+      case "pause_between": {
+        applyBetweenPhasePause(session, true);
+        break;
+      }
+      case "resume_between": {
+        applyBetweenPhasePause(session, false);
+        break;
+      }
       case "end_game": {
         session.pausedAt = undefined;
+        session.autoAdvancePaused = undefined;
+        session.betweenPausedRemainingMs = undefined;
         session.phaseEndsAt = undefined;
         const alreadyEnded = session.phase === "podium" || session.phase === "finished";
         session.phase = "podium";

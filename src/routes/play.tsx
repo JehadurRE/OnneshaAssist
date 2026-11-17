@@ -633,10 +633,12 @@ function PlayPage() {
 
   const isPracticeSession = !!(isSelfPractice || session?.isSelfPractice);
 
-  // Deterministic certificate number matching Dashboard & Verification Portal (official exams only)
+  // Deterministic certificate number matching Dashboard & Verification Portal (official exams only).
+  // Supplementary retakes seal merged credentials under the original exam session PIN.
+  const certOriginPin = session?.settings?.retakeOriginPin || session?.pin || "";
   const certNumber =
     participant && session && !isPracticeSession
-      ? formatDeterministicCertNumber(session.pin, participant.rollNumber, participant.rank)
+      ? formatDeterministicCertNumber(certOriginPin, participant.rollNumber, participant.rank)
       : "";
 
   const [fetchedServerCert, setFetchedServerCert] = useState<CertificateData | null>(null);

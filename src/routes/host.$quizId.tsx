@@ -439,6 +439,9 @@ function HostPage() {
             question={session.currentQuestion}
             onNext={handleNextFromChart}
             autoAdvanceSec={betweenDelays.enabled ? betweenDelays.chartSec : undefined}
+            onToggleAutoPause={(paused) =>
+              gameEngine.setBetweenAutoAdvancePaused(session.pin, paused)
+            }
           />
         )}
 
@@ -474,6 +477,9 @@ function HostPage() {
             onNextQuestion={handleNextQuestion}
             isLastQuestion={isLastQuestion}
             autoAdvanceSec={betweenDelays.enabled ? betweenDelays.leaderboardSec : undefined}
+            onToggleAutoPause={(paused) =>
+              gameEngine.setBetweenAutoAdvancePaused(session.pin, paused)
+            }
           />
         )}
 

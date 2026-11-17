@@ -1207,6 +1207,33 @@ class RealtimeGameEngine {
       });
   }
 
+  public setBetweenAutoAdvancePaused(pin: string, paused: boolean) {
+    serverHostControl({
+      data: {
+        pin,
+        hostToken: this.getStoredHostToken(pin),
+        action: paused ? "pause_between" : "resume_between",
+      },
+    })
+      .then((res) => {
+        this.updateServerClockOffset((res as { serverNow?: number }).serverNow);
+        if (res.success && res.session) this.cacheSessionLocally(res.session);
+      })
+      .catch(() => {
+        const session = this.getSession(pin);
+        if (!session || (session.phase !== "chart" && session.phase !== "leaderboard")) return;
+        session.autoAdvancePaused = paused ? true : undefined;
+        if (paused) {
+          session.betweenPausedRemainingMs =
+            session.phaseEndsAt && session.phaseEndsAt > Date.now()
+              ? session.phaseEndsAt - Date.now()
+              : undefined;
+          session.phaseEndsAt = undefined;
+        }
+        this.saveSession(session);
+      });
+  }
+
   public endGame(pin: string) {
     this.clearBotTimers();
     this.clearStartCountdownTimer();

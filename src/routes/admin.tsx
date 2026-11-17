@@ -1425,10 +1425,14 @@ function SuperAdminPage() {
                           !course.id.startsWith("course-cyber-") && (
                             <button
                               type="button"
-                              onClick={() => {
-                                db.deleteCourse(course.id);
+                              onClick={async () => {
+                                const res = await db.deleteCourse(course.id);
                                 refreshAll();
-                                showNotice(`Deleted course "${course.titleEn}".`);
+                                showNotice(
+                                  res.success
+                                    ? `Deleted course "${course.titleEn}".`
+                                    : res.error || "Could not delete course.",
+                                );
                               }}
                               className="rounded-xl border border-destructive/30 bg-destructive/10 p-2 text-destructive hover:bg-destructive/20"
                               title="Delete custom course"
@@ -1936,9 +1940,14 @@ function SuperAdminPage() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => {
-                          db.deleteRegion(r.id);
+                        onClick={async () => {
+                          const res = await db.deleteRegion(r.id);
                           refreshAll();
+                          showNotice(
+                            res.success
+                              ? `Removed region "${r.nameEn}".`
+                              : res.error || "Could not delete region from server.",
+                          );
                         }}
                         className="text-muted-foreground hover:text-destructive"
                       >

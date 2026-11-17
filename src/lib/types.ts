@@ -195,6 +195,8 @@ export interface GameSession {
   questionEndTime: number;
   countdownStartedAt?: number | undefined;
   phaseEndsAt?: number | undefined;
+  autoAdvancePaused?: boolean | undefined;
+  betweenPausedRemainingMs?: number | undefined;
   pausedAt?: number | undefined;
   settings: GameSettings;
   participants: Record<string, Participant>;

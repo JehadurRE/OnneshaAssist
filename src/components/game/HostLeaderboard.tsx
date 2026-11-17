@@ -11,6 +11,7 @@ interface HostLeaderboardProps {
   onNextQuestion: () => void;
   isLastQuestion: boolean;
   autoAdvanceSec?: number | undefined;
+  onToggleAutoPause?: ((paused: boolean) => void) | undefined;
 }
 
 export const HostLeaderboard: React.FC<HostLeaderboardProps> = ({
@@ -18,10 +19,11 @@ export const HostLeaderboard: React.FC<HostLeaderboardProps> = ({
   onNextQuestion,
   isLastQuestion,
   autoAdvanceSec,
+  onToggleAutoPause,
 }) => {
   const { lang, t } = useLanguage();
   const [selectedRegionId, setSelectedRegionId] = useState<string>("all");
-  const [autoPaused, setAutoPaused] = useState(false);
+  const [autoPaused, setAutoPaused] = useState<boolean>(Boolean(session.autoAdvancePaused));
   const [autoLeft, setAutoLeft] = useState<number>(
     autoAdvanceSec && autoAdvanceSec > 0 ? autoAdvanceSec : 0,
   );
@@ -30,7 +32,10 @@ export const HostLeaderboard: React.FC<HostLeaderboardProps> = ({
   const regions = db.getRegions();
 
   useEffect(() => {
-    setAutoPaused(false);
+    setAutoPaused(Boolean(session.autoAdvancePaused));
+  }, [session.autoAdvancePaused]);
+
+  useEffect(() => {
     setAutoLeft(autoAdvanceSec && autoAdvanceSec > 0 ? autoAdvanceSec : 0);
   }, [session.currentQuestionIndex, autoAdvanceSec]);
 
@@ -100,7 +105,11 @@ export const HostLeaderboard: React.FC<HostLeaderboardProps> = ({
           {autoAdvanceSec && autoAdvanceSec > 0 && (
             <button
               type="button"
-              onClick={() => setAutoPaused((p) => !p)}
+              onClick={() => {
+                const next = !autoPaused;
+                setAutoPaused(next);
+                onToggleAutoPause?.(next);
+              }}
               className="flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-mono font-bold text-foreground hover:bg-accent"
               title={autoPaused ? "Resume auto-advance" : "Pause auto-advance"}
             >
