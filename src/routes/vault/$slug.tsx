@@ -9,7 +9,21 @@ import { db, isQuizPrivate } from "@/lib/db";
 import { sqliteEngine } from "@/lib/db/sqlite-engine";
 import { Quiz } from "@/lib/types";
 import { OmrSheetView } from "@/components/common/OmrSheetView";
-import { ArrowLeft, BookOpen, CheckCircle2, ChevronDown, ChevronUp, Download, Eye, EyeOff, FileText, Lock, Play, Printer, ShieldCheck } from "lucide-react";
+import {
+  ArrowLeft,
+  BookOpen,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Download,
+  Eye,
+  EyeOff,
+  FileText,
+  Lock,
+  Play,
+  Printer,
+  ShieldCheck,
+} from "lucide-react";
 
 export const Route = createFileRoute("/vault/$slug")({
   head: ({ params }) => {
@@ -27,7 +41,9 @@ export const Route = createFileRoute("/vault/$slug")({
     }
     return {
       meta: [
-        { title: `${publicPack.titleBn || publicPack.titleEn} — Verified Curriculum Assessment · Onnesha Arena` },
+        {
+          title: `${publicPack.titleBn || publicPack.titleEn} — Verified Curriculum Assessment · Onnesha Arena`,
+        },
         {
           name: "description",
           content: `${publicPack.titleBn || publicPack.titleEn} - ${publicPack.questions.length} verified assessment items with pedagogical rationale.`,
@@ -93,7 +109,9 @@ function SingleCurriculumDetailPage() {
         <main className="flex-1 flex items-center justify-center px-4 py-12">
           <div className="flex items-center gap-3 font-display text-base font-bold text-foreground">
             <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-            <span>{lang === "bn" ? "প্রশ্নপত্র লোড হচ্ছে..." : "Loading verified assessment..."}</span>
+            <span>
+              {lang === "bn" ? "প্রশ্নপত্র লোড হচ্ছে..." : "Loading verified assessment..."}
+            </span>
           </div>
         </main>
         <Footer />
@@ -152,7 +170,9 @@ function SingleCurriculumDetailPage() {
         <main className="flex-1 flex items-center justify-center px-4 py-12">
           <div className="flex items-center gap-3 font-display text-base font-bold text-foreground">
             <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-            <span>{lang === "bn" ? "অনুমতি যাচাই করা হচ্ছে..." : "Checking access permissions..."}</span>
+            <span>
+              {lang === "bn" ? "অনুমতি যাচাই করা হচ্ছে..." : "Checking access permissions..."}
+            </span>
           </div>
         </main>
         <Footer />
@@ -188,7 +208,9 @@ function SingleCurriculumDetailPage() {
                 className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-2xl bg-primary py-3 text-xs font-extrabold text-primary-foreground shadow-sm hover:bg-primary/90 transition"
               >
                 <Play className="h-3.5 w-3.5 fill-current" />
-                <span>{lang === "bn" ? "পিন দিয়ে লাইভ পরীক্ষায় যোগ দিন" : "Join Live Exam with PIN"}</span>
+                <span>
+                  {lang === "bn" ? "পিন দিয়ে লাইভ পরীক্ষায় যোগ দিন" : "Join Live Exam with PIN"}
+                </span>
               </Link>
               <Link
                 to="/auth/login"
@@ -211,8 +233,8 @@ function SingleCurriculumDetailPage() {
     }));
   };
 
-  const optionLetters = ['ক', 'খ', 'গ', 'ঘ'];
-  const optionLettersEn = ['A', 'B', 'C', 'D'];
+  const optionLetters = ["ক", "খ", "গ", "ঘ"];
+  const optionLettersEn = ["A", "B", "C", "D"];
 
   return (
     <div className="min-h-screen bg-background text-foreground bg-grid flex flex-col transition-colors">
@@ -260,9 +282,7 @@ function SingleCurriculumDetailPage() {
                 className="flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 text-xs sm:text-sm font-extrabold text-primary-foreground shadow-glow hover:bg-primary/90 transition"
               >
                 <Play className="h-4 w-4 fill-current" />
-                <span>
-                  {lang === "bn" ? "নিজে পরীক্ষা দিন (Practice)" : "Practice Exam Now"}
-                </span>
+                <span>{lang === "bn" ? "নিজে পরীক্ষা দিন (Practice)" : "Practice Exam Now"}</span>
               </Link>
 
               {isStaff && (
@@ -307,9 +327,7 @@ function SingleCurriculumDetailPage() {
               </div>
             </div>
             <div>
-              <div className="font-mono text-xl sm:text-2xl font-black text-foreground">
-                -0.25
-              </div>
+              <div className="font-mono text-xl sm:text-2xl font-black text-foreground">-0.25</div>
               <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
                 {lang === "bn" ? "নেগেটিভ মার্কিং" : "Negative Penalty"}
               </div>
@@ -321,7 +339,9 @@ function SingleCurriculumDetailPage() {
         <div className="mt-10 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="font-display text-lg font-bold text-foreground">
-              {lang === "bn" ? "প্রশ্নমালা ও বিশ্লেষণ পর্যালোচনা" : "Curriculum Items & Explanations"}
+              {lang === "bn"
+                ? "প্রশ্নমালা ও বিশ্লেষণ পর্যালোচনা"
+                : "Curriculum Items & Explanations"}
             </h2>
             <button
               onClick={() => {
@@ -368,7 +388,9 @@ function SingleCurriculumDetailPage() {
                   {q.type === "written" || q.type === "fill_blank" ? (
                     <div className="rounded-2xl border border-dashed border-primary/40 bg-background/80 p-3.5 text-xs">
                       <span className="font-mono font-bold text-primary">
-                        {lang === "bn" ? "✍️ সংক্ষিপ্ত লিখিত উত্তর প্রশ্ন" : "✍️ Short Written Response Item"}
+                        {lang === "bn"
+                          ? "✍️ সংক্ষিপ্ত লিখিত উত্তর প্রশ্ন"
+                          : "✍️ Short Written Response Item"}
                       </span>
                       {isRevealed && (
                         <div className="mt-2 font-mono font-bold text-emerald-600 dark:text-emerald-400">
@@ -398,7 +420,9 @@ function SingleCurriculumDetailPage() {
                             >
                               {lang === "bn" ? optionLetters[optIdx] : optionLettersEn[optIdx]}
                             </span>
-                            <span className="flex-1">{lang === "bn" ? opt.textBn : opt.textEn}</span>
+                            <span className="flex-1">
+                              {lang === "bn" ? opt.textBn : opt.textEn}
+                            </span>
                             {isRevealed && isCorrect && (
                               <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
                             )}
@@ -413,7 +437,11 @@ function SingleCurriculumDetailPage() {
                     <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-xs space-y-1 animate-in fade-in">
                       <div className="font-bold text-primary flex items-center gap-1.5">
                         <BookOpen className="h-3.5 w-3.5" />
-                        <span>{lang === "bn" ? "অফিসিয়াল সমাধান ও বিশ্লেষণ" : "Official Editorial Rationale"}</span>
+                        <span>
+                          {lang === "bn"
+                            ? "অফিসিয়াল সমাধান ও বিশ্লেষণ"
+                            : "Official Editorial Rationale"}
+                        </span>
                       </div>
                       <p className="text-muted-foreground leading-relaxed">
                         {lang === "bn" ? q.explanationBn : q.explanationEn || q.explanationBn}
@@ -429,10 +457,7 @@ function SingleCurriculumDetailPage() {
 
       {/* OMR Sheet Modal (Staff Only) */}
       {isStaff && showOmrModal && (
-        <OmrSheetView
-          quiz={pack}
-          onClose={() => setShowOmrModal(false)}
-        />
+        <OmrSheetView quiz={pack} onClose={() => setShowOmrModal(false)} />
       )}
 
       <Footer />

@@ -1,21 +1,22 @@
-import React, { useMemo, useState } from 'react';
-import { MeritParticipant } from '@/lib/types';
-import { db } from '@/lib/db';
+import React, { useMemo, useState } from "react";
+import { MeritParticipant } from "@/lib/types";
+import { db } from "@/lib/db";
 import {
   computeParticipantAccuracyPct,
   isPassingScore,
   resolvePassThresholdPct,
-} from '@/lib/scoring';
-import { useBranding } from '@/hooks/use-branding';
-import { downloadMeritGazettePdf } from '@/lib/pdf-generator';
-import { Download, Loader2, MapPin, Shield, X } from 'lucide-react';
-import { OnneshaLogo } from '@/components/common/OnneshaLogo';
+} from "@/lib/scoring";
+import { useBranding } from "@/hooks/use-branding";
+import { downloadMeritGazettePdf } from "@/lib/pdf-generator";
+import { Download, Loader2, MapPin, Shield, X } from "lucide-react";
+import { OnneshaLogo } from "@/components/common/OnneshaLogo";
 
 interface MeritGazetteViewProps {
   quizTitle: string;
   participants: MeritParticipant[];
   passThresholdPct?: number | undefined;
   thresholdLabel?: string | undefined;
+  negativeMarking?: number | undefined;
   onClose: () => void;
 }
 
@@ -24,6 +25,7 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
   participants,
   passThresholdPct,
   thresholdLabel,
+  negativeMarking = 0.25,
   onClose,
 }) => {
   const regions = db.getRegions();
@@ -33,15 +35,21 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
     brandingDefaultThreshold: branding.defaultPassThresholdPct,
   });
   const thresholdDisplay = thresholdLabel || `${effectiveThreshold}%`;
-  const [selectedRegionId, setSelectedRegionId] = useState<string>('all');
+  const [selectedRegionId, setSelectedRegionId] = useState<string>("all");
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+
+  const penaltyLabel =
+    typeof negativeMarking === "number" && Number.isFinite(negativeMarking) && negativeMarking > 0
+      ? `-${negativeMarking} penalty per wrong answer`
+      : "no negative marking deduction";
 
   const filtered = useMemo(() => {
     const base =
-      selectedRegionId === 'all'
+      selectedRegionId === "all"
         ? participants
         : participants.filter(
-            (p) => p.regionId === selectedRegionId || p.regionName === selectedRegionId
+            (p) => p.regionId === selectedRegionId || p.regionName === selectedRegionId,
           );
     return [...base].sort((a, b) =>
       b.finalScore !== a.finalScore
@@ -51,12 +59,13 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
   }, [participants, selectedRegionId]);
 
   const activeRegionLabel =
-    selectedRegionId === 'all'
-      ? 'All Regions (National Merit List)'
+    selectedRegionId === "all"
+      ? "All Regions (National Merit List)"
       : regions.find((r) => r.id === selectedRegionId)?.nameEn || selectedRegionId;
 
   const handleDownloadPdf = async () => {
     if (isDownloadingPdf) return;
+    setPdfError(null);
     setIsDownloadingPdf(true);
     try {
       await downloadMeritGazettePdf({
@@ -66,7 +75,14 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
         branding,
         passThresholdPct: effectiveThreshold,
         thresholdLabel,
+        negativeMarking,
       });
+    } catch (err) {
+      setPdfError(
+        err instanceof Error
+          ? err.message
+          : "Failed to export Merit Gazette PDF. Please try again.",
+      );
     } finally {
       setIsDownloadingPdf(false);
     }
@@ -122,16 +138,30 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
           </div>
         </div>
 
+        {pdfError && (
+          <div className="print:hidden mb-4 rounded-xl border border-red-300 bg-red-50 px-4 py-2 text-xs font-semibold text-red-700">
+            {pdfError}
+          </div>
+        )}
+
         {/* PRINTABLE GAZETTE DOCUMENT CONTENT */}
         <div className="space-y-6">
           {/* Header Banner */}
           <div className="flex items-center justify-between border-b-2 border-black pb-4">
             <div className="flex items-center gap-2.5">
-              <OnneshaLogo variant="print" size="md" showArenaBadge={false} />
+              {branding.leftLogoUrl ? (
+                <img
+                  src={branding.leftLogoUrl}
+                  alt={branding.institutionTitle || "Institution Logo"}
+                  className="h-12 max-w-[130px] object-contain"
+                />
+              ) : (
+                <OnneshaLogo variant="print" size="md" showArenaBadge={false} />
+              )}
               {branding.showPartnerLogo && branding.partnerLogoUrl && (
                 <img
                   src={branding.partnerLogoUrl}
-                  alt={branding.partnerName || 'Partner'}
+                  alt={branding.partnerName || "Partner"}
                   className="h-12 max-w-[120px] object-contain"
                 />
               )}
@@ -140,7 +170,7 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
               <div className="text-xs font-bold uppercase tracking-widest text-gray-600">
                 {branding.showPartnerLogo && branding.partnerName
                   ? `${branding.partnerName.toUpperCase()} · ONNESHA ASSESSMENT`
-                  : (branding.institutionTitle || 'ONNESHA ASSESSMENT ARENA').toUpperCase()}
+                  : (branding.institutionTitle || "ONNESHA ASSESSMENT ARENA").toUpperCase()}
               </div>
               <h1 className="text-xl font-black uppercase text-black tracking-tight mt-0.5">
                 EXAMINATION EVALUATION GAZETTE
@@ -164,12 +194,12 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
 
           {/* Notice Declaration */}
           <div className="border border-black p-3 rounded-lg text-xs leading-relaxed bg-gray-50">
-            <strong>NOTICE FOR CANDIDATES ({activeRegionLabel.toUpperCase()}):</strong> The following
-            merit list contains verified final rankings based on raw marks, speed velocity, and
-            applicable negative marking (-0.25 penalty). This gazette is officially certified for
-            public notice boards and regional archives. Qualifying passing threshold:{' '}
+            <strong>NOTICE FOR CANDIDATES ({activeRegionLabel.toUpperCase()}):</strong> The
+            following merit list contains verified final rankings based on raw marks, speed
+            velocity, and applicable negative marking ({penaltyLabel}). This gazette is officially
+            certified for public notice boards and regional archives. Qualifying passing threshold:{" "}
             <span className="font-bold">{thresholdDisplay}</span>
-            {!thresholdLabel && ' accuracy'}.
+            {!thresholdLabel && " accuracy"}.
           </div>
 
           {/* Merit Table */}
@@ -193,7 +223,7 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
                   const totalQ =
                     (p.correctCount ?? 0) + (p.incorrectCount ?? 0) + (p.unansweredCount ?? 0);
                   const acc =
-                    typeof p.accuracyPct === 'number'
+                    typeof p.accuracyPct === "number"
                       ? p.accuracyPct
                       : totalQ > 0
                         ? computeParticipantAccuracyPct({
@@ -203,11 +233,11 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
                           })
                         : 0;
                   const isPassed =
-                    typeof p.passed === 'boolean'
+                    typeof p.passed === "boolean"
                       ? p.passed
                       : isPassingScore(acc, effectiveThreshold);
                   return (
-                    <tr key={p.id} className={idx < 3 ? 'bg-amber-50/60 font-semibold' : ''}>
+                    <tr key={p.id} className={idx < 3 ? "bg-amber-50/60 font-semibold" : ""}>
                       <td className="border border-black p-2 text-center font-bold font-mono">
                         #{idx + 1}
                       </td>
@@ -216,7 +246,7 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
                       </td>
                       <td className="border border-black p-2 font-bold">{p.nickname}</td>
                       <td className="border border-black p-2 font-semibold">
-                        {p.regionName || 'Dhaka Range'}
+                        {p.regionName || "Dhaka Range"}
                       </td>
                       <td className="border border-black p-2 text-center text-emerald-700 font-bold">
                         {p.correctCount}
@@ -256,7 +286,7 @@ export const MeritGazetteView: React.FC<MeritGazetteViewProps> = ({
               <div className="text-[10px] text-gray-600">
                 {branding.showPartnerLogo && branding.partnerName
                   ? `${branding.partnerName} / Onnesha`
-                  : branding.institutionTitle || 'Onnesha Assessment Arena'}
+                  : branding.institutionTitle || "Onnesha Assessment Arena"}
               </div>
             </div>
           </div>

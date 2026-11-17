@@ -1,8 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { GameSession, Question } from '@/lib/types';
-import { useLanguage } from '@/lib/i18n';
-import { Check, CheckCircle2, ChevronRight, Clock, Pause, PieChart, Play } from 'lucide-react';
-import { audioEngine } from '@/lib/audio-engine';
+import React, { useEffect, useRef, useState } from "react";
+import { GameSession, Question } from "@/lib/types";
+import { useLanguage } from "@/lib/i18n";
+import { Check, CheckCircle2, ChevronRight, Clock, Pause, PieChart, Play } from "lucide-react";
+import { audioEngine } from "@/lib/audio-engine";
 
 interface HostBarChartProps {
   session: GameSession;
@@ -12,10 +12,30 @@ interface HostBarChartProps {
 }
 
 const BAR_STYLES = [
-  { key: 'A / 1', bnKey: 'ক / ১', bar: 'bg-cyan-500', badge: 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 border-cyan-500/40' },
-  { key: 'B / 2', bnKey: 'খ / ২', bar: 'bg-indigo-500', badge: 'bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-indigo-500/40' },
-  { key: 'C / 3', bnKey: 'গ / ৩', bar: 'bg-amber-500', badge: 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/40' },
-  { key: 'D / 4', bnKey: 'ঘ / ৪', bar: 'bg-emerald-500', badge: 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/40' },
+  {
+    key: "A / 1",
+    bnKey: "ক / ১",
+    bar: "bg-cyan-500",
+    badge: "bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 border-cyan-500/40",
+  },
+  {
+    key: "B / 2",
+    bnKey: "খ / ২",
+    bar: "bg-indigo-500",
+    badge: "bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-indigo-500/40",
+  },
+  {
+    key: "C / 3",
+    bnKey: "গ / ৩",
+    bar: "bg-amber-500",
+    badge: "bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/40",
+  },
+  {
+    key: "D / 4",
+    bnKey: "ঘ / ৪",
+    bar: "bg-emerald-500",
+    badge: "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/40",
+  },
 ];
 
 export const HostBarChart: React.FC<HostBarChartProps> = ({
@@ -71,12 +91,12 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
   });
 
   const maxCount = Math.max(...Object.values(counts), 1);
-  const isWritten = question.type === 'written' || question.type === 'fill_blank';
+  const isWritten = question.type === "written" || question.type === "fill_blank";
   const correctParticipantCount = participants.filter(
-    (p) => p.answers[question.id]?.isCorrect
+    (p) => p.answers[question.id]?.isCorrect,
   ).length;
   const itemDifficultyPValue =
-    totalPlayers > 0 ? (correctParticipantCount / totalPlayers).toFixed(2) : '1.00';
+    totalPlayers > 0 ? (correctParticipantCount / totalPlayers).toFixed(2) : "1.00";
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6 animate-in fade-in zoom-in-95">
@@ -88,10 +108,12 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
           </div>
           <div>
             <div className="font-display text-sm font-bold text-foreground">
-              {t('question')} {session.currentQuestionIndex + 1}: Psychometric Response Matrix
+              {t("question")} {session.currentQuestionIndex + 1}: Psychometric Response Matrix
             </div>
             <div className="text-[11px] font-mono text-muted-foreground">
-              Item Facility (P-Value): <span className="font-bold text-primary">{itemDifficultyPValue}</span> · {totalPlayers} Examinees
+              Item Facility (P-Value):{" "}
+              <span className="font-bold text-primary">{itemDifficultyPValue}</span> ·{" "}
+              {totalPlayers} Examinees
             </div>
           </div>
         </div>
@@ -102,17 +124,21 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
               type="button"
               onClick={() => setAutoPaused((p) => !p)}
               className="flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-mono font-bold text-foreground hover:bg-accent"
-              title={autoPaused ? 'Resume auto-advance' : 'Pause auto-advance'}
+              title={autoPaused ? "Resume auto-advance" : "Pause auto-advance"}
             >
-              {autoPaused ? <Play className="h-3.5 w-3.5 text-emerald-500" /> : <Pause className="h-3.5 w-3.5 text-amber-500" />}
-              <span>{autoPaused ? 'Paused' : `Auto ${autoLeft}s`}</span>
+              {autoPaused ? (
+                <Play className="h-3.5 w-3.5 text-emerald-500" />
+              ) : (
+                <Pause className="h-3.5 w-3.5 text-amber-500" />
+              )}
+              <span>{autoPaused ? "Paused" : `Auto ${autoLeft}s`}</span>
             </button>
           )}
           <button
             onClick={onNext}
             className="flex items-center gap-1.5 rounded-2xl bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground shadow-md transition hover:bg-primary/90"
           >
-            <span>{t('show_leaderboard')}</span>
+            <span>{t("show_leaderboard")}</span>
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>
@@ -121,14 +147,16 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
       {/* Main Bar Chart Container */}
       <div className="rounded-3xl border-2 border-border bg-card p-8 sm:p-12 shadow-glow">
         <h3 className="text-center font-display text-xl sm:text-2xl font-bold text-foreground mb-8">
-          {lang === 'bn' ? 'পরীক্ষার্থীদের উত্তর বণ্টন ও সঠিক সমাধান' : 'Response Distribution & Key Rationale'}
+          {lang === "bn"
+            ? "পরীক্ষার্থীদের উত্তর বণ্টন ও সঠিক সমাধান"
+            : "Response Distribution & Key Rationale"}
         </h3>
 
         {isWritten ? (
           <div className="space-y-6 py-4">
             <div className="rounded-2xl border-2 border-emerald-500/40 bg-emerald-500/10 p-6 text-center space-y-2">
               <div className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-                {lang === 'bn' ? 'গ্রহণযোগ্য সঠিক উত্তরসমূহ' : 'Official Accepted Answer Key'}
+                {lang === "bn" ? "গ্রহণযোগ্য সঠিক উত্তরসমূহ" : "Official Accepted Answer Key"}
               </div>
               <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
                 {(question.acceptedAnswers || []).map((ansText, idx) => (
@@ -148,7 +176,7 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
                   {correctParticipantCount}
                 </div>
                 <div className="text-xs font-bold text-muted-foreground">
-                  {lang === 'bn' ? 'সঠিক লিখিত উত্তর' : 'Correct Responses'}
+                  {lang === "bn" ? "সঠিক লিখিত উত্তর" : "Correct Responses"}
                 </div>
               </div>
               <div className="rounded-2xl border border-border bg-muted/40 p-4 text-center">
@@ -156,7 +184,7 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
                   {Math.max(0, totalPlayers - correctParticipantCount)}
                 </div>
                 <div className="text-xs font-bold text-muted-foreground">
-                  {lang === 'bn' ? 'ভুল বা অনুত্তরিত' : 'Incorrect / Unanswered'}
+                  {lang === "bn" ? "ভুল বা অনুত্তরিত" : "Incorrect / Unanswered"}
                 </div>
               </div>
             </div>
@@ -174,7 +202,7 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
                 <div key={opt.id} className="flex flex-col items-center gap-3">
                   {/* Number of votes */}
                   <div className="font-mono text-sm sm:text-base font-black text-foreground tabular-nums">
-                    {count}{' '}
+                    {count}{" "}
                     <span className="text-xs font-normal text-muted-foreground">
                       ({totalPlayers > 0 ? Math.round((count / totalPlayers) * 100) : 0}%)
                     </span>
@@ -183,8 +211,9 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
                   {/* The Bar */}
                   <div className="relative w-full rounded-2xl bg-muted/40 p-1 flex items-end justify-center h-48">
                     <div
-                      className={`w-full rounded-xl transition-all duration-1000 ease-out flex items-center justify-center ${style.bar
-                        } ${isCorrect ? 'ring-4 ring-emerald-400 ring-offset-2 ring-offset-background shadow-neon' : 'opacity-70'}`}
+                      className={`w-full rounded-xl transition-all duration-1000 ease-out flex items-center justify-center ${
+                        style.bar
+                      } ${isCorrect ? "ring-4 ring-emerald-400 ring-offset-2 ring-offset-background shadow-neon" : "opacity-70"}`}
                       style={{ height: `${heightPct}%` }}
                     >
                       {isCorrect && (
@@ -196,16 +225,20 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
                   {/* Option Badge & Text */}
                   <div className="flex items-center gap-2 text-center">
                     <span
-                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border font-mono text-[11px] font-bold ${style.badge
-                        }`}
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border font-mono text-[11px] font-bold ${
+                        style.badge
+                      }`}
                     >
-                      {lang === 'bn' ? style.bnKey : style.key}
+                      {lang === "bn" ? style.bnKey : style.key}
                     </span>
                     <span
-                      className={`text-xs sm:text-sm font-bold line-clamp-2 ${isCorrect ? 'text-emerald-600 dark:text-emerald-400 font-extrabold' : 'text-foreground'
-                        }`}
+                      className={`text-xs sm:text-sm font-bold line-clamp-2 ${
+                        isCorrect
+                          ? "text-emerald-600 dark:text-emerald-400 font-extrabold"
+                          : "text-foreground"
+                      }`}
                     >
-                      {lang === 'bn' ? opt.textBn : opt.textEn}
+                      {lang === "bn" ? opt.textBn : opt.textEn}
                     </span>
                   </div>
                 </div>
@@ -219,10 +252,14 @@ export const HostBarChart: React.FC<HostBarChartProps> = ({
           <div className="mt-8 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-5 text-left text-xs sm:text-sm leading-relaxed text-foreground">
             <div className="flex items-center gap-2 font-bold text-emerald-700 dark:text-emerald-300 mb-1">
               <CheckCircle2 className="h-4 w-4" />
-              <span>{lang === 'bn' ? 'একাডেমিক বিশ্লেষণ ও সঠিক উত্তরের যুক্তি:' : 'Pedagogical Analysis & Key Rationale:'}</span>
+              <span>
+                {lang === "bn"
+                  ? "একাডেমিক বিশ্লেষণ ও সঠিক উত্তরের যুক্তি:"
+                  : "Pedagogical Analysis & Key Rationale:"}
+              </span>
             </div>
             <p className="mt-1">
-              {lang === 'bn' ? question.explanationBn : question.explanationEn}
+              {lang === "bn" ? question.explanationBn : question.explanationEn}
             </p>
           </div>
         )}

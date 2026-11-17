@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { GameSession } from "@/lib/types";
 import { useLanguage } from "@/lib/i18n";
 import { db } from "@/lib/db";
@@ -38,14 +38,29 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
   onStartGame,
   onAddBots,
   onKickPlayer,
-  onToggleSound,
+  onToggleSound: _onToggleSound,
   onUpdateSettings,
   onCloseRoom,
 }) => {
   const { lang, t } = useLanguage();
   const [showQr, setShowQr] = useState(false);
   const [isMuted, setIsMuted] = useState(audioEngine.isMuted());
+  const [volume, setVolume] = useState(audioEngine.getVolume());
   const [filterRegionId, setFilterRegionId] = useState<string>("all");
+  const [minAnsDraft, setMinAnsDraft] = useState<string>(
+    String(session.settings.retakeMinCompletedAnswers ?? 1),
+  );
+
+  useEffect(() => {
+    setMinAnsDraft(String(session.settings.retakeMinCompletedAnswers ?? 1));
+  }, [session.settings.retakeMinCompletedAnswers]);
+
+  useEffect(() => {
+    return audioEngine.subscribe(() => {
+      setIsMuted(audioEngine.isMuted());
+      setVolume(audioEngine.getVolume());
+    });
+  }, []);
 
   const regions = db.getRegions();
   const participants = Object.values(session.participants);
@@ -68,7 +83,6 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
   const toggleAudio = () => {
     const next = audioEngine.toggleMute();
     setIsMuted(next);
-    onToggleSound();
   };
 
   const joinUrl =
@@ -141,14 +155,22 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
                       min={1}
                       max={500}
                       aria-label="Minimum completed submitted answers"
-                      value={session.settings.retakeMinCompletedAnswers ?? 1}
+                      value={minAnsDraft}
                       onChange={(e) => {
-                        const val = parseInt(e.target.value, 10);
-                        onUpdateSettings({
-                          retakeMinCompletedAnswers: Number.isFinite(val)
-                            ? Math.max(1, Math.min(500, val))
-                            : 1,
-                        });
+                        const raw = e.target.value;
+                        setMinAnsDraft(raw);
+                        const val = parseInt(raw, 10);
+                        if (Number.isFinite(val) && val >= 1) {
+                          onUpdateSettings({
+                            retakeMinCompletedAnswers: Math.max(1, Math.min(500, val)),
+                          });
+                        }
+                      }}
+                      onBlur={() => {
+                        const val = parseInt(minAnsDraft, 10);
+                        const clamped = Number.isFinite(val) ? Math.max(1, Math.min(500, val)) : 1;
+                        setMinAnsDraft(String(clamped));
+                        onUpdateSettings({ retakeMinCompletedAnswers: clamped });
                       }}
                       className="w-12 bg-transparent font-mono font-black text-foreground text-center outline-none"
                     />
@@ -310,18 +332,31 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={toggleAudio}
-              className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-background text-foreground hover:bg-accent"
-              title={isMuted ? "Unmute Sound FX" : "Mute Sound FX"}
-            >
-              {isMuted ? (
-                <VolumeX className="h-4 w-4 text-destructive" />
-              ) : (
-                <Volume2 className="h-4 w-4 text-emerald-500" />
-              )}
-            </button>
+            <div className="flex items-center gap-1.5 rounded-xl border border-border bg-background px-2 py-1">
+              <button
+                type="button"
+                onClick={toggleAudio}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-foreground hover:bg-accent"
+                title={isMuted ? "Unmute Sound FX" : "Mute Sound FX"}
+              >
+                {isMuted ? (
+                  <VolumeX className="h-4 w-4 text-destructive" />
+                ) : (
+                  <Volume2 className="h-4 w-4 text-emerald-500" />
+                )}
+              </button>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                aria-label="Sound effect volume"
+                value={isMuted ? 0 : volume}
+                onChange={(e) => audioEngine.setVolume(parseFloat(e.target.value))}
+                className="w-16 accent-emerald-500 cursor-pointer"
+                title={`Sound Volume: ${Math.round((isMuted ? 0 : volume) * 100)}%`}
+              />
+            </div>
             <button
               type="button"
               onClick={() => setShowQr(!showQr)}
@@ -384,7 +419,9 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
                   }
                   className="bg-transparent font-mono font-bold text-foreground outline-none cursor-pointer"
                 >
-                  <option value="0">{lang === "bn" ? "ডিফল্ট (প্রশ্নভিত্তিক)" : "Quiz Default"}</option>
+                  <option value="0">
+                    {lang === "bn" ? "ডিফল্ট (প্রশ্নভিত্তিক)" : "Quiz Default"}
+                  </option>
                   <option value="10">10s</option>
                   <option value="15">15s</option>
                   <option value="20">20s</option>
@@ -434,9 +471,7 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
                 <select
                   aria-label="Start countdown seconds"
                   value={String(session.settings.startCountdownSec ?? 3)}
-                  onChange={(e) =>
-                    onUpdateSettings({ startCountdownSec: Number(e.target.value) })
-                  }
+                  onChange={(e) => onUpdateSettings({ startCountdownSec: Number(e.target.value) })}
                   className="bg-transparent font-mono font-bold text-foreground outline-none cursor-pointer"
                 >
                   <option value="0">Instant (0s)</option>

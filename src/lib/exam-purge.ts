@@ -1,9 +1,4 @@
-import type {
-  CertificateData,
-  ExamResultRecord,
-  ExamSessionRecord,
-  GameSession,
-} from "./types";
+import type { CertificateData, ExamResultRecord, ExamSessionRecord, GameSession } from "./types";
 
 export interface PurgeableSmsLog {
   id: string;
@@ -113,11 +108,7 @@ export function purgeUnderThresholdExamsInStore<
   TLiveSession extends Pick<GameSession, "pin" | "phase" | "participants"> & {
     id?: string | undefined;
   } = GameSession,
->(
-  store: TStore,
-  minExaminees = 50,
-  liveSessions?: Record<string, TLiveSession>,
-): PurgeExamSummary {
+>(store: TStore, minExaminees = 50, liveSessions?: Record<string, TLiveSession>): PurgeExamSummary {
   const threshold = Math.max(1, Math.floor(Number.isFinite(minExaminees) ? minExaminees : 50));
   const allSessions = Array.isArray(store.examSessions) ? store.examSessions : [];
   const allResults = Array.isArray(store.examResults) ? store.examResults : [];
@@ -197,9 +188,7 @@ export function purgeUnderThresholdExamsInStore<
   const keptResults: ExamResultRecord[] = [];
   const removedResults: ExamResultRecord[] = [];
   for (const r of allResults) {
-    const belongsToRemovedSession = r.sessionId
-      ? removedSessionIdSet.has(r.sessionId)
-      : false;
+    const belongsToRemovedSession = r.sessionId ? removedSessionIdSet.has(r.sessionId) : false;
     const matchedByPinToRemovedSession =
       !r.sessionId &&
       removedSessions.some((s) => normalizePinToken(s.pin) === normalizePinToken(r.pin)) &&
@@ -434,10 +423,8 @@ export function purgeUnderThresholdExamsInStore<
         (p) => !(p.id || "").startsWith("bot-"),
       ).length;
       const isEnded = sess.phase === "podium" || sess.phase === "finished";
-      const matchesRemovedId =
-        typeof sess.id === "string" && removedSessionIdSet.has(sess.id);
-      const matchesRemovedPinEnded =
-        removedPins.has(normalizePinToken(pinKey)) && isEnded;
+      const matchesRemovedId = typeof sess.id === "string" && removedSessionIdSet.has(sess.id);
+      const matchesRemovedPinEnded = removedPins.has(normalizePinToken(pinKey)) && isEnded;
 
       if ((isEnded || matchesRemovedId || matchesRemovedPinEnded) && nonBotCount < threshold) {
         delete liveSessions[pinKey];

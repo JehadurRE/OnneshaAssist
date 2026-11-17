@@ -25,7 +25,10 @@ export const Route = createFileRoute("/for/$segment")({
   head: ({ params }) => ({
     meta: [
       { title: `Onnesha Quiz for ${params.segment} · Tailored Assessment Solutions` },
-      { name: "description", content: `Specialized live quiz and assessment workflows for ${params.segment}.` },
+      {
+        name: "description",
+        content: `Specialized live quiz and assessment workflows for ${params.segment}.`,
+      },
     ],
   }),
   component: SegmentSolutionPage,
@@ -48,8 +51,10 @@ const SEGMENTS: Record<string, SegmentContent> = {
     icon: <GraduationCap className="h-10 w-10 text-primary" />,
     titleEn: "Live Quizzes & Model Tests for Classes & Coaching",
     titleBn: "ক্লাসরুম ও কোচিং সেন্টারের জন্য লাইভ কুইজ ও মডেল টেস্ট",
-    taglineEn: "Negative marking · Roll-number join · Merit list + print · Guardian result SMS · Certificates.",
-    taglineBn: "নেগেটিভ মার্কিং · রোল নম্বর জয়েন · মেধা তালিকা ও নোটিশ প্রিন্ট · অভিভাবকের ফোনে SMS · সনদপত্র।",
+    taglineEn:
+      "Negative marking · Roll-number join · Merit list + print · Guardian result SMS · Certificates.",
+    taglineBn:
+      "নেগেটিভ মার্কিং · রোল নম্বর জয়েন · মেধা তালিকা ও নোটিশ প্রিন্ট · অভিভাবকের ফোনে SMS · সনদপত্র।",
     bulletsEn: [
       "Liven up daily classroom lectures with instant mobile participation",
       "Run BCS, Medical & Varsity model tests with exact negative marking penalties",
@@ -71,8 +76,10 @@ const SEGMENTS: Record<string, SegmentContent> = {
     icon: <Building2 className="h-10 w-10 text-blue-500" />,
     titleEn: "Employee Onboarding, Compliance & Knowledge Checks",
     titleBn: "কর্পোরেট অনবোর্ডিং, কমপ্লায়েন্স ও জ্ঞান যাচাই",
-    taglineEn: "Track compliance completion · Automated scores · Team engagement · Dedicated data isolation.",
-    taglineBn: "কমপ্লায়েন্স সম্পন্নকরণ ট্র্যাকিং · স্বয়ংক্রিয় স্কোর · টিম এনগেজমেন্ট · ডেটা সুরক্ষা।",
+    taglineEn:
+      "Track compliance completion · Automated scores · Team engagement · Dedicated data isolation.",
+    taglineBn:
+      "কমপ্লায়েন্স সম্পন্নকরণ ট্র্যাকিং · স্বয়ংক্রিয় স্কোর · টিম এনগেজমেন্ট · ডেটা সুরক্ষা।",
     bulletsEn: [
       "Transform boring compliance policies into fun interactive knowledge quizzes",
       "Ready-made packs for workplace safety, PPE, fire drill, and cyber password safety",
@@ -94,7 +101,8 @@ const SEGMENTS: Record<string, SegmentContent> = {
     icon: <Sparkles className="h-10 w-10 text-amber-500" />,
     titleEn: "Assessments & Verifiable Certification for Course Trainers",
     titleBn: "প্রশিক্ষক ও কোর্স ইন্সট্রাক্টরদের জন্য মূল্যায়ন ও ডিজিটাল সনদ",
-    taglineEn: "Pre & post tests · Instant skill benchmarks · Verifiable digital badges with QR codes.",
+    taglineEn:
+      "Pre & post tests · Instant skill benchmarks · Verifiable digital badges with QR codes.",
     taglineBn: "প্রি ও পোস্ট টেস্ট · তাৎক্ষণিক স্কিল যাচাই · QR কোডযুক্ত ডিজিটাল সার্টিফিকেট।",
     bulletsEn: [
       "Pre-training diagnostic tests to gauge audience knowledge levels before lectures",
@@ -118,7 +126,8 @@ const SEGMENTS: Record<string, SegmentContent> = {
     titleEn: "Live Quiz Nights, Campus Trivia & Event Engagement",
     titleBn: "লাইভ কুইজ নাইট, ক্যাম্পাস ট্রিভিয়া ও ইভেন্ট এনগেজমেন্ট",
     taglineEn: "Big-screen projector view · Suspense leaderboards · Sound effects · Team battles.",
-    taglineBn: "প্রজেক্টর বিগ স্ক্রিন ভিউ · লাইভ উত্তেজনাপূর্ণ লিডারবোর্ড · সাউন্ড এফেক্টস · টিম প্রতিযোগিতা।",
+    taglineBn:
+      "প্রজেক্টর বিগ স্ক্রিন ভিউ · লাইভ উত্তেজনাপূর্ণ লিডারবোর্ড · সাউন্ড এফেক্টস · টিম প্রতিযোগিতা।",
     bulletsEn: [
       "Giant PIN and QR code projector display for rapid audience onboarding",
       "Thrilling rank shifts with streak multipliers and suspense drumroll sounds",

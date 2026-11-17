@@ -12,11 +12,7 @@ import {
   DEFAULT_CERTIFICATE_SIGNATORIES,
   resolveCertificateTheme,
 } from "./branding";
-import {
-  computeParticipantAccuracyPct,
-  isPassingScore,
-  resolvePassThresholdPct,
-} from "./scoring";
+import { computeParticipantAccuracyPct, isPassingScore, resolvePassThresholdPct } from "./scoring";
 import onnesha from "@/assets/onnesha.jpg.asset.json";
 
 /**
@@ -1491,8 +1487,7 @@ export async function downloadOmrSheetPdf(params: {
 
 const GAZETTE_SANS_FONT =
   '"Noto Sans Bengali", "Hind Siliguri", "Kalpurush", "Segoe UI", system-ui, -apple-system, sans-serif';
-const GAZETTE_MONO_FONT =
-  '"JetBrains Mono", "Cascadia Mono", Consolas, "Courier New", monospace';
+const GAZETTE_MONO_FONT = '"JetBrains Mono", "Cascadia Mono", Consolas, "Courier New", monospace';
 
 function wrapCanvasLines(
   ctx: CanvasRenderingContext2D,
@@ -1532,11 +1527,7 @@ function wrapCanvasLines(
   );
 }
 
-function fitCellText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  maxWidth: number,
-): string {
+function fitCellText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
   const clean = (text || "").trim();
   if (!clean || maxWidth <= 8) return "";
   if (ctx.measureText(clean).width <= maxWidth) return clean;
@@ -1593,8 +1584,23 @@ function drawGazetteHeader(params: {
   // 1. Left Logos Zone (Onnesha + optional Partner Co-brand)
   const hasCustomLeftLogo = Boolean((branding?.leftLogoUrl || "").trim());
   if (onneshaLogo && partnerLogo) {
-    drawContainedImage(ctx, onneshaLogo, M, topY + 12, 86, 84, "left");
-    drawContainedImage(ctx, partnerLogo, M + 96, topY + 12, 148, 84, "left");
+    if (!hasCustomLeftLogo) {
+      drawContainedImage(ctx, onneshaLogo, M, topY + 14, 62, 62, "left");
+      ctx.save();
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#0f172a";
+      ctx.font = `900 18px ${GAZETTE_SANS_FONT}`;
+      ctx.fillText("ONNESHA", M + 68, topY + 34);
+      ctx.fillStyle = "#0369a1";
+      ctx.font = `700 15px ${GAZETTE_SANS_FONT}`;
+      ctx.fillText("অন্বেষা", M + 68, topY + 56);
+      ctx.restore();
+      drawContainedImage(ctx, partnerLogo, M + 178, topY + 14, 118, 66, "left");
+    } else {
+      drawContainedImage(ctx, onneshaLogo, M, topY + 12, 116, 84, "left");
+      drawContainedImage(ctx, partnerLogo, M + 124, topY + 12, 134, 84, "left");
+    }
   } else if (onneshaLogo && !hasCustomLeftLogo) {
     drawContainedImage(ctx, onneshaLogo, M, topY + 14, 80, 80, "left");
     ctx.save();
@@ -1713,13 +1719,27 @@ function drawGazetteNoticeBox(params: {
   regionLabel: string;
   thresholdDisplay: string;
   thresholdLabel?: string | undefined;
+  negativeMarking?: number | undefined;
 }): number {
-  const { ctx, M, CW, startY, regionLabel, thresholdDisplay, thresholdLabel } = params;
+  const {
+    ctx,
+    M,
+    CW,
+    startY,
+    regionLabel,
+    thresholdDisplay,
+    thresholdLabel,
+    negativeMarking = 0.25,
+  } = params;
   const padX = 22;
   const padY = 18;
   const innerW = CW - padX * 2;
   const thresholdSuffix = thresholdLabel ? "" : " accuracy";
-  const body = `NOTICE FOR CANDIDATES (${regionLabel.toUpperCase()}): The following merit list contains verified final rankings based on raw marks, speed velocity, and applicable negative marking (-0.25 penalty). This gazette is officially certified for public notice boards and regional archives. Qualifying passing threshold: ${thresholdDisplay}${thresholdSuffix}.`;
+  const penaltyText =
+    typeof negativeMarking === "number" && Number.isFinite(negativeMarking) && negativeMarking > 0
+      ? `-${negativeMarking} penalty per wrong answer`
+      : "no negative marking deduction";
+  const body = `NOTICE FOR CANDIDATES (${regionLabel.toUpperCase()}): The following merit list contains verified final rankings based on raw marks, speed velocity, and applicable negative marking (${penaltyText}). This gazette is officially certified for public notice boards and regional archives. Qualifying passing threshold: ${thresholdDisplay}${thresholdSuffix}.`;
 
   ctx.font = `600 18px ${GAZETTE_SANS_FONT}`;
   const lines = wrapCanvasLines(ctx, body, innerW, 4);
@@ -1774,9 +1794,17 @@ export async function downloadMeritGazettePdf(params: {
   branding?: BrandingSettings | undefined;
   passThresholdPct?: number | undefined;
   thresholdLabel?: string | undefined;
+  negativeMarking?: number | undefined;
 }): Promise<void> {
-  const { quizTitle, regionLabel, participants, branding, passThresholdPct, thresholdLabel } =
-    params;
+  const {
+    quizTitle,
+    regionLabel,
+    participants,
+    branding,
+    passThresholdPct,
+    thresholdLabel,
+    negativeMarking = 0.25,
+  } = params;
   const effectiveThreshold = resolvePassThresholdPct({
     sessionThreshold: passThresholdPct,
     brandingDefaultThreshold: branding?.defaultPassThresholdPct,
@@ -1833,6 +1861,7 @@ export async function downloadMeritGazettePdf(params: {
     regionLabel,
     thresholdDisplay,
     thresholdLabel,
+    negativeMarking,
   });
   const page1TableTop = estNoticeBottom + 24;
 
@@ -1854,7 +1883,10 @@ export async function downloadMeritGazettePdf(params: {
   const maxNonFinalTableBottom = H - 110;
   const maxFinalTableBottom = H - 275; // leaves room for Authority Signatures + page footer
 
-  const p1FinalCap = Math.max(1, Math.floor((maxFinalTableBottom - page1TableTop - tableHeaderH) / rowH));
+  const p1FinalCap = Math.max(
+    1,
+    Math.floor((maxFinalTableBottom - page1TableTop - tableHeaderH) / rowH),
+  );
   const p1NonFinalCap = Math.max(
     1,
     Math.floor((maxNonFinalTableBottom - page1TableTop - tableHeaderH) / rowH),
@@ -1957,6 +1989,7 @@ export async function downloadMeritGazettePdf(params: {
             regionLabel,
             thresholdDisplay,
             thresholdLabel,
+            negativeMarking,
           }) + 24
         : dividerY + 24;
 
@@ -2005,7 +2038,11 @@ export async function downloadMeritGazettePdf(params: {
       ctx.fillStyle = "#64748b";
       ctx.textAlign = "center";
       ctx.font = `600 18px ${GAZETTE_SANS_FONT}`;
-      ctx.fillText("No examinee records available for the selected scope.", M + CW / 2, currentY + 38);
+      ctx.fillText(
+        "No examinee records available for the selected scope.",
+        M + CW / 2,
+        currentY + 38,
+      );
       currentY += 76;
     } else {
       bodyRows.forEach((p, idx) => {
@@ -2055,11 +2092,7 @@ export async function downloadMeritGazettePdf(params: {
         ctx.fillStyle = "#0f172a";
         ctx.font = `600 17px ${GAZETTE_MONO_FONT}`;
         const rollStr = p.rollNumber || `2026-${100 + globalRank}`;
-        ctx.fillText(
-          fitCellText(ctx, rollStr, columns[1]!.width - 24),
-          colEdges[1]! + 14,
-          midY,
-        );
+        ctx.fillText(fitCellText(ctx, rollStr, columns[1]!.width - 24), colEdges[1]! + 14, midY);
 
         // Col 2: Candidate Name
         ctx.fillStyle = "#000000";

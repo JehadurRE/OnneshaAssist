@@ -68,7 +68,8 @@ const INSTITUTIONAL_PLANS: InstitutionalPlan[] = [
     id: "tier-starter",
     nameEn: "Academic Starter",
     nameBn: "একাডেমিক স্টার্টার",
-    descriptionEn: "Ideal for individual teachers, small batches, and classroom diagnostic quizzes.",
+    descriptionEn:
+      "Ideal for individual teachers, small batches, and classroom diagnostic quizzes.",
     descriptionBn: "ব্যক্তিগত শিক্ষক ও ছোট ক্লাসরুমের তাৎক্ষণিক কুইজ মূল্যায়নের জন্য উপযোগী।",
     monthlyPrice: 0,
     annualPrice: 0,
@@ -168,11 +169,11 @@ const INSTITUTIONAL_PLANS: InstitutionalPlan[] = [
 function PricingPage() {
   const { lang, t } = useLanguage();
   const navigate = useNavigate();
-  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
   const [selectedPlanForBkash, setSelectedPlanForBkash] = useState<InstitutionalPlan | null>(null);
   const [paymentNotice, setPaymentNotice] = useState<{
     trxId: string;
-    status: 'completed' | 'pending' | 'failed';
+    status: "completed" | "pending" | "failed";
   } | null>(null);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
@@ -195,7 +196,7 @@ function PricingPage() {
   const handleOpenBkash = (plan: InstitutionalPlan) => {
     setPaymentNotice(null);
     if (plan.monthlyPrice === 0) {
-      navigate({ to: '/dashboard' });
+      navigate({ to: "/dashboard" });
       return;
     }
     setSelectedPlanForBkash(plan);
@@ -210,17 +211,23 @@ function PricingPage() {
         <div className="text-center max-w-3xl mx-auto space-y-3">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-xs font-bold text-primary shadow-sm">
             <ShieldCheck className="h-3.5 w-3.5" />
-            <span>{lang === 'bn' ? 'স্বচ্ছ ও সাশ্রয়ী প্রাতিষ্ঠানিক সাবস্ক্রিপশন' : 'Predictable Institutional Licensing'}</span>
+            <span>
+              {lang === "bn"
+                ? "স্বচ্ছ ও সাশ্রয়ী প্রাতিষ্ঠানিক সাবস্ক্রিপশন"
+                : "Predictable Institutional Licensing"}
+            </span>
           </div>
 
           <h1 className="font-display text-3xl sm:text-5xl font-black text-foreground tracking-tight">
-            {lang === 'bn' ? 'আপনার একাডেমি বা ক্যাম্পাসের জন্য সঠিক প্ল্যান' : 'Scale Examinations with Zero Friction'}
+            {lang === "bn"
+              ? "আপনার একাডেমি বা ক্যাম্পাসের জন্য সঠিক প্ল্যান"
+              : "Scale Examinations with Zero Friction"}
           </h1>
 
           <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
-            {lang === 'bn'
-              ? 'ব্যক্তিগত শিক্ষক থেকে শুরু করে বিশ্ববিদ্যালয়, প্রশিক্ষণ একাডেমি এবং শীর্ষ কোচিং সেন্টারের জন্য তৈরি ডিজিটাল মূল্যায়ন ব্যবস্থা।'
-              : 'From classroom pop-quizzes to high-stakes defense academy model exams with negative marking, proctor telemetry, and instant gazette notices.'}
+            {lang === "bn"
+              ? "ব্যক্তিগত শিক্ষক থেকে শুরু করে বিশ্ববিদ্যালয়, প্রশিক্ষণ একাডেমি এবং শীর্ষ কোচিং সেন্টারের জন্য তৈরি ডিজিটাল মূল্যায়ন ব্যবস্থা।"
+              : "From classroom pop-quizzes to high-stakes defense academy model exams with negative marking, proctor telemetry, and instant gazette notices."}
           </p>
 
           {/* Billing Cycle Selector */}
@@ -228,25 +235,25 @@ function PricingPage() {
             <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card p-1.5 shadow-sm">
               <button
                 type="button"
-                onClick={() => setBillingCycle('monthly')}
+                onClick={() => setBillingCycle("monthly")}
                 className={`rounded-full px-5 py-2 text-xs font-bold transition-all ${
-                  billingCycle === 'monthly'
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
+                  billingCycle === "monthly"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {t('monthly')}
+                {t("monthly")}
               </button>
               <button
                 type="button"
-                onClick={() => setBillingCycle('yearly')}
+                onClick={() => setBillingCycle("yearly")}
                 className={`flex items-center gap-1.5 rounded-full px-5 py-2 text-xs font-bold transition-all ${
-                  billingCycle === 'yearly'
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
+                  billingCycle === "yearly"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <span>{t('yearly')}</span>
+                <span>{t("yearly")}</span>
                 <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400">
                   2 Months Free
                 </span>
@@ -258,23 +265,23 @@ function PricingPage() {
         {paymentNotice && (
           <div
             className={`mt-8 rounded-2xl border p-4 text-xs sm:text-sm font-semibold flex items-center justify-between gap-3 ${
-              paymentNotice.status === 'completed'
-                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                : paymentNotice.status === 'pending'
-                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                  : 'border-destructive/40 bg-destructive/10 text-destructive'
+              paymentNotice.status === "completed"
+                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                : paymentNotice.status === "pending"
+                  ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                  : "border-destructive/40 bg-destructive/10 text-destructive"
             }`}
           >
             <div className="flex items-center gap-2">
-              {paymentNotice.status === 'completed' ? (
+              {paymentNotice.status === "completed" ? (
                 <CheckCircle2 className="h-4 w-4 shrink-0" />
               ) : (
                 <Clock className="h-4 w-4 shrink-0" />
               )}
               <span>
-                {paymentNotice.status === 'completed'
+                {paymentNotice.status === "completed"
                   ? `Payment verified! Transaction ID: ${paymentNotice.trxId}. Institutional subscription activated.`
-                  : paymentNotice.status === 'pending'
+                  : paymentNotice.status === "pending"
                     ? `bKash TrxID ${paymentNotice.trxId} recorded and queued for manual verification in Super Admin Panel.`
                     : `Transaction ${paymentNotice.trxId} could not be verified. Please contact support or retry.`}
               </span>
@@ -293,9 +300,9 @@ function PricingPage() {
         <div className="mt-12 grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch">
           {INSTITUTIONAL_PLANS.map((plan) => {
             const isPopular = plan.popular;
-            const price = billingCycle === 'yearly' ? plan.annualPrice : plan.monthlyPrice;
+            const price = billingCycle === "yearly" ? plan.annualPrice : plan.monthlyPrice;
             const displayMonthlyEquivalent =
-              billingCycle === 'yearly' && plan.annualPrice > 0
+              billingCycle === "yearly" && plan.annualPrice > 0
                 ? Math.round(plan.annualPrice / 12)
                 : plan.monthlyPrice;
 
@@ -304,15 +311,15 @@ function PricingPage() {
                 key={plan.id}
                 className={`bento-card relative flex flex-col justify-between p-6 sm:p-8 shadow-sm transition-all duration-300 ${
                   isPopular
-                    ? 'border-primary shadow-glow ring-2 ring-primary/40 lg:-translate-y-2'
-                    : 'hover:border-primary/50'
+                    ? "border-primary shadow-glow ring-2 ring-primary/40 lg:-translate-y-2"
+                    : "hover:border-primary/50"
                 }`}
               >
                 {/* Popular Badge */}
                 {plan.badgeEn && (
                   <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
                     <span className="rounded-full bg-primary px-3.5 py-1 font-mono text-[10px] font-black uppercase tracking-wider text-primary-foreground shadow-md">
-                      {lang === 'bn' ? plan.badgeBn : plan.badgeEn}
+                      {lang === "bn" ? plan.badgeBn : plan.badgeEn}
                     </span>
                   </div>
                 )}
@@ -321,24 +328,20 @@ function PricingPage() {
                   {/* Plan Name & Desc */}
                   <div className="border-b border-border/80 pb-6">
                     <h3 className="font-display text-xl font-extrabold text-foreground">
-                      {lang === 'bn' ? plan.nameBn : plan.nameEn}
+                      {lang === "bn" ? plan.nameBn : plan.nameEn}
                     </h3>
                     <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
-                      {lang === 'bn' ? plan.descriptionBn : plan.descriptionEn}
+                      {lang === "bn" ? plan.descriptionBn : plan.descriptionEn}
                     </p>
 
                     {/* Price */}
                     <div className="mt-6 flex items-baseline gap-1.5 font-mono">
                       <span className="text-4xl sm:text-5xl font-black text-foreground">
-                        {price === 0 ? (
-                          'Free'
-                        ) : (
-                          <>৳{displayMonthlyEquivalent.toLocaleString()}</>
-                        )}
+                        {price === 0 ? "Free" : <>৳{displayMonthlyEquivalent.toLocaleString()}</>}
                       </span>
                       {price > 0 && (
                         <span className="text-xs text-muted-foreground">
-                          / month {billingCycle === 'yearly' && '(billed annually)'}
+                          / month {billingCycle === "yearly" && "(billed annually)"}
                         </span>
                       )}
                     </div>
@@ -354,7 +357,7 @@ function PricingPage() {
                       Included Capabilities:
                     </div>
                     <ul className="space-y-2.5 text-xs text-foreground">
-                      {(lang === 'bn' ? plan.featuresBn : plan.featuresEn).map((feat, idx) => (
+                      {(lang === "bn" ? plan.featuresBn : plan.featuresEn).map((feat, idx) => (
                         <li key={idx} className="flex items-start gap-2.5">
                           <Check className="h-4 w-4 shrink-0 text-emerald-500 mt-0.5" />
                           <span className="leading-snug">{feat}</span>
@@ -371,11 +374,11 @@ function PricingPage() {
                     onClick={() => handleOpenBkash(plan)}
                     className={`w-full rounded-2xl py-3.5 text-xs font-extrabold transition-all shadow-sm ${
                       isPopular
-                        ? 'bg-primary text-primary-foreground shadow-glow hover:bg-primary/90 hover:scale-[1.02]'
-                        : 'border border-border bg-card text-foreground hover:bg-accent'
+                        ? "bg-primary text-primary-foreground shadow-glow hover:bg-primary/90 hover:scale-[1.02]"
+                        : "border border-border bg-card text-foreground hover:bg-accent"
                     }`}
                   >
-                    {lang === 'bn' ? plan.ctaBn : plan.ctaEn} →
+                    {lang === "bn" ? plan.ctaBn : plan.ctaEn} →
                   </button>
                 </div>
               </div>
@@ -392,7 +395,9 @@ function PricingPage() {
                 <span>Onnesha Arena Scaler</span>
               </div>
               <h2 className="font-display text-xl sm:text-2xl font-bold text-foreground">
-                {lang === 'bn' ? 'ক্যাম্পাস ক্যাপাসিটি ও অ্যাড-অন এস্টিমেটর' : 'Interactive Campus Capacity & Add-On Estimator'}
+                {lang === "bn"
+                  ? "ক্যাম্পাস ক্যাপাসিটি ও অ্যাড-অন এস্টিমেটর"
+                  : "Interactive Campus Capacity & Add-On Estimator"}
               </h2>
             </div>
 
@@ -417,11 +422,13 @@ function PricingPage() {
                       onClick={() => setSelectedBatchSize(size)}
                       className={`rounded-2xl border-2 p-3 text-center transition-all ${
                         selectedBatchSize === size
-                          ? 'border-primary bg-primary/10 text-primary shadow-sm font-black'
-                          : 'border-border bg-background text-foreground hover:bg-accent font-semibold'
+                          ? "border-primary bg-primary/10 text-primary shadow-sm font-black"
+                          : "border-border bg-background text-foreground hover:bg-accent font-semibold"
                       }`}
                     >
-                      <div className="font-mono text-lg">{size >= 1000 ? `${size / 1000}k` : size}</div>
+                      <div className="font-mono text-lg">
+                        {size >= 1000 ? `${size / 1000}k` : size}
+                      </div>
                       <div className="text-[10px] text-muted-foreground">Students</div>
                     </button>
                   ))}
@@ -438,8 +445,12 @@ function PricingPage() {
                   <div className="flex items-center gap-3">
                     <MessageSquare className="h-4 w-4 text-emerald-500" />
                     <div>
-                      <div className="text-xs font-bold text-foreground">Automated Guardian SMS Result Gateway</div>
-                      <div className="text-[10px] text-muted-foreground">Instant scorecard dispatch to parent phone numbers</div>
+                      <div className="text-xs font-bold text-foreground">
+                        Automated Guardian SMS Result Gateway
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        Instant scorecard dispatch to parent phone numbers
+                      </div>
                     </div>
                   </div>
                   <input
@@ -454,8 +465,12 @@ function PricingPage() {
                   <div className="flex items-center gap-3">
                     <Award className="h-4 w-4 text-amber-500" />
                     <div>
-                      <div className="text-xs font-bold text-foreground">Cryptographic QR Verifiable Certificates</div>
-                      <div className="text-[10px] text-muted-foreground">Tamper-proof digital credentials for each examinee</div>
+                      <div className="text-xs font-bold text-foreground">
+                        Cryptographic QR Verifiable Certificates
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        Tamper-proof digital credentials for each examinee
+                      </div>
                     </div>
                   </div>
                   <input
@@ -477,31 +492,36 @@ function PricingPage() {
 
                 <div className="border-b border-border/60 pb-4">
                   <h3 className="font-display text-2xl font-black text-foreground">
-                    {lang === 'bn' ? 'এন্টারপ্রাইজ ও জাতীয় বোর্ড' : 'Dedicated National & Defense Grid'}
+                    {lang === "bn"
+                      ? "এন্টারপ্রাইজ ও জাতীয় বোর্ড"
+                      : "Dedicated National & Defense Grid"}
                   </h3>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Matched for {selectedBatchSize.toLocaleString()}+ simultaneous examinees with isolated database nodes, Bank PO billing, and custom SLA.
+                    Matched for {selectedBatchSize.toLocaleString()}+ simultaneous examinees with
+                    isolated database nodes, Bank PO billing, and custom SLA.
                   </p>
                 </div>
 
                 <div className="flex items-baseline gap-2 font-mono">
                   <span className="text-4xl font-black text-foreground">Custom Quote</span>
                   <span className="text-xs text-muted-foreground">
-                    ({billingCycle === 'yearly' ? 'Annual Contract' : 'Monthly SLA'})
+                    ({billingCycle === "yearly" ? "Annual Contract" : "Monthly SLA"})
                   </span>
                 </div>
 
                 <ul className="space-y-1.5 text-xs text-muted-foreground">
                   <li>✓ Dedicated 5,000+ concurrent capacity</li>
                   {includeSms && <li>✓ Bulk Greenweb / Academy SMS Gateway included</li>}
-                  {includeCertificates && <li>✓ Rekor + OpenTimestamps QR certificates included</li>}
+                  {includeCertificates && (
+                    <li>✓ Rekor + OpenTimestamps QR certificates included</li>
+                  )}
                 </ul>
 
                 <Link
                   to="/contact-sales"
                   className="block w-full text-center rounded-2xl bg-primary py-3.5 text-xs font-extrabold text-primary-foreground shadow-glow hover:bg-primary/90 transition"
                 >
-                  {t('contact_sales')} →
+                  {t("contact_sales")} →
                 </Link>
 
                 <div className="text-center text-[10px] text-muted-foreground">
@@ -512,58 +532,58 @@ function PricingPage() {
               recommendedPlan && (
                 <div className="lg:col-span-5 rounded-3xl border-2 border-primary/40 bg-card p-6 shadow-tactical space-y-4">
                   <div className="text-xs font-bold uppercase tracking-widest text-primary">
-                    Recommended Configuration ({billingCycle === 'yearly' ? 'Annual' : 'Monthly'})
+                    Recommended Configuration ({billingCycle === "yearly" ? "Annual" : "Monthly"})
                   </div>
 
                   <div className="border-b border-border/60 pb-4">
                     <h3 className="font-display text-2xl font-black text-foreground">
-                      {lang === 'bn' ? recommendedPlan.nameBn : recommendedPlan.nameEn}
+                      {lang === "bn" ? recommendedPlan.nameBn : recommendedPlan.nameEn}
                     </h3>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Matched for up to {recommendedPlan.capacity.toLocaleString()} simultaneous examinees.
+                      Matched for up to {recommendedPlan.capacity.toLocaleString()} simultaneous
+                      examinees.
                     </p>
                   </div>
 
                   {(() => {
                     const baseMonthly = recommendedPlan.monthlyPrice;
-                    const smsExtra = includeSms && recommendedPlan.id === 'tier-starter' ? 400 : 0;
+                    const smsExtra = includeSms && recommendedPlan.id === "tier-starter" ? 400 : 0;
                     const certExtra =
-                      includeCertificates && recommendedPlan.id !== 'tier-campus' ? 500 : 0;
+                      includeCertificates && recommendedPlan.id !== "tier-campus" ? 500 : 0;
                     const estMonthly = baseMonthly + smsExtra + certExtra;
-                    const estTotal =
-                      billingCycle === 'yearly' ? estMonthly * 10 : estMonthly;
+                    const estTotal = billingCycle === "yearly" ? estMonthly * 10 : estMonthly;
 
                     return (
                       <div className="space-y-2">
                         <div className="flex items-baseline gap-1 font-mono">
                           <span className="text-4xl font-black text-foreground">
-                            {estTotal === 0 ? 'Free' : `৳${estTotal.toLocaleString()}`}
+                            {estTotal === 0 ? "Free" : `৳${estTotal.toLocaleString()}`}
                           </span>
                           {estTotal > 0 && (
                             <span className="text-xs text-muted-foreground">
-                              / {billingCycle === 'yearly' ? 'year (2 months free)' : 'month'}
+                              / {billingCycle === "yearly" ? "year (2 months free)" : "month"}
                             </span>
                           )}
                         </div>
                         <div className="space-y-1 text-[11px] text-muted-foreground">
                           <div>
-                            • Guardian SMS:{' '}
+                            • Guardian SMS:{" "}
                             <strong className="text-foreground">
                               {!includeSms
-                                ? 'Not selected'
+                                ? "Not selected"
                                 : smsExtra > 0
-                                  ? '+৳400/mo add-on'
-                                  : 'Included in plan'}
+                                  ? "+৳400/mo add-on"
+                                  : "Included in plan"}
                             </strong>
                           </div>
                           <div>
-                            • Cryptographic QR Certs:{' '}
+                            • Cryptographic QR Certs:{" "}
                             <strong className="text-foreground">
                               {!includeCertificates
-                                ? 'Not selected'
+                                ? "Not selected"
                                 : certExtra > 0
-                                  ? '+৳500/mo add-on'
-                                  : 'Included in plan'}
+                                  ? "+৳500/mo add-on"
+                                  : "Included in plan"}
                             </strong>
                           </div>
                         </div>
@@ -577,8 +597,8 @@ function PricingPage() {
                     className="w-full rounded-2xl bg-primary py-3.5 text-xs font-extrabold text-primary-foreground shadow-glow hover:bg-primary/90 transition"
                   >
                     {recommendedPlan.monthlyPrice === 0
-                      ? 'Start Free Assessment →'
-                      : 'Proceed with bKash Checkout →'}
+                      ? "Start Free Assessment →"
+                      : "Proceed with bKash Checkout →"}
                   </button>
 
                   <div className="text-center text-[10px] text-muted-foreground">
@@ -593,7 +613,9 @@ function PricingPage() {
         {/* DETAILED INSTITUTIONAL FEATURE MATRIX */}
         <section className="mt-16">
           <h2 className="text-center font-display text-xl sm:text-2xl font-bold text-foreground mb-8">
-            {lang === 'bn' ? 'ফিচার ও প্রাতিষ্ঠানিক সক্ষমতার পূর্ণাঙ্গ তুলনা' : 'Deep Functional Comparison Matrix'}
+            {lang === "bn"
+              ? "ফিচার ও প্রাতিষ্ঠানিক সক্ষমতার পূর্ণাঙ্গ তুলনা"
+              : "Deep Functional Comparison Matrix"}
           </h2>
 
           <div className="overflow-x-auto rounded-3xl border border-border bg-card shadow-sm">
@@ -608,43 +630,57 @@ function PricingPage() {
               </thead>
               <tbody className="divide-y divide-border/60">
                 <tr>
-                  <td className="p-4 font-semibold text-foreground">Simultaneous Candidate Capacity</td>
+                  <td className="p-4 font-semibold text-foreground">
+                    Simultaneous Candidate Capacity
+                  </td>
                   <td className="p-4 text-center font-mono font-bold">50</td>
                   <td className="p-4 text-center font-mono font-bold text-primary">300</td>
                   <td className="p-4 text-center font-mono font-bold">1,500+</td>
                 </tr>
                 <tr>
-                  <td className="p-4 font-semibold text-foreground">Formal OMR Negative Marking (-0.25)</td>
+                  <td className="p-4 font-semibold text-foreground">
+                    Formal OMR Negative Marking (-0.25)
+                  </td>
                   <td className="p-4 text-center text-muted-foreground">—</td>
                   <td className="p-4 text-center text-emerald-500 font-bold">✓ Included</td>
                   <td className="p-4 text-center text-emerald-500 font-bold">✓ Included</td>
                 </tr>
                 <tr>
-                  <td className="p-4 font-semibold text-foreground">Printable Notice Board Merit Gazette</td>
+                  <td className="p-4 font-semibold text-foreground">
+                    Printable Notice Board Merit Gazette
+                  </td>
                   <td className="p-4 text-center text-muted-foreground">—</td>
                   <td className="p-4 text-center text-emerald-500 font-bold">✓ Included</td>
                   <td className="p-4 text-center text-emerald-500 font-bold">✓ Included</td>
                 </tr>
                 <tr>
-                  <td className="p-4 font-semibold text-foreground">Psychometric Item Difficulty ($P$-Value)</td>
+                  <td className="p-4 font-semibold text-foreground">
+                    Psychometric Item Difficulty ($P$-Value)
+                  </td>
                   <td className="p-4 text-center text-muted-foreground">—</td>
                   <td className="p-4 text-center text-emerald-500 font-bold">✓ Included</td>
                   <td className="p-4 text-center text-emerald-500 font-bold">✓ Included</td>
                 </tr>
                 <tr>
-                  <td className="p-4 font-semibold text-foreground">Anti-Cheat Proctor Pulse (Focus Tracker)</td>
+                  <td className="p-4 font-semibold text-foreground">
+                    Anti-Cheat Proctor Pulse (Focus Tracker)
+                  </td>
                   <td className="p-4 text-center text-muted-foreground">—</td>
                   <td className="p-4 text-center text-muted-foreground">—</td>
                   <td className="p-4 text-center text-emerald-500 font-bold">✓ Included</td>
                 </tr>
                 <tr>
-                  <td className="p-4 font-semibold text-foreground">Cryptographic QR Verifiable Certificates</td>
+                  <td className="p-4 font-semibold text-foreground">
+                    Cryptographic QR Verifiable Certificates
+                  </td>
                   <td className="p-4 text-center text-muted-foreground">—</td>
                   <td className="p-4 text-center text-muted-foreground">—</td>
                   <td className="p-4 text-center text-emerald-500 font-bold">✓ Included</td>
                 </tr>
                 <tr>
-                  <td className="p-4 font-semibold text-foreground">AI Question Generation Credits / Mo</td>
+                  <td className="p-4 font-semibold text-foreground">
+                    AI Question Generation Credits / Mo
+                  </td>
                   <td className="p-4 text-center font-mono">5 credits</td>
                   <td className="p-4 text-center font-mono font-bold text-primary">50 credits</td>
                   <td className="p-4 text-center font-mono font-bold">250 credits</td>
@@ -658,12 +694,14 @@ function PricingPage() {
         <div className="mt-16 bento-card p-8 sm:p-10 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="space-y-1 text-center md:text-left">
             <h3 className="font-display text-xl font-bold text-foreground">
-              {lang === 'bn' ? 'বাংলাদেশ আনসার ও ভিডিপি বা বিশ্ববিদ্যালয় ক্যাম্পাস চুক্তি?' : 'Custom Institutional Proposal or Government Tender?'}
+              {lang === "bn"
+                ? "বাংলাদেশ আনসার ও ভিডিপি বা বিশ্ববিদ্যালয় ক্যাম্পাস চুক্তি?"
+                : "Custom Institutional Proposal or Government Tender?"}
             </h3>
             <p className="text-xs text-muted-foreground max-w-xl">
-              {lang === 'bn'
-                ? 'বার্ষিক ইনভয়েস, ব্যাংক পিও এবং কাস্টম অন-প্রিমাইস ক্লাউড ডেপ্লয়মেন্টের জন্য আমাদের সলিউশন দলের সাথে কথা বলুন।'
-                : 'Dedicated cloud isolation, custom Moodle/Canvas LTI integration, official bank PO invoicing, and customized service agreements.'}
+              {lang === "bn"
+                ? "বার্ষিক ইনভয়েস, ব্যাংক পিও এবং কাস্টম অন-প্রিমাইস ক্লাউড ডেপ্লয়মেন্টের জন্য আমাদের সলিউশন দলের সাথে কথা বলুন।"
+                : "Dedicated cloud isolation, custom Moodle/Canvas LTI integration, official bank PO invoicing, and customized service agreements."}
             </p>
           </div>
 
@@ -671,28 +709,48 @@ function PricingPage() {
             to="/contact-sales"
             className="rounded-2xl bg-primary px-7 py-3.5 text-xs font-bold text-primary-foreground shadow-glow hover:bg-primary/90 transition shrink-0"
           >
-            {t('contact_sales')} →
+            {t("contact_sales")} →
           </Link>
         </div>
 
         {/* FAQ ACCORDION */}
         <section className="mt-16 max-w-2xl mx-auto space-y-3">
           <h3 className="font-display text-xl font-bold text-center text-foreground mb-6">
-            {lang === 'bn' ? 'পেমেন্ট ও লাইসেন্স সংক্রান্ত সাধারণ জিজ্ঞাসা' : 'Licensing & Payment FAQ'}
+            {lang === "bn"
+              ? "পেমেন্ট ও লাইসেন্স সংক্রান্ত সাধারণ জিজ্ঞাসা"
+              : "Licensing & Payment FAQ"}
           </h3>
 
           {[
             {
-              q: lang === 'bn' ? 'সিমুলটেনিয়াস এক্সামিনি (Simultaneous Capacity) বলতে কী বোঝায়?' : 'What is simultaneous examinee capacity?',
-              a: lang === 'bn' ? 'একই সময়ে একটি লাইভ পরীক্ষা বা মূল্যায়ন সেশনে সর্বোচ্চ কতজন পরীক্ষার্থী একসাথে অংশ নিতে পারবে। আপনি প্রতি মাসে যত খুশি সেশন ও পরীক্ষা নিতে পারেন।' : 'It refers to the maximum number of candidates who can be actively testing in a single examination session at the same instant. You can host unlimited sessions per month.',
+              q:
+                lang === "bn"
+                  ? "সিমুলটেনিয়াস এক্সামিনি (Simultaneous Capacity) বলতে কী বোঝায়?"
+                  : "What is simultaneous examinee capacity?",
+              a:
+                lang === "bn"
+                  ? "একই সময়ে একটি লাইভ পরীক্ষা বা মূল্যায়ন সেশনে সর্বোচ্চ কতজন পরীক্ষার্থী একসাথে অংশ নিতে পারবে। আপনি প্রতি মাসে যত খুশি সেশন ও পরীক্ষা নিতে পারেন।"
+                  : "It refers to the maximum number of candidates who can be actively testing in a single examination session at the same instant. You can host unlimited sessions per month.",
             },
             {
-              q: lang === 'bn' ? 'পেমেন্ট কীভাবে করা যায়?' : 'What payment methods are supported in Bangladesh?',
-              a: lang === 'bn' ? 'বিকাশ (bKash) ও যেকোনো স্থানীয় ভিসা/মাস্টারকার্ড দিয়ে তাৎক্ষণিক সক্রিয়করণ করা যায়। প্রাতিষ্ঠানিক চুক্তির জন্য ব্যাংক ট্রান্সফার গ্রহণযোগ্য।' : 'Instant activation via bKash, local credit/debit cards, and official institutional bank wire for annual agreements.',
+              q:
+                lang === "bn"
+                  ? "পেমেন্ট কীভাবে করা যায়?"
+                  : "What payment methods are supported in Bangladesh?",
+              a:
+                lang === "bn"
+                  ? "বিকাশ (bKash) ও যেকোনো স্থানীয় ভিসা/মাস্টারকার্ড দিয়ে তাৎক্ষণিক সক্রিয়করণ করা যায়। প্রাতিষ্ঠানিক চুক্তির জন্য ব্যাংক ট্রান্সফার গ্রহণযোগ্য।"
+                  : "Instant activation via bKash, local credit/debit cards, and official institutional bank wire for annual agreements.",
             },
             {
-              q: lang === 'bn' ? 'বাৎসরিক পেমেন্টে কী সুবিধা রয়েছে?' : 'What are the annual plan savings?',
-              a: lang === 'bn' ? 'বাৎসরিক লাইসেন্স নিলে ২ মাস সম্পূর্ণ ফ্রি (১৭% ডিসকাউন্ট) পাবেন।' : 'Annual licenses include 2 months completely free (equivalent to a 17% savings).',
+              q:
+                lang === "bn"
+                  ? "বাৎসরিক পেমেন্টে কী সুবিধা রয়েছে?"
+                  : "What are the annual plan savings?",
+              a:
+                lang === "bn"
+                  ? "বাৎসরিক লাইসেন্স নিলে ২ মাস সম্পূর্ণ ফ্রি (১৭% ডিসকাউন্ট) পাবেন।"
+                  : "Annual licenses include 2 months completely free (equivalent to a 17% savings).",
             },
           ].map((item, idx) => (
             <div key={idx} className="rounded-2xl border border-border bg-card p-4 shadow-sm">
@@ -702,7 +760,9 @@ function PricingPage() {
                 className="flex w-full items-center justify-between text-left font-display text-sm font-bold text-foreground"
               >
                 <span>{item.q}</span>
-                <ChevronDown className={`h-4 w-4 transition-transform ${openFaq === idx ? 'rotate-180 text-primary' : ''}`} />
+                <ChevronDown
+                  className={`h-4 w-4 transition-transform ${openFaq === idx ? "rotate-180 text-primary" : ""}`}
+                />
               </button>
               {openFaq === idx && (
                 <p className="mt-2 text-xs text-muted-foreground leading-relaxed border-t border-border/60 pt-2 animate-in fade-in">

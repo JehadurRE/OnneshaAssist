@@ -44,7 +44,9 @@ function ForgotPasswordPage() {
               <ShieldCheck className="h-4 w-4 text-primary shrink-0 mt-0.5" />
               <div>
                 <p className="font-bold">
-                  {lang === "bn" ? "১. সুপার অ্যাডমিন রিসেট (সুপারিশকৃত)" : "1. Institutional Super Admin Reset"}
+                  {lang === "bn"
+                    ? "১. সুপার অ্যাডমিন রিসেট (সুপারিশকৃত)"
+                    : "1. Institutional Super Admin Reset"}
                 </p>
                 <p className="text-muted-foreground mt-0.5 leading-relaxed">
                   {lang === "bn"

@@ -43,6 +43,7 @@ import {
   KeyRound,
   Layers,
   LayoutDashboard,
+  Loader2,
   Lock,
   MapPin,
   Percent,
@@ -93,16 +94,11 @@ export const Route = createFileRoute("/admin")({
 });
 
 type AdminTab =
-  | "courses"
-  | "instructors"
-  | "roster"
-  | "certificates"
-  | "settings"
-  | "sales_billing";
+  "courses" | "instructors" | "roster" | "certificates" | "settings" | "sales_billing";
 
 function SuperAdminPage() {
   const { lang } = useLanguage();
-  const { user, isAuthenticated, login } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading, login } = useAuth();
   const navigate = useNavigate();
 
   // Admin Gate Login State
@@ -331,7 +327,9 @@ function SuperAdminPage() {
     setCourseCategory(c.categoryEn || "BCS / Job");
     setCourseIcon(c.icon || "🎯");
     setCourseIsPrivate(isCoursePrivate(c));
-    setCoursePassThreshold(typeof c.passThresholdPct === "number" ? String(c.passThresholdPct) : "");
+    setCoursePassThreshold(
+      typeof c.passThresholdPct === "number" ? String(c.passThresholdPct) : "",
+    );
     setSelectedCourseInstructors(c.instructorIds || []);
   };
 
@@ -408,7 +406,7 @@ function SuperAdminPage() {
           .join(","),
       ),
     ];
-    const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob([`\uFEFF${csvLines.join("\n")}`], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -702,6 +700,21 @@ function SuperAdminPage() {
       params: { quizId: quiz.slug || quiz.id },
     });
   };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background text-foreground bg-grid flex flex-col">
+        <Navbar />
+        <main className="flex-1 flex items-center justify-center px-4 py-12">
+          <div className="flex items-center gap-3 font-display text-base font-bold text-foreground">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <span>Verifying administrator credentials...</span>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
 
   // If user is not logged in as Super Admin, show the Dedicated Super Admin Security Gate
   if (!isAuthenticated || user?.role !== "admin") {
@@ -1280,7 +1293,8 @@ function SuperAdminPage() {
                       🔒 Private Course (Live Exam Only — Disable Public Self-Practice)
                     </div>
                     <div className="text-[11px] text-muted-foreground mt-0.5">
-                      Students cannot self-practice or view questions in public vault; quizzes are unlocked only when an Admin or Instructor starts a live exam room.
+                      Students cannot self-practice or view questions in public vault; quizzes are
+                      unlocked only when an Admin or Instructor starts a live exam room.
                     </div>
                   </div>
                 </label>
@@ -1343,7 +1357,10 @@ function SuperAdminPage() {
                                 courseThreshold: course.passThresholdPct,
                                 brandingDefaultThreshold: branding.defaultPassThresholdPct,
                               })}
-                              %{typeof course.passThresholdPct === "number" ? " (Course)" : " (Global)"}
+                              %
+                              {typeof course.passThresholdPct === "number"
+                                ? " (Course)"
+                                : " (Global)"}
                             </span>
                           </span>
                         </div>
@@ -1430,7 +1447,7 @@ function SuperAdminPage() {
                         </span>
                         <Link
                           to="/dashboard"
-                          search={{ tab: "ai_creator", courseId: course.id } as any}
+                          search={{ tab: "ai_creator", courseId: course.id, editQuizId: undefined }}
                           className="text-[11px] text-primary hover:underline font-bold"
                         >
                           Open Question Builder in Studio →
@@ -1497,7 +1514,11 @@ function SuperAdminPage() {
                                 </button>
                                 <Link
                                   to="/dashboard"
-                                  search={{ tab: "ai_creator", editQuizId: q.id } as any}
+                                  search={{
+                                    tab: "ai_creator",
+                                    editQuizId: q.id,
+                                    courseId: undefined,
+                                  }}
                                   className="text-[11px] font-bold text-primary hover:underline"
                                 >
                                   Edit Questions →
@@ -2158,8 +2179,8 @@ function SuperAdminPage() {
                         Global Default Passing Threshold (% for Certificates)
                       </div>
                       <div className="text-[11px] text-muted-foreground">
-                        Minimum accuracy percentage required to pass and unlock official certificates
-                        when a course does not define its own threshold.
+                        Minimum accuracy percentage required to pass and unlock official
+                        certificates when a course does not define its own threshold.
                       </div>
                     </div>
                     <input
@@ -2489,11 +2510,7 @@ function SuperAdminPage() {
               new Set(certificates.map((c) => c.quizTitle).filter(Boolean)),
             );
             const uniqueCertRegions = Array.from(
-              new Set(
-                certificates
-                  .map((c) => c.regionName || "Dhaka Range")
-                  .filter(Boolean),
-              ),
+              new Set(certificates.map((c) => c.regionName || "Dhaka Range").filter(Boolean)),
             );
             const filteredCerts = certificates.filter((c) => {
               if (
@@ -2572,10 +2589,10 @@ function SuperAdminPage() {
                         />
                         <div className="flex-1 text-xs text-muted-foreground leading-snug">
                           Current active policy:{" "}
-                          <strong className="text-foreground">{globalThreshold}%</strong> minimum accuracy.
-                          Examinees scoring below{" "}
-                          <strong className="text-destructive">{globalThreshold}%</strong> are marked{" "}
-                          <strong>FAILED</strong> and do not receive a certificate.
+                          <strong className="text-foreground">{globalThreshold}%</strong> minimum
+                          accuracy. Examinees scoring below{" "}
+                          <strong className="text-destructive">{globalThreshold}%</strong> are
+                          marked <strong>FAILED</strong> and do not receive a certificate.
                         </div>
                       </div>
                     </div>
@@ -2597,7 +2614,8 @@ function SuperAdminPage() {
                           Per-Course Passing Threshold Overrides
                         </h3>
                         <p className="text-[11px] text-muted-foreground">
-                          Leave blank to inherit the {globalThreshold}% global threshold, or enter a custom % and press Enter.
+                          Leave blank to inherit the {globalThreshold}% global threshold, or enter a
+                          custom % and press Enter.
                         </p>
                       </div>
                       <span className="rounded-full bg-primary/10 px-3 py-1 font-mono text-[11px] font-bold text-primary">
@@ -2690,7 +2708,8 @@ function SuperAdminPage() {
                         <span>All Issued Verifiable Certificates ({filteredCerts.length})</span>
                       </h3>
                       <p className="text-xs text-muted-foreground">
-                        Only examinees meeting their assessment passing threshold are issued certificates here.
+                        Only examinees meeting their assessment passing threshold are issued
+                        certificates here.
                       </p>
                     </div>
 
@@ -2885,12 +2904,11 @@ function SuperAdminPage() {
                       <div>
                         <h3 className="font-display text-sm font-black text-foreground flex items-center gap-2">
                           <ShieldAlert className="h-4 w-4 text-amber-500" />
-                          <span>
-                            Revoked Certificates Registry ({revokedCertificates.length})
-                          </span>
+                          <span>Revoked Certificates Registry ({revokedCertificates.length})</span>
                         </h3>
                         <p className="text-xs text-muted-foreground">
-                          Revoked credentials return &ldquo;Certificate Revoked&rdquo; on public /verify checks until restored.
+                          Revoked credentials return &ldquo;Certificate Revoked&rdquo; on public
+                          /verify checks until restored.
                         </p>
                       </div>
                     </div>
@@ -2936,7 +2954,8 @@ function SuperAdminPage() {
                         </span>
                       </h3>
                       <p className="text-xs text-muted-foreground">
-                        Displays both qualified candidates (certificate issued) and non-passing attempts blocked by threshold policy.
+                        Displays both qualified candidates (certificate issued) and non-passing
+                        attempts blocked by threshold policy.
                       </p>
                     </div>
                   </div>
@@ -2966,9 +2985,7 @@ function SuperAdminPage() {
                               (s) => s.id === r.sessionId || s.pin === r.pin,
                             );
                             const sessQuiz = sess
-                              ? quizzes.find(
-                                  (q) => q.id === sess.quizId || q.slug === sess.quizId,
-                                )
+                              ? quizzes.find((q) => q.id === sess.quizId || q.slug === sess.quizId)
                               : undefined;
                             const sessCourse = sessQuiz?.courseId
                               ? courses.find((c) => c.id === sessQuiz.courseId)
@@ -3017,9 +3034,7 @@ function SuperAdminPage() {
                                   >
                                     {r.accuracyPct}%
                                   </span>{" "}
-                                  <span className="text-muted-foreground">
-                                    / {effThreshold}%
-                                  </span>
+                                  <span className="text-muted-foreground">/ {effThreshold}%</span>
                                 </td>
                                 <td className="p-3 text-center font-mono font-bold text-foreground">
                                   {r.score.toLocaleString()}
@@ -3029,7 +3044,9 @@ function SuperAdminPage() {
                                     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400">
                                       <CheckCircle2 className="h-3 w-3" />
                                       <span>
-                                        {hasCert ? "PASSED · Cert Issued" : "PASSED · Revoked/Pending"}
+                                        {hasCert
+                                          ? "PASSED · Cert Issued"
+                                          : "PASSED · Revoked/Pending"}
                                       </span>
                                     </span>
                                   ) : (

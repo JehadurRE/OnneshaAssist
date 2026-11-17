@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { GameSession, CertificateData } from '@/lib/types';
-import { useLanguage } from '@/lib/i18n';
-import { Confetti } from '@/components/common/Confetti';
-import { CertificateView } from '@/components/common/CertificateView';
-import { db, formatDeterministicCertNumber } from '@/lib/db';
-import { serverVerifyCertificate } from '@/lib/server-session';
+import React, { useEffect, useState } from "react";
+import { GameSession, CertificateData } from "@/lib/types";
+import { useLanguage } from "@/lib/i18n";
+import { Confetti } from "@/components/common/Confetti";
+import { CertificateView } from "@/components/common/CertificateView";
+import { db, formatDeterministicCertNumber } from "@/lib/db";
+import { serverVerifyCertificate } from "@/lib/server-session";
 import {
   compareParticipantsByMerit,
   computeParticipantAccuracyPct,
@@ -12,10 +12,20 @@ import {
   isPassingScore,
   resolveOrgName,
   resolvePassThresholdPct,
-} from '@/lib/scoring';
-import { downloadMeritGazettePdf } from '@/lib/pdf-generator';
-import { Award, FileSpreadsheet, FileDown, Lock, RotateCcw, ShieldCheck, Trophy, Users, X } from 'lucide-react';
-import { audioEngine } from '@/lib/audio-engine';
+} from "@/lib/scoring";
+import { downloadMeritGazettePdf } from "@/lib/pdf-generator";
+import {
+  Award,
+  FileSpreadsheet,
+  FileDown,
+  Lock,
+  RotateCcw,
+  ShieldCheck,
+  Trophy,
+  Users,
+  X,
+} from "lucide-react";
+import { audioEngine } from "@/lib/audio-engine";
 
 interface HostPodiumProps {
   session: GameSession;
@@ -85,7 +95,7 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
       const verifiedRes = await serverVerifyCertificate({
         data: {
           certId: certNo,
-          origin: typeof window !== 'undefined' ? window.location.origin : undefined,
+          origin: typeof window !== "undefined" ? window.location.origin : undefined,
         },
       });
       if (verifiedRes.success && verifiedRes.certificate) {
@@ -93,13 +103,15 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
         setSelectedCert(verifiedRes.certificate);
         return;
       }
-    } catch {}
+    } catch {
+      // ignore certificate verification network fallback
+    }
     const cert: CertificateData = {
       id: `cert-${certNo.toLowerCase()}`,
       certificateNumber: certNo,
       studentName: player.nickname,
       studentRoll: player.rollNumber || `2026-${100 + rank}`,
-      regionName: player.regionName || 'Dhaka Range',
+      regionName: player.regionName || "Dhaka Range",
       quizTitle: session.quizTitleBn || session.quizTitleEn,
       scorePct: accuracyPct,
       accuracyPercent: accuracyPct,
@@ -111,10 +123,10 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
       totalParticipants: sorted.length,
       issueDate: new Date().toISOString().slice(0, 10),
       organizationName: resolveOrgName(branding),
-      institutionName: branding.institutionTitle || 'Onnesha Assessment Arena',
-      instructorName: 'Chief Assessment Officer',
+      institutionName: branding.institutionTitle || "Onnesha Assessment Arena",
+      instructorName: "Chief Assessment Officer",
       verificationUrl:
-        typeof window !== 'undefined'
+        typeof window !== "undefined"
           ? `${window.location.origin}/verify/${certNo}`
           : `/verify/${certNo}`,
       verified: true,
@@ -123,29 +135,35 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
   };
 
   const handleExportCsv = () => {
-    const headers = ['Rank', 'Name', 'Roll Number', 'Score', 'Accuracy %', `Status (>=${passThresholdPct}%)`];
-    const escapeCell = (value: string | number) =>
-      `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const headers = [
+      "Rank",
+      "Name",
+      "Roll Number",
+      "Score",
+      "Accuracy %",
+      `Status (>=${passThresholdPct}%)`,
+    ];
+    const escapeCell = (value: string | number) => `"${String(value ?? "").replace(/"/g, '""')}"`;
     const rows = sorted.map((p, idx) => {
       const { accuracyPct, passed } = getPlayerEval(p);
       return [
         idx + 1,
         p.nickname,
-        p.rollNumber || 'N/A',
+        p.rollNumber || "N/A",
         p.score,
         `${accuracyPct}%`,
-        passed ? 'PASSED' : 'FAILED',
+        passed ? "PASSED" : "FAILED",
       ];
     });
     const csvBody = [
-      headers.map(escapeCell).join(','),
-      ...rows.map((r) => r.map(escapeCell).join(',')),
-    ].join('\r\n');
-    const blob = new Blob(['\uFEFF' + csvBody], { type: 'text/csv;charset=utf-8;' });
+      headers.map(escapeCell).join(","),
+      ...rows.map((r) => r.map(escapeCell).join(",")),
+    ].join("\r\n");
+    const blob = new Blob(["\uFEFF" + csvBody], { type: "text/csv;charset=utf-8;" });
     const objectUrl = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', objectUrl);
-    link.setAttribute('download', `Merit_List_${session.pin}.csv`);
+    const link = document.createElement("a");
+    link.setAttribute("href", objectUrl);
+    link.setAttribute("download", `Merit_List_${session.pin}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -163,10 +181,10 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
         </div>
 
         <h1 className="font-display text-3xl sm:text-5xl font-black text-foreground">
-          {lang === 'bn' ? 'বিজয়ীদের সংবর্ধনা ও পডিয়াম' : 'Grand Podium & Awards'}
+          {lang === "bn" ? "বিজয়ীদের সংবর্ধনা ও পডিয়াম" : "Grand Podium & Awards"}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          {session.quizTitleBn || session.quizTitleEn} · {sorted.length} {t('players_connected')}
+          {session.quizTitleBn || session.quizTitleEn} · {sorted.length} {t("players_connected")}
         </p>
 
         {/* 3D-Style Podium Stand */}
@@ -298,7 +316,7 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
             className="flex items-center gap-2 rounded-2xl border border-border bg-background px-5 py-3 text-xs font-bold text-foreground shadow-sm hover:bg-accent transition-all"
           >
             <FileSpreadsheet className="h-4 w-4 text-emerald-500" />
-            <span>{lang === 'bn' ? 'মেধা তালিকা (CSV) ডাউনলোড' : 'Export Merit CSV'}</span>
+            <span>{lang === "bn" ? "মেধা তালিকা (CSV) ডাউনলোড" : "Export Merit CSV"}</span>
           </button>
 
           <button
@@ -309,7 +327,7 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
                 const incorrectCount = ansList.filter(
                   (a) =>
                     !a.isCorrect &&
-                    ((a.selectedOptionIds && a.selectedOptionIds.length > 0) || !!a.writtenAnswer)
+                    ((a.selectedOptionIds && a.selectedOptionIds.length > 0) || !!a.writtenAnswer),
                 ).length;
                 const evalRes = getPlayerEval(p);
                 return {
@@ -329,7 +347,7 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
               });
               downloadMeritGazettePdf({
                 quizTitle: session.quizTitleBn || session.quizTitleEn,
-                regionLabel: session.settings.allowedRegionName || 'All Divisions',
+                regionLabel: session.settings.allowedRegionName || "All Divisions",
                 participants,
                 branding,
                 passThresholdPct,
@@ -338,7 +356,9 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
             className="flex items-center gap-2 rounded-2xl border border-border bg-background px-5 py-3 text-xs font-bold text-foreground shadow-sm hover:bg-accent transition-all"
           >
             <FileDown className="h-4 w-4 text-primary" />
-            <span>{lang === 'bn' ? 'অফিসিয়াল মেধা তালিকা (PDF)' : 'Download Merit Gazette PDF'}</span>
+            <span>
+              {lang === "bn" ? "অফিসিয়াল মেধা তালিকা (PDF)" : "Download Merit Gazette PDF"}
+            </span>
           </button>
 
           <button
@@ -346,7 +366,7 @@ export const HostPodium: React.FC<HostPodiumProps> = ({ session, onPlayAgain }) 
             className="flex items-center gap-2 rounded-2xl bg-primary px-6 py-3 text-xs font-extrabold text-primary-foreground shadow-md hover:bg-primary/90 transition-all"
           >
             <RotateCcw className="h-4 w-4" />
-            <span>{t('play_again')}</span>
+            <span>{t("play_again")}</span>
           </button>
         </div>
       </div>

@@ -6,13 +6,27 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { db } from "@/lib/db";
 import { isQuizPrivate } from "@/lib/sanjibon-seed-data";
-import { Check, CheckCircle2, Code2, Copy, Key, Play, RefreshCw, Send, Terminal, Webhook } from "lucide-react";
+import {
+  Check,
+  CheckCircle2,
+  Code2,
+  Copy,
+  Key,
+  Play,
+  RefreshCw,
+  Send,
+  Terminal,
+  Webhook,
+} from "lucide-react";
 
 export const Route = createFileRoute("/developers")({
   head: () => ({
     meta: [
       { title: "Developer API & LMS Integrations · Onnesha Arena" },
-      { name: "description", content: "REST APIs, Webhooks, and LTI 1.3 integration documentation." },
+      {
+        name: "description",
+        content: "REST APIs, Webhooks, and LTI 1.3 integration documentation.",
+      },
     ],
   }),
   component: DevelopersPage,
@@ -24,16 +38,16 @@ function DevelopersPage() {
   const isStaff = isAuthenticated && (user?.role === "admin" || user?.role === "instructor");
   const [apiKey, setApiKey] = useState("onn_live_9k28al90p482910");
   const [copied, setCopied] = useState(false);
-  const [selectedEndpoint, setSelectedEndpoint] = useState<"get_quizzes" | "get_certificate" | "get_roster">("get_quizzes");
+  const [selectedEndpoint, setSelectedEndpoint] = useState<
+    "get_quizzes" | "get_certificate" | "get_roster"
+  >("get_quizzes");
   const [apiResponse, setApiResponse] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const apiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-      if (apiTimerRef.current) clearTimeout(apiTimerRef.current);
     };
   }, []);
 
@@ -53,61 +67,60 @@ function DevelopersPage() {
     }
   };
 
-  const handleRunApiTest = () => {
+  const handleRunApiTest = async () => {
     setIsLoading(true);
-    if (apiTimerRef.current) clearTimeout(apiTimerRef.current);
-    apiTimerRef.current = setTimeout(() => {
+    try {
       if (selectedEndpoint === "get_quizzes") {
-        const courses = db.getCourses();
-        const visibleQuizzes = isStaff
-          ? db.getQuizzes()
-          : db.getQuizzes().filter((q) => !isQuizPrivate(q, courses));
-        const data = visibleQuizzes.slice(0, 3).map((q) => ({
-          id: q.id,
-          slug: q.slug,
-          title: q.titleEn,
-          category: q.categoryEn,
-          questionCount: q.questions.length,
-        }));
-        setApiResponse(JSON.stringify({ status: "success", count: data.length, data }, null, 2));
+        const res = await fetch("/api/v1/quizzes");
+        const json = await res.json();
+        setApiResponse(JSON.stringify(json, null, 2));
       } else if (selectedEndpoint === "get_certificate") {
-        if (!isStaff) {
-          setApiResponse(
-            JSON.stringify(
-              {
-                status: "auth_required",
-                message: "Sign in as Instructor or Admin to query live issued certificates. Public checks use /verify/<certId>.",
-              },
-              null,
-              2,
-            ),
-          );
-        } else {
-          const certs = db.getCertificates();
-          setApiResponse(JSON.stringify({ status: "success", count: certs.length, certificates: certs.slice(0, 5) }, null, 2));
-        }
+        const sampleCert =
+          (isStaff ? db.getCertificates()[0]?.certificateNumber : undefined) || "ONN-4821-9982";
+        const res = await fetch(`/api/v1/certificates/${encodeURIComponent(sampleCert)}`);
+        const json = await res.json();
+        setApiResponse(JSON.stringify(json, null, 2));
       } else {
+        const res = await fetch("/api/v1/courses");
+        const coursesJson = await res.json();
         if (!isStaff) {
           setApiResponse(
             JSON.stringify(
               {
-                status: "auth_required",
-                message: "Candidate roster PII is redacted for unauthenticated requests. Sign in as staff to inspect.",
-                sampleRedacted: [
-                  { id: "sample-1", rollNumber: "DEMO-101", regionName: "Dhaka Range" },
-                ],
+                status: "partial_public",
+                message:
+                  "Public catalog returned below. Candidate roster PII requires authenticated staff session.",
+                courses: coursesJson,
               },
               null,
               2,
             ),
           );
         } else {
-          const roster = db.getRoster().slice(0, 3);
-          setApiResponse(JSON.stringify({ status: "success", count: roster.length, roster }, null, 2));
+          const roster = db.getRoster().slice(0, 5);
+          setApiResponse(
+            JSON.stringify(
+              { status: "success", count: roster.length, coursesCount: coursesJson.count, roster },
+              null,
+              2,
+            ),
+          );
         }
       }
+    } catch (err) {
+      setApiResponse(
+        JSON.stringify(
+          {
+            status: "error",
+            message: err instanceof Error ? err.message : "Failed to reach live /api/v1 endpoint.",
+          },
+          null,
+          2,
+        ),
+      );
+    } finally {
       setIsLoading(false);
-    }, 400);
+    }
   };
 
   return (
@@ -135,9 +148,13 @@ function DevelopersPage() {
             <div>
               <div className="flex items-center gap-2">
                 <Key className="h-4 w-4 text-primary" />
-                <h3 className="font-display text-base font-bold text-foreground">Active Production API Key</h3>
+                <h3 className="font-display text-base font-bold text-foreground">
+                  Active Production API Key
+                </h3>
               </div>
-              <p className="text-xs text-muted-foreground mt-0.5">Use this token in your Authorization Bearer header.</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Use this token in your Authorization Bearer header.
+              </p>
             </div>
 
             <div className="flex items-center gap-2">
@@ -150,7 +167,11 @@ function DevelopersPage() {
                 className="rounded-xl border border-border p-2 text-foreground hover:bg-accent"
                 title="Copy API Key"
               >
-                {copied ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+                {copied ? (
+                  <Check className="h-4 w-4 text-emerald-500" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
               </button>
               <button
                 type="button"
@@ -170,7 +191,8 @@ function DevelopersPage() {
             <Key className="h-5 w-5 text-primary mb-2" />
             <h3 className="font-display text-sm font-bold text-foreground">REST JSON API</h3>
             <p className="text-xs text-muted-foreground mt-1">
-              Create quizzes, fetch candidate scorecards, and query rankings via SQLite-backed JSON endpoints.
+              Create quizzes, fetch candidate scorecards, and query rankings via SQLite-backed JSON
+              endpoints.
             </p>
           </div>
 
@@ -178,7 +200,8 @@ function DevelopersPage() {
             <Webhook className="h-5 w-5 text-emerald-500 mb-2" />
             <h3 className="font-display text-sm font-bold text-foreground">Instant Webhooks</h3>
             <p className="text-xs text-muted-foreground mt-1">
-              Receive live webhook events when a candidate finishes an exam or when an invigilator confirms an OMR batch.
+              Receive live webhook events when a candidate finishes an exam or when an invigilator
+              confirms an OMR batch.
             </p>
           </div>
 
@@ -199,13 +222,19 @@ function DevelopersPage() {
                 <Terminal className="h-4 w-4 text-primary" />
                 <span>Interactive REST API Sandbox</span>
               </h3>
-              <p className="text-xs text-muted-foreground">Test live database queries against the local SQLite engine.</p>
+              <p className="text-xs text-muted-foreground">
+                Test live database queries against the local SQLite engine.
+              </p>
             </div>
 
             <div className="flex items-center gap-2">
               <select
                 value={selectedEndpoint}
-                onChange={(e) => setSelectedEndpoint(e.target.value as any)}
+                onChange={(e) =>
+                  setSelectedEndpoint(
+                    e.target.value as "get_quizzes" | "get_certificate" | "get_roster",
+                  )
+                }
                 className="rounded-xl border border-border bg-background px-3 py-1.5 font-mono text-xs font-bold text-foreground outline-none focus:border-primary"
               >
                 <option value="get_quizzes">GET /v1/quizzes</option>
@@ -227,7 +256,7 @@ function DevelopersPage() {
 
           <pre className="overflow-x-auto rounded-2xl bg-muted/60 p-4 font-mono text-xs text-foreground leading-relaxed max-h-72 overflow-y-auto">
             {apiResponse ||
-`// Click "Execute Query" above to test response from live SQLite repository.
+              `// Click "Execute Query" above to test response from live SQLite repository.
 {
   "endpoint": "${selectedEndpoint}",
   "authenticated": true,

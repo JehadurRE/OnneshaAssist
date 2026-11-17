@@ -68,6 +68,7 @@ import {
   resolvePassThresholdPct,
   resolveQuestionTimeLimitSec,
   resolveStartCountdownSec,
+  splitBetweenQuestionDelays,
 } from "./scoring";
 import {
   anchorCertificateToRekor,
@@ -131,6 +132,8 @@ interface PersistentStoreData {
   users: ManagedUser[];
   customQuizzes: Quiz[];
   deletedQuizIds?: string[] | undefined;
+  deletedRegionIds?: string[] | undefined;
+  deletedCourseIds?: string[] | undefined;
   examSessions: ExamSessionRecord[];
   examResults: ExamResultRecord[];
   certificates: CertificateData[];
@@ -301,10 +304,14 @@ export function mergeSeededStoreData<
     courses: Course[];
     roster: RosterStudent[];
     purgedSampleData?: boolean | undefined;
+    deletedRegionIds?: string[] | undefined;
+    deletedCourseIds?: string[] | undefined;
   },
 >(current: T): T {
+  const deletedRegionSet = new Set(current.deletedRegionIds || []);
   const regions = [...current.regions];
   for (const defReg of DEFAULT_REGIONS) {
+    if (deletedRegionSet.has(defReg.id)) continue;
     const idx = regions.findIndex((r) => r.id === defReg.id);
     if (idx === -1) {
       regions.push(defReg);
@@ -324,8 +331,10 @@ export function mergeSeededStoreData<
     };
   }
 
+  const deletedCourseSet = new Set(current.deletedCourseIds || []);
   const courses = [...current.courses];
   for (const defCourse of DEFAULT_COURSES) {
+    if (deletedCourseSet.has(defCourse.id)) continue;
     const existingIdx = courses.findIndex((c) => c.id === defCourse.id);
     if (existingIdx === -1) {
       if (defCourse.id === "course-sanjibon-ai-dm") {
@@ -454,9 +463,10 @@ export function deleteQuizInStore<
   return true;
 }
 
-export function clearDeletedQuizTokensInStore<
-  T extends { deletedQuizIds?: string[] | undefined },
->(store: T, quiz: Pick<Quiz, "id" | "slug">): void {
+export function clearDeletedQuizTokensInStore<T extends { deletedQuizIds?: string[] | undefined }>(
+  store: T,
+  quiz: Pick<Quiz, "id" | "slug">,
+): void {
   if (!Array.isArray(store.deletedQuizIds) || store.deletedQuizIds.length === 0) return;
   store.deletedQuizIds = store.deletedQuizIds.filter(
     (tok) => tok !== quiz.id && (!quiz.slug || tok !== quiz.slug),
@@ -571,12 +581,18 @@ function loadInitialStore(): PersistentStoreData {
           );
           const purged = !!parsed.purgedSampleData;
           return mergeSeededStoreData({
-            regions: parsed.regions?.length ? parsed.regions : [...DEFAULT_REGIONS],
+            regions: Array.isArray(parsed.regions) ? parsed.regions : [...DEFAULT_REGIONS],
             roster: cleanedRoster,
-            courses: purged ? parsed.courses || [] : parsed.courses?.length ? parsed.courses : [...DEFAULT_COURSES],
+            courses: purged
+              ? parsed.courses || []
+              : parsed.courses?.length
+                ? parsed.courses
+                : [...DEFAULT_COURSES],
             users: ensureDefaultUsers(parsed.users),
             customQuizzes: parsed.customQuizzes || [],
             deletedQuizIds: parsed.deletedQuizIds || [],
+            deletedRegionIds: parsed.deletedRegionIds || [],
+            deletedCourseIds: parsed.deletedCourseIds || [],
             examSessions: parsed.examSessions || [],
             examResults: cleanedResults,
             certificates: parsed.certificates || [],
@@ -598,7 +614,9 @@ function loadInitialStore(): PersistentStoreData {
           // Preserve corrupted snapshot instead of silently overwriting it on next save
           try {
             fs.copyFileSync(storeFile, `${storeFile}.corrupt-${Date.now()}`);
-          } catch {}
+          } catch {
+            // ignore backup copy failure
+          }
           console.warn("[OnneshaServerStore] Store JSON corrupted; backed up copy:", parseErr);
         }
       }
@@ -614,6 +632,8 @@ function loadInitialStore(): PersistentStoreData {
     users: ensureDefaultUsers([]),
     customQuizzes: [],
     deletedQuizIds: [],
+    deletedRegionIds: [],
+    deletedCourseIds: [],
     examSessions: [],
     examResults: [],
     certificates: [],
@@ -728,7 +748,8 @@ function flushAllPendingDiskSync() {
 }
 
 function ensureShutdownHooks() {
-  if (globalStore.__onneshaShutdownHooked || typeof process === "undefined" || !process.once) return;
+  if (globalStore.__onneshaShutdownHooked || typeof process === "undefined" || !process.once)
+    return;
   globalStore.__onneshaShutdownHooked = true;
   process.once("SIGINT", flushAllPendingDiskSync);
   process.once("SIGTERM", flushAllPendingDiskSync);
@@ -869,10 +890,7 @@ export function isCertificateRevoked(
  * Bidirectionally syncs every user's `assignedCourseIds` when a course's `instructorIds` changes,
  * adding `course.id` for assigned instructors and removing it from unassigned instructors.
  */
-export function syncCourseInstructorsInStore(
-  users: ManagedUser[],
-  course: Course,
-): ManagedUser[] {
+export function syncCourseInstructorsInStore(users: ManagedUser[], course: Course): ManagedUser[] {
   if (!Array.isArray(course.instructorIds)) return users;
   const assignedSet = new Set(course.instructorIds);
   return users.map((u) => {
@@ -994,9 +1012,7 @@ export function deleteCertificateInStore(
   store.certificates = store.certificates.filter(
     (c) => c.certificateNumber.trim().toUpperCase() !== targetCertNo,
   );
-  const revoked = new Set(
-    (store.revokedCertificates || []).map((c) => c.trim().toUpperCase()),
-  );
+  const revoked = new Set((store.revokedCertificates || []).map((c) => c.trim().toUpperCase()));
   revoked.add(targetCertNo);
   store.revokedCertificates = [...revoked];
   return true;
@@ -1079,7 +1095,8 @@ function recalculateSessionMetrics(session: ServerLiveSession) {
 
   const isEnded = session.phase === "podium" || session.phase === "finished";
   const humans = all.filter((p) => !p.isBot);
-  const rankSource = isEnded && humans.length > 0 ? sortParticipants([...humans]) : sortParticipants([...all]);
+  const rankSource =
+    isEnded && humans.length > 0 ? sortParticipants([...humans]) : sortParticipants([...all]);
 
   rankSource.forEach((p, idx) => {
     const entry = session.participants[p.id];
@@ -1421,10 +1438,7 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
     ];
 
     // Remove any previous results for this pin before writing final results
-    store.examResults = [
-      ...store.examResults.filter((r) => r.pin !== targetPin),
-      ...builtResults,
-    ];
+    store.examResults = [...store.examResults.filter((r) => r.pin !== targetPin), ...builtResults];
     finalResultsForCerts = builtResults;
     totalParticipantsForCerts = count;
   }
@@ -1550,6 +1564,7 @@ function advanceSessionToQuestion(
   };
   const now = Date.now();
   session.phase = "question";
+  session.phaseEndsAt = undefined;
   session.currentQuestionIndex = idx;
   session.currentQuestion = effectiveQuestion;
   session.pausedAt = undefined;
@@ -1638,6 +1653,9 @@ export const serverGetBootstrapData = createServerFn({ method: "GET" }).handler(
       ? store.customQuizzes
       : store.customQuizzes.filter((q) => !isQuizPrivate(q, store.courses)),
     deletedQuizIds: store.deletedQuizIds || [],
+    deletedRegionIds: store.deletedRegionIds || [],
+    deletedCourseIds: store.deletedCourseIds || [],
+    purgedSampleData: !!store.purgedSampleData,
     hasServerGeminiKey: isStaff ? resolveServerGeminiApiKey(store).source !== "none" : false,
     examSessions: isStaff ? store.examSessions : [],
     examResults: isStaff ? store.examResults : [],
@@ -1650,14 +1668,39 @@ export const serverGetBootstrapData = createServerFn({ method: "GET" }).handler(
   };
 });
 
+const serverLoginFailureTracker = new Map<string, { count: number; lockedUntil: number }>();
+
 export const serverAuthenticateUser = createServerFn({ method: "POST" })
   .validator((data: { email: string; password: string }) => data)
   .handler(async ({ data }) => {
     const store = getStore();
     const cleanEmail = (data.email || "").trim().toLowerCase();
+    const now = Date.now();
+    const failureEntry = cleanEmail ? serverLoginFailureTracker.get(cleanEmail) : undefined;
+    if (failureEntry && failureEntry.lockedUntil > now) {
+      const waitSec = Math.max(1, Math.ceil((failureEntry.lockedUntil - now) / 1000));
+      return {
+        success: false,
+        error: `Too many failed login attempts for this account. Wait ${waitSec} seconds before retrying.`,
+      };
+    }
+
+    const recordFailedAttempt = () => {
+      if (!cleanEmail) return;
+      const prev = serverLoginFailureTracker.get(cleanEmail);
+      const activePrev = prev && prev.lockedUntil <= now ? prev : undefined;
+      const nextCount = (activePrev?.count ?? 0) + 1;
+      if (nextCount >= 5) {
+        serverLoginFailureTracker.set(cleanEmail, { count: 0, lockedUntil: now + 60 * 1000 });
+      } else {
+        serverLoginFailureTracker.set(cleanEmail, { count: nextCount, lockedUntil: 0 });
+      }
+    };
+
     const foundIdx = store.users.findIndex((u) => u.email.toLowerCase() === cleanEmail);
     const found = foundIdx >= 0 ? store.users[foundIdx] : undefined;
     if (!found) {
+      recordFailedAttempt();
       return {
         success: false,
         error: "Account not found. Check your email or use one of the demo credentials.",
@@ -1669,7 +1712,11 @@ export const serverAuthenticateUser = createServerFn({ method: "POST" })
 
     const check = verifyPasswordScrypt(data.password || "", found.passwordHash);
     if (!check.valid) {
+      recordFailedAttempt();
       return { success: false, error: "Incorrect password." };
+    }
+    if (cleanEmail) {
+      serverLoginFailureTracker.delete(cleanEmail);
     }
     if (check.needsRehash && foundIdx >= 0) {
       store.users[foundIdx] = {
@@ -1756,7 +1803,10 @@ export const serverRequestPhoneOtp = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const cleanPhone = normalizeBdPhone(data.phone);
     if (!/^01[3-9]\d{8}$/.test(cleanPhone)) {
-      return { success: false, error: "Please enter a valid 11-digit Bangladeshi mobile number (01XXXXXXXXX)." };
+      return {
+        success: false,
+        error: "Please enter a valid 11-digit Bangladeshi mobile number (01XXXXXXXXX).",
+      };
     }
 
     if (!globalStore.__onneshaPhoneOtps) {
@@ -1918,6 +1968,21 @@ export const serverSubmitSalesLead = createServerFn({ method: "POST" })
       store.salesLeads.length = 500;
     }
     scheduleDiskPersist();
+
+    const webhookUrl =
+      typeof process !== "undefined" ? process.env["SALES_WEBHOOK_URL"]?.trim() : undefined;
+    if (webhookUrl && /^https?:\/\//i.test(webhookUrl)) {
+      void fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: "sales_lead.created",
+          lead,
+        }),
+        signal: AbortSignal.timeout(4000),
+      }).catch((err) => console.warn("[OnneshaSales] Webhook dispatch notice:", err));
+    }
+
     return { success: true, leadId: lead.id };
   });
 
@@ -2462,7 +2527,10 @@ export async function handlePublicStandardEndpoint(request: Request): Promise<Re
     }
     const vcVerify = verifyCertificateCryptographically(raw, dataDir, store.certificates);
     if (vcVerify.status !== "verified_signed") {
-      return Response.json({ error: "Credential failed cryptographic verification" }, { status: 409 });
+      return Response.json(
+        { error: "Credential failed cryptographic verification" },
+        { status: 409 },
+      );
     }
     const checkpoint = findCoveringOtsCheckpoint(raw, store.ledgerCheckpoints);
     const enriched = enrichCertificateWithOtsCheckpoint(raw, store.ledgerCheckpoints);
@@ -2505,6 +2573,115 @@ export async function handlePublicStandardEndpoint(request: Request): Promise<Re
         "Access-Control-Allow-Origin": "*",
       },
     });
+  }
+
+  if (path === "/api/v1/health") {
+    return Response.json(
+      {
+        status: "ok",
+        service: "onnesha-arena",
+        updatedAt: store.updatedAt,
+        hasSigningKeys: Boolean(certKeys),
+      },
+      { headers: { "Access-Control-Allow-Origin": "*" } },
+    );
+  }
+
+  if (path === "/api/v1/courses") {
+    const publicCourses = store.courses
+      .filter((c) => !isCoursePrivate(c))
+      .map((c) => ({
+        id: c.id,
+        code: c.code,
+        titleEn: c.titleEn,
+        titleBn: c.titleBn,
+        categoryEn: c.categoryEn,
+        status: c.status,
+      }));
+    return Response.json(
+      { status: "success", count: publicCourses.length, data: publicCourses },
+      { headers: { "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=60" } },
+    );
+  }
+
+  if (path === "/api/v1/quizzes") {
+    const deletedSet = new Set(store.deletedQuizIds || []);
+    const allById = new Map<string, Quiz>();
+    for (const q of READY_MADE_PACKS) {
+      if (!deletedSet.has(q.id) && (!q.slug || !deletedSet.has(q.slug))) {
+        allById.set(q.id, q);
+      }
+    }
+    for (const q of store.customQuizzes) {
+      if (!deletedSet.has(q.id) && (!q.slug || !deletedSet.has(q.slug))) {
+        allById.set(q.id, q);
+      }
+    }
+    const publicQuizzes = Array.from(allById.values())
+      .filter((q) => !isQuizPrivate(q, store.courses))
+      .map((q) => ({
+        id: q.id,
+        slug: q.slug,
+        titleEn: q.titleEn,
+        titleBn: q.titleBn,
+        categoryEn: q.categoryEn,
+        courseId: q.courseId,
+        questionCount: q.questions.length,
+      }));
+    return Response.json(
+      { status: "success", count: publicQuizzes.length, data: publicQuizzes },
+      { headers: { "Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=60" } },
+    );
+  }
+
+  const v1CertMatch = path.match(/^\/api\/v1\/certificates\/([^/]+)$/i);
+  if (v1CertMatch && v1CertMatch[1]) {
+    const certNo = decodeURIComponent(v1CertMatch[1]).trim();
+    if (isCertificateRevoked(store, certNo)) {
+      return Response.json(
+        { status: "revoked", verified: false, error: "Credential has been revoked" },
+        { status: 404, headers: { "Access-Control-Allow-Origin": "*" } },
+      );
+    }
+    const raw = store.certificates.find(
+      (c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase(),
+    );
+    if (!raw) {
+      return Response.json(
+        {
+          status: "not_found",
+          verified: false,
+          error: "Credential not found",
+          certificateNumber: certNo,
+        },
+        { status: 404, headers: { "Access-Control-Allow-Origin": "*" } },
+      );
+    }
+    const vcVerify = verifyCertificateCryptographically(raw, dataDir, store.certificates);
+    const enriched = enrichCertificateWithOtsCheckpoint(raw, store.ledgerCheckpoints);
+    return Response.json(
+      {
+        status: vcVerify.status === "tampered" ? "tampered" : "verified",
+        verified: vcVerify.status !== "tampered" && raw.verified !== false,
+        verificationStatus: vcVerify.status,
+        certificate: {
+          certificateNumber: enriched.certificateNumber,
+          studentName: enriched.studentName,
+          studentRoll: enriched.studentRoll,
+          regionName: enriched.regionName,
+          quizTitle: enriched.quizTitle,
+          score: enriched.score,
+          totalMarks: enriched.totalMarks ?? enriched.totalPoints,
+          rank: enriched.rank,
+          accuracyPercent: enriched.accuracyPercent,
+          issueDate: enriched.issueDate,
+          chainHash: enriched.chainHash,
+          rekorStatus: enriched.rekorStatus,
+          otsStatus: enriched.otsStatus,
+        },
+      },
+      { headers: { "Access-Control-Allow-Origin": "*" } },
+    );
   }
 
   return null;
@@ -2673,6 +2850,11 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
           } else {
             store.regions.push(data.region);
           }
+          if (Array.isArray(store.deletedRegionIds)) {
+            store.deletedRegionIds = store.deletedRegionIds.filter(
+              (rid) => rid !== data.region!.id,
+            );
+          }
           scheduleDiskPersist();
         }
         break;
@@ -2680,6 +2862,9 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
       case "delete_region": {
         if (data.regionId) {
           store.regions = store.regions.filter((r) => r.id !== data.regionId);
+          const delRegs = new Set(store.deletedRegionIds || []);
+          delRegs.add(data.regionId);
+          store.deletedRegionIds = Array.from(delRegs);
           scheduleDiskPersist();
         }
         break;
@@ -2740,6 +2925,11 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
           } else {
             store.courses.unshift(data.course);
           }
+          if (Array.isArray(store.deletedCourseIds)) {
+            store.deletedCourseIds = store.deletedCourseIds.filter(
+              (cid) => cid !== data.course!.id,
+            );
+          }
           store.users = syncCourseInstructorsInStore(store.users, data.course);
           scheduleDiskPersist();
         }
@@ -2748,6 +2938,14 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
       case "delete_course": {
         if (data.courseId) {
           store.courses = store.courses.filter((c) => c.id !== data.courseId);
+          const delCourses = new Set(store.deletedCourseIds || []);
+          delCourses.add(data.courseId);
+          store.deletedCourseIds = Array.from(delCourses);
+          store.customQuizzes = store.customQuizzes.map((q) =>
+            q.courseId === data.courseId
+              ? { ...q, courseId: undefined, courseTitle: undefined }
+              : q,
+          );
           store.users = store.users.map((u) => {
             if (!(u.assignedCourseIds || []).includes(data.courseId!)) return u;
             return {
@@ -2847,7 +3045,13 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
           const certNo = (data.certificate.certificateNumber || "").trim();
           const studentName = (data.certificate.studentName || "").trim();
           const scoreVal = data.certificate.score;
-          if (!certNo || !studentName || typeof scoreVal !== "number" || !Number.isFinite(scoreVal) || scoreVal < 0) {
+          if (
+            !certNo ||
+            !studentName ||
+            typeof scoreVal !== "number" ||
+            !Number.isFinite(scoreVal) ||
+            scoreVal < 0
+          ) {
             return {
               success: false,
               error:
@@ -3000,12 +3204,9 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
           if (data.backup.courses?.length) store.courses = data.backup.courses;
           if (data.backup.users?.length) {
             const existingById = new Map(store.users.map((u) => [u.id, u]));
-            const existingByEmail = new Map(
-              store.users.map((u) => [u.email.toLowerCase(), u]),
-            );
+            const existingByEmail = new Map(store.users.map((u) => [u.email.toLowerCase(), u]));
             const mergedUsers = data.backup.users.map((u) => {
-              const existing =
-                existingById.get(u.id) || existingByEmail.get(u.email.toLowerCase());
+              const existing = existingById.get(u.id) || existingByEmail.get(u.email.toLowerCase());
               const hasValidHash =
                 typeof u.passwordHash === "string" && u.passwordHash.startsWith("scrypt:");
               return {
@@ -3090,6 +3291,9 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
       users: store.users.map(sanitizeUserForClient),
       customQuizzes: store.customQuizzes,
       deletedQuizIds: store.deletedQuizIds || [],
+      deletedRegionIds: store.deletedRegionIds || [],
+      deletedCourseIds: store.deletedCourseIds || [],
+      purgedSampleData: !!store.purgedSampleData,
       hasServerGeminiKey: resolveServerGeminiApiKey(store).source !== "none",
       branding: store.branding,
       salesLeads: actor?.role === "admin" ? store.salesLeads : [],
@@ -3106,7 +3310,8 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
 export function buildJoinDirectoryForSession(params: {
   roster: RosterStudent[];
   regions: Region[];
-  session?: Pick<ServerLiveSession, "phase" | "isSelfPractice" | "settings" | "participants"> | undefined;
+  session?:
+    Pick<ServerLiveSession, "phase" | "isSelfPractice" | "settings" | "participants"> | undefined;
   examResults?: ExamResultRecord[] | undefined;
 }) {
   const { roster, regions, session, examResults } = params;
@@ -3201,10 +3406,7 @@ export function buildJoinDirectoryForSession(params: {
   };
 }
 
-export function sanitizeLookupCandidate(
-  matched: RosterStudent,
-  isSeatLocked: boolean,
-) {
+export function sanitizeLookupCandidate(matched: RosterStudent, isSeatLocked: boolean) {
   return {
     id: matched.id,
     name: matched.name,
@@ -3278,7 +3480,8 @@ export const serverLookupCandidateByNumber = createServerFn({ method: "GET" })
     if (session.isSelfPractice) {
       return {
         success: false,
-        error: "Roster lookup is disabled in Self-Practice mode. Please enter your details under New Entry.",
+        error:
+          "Roster lookup is disabled in Self-Practice mode. Please enter your details under New Entry.",
       };
     }
 
@@ -3577,7 +3780,12 @@ export const serverCreateSession = createServerFn({ method: "POST" })
 
     sessions[pin] = newSession;
     scheduleLiveSessionsPersist();
-    return { success: true, serverNow: Date.now(), session: toHostSessionView(newSession), hostToken };
+    return {
+      success: true,
+      serverNow: Date.now(),
+      session: toHostSessionView(newSession),
+      hostToken,
+    };
   });
 
 export const serverGetSession = createServerFn({ method: "GET" })
@@ -3633,6 +3841,25 @@ export const serverGetSession = createServerFn({ method: "GET" })
         advanceSessionToQuestion(session, store, 0);
         scheduleLiveSessionsPersist();
       }
+    } else if (
+      session.phase === "chart" &&
+      session.phaseEndsAt &&
+      Date.now() >= session.phaseEndsAt - 150
+    ) {
+      const delays = splitBetweenQuestionDelays(session.settings.betweenQuestionSec);
+      const lbSec = delays.enabled ? delays.leaderboardSec : 0;
+      session.phase = "leaderboard";
+      session.phaseEndsAt = lbSec > 0 ? Date.now() + lbSec * 1000 : undefined;
+      recalculateSessionMetrics(session);
+      scheduleLiveSessionsPersist();
+    } else if (
+      session.phase === "leaderboard" &&
+      session.phaseEndsAt &&
+      Date.now() >= session.phaseEndsAt - 150
+    ) {
+      session.phaseEndsAt = undefined;
+      advanceSessionToQuestion(session, store);
+      scheduleLiveSessionsPersist();
     }
 
     // Fast 304-style delta short-circuit if nothing changed since client's last poll
@@ -3864,10 +4091,7 @@ export const serverJoinSession = createServerFn({ method: "POST" })
     }
 
     // 2b. Retake Guard: Skip examinees who already submitted >= configured minimum answers in the original exam
-    if (
-      session.settings.retakeForSessionId &&
-      session.settings.retakeSkipCompleted !== false
-    ) {
+    if (session.settings.retakeForSessionId && session.settings.retakeSkipCompleted !== false) {
       const minCompletedAnswers = resolveRetakeMinCompletedAnswers(
         session.settings.retakeMinCompletedAnswers,
       );
@@ -4261,12 +4485,18 @@ export const serverHostControl = createServerFn({ method: "POST" })
       case "show_chart": {
         session.pausedAt = undefined;
         session.phase = "chart";
+        const delays = splitBetweenQuestionDelays(session.settings.betweenQuestionSec);
+        const chartSec = delays.enabled ? delays.chartSec : 0;
+        session.phaseEndsAt = chartSec > 0 ? Date.now() + chartSec * 1000 : undefined;
         recalculateSessionMetrics(session);
         break;
       }
       case "show_leaderboard": {
         session.pausedAt = undefined;
         session.phase = "leaderboard";
+        const delays = splitBetweenQuestionDelays(session.settings.betweenQuestionSec);
+        const lbSec = delays.enabled ? delays.leaderboardSec : 0;
+        session.phaseEndsAt = lbSec > 0 ? Date.now() + lbSec * 1000 : undefined;
         recalculateSessionMetrics(session);
         break;
       }
@@ -4280,6 +4510,7 @@ export const serverHostControl = createServerFn({ method: "POST" })
       }
       case "end_game": {
         session.pausedAt = undefined;
+        session.phaseEndsAt = undefined;
         const alreadyEnded = session.phase === "podium" || session.phase === "finished";
         session.phase = "podium";
         recalculateSessionMetrics(session);

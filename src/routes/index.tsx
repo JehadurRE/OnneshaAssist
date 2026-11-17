@@ -92,9 +92,21 @@ function HomePage() {
       "Which Article of the Constitution of Bangladesh guarantees Freedom of Thought, Conscience, and Speech?",
     options: [
       { bn: "অনুচ্ছেদ ২৭ (আইনের সমতা)", en: "Article 27 (Equality before Law)", isCorrect: false },
-      { bn: "অনুচ্ছেদ ৩৯ (বাক ও ভাব প্রকাশ)", en: "Article 39 (Freedom of Thought & Speech)", isCorrect: true },
-      { bn: "অনুচ্ছেদ ৩২ (জীবন ও ব্যক্তিস্বাধীনতা)", en: "Article 32 (Protection of Right to Life)", isCorrect: false },
-      { bn: "অনুচ্ছেদ ৩৭ (সমাবেশের স্বাধীনতা)", en: "Article 37 (Freedom of Assembly)", isCorrect: false },
+      {
+        bn: "অনুচ্ছেদ ৩৯ (বাক ও ভাব প্রকাশ)",
+        en: "Article 39 (Freedom of Thought & Speech)",
+        isCorrect: true,
+      },
+      {
+        bn: "অনুচ্ছেদ ৩২ (জীবন ও ব্যক্তিস্বাধীনতা)",
+        en: "Article 32 (Protection of Right to Life)",
+        isCorrect: false,
+      },
+      {
+        bn: "অনুচ্ছেদ ৩৭ (সমাবেশের স্বাধীনতা)",
+        en: "Article 37 (Freedom of Assembly)",
+        isCorrect: false,
+      },
     ],
     explanationBn:
       "সংবিধানের ৩য় ভাগের ৩৯(২) অনুচ্ছেদ অনুসারে চিন্তা ও বিবেকের স্বাধীনতা এবং বাক-স্বাধীনতার নিশ্চয়তা প্রদান করা হয়েছে।",
@@ -110,33 +122,33 @@ function HomePage() {
     score: String(r.score),
   }));
 
-const DEMO_PREVIEW_CANDIDATES = [
-  {
-    id: "demo-1",
-    name: "Sample Candidate (Dhaka)",
-    rollNumber: "DEMO-101",
-    phone: "01700000101",
-    regionId: "reg-dhaka",
-    regionName: "Dhaka Range",
-    batch: "Demo Batch",
-  },
-  {
-    id: "demo-2",
-    name: "Sample Candidate (Chattogram)",
-    rollNumber: "DEMO-102",
-    phone: "01700000102",
-    regionId: "reg-chattogram",
-    regionName: "Chattogram Range",
-    batch: "Demo Batch",
-  },
-];
+  const DEMO_PREVIEW_CANDIDATES = [
+    {
+      id: "demo-1",
+      name: "Sample Candidate (Dhaka)",
+      rollNumber: "DEMO-101",
+      phone: "01700000101",
+      regionId: "reg-dhaka",
+      regionName: "Dhaka Range",
+      batch: "Demo Batch",
+    },
+    {
+      id: "demo-2",
+      name: "Sample Candidate (Chattogram)",
+      rollNumber: "DEMO-102",
+      phone: "01700000102",
+      regionId: "reg-chattogram",
+      regionName: "Chattogram Range",
+      batch: "Demo Batch",
+    },
+  ];
 
   const demoPool = isStaff ? realRoster : DEMO_PREVIEW_CANDIDATES;
   const matchedDemoCandidate = demoQuery.trim()
     ? demoPool.find(
         (c) =>
           (c.phone || "").includes(demoQuery.trim()) ||
-          c.rollNumber.toLowerCase() === demoQuery.trim().toLowerCase()
+          c.rollNumber.toLowerCase() === demoQuery.trim().toLowerCase(),
       )
     : demoPool[0];
 
@@ -150,12 +162,16 @@ const DEMO_PREVIEW_CANDIDATES = [
       setSampleScore(1.0);
       try {
         audioEngine.playCorrect();
-      } catch {}
+      } catch {
+        // ignore audio context error
+      }
     } else {
       setSampleScore(-0.25);
       try {
         audioEngine.playIncorrect();
-      } catch {}
+      } catch {
+        // ignore audio context error
+      }
     }
   };
 
@@ -183,23 +199,25 @@ const DEMO_PREVIEW_CANDIDATES = [
   const filteredPacks =
     selectedVaultCategory === "all"
       ? availablePacks.slice(0, 6)
-      : availablePacks.filter((p) => {
-          const tags = p.tags || [];
-          if (selectedVaultCategory === "bcs")
-            return p.categoryEn.includes("BCS") || p.titleEn.includes("BCS") || tags.includes("BCS");
-          if (selectedVaultCategory === "academy")
-            return tags.some(
-              (tag) =>
-                tag.includes("Defense") ||
-                tag.includes("Security") ||
-                tag.includes("General")
-            );
-          if (selectedVaultCategory === "varsity")
-            return p.categoryEn.includes("Science") || p.categoryEn.includes("General");
-          if (selectedVaultCategory === "ict")
-            return p.categoryEn.includes("ICT") || tags.includes("ICT");
-          return true;
-        }).slice(0, 6);
+      : availablePacks
+          .filter((p) => {
+            const tags = p.tags || [];
+            if (selectedVaultCategory === "bcs")
+              return (
+                p.categoryEn.includes("BCS") || p.titleEn.includes("BCS") || tags.includes("BCS")
+              );
+            if (selectedVaultCategory === "academy")
+              return tags.some(
+                (tag) =>
+                  tag.includes("Defense") || tag.includes("Security") || tag.includes("General"),
+              );
+            if (selectedVaultCategory === "varsity")
+              return p.categoryEn.includes("Science") || p.categoryEn.includes("General");
+            if (selectedVaultCategory === "ict")
+              return p.categoryEn.includes("ICT") || tags.includes("ICT");
+            return true;
+          })
+          .slice(0, 6);
 
   return (
     <div
@@ -297,10 +315,7 @@ const DEMO_PREVIEW_CANDIDATES = [
                       {t("enter_pin_prompt")}
                     </span>
                   </div>
-                  <Link
-                    to="/play"
-                    className="font-mono text-[11px] text-primary hover:underline"
-                  >
+                  <Link to="/play" className="font-mono text-[11px] text-primary hover:underline">
                     {lang === "bn" ? "রোল/মোবাইল লুকআপ →" : "Roll / Mobile Lookup →"}
                   </Link>
                 </div>
@@ -567,9 +582,7 @@ const DEMO_PREVIEW_CANDIDATES = [
                   <span className="font-bold text-foreground flex items-center gap-1.5">
                     <Phone className="h-3.5 w-3.5 text-primary" />
                     <span>
-                      {lang === "bn"
-                        ? "রস্টার মোবাইল / রোল সার্চ"
-                        : "Roster Mobile / Roll Lookup"}
+                      {lang === "bn" ? "রস্টার মোবাইল / রোল সার্চ" : "Roster Mobile / Roll Lookup"}
                     </span>
                   </span>
                   {realRoster.length > 0 && (
@@ -666,19 +679,27 @@ const DEMO_PREVIEW_CANDIDATES = [
                 {/* System Guarantees Bar */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
                   <div className="rounded-xl border border-border bg-muted/30 p-3">
-                    <div className="font-mono text-xs font-bold text-foreground">Tab-Switch Log</div>
-                    <div className="text-[11px] text-muted-foreground">Live host pardon control</div>
+                    <div className="font-mono text-xs font-bold text-foreground">
+                      Tab-Switch Log
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      Live host pardon control
+                    </div>
                   </div>
                   <div className="rounded-xl border border-border bg-muted/30 p-3">
                     <div className="font-mono text-xs font-bold text-foreground">Key Stripping</div>
                     <div className="text-[11px] text-muted-foreground">Zero answer key in DOM</div>
                   </div>
                   <div className="rounded-xl border border-border bg-muted/30 p-3">
-                    <div className="font-mono text-xs font-bold text-foreground">Host Seat Unlock</div>
+                    <div className="font-mono text-xs font-bold text-foreground">
+                      Host Seat Unlock
+                    </div>
                     <div className="text-[11px] text-muted-foreground">1-click device handoff</div>
                   </div>
                   <div className="rounded-xl border border-border bg-muted/30 p-3">
-                    <div className="font-mono text-xs font-bold text-foreground">CSV Bulk Roster</div>
+                    <div className="font-mono text-xs font-bold text-foreground">
+                      CSV Bulk Roster
+                    </div>
                     <div className="text-[11px] text-muted-foreground">Import with Region code</div>
                   </div>
                 </div>
@@ -731,7 +752,9 @@ const DEMO_PREVIEW_CANDIDATES = [
                 <Eye className="h-5 w-5" />
               </div>
               <h3 className="font-display text-base font-bold text-foreground">
-                {lang === "bn" ? "লাইভ অ্যান্টি-চিট প্রক্টর পালস" : "Live Proctor Telemetry & Pardon"}
+                {lang === "bn"
+                  ? "লাইভ অ্যান্টি-চিট প্রক্টর পালস"
+                  : "Live Proctor Telemetry & Pardon"}
               </h3>
               <p className="text-xs text-muted-foreground leading-relaxed">
                 {lang === "bn"
@@ -761,7 +784,9 @@ const DEMO_PREVIEW_CANDIDATES = [
                 <Wand2 className="h-5 w-5" />
               </div>
               <h3 className="font-display text-base font-bold text-foreground">
-                {lang === "bn" ? "Gemini 2.5 দ্বিভাষিক প্রশ্ন নির্মাতা" : "Gemini 2.5 Bilingual Paper Setter"}
+                {lang === "bn"
+                  ? "Gemini 2.5 দ্বিভাষিক প্রশ্ন নির্মাতা"
+                  : "Gemini 2.5 Bilingual Paper Setter"}
               </h3>
               <p className="text-xs text-muted-foreground leading-relaxed">
                 {lang === "bn"
@@ -775,7 +800,9 @@ const DEMO_PREVIEW_CANDIDATES = [
                 <FileSpreadsheet className="h-5 w-5" />
               </div>
               <h3 className="font-display text-base font-bold text-foreground">
-                {lang === "bn" ? "প্রিন্টযোগ্য A4 OMR শিট ও স্ক্যানার" : "Printable A4 OMR Bubble Sheets"}
+                {lang === "bn"
+                  ? "প্রিন্টযোগ্য A4 OMR শিট ও স্ক্যানার"
+                  : "Printable A4 OMR Bubble Sheets"}
               </h3>
               <p className="text-xs text-muted-foreground leading-relaxed">
                 {lang === "bn"
@@ -822,7 +849,9 @@ const DEMO_PREVIEW_CANDIDATES = [
               className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-bold text-foreground hover:border-primary/50 transition-all shrink-0"
             >
               <span>
-                {lang === "bn" ? "সকল ১৫টি প্রশ্নব্যাংক দেখুন →" : "Browse all 15 question vaults →"}
+                {lang === "bn"
+                  ? "সকল ১৫টি প্রশ্নব্যাংক দেখুন →"
+                  : "Browse all 15 question vaults →"}
               </span>
             </Link>
           </div>

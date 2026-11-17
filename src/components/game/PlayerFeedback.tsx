@@ -1,8 +1,8 @@
-import React from 'react';
-import { ParticipantAnswer, Question } from '@/lib/types';
-import { useLanguage } from '@/lib/i18n';
-import { computeSpeedBonusPct } from '@/lib/scoring';
-import { CheckCircle2, ChevronRight, Clock, Flame, Trophy, XCircle, Zap } from 'lucide-react';
+import React from "react";
+import { ParticipantAnswer, Question } from "@/lib/types";
+import { useLanguage } from "@/lib/i18n";
+import { computeSpeedBonusPct } from "@/lib/scoring";
+import { CheckCircle2, ChevronRight, Clock, Flame, Trophy, XCircle, Zap } from "lucide-react";
 
 interface PlayerFeedbackProps {
   answer?: ParticipantAnswer | undefined;
@@ -27,40 +27,40 @@ export const PlayerFeedback: React.FC<PlayerFeedbackProps> = ({
 }) => {
   const { lang, t } = useLanguage();
 
-  const isWritten = question.type === 'written' || question.type === 'fill_blank';
+  const isWritten = question.type === "written" || question.type === "fill_blank";
   const isTimedOut = !answer;
   const isCorrect = !!answer?.isCorrect;
 
   // Format official correct answer text for all 4 question styles
   const correctAnswerDisplay = isWritten
-    ? (question.acceptedAnswers && question.acceptedAnswers.length > 0
-        ? question.acceptedAnswers.join(' / ')
-        : 'Verified Key')
+    ? question.acceptedAnswers && question.acceptedAnswers.length > 0
+      ? question.acceptedAnswers.join(" / ")
+      : "Verified Key"
     : question.options
         .filter((o) => question.correctOptionIds.includes(o.id) || o.isCorrect)
-        .map((o) => (lang === 'bn' ? o.textBn : o.textEn))
-        .join(', ');
+        .map((o) => (lang === "bn" ? o.textBn : o.textEn))
+        .join(", ");
 
   // Format student's submitted answer text
   const studentAnswerDisplay = !answer
-    ? lang === 'bn'
-      ? 'সময় শেষ (উত্তর দেওয়া হয়নি)'
-      : 'Time Expired (Unattempted)'
+    ? lang === "bn"
+      ? "সময় শেষ (উত্তর দেওয়া হয়নি)"
+      : "Time Expired (Unattempted)"
     : isWritten
-      ? answer.writtenAnswer || '—'
+      ? answer.writtenAnswer || "—"
       : question.options
           .filter((o) => answer.selectedOptionIds?.includes(o.id))
-          .map((o) => (lang === 'bn' ? o.textBn : o.textEn))
-          .join(', ') || '—';
+          .map((o) => (lang === "bn" ? o.textBn : o.textEn))
+          .join(", ") || "—";
 
   return (
     <div
       className={`relative w-full max-w-lg overflow-hidden rounded-3xl border-2 p-6 sm:p-8 text-center shadow-tactical animate-in zoom-in-95 transition-all ${
         isTimedOut
-          ? 'border-amber-500/40 bg-card'
+          ? "border-amber-500/40 bg-card"
           : isCorrect
-            ? 'border-emerald-500/50 bg-card'
-            : 'border-destructive/50 bg-card'
+            ? "border-emerald-500/50 bg-card"
+            : "border-destructive/50 bg-card"
       }`}
     >
       {/* Top Status Icon */}
@@ -82,11 +82,7 @@ export const PlayerFeedback: React.FC<PlayerFeedbackProps> = ({
 
       {/* Result Status Title */}
       <h2 className="font-display text-2xl sm:text-3xl font-extrabold text-foreground">
-        {isTimedOut
-          ? t('time_up')
-          : isCorrect
-            ? t('correct')
-            : t('incorrect')}
+        {isTimedOut ? t("time_up") : isCorrect ? t("correct") : t("incorrect")}
       </h2>
 
       {/* Points, Time Taken & Streak Banner */}
@@ -94,18 +90,18 @@ export const PlayerFeedback: React.FC<PlayerFeedbackProps> = ({
         <span
           className={`rounded-xl px-3.5 py-1 font-mono text-lg font-black ${
             isTimedOut
-              ? 'bg-muted text-muted-foreground'
+              ? "bg-muted text-muted-foreground"
               : isCorrect
-                ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                : 'bg-destructive/15 text-destructive'
+                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                : "bg-destructive/15 text-destructive"
           }`}
         >
           {isTimedOut
-            ? '0'
+            ? "0"
             : answer.pointsAwarded >= 0
               ? `+${answer.pointsAwarded}`
-              : `${answer.pointsAwarded}`}{' '}
-          <span className="text-xs font-bold">{t('pts')}</span>
+              : `${answer.pointsAwarded}`}{" "}
+          <span className="text-xs font-bold">{t("pts")}</span>
         </span>
 
         {answer?.timeTakenSec !== undefined && (
@@ -121,7 +117,7 @@ export const PlayerFeedback: React.FC<PlayerFeedbackProps> = ({
           >
             <Zap className="h-3.5 w-3.5" />
             <span>
-              {lang === 'bn' ? 'স্পিড ফ্যাক্টর' : 'Speed'}:{' '}
+              {lang === "bn" ? "স্পিড ফ্যাক্টর" : "Speed"}:{" "}
               {computeSpeedBonusPct(answer.timeTakenSec, question.timeLimitSec || 20, true)}%
             </span>
           </span>
@@ -131,7 +127,7 @@ export const PlayerFeedback: React.FC<PlayerFeedbackProps> = ({
           <span className="inline-flex items-center gap-1 rounded-xl bg-amber-500/20 px-3 py-1 text-xs font-bold text-amber-600 dark:text-amber-400">
             <Flame className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
             <span>
-              {answer?.streakCount}x {t('streak')}
+              {answer?.streakCount}x {t("streak")}
             </span>
           </span>
         )}
@@ -142,7 +138,7 @@ export const PlayerFeedback: React.FC<PlayerFeedbackProps> = ({
         {!isCorrect && (
           <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-3.5 text-xs">
             <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-destructive">
-              {lang === 'bn' ? 'আপনার প্রদত্ত উত্তর:' : 'Your Response:'}
+              {lang === "bn" ? "আপনার প্রদত্ত উত্তর:" : "Your Response:"}
             </div>
             <div className="mt-0.5 font-bold text-foreground">{studentAnswerDisplay}</div>
           </div>
@@ -151,7 +147,7 @@ export const PlayerFeedback: React.FC<PlayerFeedbackProps> = ({
         {correctAnswerDisplay && (
           <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-3.5 text-xs">
             <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-              {lang === 'bn' ? '✓ সঠিক উত্তর (Official Key):' : '✓ Official Correct Answer:'}
+              {lang === "bn" ? "✓ সঠিক উত্তর (Official Key):" : "✓ Official Correct Answer:"}
             </div>
             <div className="mt-0.5 font-display text-sm font-extrabold text-emerald-800 dark:text-emerald-200">
               {correctAnswerDisplay}
@@ -163,9 +159,13 @@ export const PlayerFeedback: React.FC<PlayerFeedbackProps> = ({
         {(question.explanationBn || question.explanationEn) && (
           <div className="rounded-2xl border border-border bg-background/80 p-3.5 text-xs leading-relaxed text-muted-foreground">
             <p className="font-bold text-foreground mb-1">
-              {lang === 'bn' ? '💡 একাডেমিক ব্যাখ্যা ও সমাধান:' : '💡 Key Rationale & Explanation:'}
+              {lang === "bn" ? "💡 একাডেমিক ব্যাখ্যা ও সমাধান:" : "💡 Key Rationale & Explanation:"}
             </p>
-            <p>{lang === 'bn' ? question.explanationBn : question.explanationEn || question.explanationBn}</p>
+            <p>
+              {lang === "bn"
+                ? question.explanationBn
+                : question.explanationEn || question.explanationBn}
+            </p>
           </div>
         )}
       </div>
@@ -174,12 +174,12 @@ export const PlayerFeedback: React.FC<PlayerFeedbackProps> = ({
       <div className="mt-5 flex items-center justify-between rounded-2xl border border-border/80 bg-background p-3 px-5 shadow-xs">
         <div className="flex items-center gap-2">
           <Trophy className="h-4 w-4 text-primary" />
-          <span className="text-xs text-muted-foreground">{t('rank')}:</span>
+          <span className="text-xs text-muted-foreground">{t("rank")}:</span>
           <span className="font-mono text-sm font-black text-foreground">#{currentRank}</span>
         </div>
         <div className="flex items-center gap-1.5 font-mono text-sm font-black text-foreground">
           <span>{totalScore.toLocaleString()}</span>
-          <span className="text-xs font-normal text-muted-foreground">{t('pts')}</span>
+          <span className="text-xs font-normal text-muted-foreground">{t("pts")}</span>
         </div>
       </div>
 
@@ -192,12 +192,12 @@ export const PlayerFeedback: React.FC<PlayerFeedbackProps> = ({
         >
           <span>
             {isLastQuestion
-              ? lang === 'bn'
-                ? 'চূড়ান্ত ফলাফল ও উত্তরপত্র দেখুন'
-                : 'View Final Results & Answer Script'
-              : lang === 'bn'
-                ? 'পরবর্তী প্রশ্নে যান'
-                : 'Next Question'}
+              ? lang === "bn"
+                ? "চূড়ান্ত ফলাফল ও উত্তরপত্র দেখুন"
+                : "View Final Results & Answer Script"
+              : lang === "bn"
+                ? "পরবর্তী প্রশ্নে যান"
+                : "Next Question"}
           </span>
           <ChevronRight className="h-4 w-4" />
         </button>

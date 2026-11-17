@@ -1,9 +1,20 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { GameSession, Question } from '@/lib/types';
-import { useLanguage } from '@/lib/i18n';
-import { CheckCircle2, Eye, FastForward, Pause, Play, ShieldAlert, Users, X } from 'lucide-react';
-import { audioEngine } from '@/lib/audio-engine';
-import { gameEngine } from '@/lib/game-engine';
+import React, { useEffect, useRef, useState } from "react";
+import { GameSession, Question } from "@/lib/types";
+import { useLanguage } from "@/lib/i18n";
+import {
+  CheckCircle2,
+  Eye,
+  FastForward,
+  Pause,
+  Play,
+  ShieldAlert,
+  Users,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react";
+import { audioEngine } from "@/lib/audio-engine";
+import { gameEngine } from "@/lib/game-engine";
 
 interface HostProjectorProps {
   session: GameSession;
@@ -15,10 +26,30 @@ interface HostProjectorProps {
 }
 
 const RESPONSE_STYLES = [
-  { key: 'A / 1', bnKey: 'ক / ১', border: 'border-cyan-500/30 bg-cyan-500/5', badge: 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 border-cyan-500/40' },
-  { key: 'B / 2', bnKey: 'খ / ২', border: 'border-emerald-500/30 bg-emerald-500/5', badge: 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/40' },
-  { key: 'C / 3', bnKey: 'গ / ৩', border: 'border-amber-500/30 bg-amber-500/5', badge: 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/40' },
-  { key: 'D / 4', bnKey: 'ঘ / ৪', border: 'border-sky-500/30 bg-sky-500/5', badge: 'bg-sky-500/20 text-sky-600 dark:text-sky-400 border-sky-500/40' },
+  {
+    key: "A / 1",
+    bnKey: "ক / ১",
+    border: "border-cyan-500/30 bg-cyan-500/5",
+    badge: "bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 border-cyan-500/40",
+  },
+  {
+    key: "B / 2",
+    bnKey: "খ / ২",
+    border: "border-emerald-500/30 bg-emerald-500/5",
+    badge: "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/40",
+  },
+  {
+    key: "C / 3",
+    bnKey: "গ / ৩",
+    border: "border-amber-500/30 bg-amber-500/5",
+    badge: "bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/40",
+  },
+  {
+    key: "D / 4",
+    bnKey: "ঘ / ৪",
+    border: "border-sky-500/30 bg-sky-500/5",
+    badge: "bg-sky-500/20 text-sky-600 dark:text-sky-400 border-sky-500/40",
+  },
 ];
 
 export const HostProjector: React.FC<HostProjectorProps> = ({
@@ -30,18 +61,24 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
   onEndExam,
 }) => {
   const { lang, t } = useLanguage();
+  const [isMuted, setIsMuted] = useState(audioEngine.isMuted());
+  const [volume, setVolume] = useState(audioEngine.getVolume());
+
+  useEffect(() => {
+    return audioEngine.subscribe(() => {
+      setIsMuted(audioEngine.isMuted());
+      setVolume(audioEngine.getVolume());
+    });
+  }, []);
   const computeInitialRemaining = () => {
     if (session.questionEndTime && session.questionEndTime > 0) {
       const refNow =
-        typeof session.pausedAt === 'number' && session.pausedAt > 0
+        typeof session.pausedAt === "number" && session.pausedAt > 0
           ? session.pausedAt
           : gameEngine.getServerNow();
       return Math.max(
         0,
-        Math.min(
-          question.timeLimitSec,
-          Math.ceil((session.questionEndTime - refNow) / 1000),
-        ),
+        Math.min(question.timeLimitSec, Math.ceil((session.questionEndTime - refNow) / 1000)),
       );
     }
     return question.timeLimitSec;
@@ -75,7 +112,9 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
   const answeredCount =
     session.answeredCount ?? participants.filter((p) => p.answers[question.id]).length;
 
-  const flaggedParticipants = participants.filter((p) => (p.proctorFlags || 0) > 0 || p.isSuspended);
+  const flaggedParticipants = participants.filter(
+    (p) => (p.proctorFlags || 0) > 0 || p.isSuspended,
+  );
   const suspendedParticipants = participants.filter((p) => p.isSuspended);
   const focusedPct =
     totalPlayers > 0
@@ -88,17 +127,14 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
     const serverPaused = Boolean(session.pausedAt);
     setIsPaused(serverPaused);
     const refNow =
-      typeof session.pausedAt === 'number' && session.pausedAt > 0
+      typeof session.pausedAt === "number" && session.pausedAt > 0
         ? session.pausedAt
         : gameEngine.getServerNow();
     const initialSec =
       session.questionEndTime && session.questionEndTime > 0
         ? Math.max(
             0,
-            Math.min(
-              question.timeLimitSec,
-              Math.ceil((session.questionEndTime - refNow) / 1000),
-            ),
+            Math.min(question.timeLimitSec, Math.ceil((session.questionEndTime - refNow) / 1000)),
           )
         : question.timeLimitSec;
     deadlineMsRef.current =
@@ -125,11 +161,16 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
   useEffect(() => {
     if (isPaused) {
       const refNow =
-        typeof session.pausedAt === 'number' && session.pausedAt > 0
+        typeof session.pausedAt === "number" && session.pausedAt > 0
           ? session.pausedAt
           : gameEngine.getServerNow();
       pausedRemainingMsRef.current = Math.max(0, deadlineMsRef.current - refNow);
-      setTimeLeft(Math.max(0, Math.min(question.timeLimitSec, Math.ceil(pausedRemainingMsRef.current / 1000))));
+      setTimeLeft(
+        Math.max(
+          0,
+          Math.min(question.timeLimitSec, Math.ceil(pausedRemainingMsRef.current / 1000)),
+        ),
+      );
       return;
     }
 
@@ -175,11 +216,11 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-border bg-card p-4 px-6 shadow-tactical">
         <div className="flex items-center gap-3">
           <span className="rounded-2xl bg-primary/15 border border-primary/30 px-3.5 py-1.5 font-mono text-xs font-black text-primary uppercase tracking-wider">
-            {t('question')} {session.currentQuestionIndex + 1} / {session.totalQuestions}
+            {t("question")} {session.currentQuestionIndex + 1} / {session.totalQuestions}
           </span>
           <span className="text-xs font-semibold text-muted-foreground hidden md:inline">
-            {question.category || 'National Assessment Standard'} · {question.points} Max Marks ·{' '}
-            {(session.settings.speedBonus ?? true) ? '⚡ Speed Marks ON' : 'Accuracy Marks'}
+            {question.category || "National Assessment Standard"} · {question.points} Max Marks ·{" "}
+            {(session.settings.speedBonus ?? true) ? "⚡ Speed Marks ON" : "Accuracy Marks"}
           </span>
         </div>
 
@@ -190,10 +231,10 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
             onClick={() => setShowProctorModal(true)}
             className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition ${
               suspendedParticipants.length > 0
-                ? 'bg-destructive/15 border-destructive/40 text-destructive animate-pulse'
+                ? "bg-destructive/15 border-destructive/40 text-destructive animate-pulse"
                 : flaggedParticipants.length > 0
-                ? 'bg-amber-500/15 border-amber-500/40 text-amber-600 dark:text-amber-400'
-                : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                  ? "bg-amber-500/15 border-amber-500/40 text-amber-600 dark:text-amber-400"
+                  : "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
             }`}
           >
             {flaggedParticipants.length > 0 ? (
@@ -203,7 +244,7 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
             )}
             <span>
               Proctor: {focusedPct}% Focused
-              {incidents.length > 0 ? ` (${incidents.length} Alerts)` : ''}
+              {incidents.length > 0 ? ` (${incidents.length} Alerts)` : ""}
             </span>
           </button>
 
@@ -212,6 +253,32 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
             <span>
               {answeredCount}/{totalPlayers} ({answeredPct}%)
             </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 rounded-xl border border-border bg-background px-2 py-1">
+            <button
+              type="button"
+              onClick={() => audioEngine.toggleMute()}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-foreground hover:bg-accent"
+              title={isMuted ? "Unmute Sound FX" : "Mute Sound FX"}
+            >
+              {isMuted ? (
+                <VolumeX className="h-4 w-4 text-destructive" />
+              ) : (
+                <Volume2 className="h-4 w-4 text-emerald-500" />
+              )}
+            </button>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              aria-label="Sound effect volume"
+              value={isMuted ? 0 : volume}
+              onChange={(e) => audioEngine.setVolume(parseFloat(e.target.value))}
+              className="w-14 accent-emerald-500 cursor-pointer"
+              title={`Sound Volume: ${Math.round((isMuted ? 0 : volume) * 100)}%`}
+            />
           </div>
 
           <button
@@ -226,7 +293,7 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
               }
             }}
             className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-background hover:bg-accent text-foreground"
-            title={isPaused ? 'Resume' : 'Pause'}
+            title={isPaused ? "Resume" : "Pause"}
           >
             {isPaused ? <Play className="h-4 w-4 fill-current" /> : <Pause className="h-4 w-4" />}
           </button>
@@ -237,7 +304,7 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
             className="flex items-center gap-1.5 rounded-xl bg-secondary px-3.5 py-1.5 text-xs font-bold text-secondary-foreground hover:opacity-90"
           >
             <FastForward className="h-3.5 w-3.5" />
-            <span>{t('skip_timer')}</span>
+            <span>{t("skip_timer")}</span>
           </button>
 
           {onEndExam && (
@@ -258,13 +325,20 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
         {/* Countdown Ring */}
         <div className="mx-auto mb-5 flex h-24 w-24 items-center justify-center rounded-full border-4 border-border bg-background shadow-inner relative">
           <svg className="absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 100 100">
-            <circle cx="50" cy="50" r="44" className="stroke-muted" strokeWidth="8" fill="transparent" />
+            <circle
+              cx="50"
+              cy="50"
+              r="44"
+              className="stroke-muted"
+              strokeWidth="8"
+              fill="transparent"
+            />
             <circle
               cx="50"
               cy="50"
               r="44"
               className={`transition-all duration-1000 ease-linear ${
-                isUrgent ? 'stroke-destructive' : 'stroke-primary'
+                isUrgent ? "stroke-destructive" : "stroke-primary"
               }`}
               strokeWidth="8"
               strokeDasharray={276}
@@ -275,7 +349,7 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
           </svg>
           <span
             className={`font-mono text-3xl font-black tabular-nums ${
-              isUrgent ? 'text-destructive animate-pulse' : 'text-foreground'
+              isUrgent ? "text-destructive animate-pulse" : "text-foreground"
             }`}
           >
             {timeLeft}s
@@ -284,7 +358,7 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
 
         {/* Question Text */}
         <h1 className="font-display text-2xl sm:text-4xl font-extrabold leading-snug tracking-tight text-foreground max-w-4xl mx-auto">
-          {lang === 'bn' ? question.textBn : question.textEn}
+          {lang === "bn" ? question.textBn : question.textEn}
         </h1>
 
         {question.imageUrl && (
@@ -315,20 +389,20 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
       </div>
 
       {/* Option Bento Grid or Written Response Prompt */}
-      {question.type === 'written' || question.type === 'fill_blank' ? (
+      {question.type === "written" || question.type === "fill_blank" ? (
         <div className="rounded-3xl border-2 border-dashed border-primary/40 bg-primary/5 p-8 text-center space-y-2">
           <div className="font-mono text-xs font-black uppercase tracking-widest text-primary">
             ✍️ Written / Short Response Question
           </div>
           <p className="text-sm sm:text-base font-bold text-foreground">
-            {lang === 'bn'
-              ? 'পরীক্ষার্থীরা তাদের মোবাইলে সরাসরি সঠিক উত্তর টাইপ করে সাবমিট করছে।'
-              : 'Candidates are typing their exact response directly on their mobile examination terminals.'}
+            {lang === "bn"
+              ? "পরীক্ষার্থীরা তাদের মোবাইলে সরাসরি সঠিক উত্তর টাইপ করে সাবমিট করছে।"
+              : "Candidates are typing their exact response directly on their mobile examination terminals."}
           </p>
         </div>
       ) : (
         <div className="space-y-3">
-          {question.type === 'multi_mcq' && (
+          {question.type === "multi_mcq" && (
             <div className="text-center font-mono text-xs font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">
               ☑️ Multi-Select Question — Candidates must select ALL correct options
             </div>
@@ -344,10 +418,10 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
                   <div
                     className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border font-mono text-xs font-black shadow-sm ${style.badge}`}
                   >
-                    {lang === 'bn' ? style.bnKey : style.key}
+                    {lang === "bn" ? style.bnKey : style.key}
                   </div>
                   <div className="min-w-0 flex-1 text-base sm:text-lg font-bold leading-snug text-foreground">
-                    {lang === 'bn' ? opt.textBn : opt.textEn}
+                    {lang === "bn" ? opt.textBn : opt.textEn}
                   </div>
                 </div>
               );
@@ -389,10 +463,10 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
                     >
                       <div>
                         <div className="font-bold text-foreground">
-                          {fp.nickname} ({fp.rollNumber || 'N/A'})
+                          {fp.nickname} ({fp.rollNumber || "N/A"})
                         </div>
                         <div className="text-[11px] text-muted-foreground">
-                          {fp.regionName || 'Dhaka Range'} · {fp.proctorFlags || 0} tab switches
+                          {fp.regionName || "Dhaka Range"} · {fp.proctorFlags || 0} tab switches
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5">
@@ -440,9 +514,11 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
                   {incidents.map((inc) => (
                     <div key={inc.id} className="flex items-center justify-between p-3">
                       <div>
-                        <span className="font-bold text-foreground">{inc.candidateName}</span>{' '}
+                        <span className="font-bold text-foreground">{inc.candidateName}</span>{" "}
                         {inc.rollNumber && (
-                          <span className="font-mono text-muted-foreground">({inc.rollNumber})</span>
+                          <span className="font-mono text-muted-foreground">
+                            ({inc.rollNumber})
+                          </span>
                         )}
                         {inc.regionName && (
                           <span className="ml-2 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
@@ -451,7 +527,7 @@ export const HostProjector: React.FC<HostProjectorProps> = ({
                         )}
                       </div>
                       <div className="font-mono text-[11px] text-destructive">
-                        {inc.type.replace('_', ' ').toUpperCase()} ·{' '}
+                        {inc.type.replace("_", " ").toUpperCase()} ·{" "}
                         {new Date(inc.timestamp).toLocaleTimeString()}
                       </div>
                     </div>

@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
-import { Link, useLocation, useNavigate } from '@tanstack/react-router';
-import { useLanguage } from '@/lib/i18n';
-import { useAuth } from '@/lib/auth-context';
-import { LanguageToggle } from '@/components/common/LanguageToggle';
-import { OnneshaLogo } from '@/components/common/OnneshaLogo';
-import { useBranding } from '@/hooks/use-branding';
+import React, { useState } from "react";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import { useLanguage } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth-context";
+import { LanguageToggle } from "@/components/common/LanguageToggle";
+import { OnneshaLogo } from "@/components/common/OnneshaLogo";
+import { useBranding } from "@/hooks/use-branding";
 import {
   Award,
   BookOpen,
@@ -24,7 +24,7 @@ import {
   User,
   Users,
   X,
-} from 'lucide-react';
+} from "lucide-react";
 
 export const Navbar: React.FC = () => {
   const { lang, t } = useLanguage();
@@ -46,8 +46,8 @@ export const Navbar: React.FC = () => {
   }, [pathname]);
 
   const isActive = (path: string) => {
-    if (path === '/' && pathname === '/') return true;
-    if (path !== '/' && pathname.startsWith(path)) return true;
+    if (path === "/" && pathname === "/") return true;
+    if (path !== "/" && pathname.startsWith(path)) return true;
     return false;
   };
 
@@ -70,12 +70,10 @@ export const Navbar: React.FC = () => {
 
             {branding.showPartnerLogo && branding.partnerLogoUrl && (
               <>
-                <span className="text-muted-foreground/50 font-mono text-xs font-bold pl-1">
-                  ×
-                </span>
+                <span className="text-muted-foreground/50 font-mono text-xs font-bold pl-1">×</span>
                 <img
                   src={branding.partnerLogoUrl}
-                  alt={branding.partnerName || 'Joint Partner'}
+                  alt={branding.partnerName || "Joint Partner"}
                   className="h-8 max-w-[100px] rounded object-contain"
                 />
               </>
@@ -87,36 +85,36 @@ export const Navbar: React.FC = () => {
             <Link
               to="/"
               className={`whitespace-nowrap rounded-xl px-3 py-2 transition-colors ${
-                isActive('/') && pathname === '/'
-                  ? 'bg-primary/10 text-primary font-bold'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                isActive("/") && pathname === "/"
+                  ? "bg-primary/10 text-primary font-bold"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
               }`}
             >
-              {lang === 'bn' ? 'হোম' : 'Home'}
+              {lang === "bn" ? "হোম" : "Home"}
             </Link>
 
             <Link
               to="/play"
               className={`flex items-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 transition-colors ${
-                isActive('/play')
-                  ? 'bg-primary/15 text-primary font-bold'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                isActive("/play")
+                  ? "bg-primary/15 text-primary font-bold"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
               }`}
             >
               <Shield className="h-3.5 w-3.5 text-primary" />
-              <span>{t('join_pin')}</span>
+              <span>{t("join_pin")}</span>
             </Link>
 
             <Link
               to="/vault"
               className={`flex items-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 transition-colors ${
-                isActive('/vault')
-                  ? 'bg-primary/10 text-primary font-bold'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                isActive("/vault")
+                  ? "bg-primary/10 text-primary font-bold"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
               }`}
             >
               <BookOpen className="h-3.5 w-3.5 text-primary" />
-              <span>{t('vault')}</span>
+              <span>{t("vault")}</span>
             </Link>
 
             {/* Solutions Dropdown */}
@@ -129,15 +127,15 @@ export const Navbar: React.FC = () => {
                 type="button"
                 onClick={() => setSolutionsOpen(!solutionsOpen)}
                 className={`flex items-center gap-1 whitespace-nowrap rounded-xl px-3 py-2 transition-colors ${
-                  isActive('/for')
-                    ? 'bg-primary/10 text-primary font-bold'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                  isActive("/for")
+                    ? "bg-primary/10 text-primary font-bold"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 }`}
               >
-                <span>{t('solutions')}</span>
+                <span>{t("solutions")}</span>
                 <ChevronDown
                   className={`h-3.5 w-3.5 transition-transform duration-200 ${
-                    solutionsOpen ? 'rotate-180 text-primary' : 'opacity-60'
+                    solutionsOpen ? "rotate-180 text-primary" : "opacity-60"
                   }`}
                 />
               </button>
@@ -151,7 +149,7 @@ export const Navbar: React.FC = () => {
 
                     <Link
                       to="/for/$segment"
-                      params={{ segment: 'education' }}
+                      params={{ segment: "education" }}
                       onClick={() => setSolutionsOpen(false)}
                       className="flex items-start gap-3 rounded-xl p-2.5 hover:bg-accent transition-colors"
                     >
@@ -159,14 +157,18 @@ export const Navbar: React.FC = () => {
                         <GraduationCap className="h-4 w-4" />
                       </div>
                       <div>
-                        <div className="font-bold text-xs text-foreground">{t('for_education')}</div>
-                        <div className="text-[11px] text-muted-foreground leading-snug">{t('for_education_desc')}</div>
+                        <div className="font-bold text-xs text-foreground">
+                          {t("for_education")}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground leading-snug">
+                          {t("for_education_desc")}
+                        </div>
                       </div>
                     </Link>
 
                     <Link
                       to="/for/$segment"
-                      params={{ segment: 'training' }}
+                      params={{ segment: "training" }}
                       onClick={() => setSolutionsOpen(false)}
                       className="flex items-start gap-3 rounded-xl p-2.5 hover:bg-accent transition-colors"
                     >
@@ -174,14 +176,16 @@ export const Navbar: React.FC = () => {
                         <ShieldCheck className="h-4 w-4" />
                       </div>
                       <div>
-                        <div className="font-bold text-xs text-foreground">{t('for_training')}</div>
-                        <div className="text-[11px] text-muted-foreground leading-snug">{t('for_training_desc')}</div>
+                        <div className="font-bold text-xs text-foreground">{t("for_training")}</div>
+                        <div className="text-[11px] text-muted-foreground leading-snug">
+                          {t("for_training_desc")}
+                        </div>
                       </div>
                     </Link>
 
                     <Link
                       to="/for/$segment"
-                      params={{ segment: 'corporate' }}
+                      params={{ segment: "corporate" }}
                       onClick={() => setSolutionsOpen(false)}
                       className="flex items-start gap-3 rounded-xl p-2.5 hover:bg-accent transition-colors"
                     >
@@ -189,14 +193,18 @@ export const Navbar: React.FC = () => {
                         <Building2 className="h-4 w-4" />
                       </div>
                       <div>
-                        <div className="font-bold text-xs text-foreground">{t('for_corporate')}</div>
-                        <div className="text-[11px] text-muted-foreground leading-snug">{t('for_corporate_desc')}</div>
+                        <div className="font-bold text-xs text-foreground">
+                          {t("for_corporate")}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground leading-snug">
+                          {t("for_corporate_desc")}
+                        </div>
                       </div>
                     </Link>
 
                     <Link
                       to="/for/$segment"
-                      params={{ segment: 'events' }}
+                      params={{ segment: "events" }}
                       onClick={() => setSolutionsOpen(false)}
                       className="flex items-start gap-3 rounded-xl p-2.5 hover:bg-accent transition-colors"
                     >
@@ -204,8 +212,10 @@ export const Navbar: React.FC = () => {
                         <Users className="h-4 w-4" />
                       </div>
                       <div>
-                        <div className="font-bold text-xs text-foreground">{t('for_events')}</div>
-                        <div className="text-[11px] text-muted-foreground leading-snug">{t('for_events_desc')}</div>
+                        <div className="font-bold text-xs text-foreground">{t("for_events")}</div>
+                        <div className="text-[11px] text-muted-foreground leading-snug">
+                          {t("for_events_desc")}
+                        </div>
                       </div>
                     </Link>
                   </div>
@@ -216,24 +226,24 @@ export const Navbar: React.FC = () => {
             <Link
               to="/pricing"
               className={`whitespace-nowrap rounded-xl px-3 py-2 transition-colors ${
-                isActive('/pricing')
-                  ? 'bg-primary/10 text-primary font-bold'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                isActive("/pricing")
+                  ? "bg-primary/10 text-primary font-bold"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
               }`}
             >
-              {t('pricing')}
+              {t("pricing")}
             </Link>
 
             <Link
               to="/timer"
               className={`flex items-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 transition-colors ${
-                isActive('/timer')
-                  ? 'bg-primary/10 text-primary font-bold'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                isActive("/timer")
+                  ? "bg-primary/10 text-primary font-bold"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
               }`}
             >
               <Clock className="h-3.5 w-3.5 text-primary" />
-              <span>{t('exam_timer')}</span>
+              <span>{t("exam_timer")}</span>
             </Link>
           </nav>
 
@@ -249,7 +259,7 @@ export const Navbar: React.FC = () => {
                   className="flex items-center gap-2 rounded-xl border border-border bg-card p-1.5 pr-2.5 hover:bg-accent transition"
                 >
                   <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/15 text-xs font-bold text-primary">
-                    {user.name ? user.name.slice(0, 1).toUpperCase() : 'U'}
+                    {user.name ? user.name.slice(0, 1).toUpperCase() : "U"}
                   </div>
                   <div className="text-left hidden sm:block">
                     <div className="font-display text-xs font-bold text-foreground leading-tight max-w-[110px] truncate">
@@ -269,7 +279,7 @@ export const Navbar: React.FC = () => {
                       <div className="text-[10px] text-muted-foreground truncate">{user.email}</div>
                     </div>
 
-                    {user?.role === 'admin' && (
+                    {user?.role === "admin" && (
                       <Link
                         to="/admin"
                         onClick={() => setUserDropdownOpen(false)}
@@ -280,7 +290,7 @@ export const Navbar: React.FC = () => {
                       </Link>
                     )}
 
-                    {user?.role !== 'candidate' && (
+                    {user?.role !== "candidate" && (
                       <Link
                         to="/dashboard"
                         onClick={() => setUserDropdownOpen(false)}
@@ -305,7 +315,7 @@ export const Navbar: React.FC = () => {
                       onClick={() => {
                         logout();
                         setUserDropdownOpen(false);
-                        navigate({ to: '/' });
+                        navigate({ to: "/" });
                       }}
                       className="flex w-full items-center gap-2 rounded-xl p-2.5 text-xs font-bold text-destructive hover:bg-destructive/10 transition"
                     >
@@ -322,7 +332,7 @@ export const Navbar: React.FC = () => {
                   className="hidden sm:inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-border bg-card px-3.5 py-2 text-xs font-bold text-foreground hover:bg-accent transition"
                 >
                   <User className="h-3.5 w-3.5" />
-                  <span>{lang === 'bn' ? 'লগইন' : 'Sign In'}</span>
+                  <span>{lang === "bn" ? "লগইন" : "Sign In"}</span>
                 </Link>
 
                 <Link
@@ -331,9 +341,9 @@ export const Navbar: React.FC = () => {
                 >
                   <LayoutDashboard className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">
-                    {lang === 'bn' ? 'ইন্সট্রাক্টর স্টুডিও' : 'Instructor Studio'}
+                    {lang === "bn" ? "ইন্সট্রাক্টর স্টুডিও" : "Instructor Studio"}
                   </span>
-                  <span className="sm:hidden">{lang === 'bn' ? 'স্টুডিও' : 'Studio'}</span>
+                  <span className="sm:hidden">{lang === "bn" ? "স্টুডিও" : "Studio"}</span>
                 </Link>
               </div>
             )}
@@ -358,74 +368,74 @@ export const Navbar: React.FC = () => {
                 to="/"
                 onClick={() => setMobileDrawerOpen(false)}
                 className={`flex items-center gap-2 rounded-xl p-3 text-xs font-bold ${
-                  pathname === '/'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-background border border-border text-foreground'
+                  pathname === "/"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background border border-border text-foreground"
                 }`}
               >
                 <Home className="h-4 w-4" />
-                <span>{lang === 'bn' ? 'হোম' : 'Home'}</span>
+                <span>{lang === "bn" ? "হোম" : "Home"}</span>
               </Link>
 
               <Link
                 to="/play"
                 onClick={() => setMobileDrawerOpen(false)}
                 className={`flex items-center gap-2 rounded-xl p-3 text-xs font-bold ${
-                  isActive('/play')
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-background border border-border text-foreground'
+                  isActive("/play")
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background border border-border text-foreground"
                 }`}
               >
                 <Shield className="h-4 w-4" />
-                <span>{t('join_pin')}</span>
+                <span>{t("join_pin")}</span>
               </Link>
 
               <Link
                 to="/vault"
                 onClick={() => setMobileDrawerOpen(false)}
                 className={`flex items-center gap-2 rounded-xl p-3 text-xs font-bold ${
-                  isActive('/vault')
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-background border border-border text-foreground'
+                  isActive("/vault")
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background border border-border text-foreground"
                 }`}
               >
                 <BookOpen className="h-4 w-4" />
-                <span>{t('vault')}</span>
+                <span>{t("vault")}</span>
               </Link>
 
               <Link
                 to="/timer"
                 onClick={() => setMobileDrawerOpen(false)}
                 className={`flex items-center gap-2 rounded-xl p-3 text-xs font-bold ${
-                  isActive('/timer')
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-background border border-border text-foreground'
+                  isActive("/timer")
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background border border-border text-foreground"
                 }`}
               >
                 <Clock className="h-4 w-4" />
-                <span>{t('exam_timer')}</span>
+                <span>{t("exam_timer")}</span>
               </Link>
 
               <Link
                 to="/pricing"
                 onClick={() => setMobileDrawerOpen(false)}
                 className={`flex items-center gap-2 rounded-xl p-3 text-xs font-bold ${
-                  isActive('/pricing')
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-background border border-border text-foreground'
+                  isActive("/pricing")
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background border border-border text-foreground"
                 }`}
               >
                 <Award className="h-4 w-4" />
-                <span>{t('pricing')}</span>
+                <span>{t("pricing")}</span>
               </Link>
 
               <Link
                 to="/security"
                 onClick={() => setMobileDrawerOpen(false)}
                 className={`flex items-center gap-2 rounded-xl p-3 text-xs font-bold ${
-                  isActive('/security')
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-background border border-border text-foreground'
+                  isActive("/security")
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background border border-border text-foreground"
                 }`}
               >
                 <Lock className="h-4 w-4" />
@@ -436,9 +446,9 @@ export const Navbar: React.FC = () => {
                 to="/developers"
                 onClick={() => setMobileDrawerOpen(false)}
                 className={`flex items-center gap-2 rounded-xl p-3 text-xs font-bold ${
-                  isActive('/developers')
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-background border border-border text-foreground'
+                  isActive("/developers")
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background border border-border text-foreground"
                 }`}
               >
                 <Code2 className="h-4 w-4" />
@@ -449,9 +459,9 @@ export const Navbar: React.FC = () => {
                 to="/contact-sales"
                 onClick={() => setMobileDrawerOpen(false)}
                 className={`flex items-center gap-2 rounded-xl p-3 text-xs font-bold ${
-                  isActive('/contact-sales')
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-background border border-border text-foreground'
+                  isActive("/contact-sales")
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background border border-border text-foreground"
                 }`}
               >
                 <MessageSquare className="h-4 w-4" />
@@ -501,9 +511,9 @@ export const Navbar: React.FC = () => {
           <Link
             to="/"
             className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl ${
-              isActive('/') && pathname === '/'
-                ? 'text-primary font-bold'
-                : 'text-muted-foreground hover:text-foreground'
+              isActive("/") && pathname === "/"
+                ? "text-primary font-bold"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             <Home className="h-4 w-4 mb-0.5" />
@@ -513,14 +523,14 @@ export const Navbar: React.FC = () => {
           <Link
             to="/vault"
             className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl ${
-              isActive('/vault')
-                ? 'text-primary font-bold'
-                : 'text-muted-foreground hover:text-foreground'
+              isActive("/vault")
+                ? "text-primary font-bold"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             <BookOpen className="h-4 w-4 mb-0.5" />
             <span className="text-[10px] font-medium leading-none">
-              {lang === 'bn' ? 'ভল্ট' : 'Vault'}
+              {lang === "bn" ? "ভল্ট" : "Vault"}
             </span>
           </Link>
 
@@ -532,30 +542,30 @@ export const Navbar: React.FC = () => {
               <Shield className="h-5 w-5" />
             </div>
             <span className="text-[10px] font-bold text-primary mt-0.5">
-              {lang === 'bn' ? 'পিন পাস' : 'Join Hall'}
+              {lang === "bn" ? "পিন পাস" : "Join Hall"}
             </span>
           </Link>
 
           <Link
             to="/timer"
             className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl ${
-              isActive('/timer')
-                ? 'text-primary font-bold'
-                : 'text-muted-foreground hover:text-foreground'
+              isActive("/timer")
+                ? "text-primary font-bold"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             <Clock className="h-4 w-4 mb-0.5" />
             <span className="text-[10px] font-medium leading-none">
-              {lang === 'bn' ? 'টাইমার' : 'Timer'}
+              {lang === "bn" ? "টাইমার" : "Timer"}
             </span>
           </Link>
 
           <Link
-            to={isAuthenticated ? '/dashboard' : '/auth/login'}
+            to={isAuthenticated ? "/dashboard" : "/auth/login"}
             className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl ${
-              isActive('/dashboard') || isActive('/auth/login')
-                ? 'text-primary font-bold'
-                : 'text-muted-foreground hover:text-foreground'
+              isActive("/dashboard") || isActive("/auth/login")
+                ? "text-primary font-bold"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             {isAuthenticated ? (
@@ -565,12 +575,12 @@ export const Navbar: React.FC = () => {
             )}
             <span className="text-[10px] font-medium leading-none">
               {isAuthenticated
-                ? lang === 'bn'
-                  ? 'স্টুডিও'
-                  : 'Studio'
-                : lang === 'bn'
-                  ? 'লগইন'
-                  : 'Login'}
+                ? lang === "bn"
+                  ? "স্টুডিও"
+                  : "Studio"
+                : lang === "bn"
+                  ? "লগইন"
+                  : "Login"}
             </span>
           </Link>
         </div>

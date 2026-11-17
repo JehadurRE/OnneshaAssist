@@ -96,6 +96,7 @@ class SQLiteEngine {
         plan TEXT,
         assignedCourseIdsJson TEXT,
         status TEXT,
+        aiCredits INTEGER,
         createdAt TEXT
       );
 
@@ -310,6 +311,7 @@ class SQLiteEngine {
       "ALTER TABLE users ADD COLUMN plan TEXT",
       "ALTER TABLE users ADD COLUMN assignedCourseIdsJson TEXT",
       "ALTER TABLE users ADD COLUMN status TEXT",
+      "ALTER TABLE users ADD COLUMN aiCredits INTEGER",
       "ALTER TABLE sales_leads ADD COLUMN status TEXT",
       "ALTER TABLE certificates ADD COLUMN payloadHash TEXT",
       "ALTER TABLE certificates ADD COLUMN prevBlockHash TEXT",

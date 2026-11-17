@@ -1,5 +1,5 @@
-import { db, DbSmsLog } from './db';
-import { serverSendGuardianSms } from './server-session';
+import { db, DbSmsLog } from "./db";
+import { serverSendGuardianSms } from "./server-session";
 
 export interface SmsPayload {
   studentName: string;
@@ -17,10 +17,12 @@ export class SmsGateway {
     return `[ফলাফল বার্তা]\nশ্রদ্ধেয় অভিভাবক, আপনার সন্তান ${data.studentName} (রোল: ${data.rollNumber}) "${data.quizTitle}" পরীক্ষায় ${data.score}/${data.totalPoints} পেয়ে ${data.totalParticipants} জনের মধ্যে ${data.rank}ম স্থান অর্জন করেছে।\n- অন্বেষা এক্সাম অ্যারেনা`;
   }
 
-  static async sendGuardianScorecard(payload: SmsPayload): Promise<{ success: boolean; log: DbSmsLog }> {
+  static async sendGuardianScorecard(
+    payload: SmsPayload,
+  ): Promise<{ success: boolean; log: DbSmsLog }> {
     const messageText = this.formatMessage(payload);
-    const cleanPhone = payload.guardianPhone.replace(/\D/g, '');
-    let status: 'delivered' | 'queued' | 'failed' = 'queued';
+    const cleanPhone = payload.guardianPhone.replace(/\D/g, "");
+    let status: "delivered" | "queued" | "failed" = "queued";
 
     try {
       const serverRes = await serverSendGuardianSms({
@@ -53,25 +55,25 @@ export class SmsGateway {
       // Optional local key or offline queue fallback
     }
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('onnesha_sms_token') : null;
+    const token = typeof window !== "undefined" ? localStorage.getItem("onnesha_sms_token") : null;
     if (token && token.trim().length > 5) {
       try {
         const url = `https://api.greenweb.com.bd/api.php?token=${encodeURIComponent(token.trim())}&to=${encodeURIComponent(cleanPhone)}&message=${encodeURIComponent(messageText)}`;
-        const response = await fetch(url, { method: 'GET' });
+        const response = await fetch(url, { method: "GET" });
         if (response.ok) {
           const resText = (await response.text()).toLowerCase();
           status =
-            resText.includes('ok') || resText.includes('success') || resText.includes('100')
-              ? 'delivered'
-              : 'queued';
+            resText.includes("ok") || resText.includes("success") || resText.includes("100")
+              ? "delivered"
+              : "queued";
         } else {
-          status = 'failed';
+          status = "failed";
         }
       } catch {
-        status = 'failed';
+        status = "failed";
       }
     } else {
-      status = 'failed';
+      status = "failed";
     }
 
     const log = db.logSms({
@@ -85,12 +87,12 @@ export class SmsGateway {
       status,
     });
 
-    return { success: status === 'delivered', log };
+    return { success: status === "delivered", log };
   }
 
   static async sendBulkGuardianScorecards(
     payloads: SmsPayload[],
-    onProgress?: (sent: number, total: number) => void
+    onProgress?: (sent: number, total: number) => void,
   ): Promise<{ totalSent: number; failed: number }> {
     let sent = 0;
     let failed = 0;

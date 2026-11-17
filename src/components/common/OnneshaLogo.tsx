@@ -10,14 +10,17 @@ export interface OnneshaLogoProps {
   className?: string | undefined;
 }
 
-const SIZE_CLASSES: Record<NonNullable<OnneshaLogoProps["size"]>, {
-  img: string;
-  title: string;
-  bn: string;
-  badge: string;
-  sub: string;
-  gap: string;
-}> = {
+const SIZE_CLASSES: Record<
+  NonNullable<OnneshaLogoProps["size"]>,
+  {
+    img: string;
+    title: string;
+    bn: string;
+    badge: string;
+    sub: string;
+    gap: string;
+  }
+> = {
   xs: {
     img: "h-5 w-5",
     title: "text-xs font-black tracking-tight",
@@ -90,20 +93,12 @@ export const OnneshaLogo: React.FC<OnneshaLogoProps> = ({
       />
       <span className="flex flex-col text-left leading-none">
         <span className="flex items-center gap-1.5 leading-none">
-          <span
-            className={`font-display ${s.title} ${
-              isPrint ? "text-black" : "text-foreground"
-            }`}
-          >
+          <span className={`font-display ${s.title} ${isPrint ? "text-black" : "text-foreground"}`}>
             Onnesha
           </span>
           {showBengali && (
             <span
-              className={`${s.bn} ${
-                isPrint
-                  ? "text-sky-800"
-                  : "text-sky-600 dark:text-sky-400"
-              }`}
+              className={`${s.bn} ${isPrint ? "text-sky-800" : "text-sky-600 dark:text-sky-400"}`}
             >
               অন্বেষা
             </span>

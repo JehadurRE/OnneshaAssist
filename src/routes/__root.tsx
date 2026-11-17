@@ -56,7 +56,8 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
           Something went wrong
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          We encountered an unexpected error. You can refresh the page or return to the main dashboard.
+          We encountered an unexpected error. You can refresh the page or return to the main
+          dashboard.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
@@ -91,6 +92,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         content:
           "Bilingual live model tests, exact negative marking, item difficulty telemetry, OMR generation, and verifiable digital certificates.",
       },
+      { name: "theme-color", content: "#051412" },
       { property: "og:title", content: "Onnesha Arena — Institutional AI Assessment" },
       {
         name: "twitter:card",
@@ -102,6 +104,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
+      { rel: "manifest", href: "/manifest.webmanifest" },
+      { rel: "shortcut icon", href: "/favicon.ico" },
       { rel: "icon", href: "/favicon.png?v=3", type: "image/png" },
       { rel: "apple-touch-icon", href: "/apple-touch-icon.png?v=3" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },

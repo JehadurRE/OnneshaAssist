@@ -21,7 +21,7 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
   defaultCourseId,
 }) => {
   const { lang } = useLanguage();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
   const [quizNumber, setQuizNumber] = useState<number>(1);
@@ -99,7 +99,7 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
 
   if (!isOpen) return null;
 
-  const credits = getAiCredits();
+  const credits = typeof user?.aiCredits === "number" ? user.aiCredits : getAiCredits();
   const activeCourse = courses.find((c) => c.id === selectedCourseId);
   const trimmedKeyInput = apiKeyInput.trim();
   const isAiReady = hasServerKey || trimmedKeyInput.length >= 10;
@@ -141,6 +141,7 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
         ...(trimmedKeyInput.length >= 10 ? { apiKey: trimmedKeyInput } : {}),
       });
       setIsGenerating(false);
+      void refreshUser();
       onQuizGenerated(generated);
       onClose();
     } catch (err) {
@@ -235,11 +236,7 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
                 onClick={() => setShowKeyInput((v) => !v)}
                 className="font-mono text-[11px] font-bold text-primary hover:underline"
               >
-                {showKeyInput
-                  ? "Hide Key"
-                  : isAiReady
-                    ? "Change API Key"
-                    : "Enter Key"}
+                {showKeyInput ? "Hide Key" : isAiReady ? "Change API Key" : "Enter Key"}
               </button>
             </div>
 

@@ -7,7 +7,18 @@ import { Footer } from "@/components/layout/Footer";
 import { READY_MADE_PACKS } from "@/lib/mock-data";
 import { db, isQuizPrivate } from "@/lib/db";
 import { Quiz } from "@/lib/types";
-import { ArrowRight, BookOpen, Download, FileText, Lock, Play, Search, ShieldCheck, Sparkles, Tag } from "lucide-react";
+import {
+  ArrowRight,
+  BookOpen,
+  Download,
+  FileText,
+  Lock,
+  Play,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Tag,
+} from "lucide-react";
 
 export const Route = createFileRoute("/vault/")({
   head: () => ({
@@ -44,9 +55,21 @@ function KnowledgeVaultCatalogPage() {
   const curricula = [
     { id: "all", nameEn: "All Repositories", nameBn: "সকল ভল্ট" },
     { id: "General Knowledge", nameEn: "BCS & Civil Service", nameBn: "বিসিএস ও ক্যাডার একাডেমি" },
-    { id: "Physics", nameEn: "Varsity & Medical Entrance", nameBn: "মেডিকেল ও বিশ্ববিদ্যালয় ভর্তি" },
-    { id: "Safety & Compliance", nameEn: "Public Service & Compliance", nameBn: "পাবলিক সার্ভিস ও কমপ্লায়েন্স" },
-    { id: "Mathematics", nameEn: "Mathematics & Analytical", nameBn: "উচ্চতর গণিত ও অ্যানালিটিক্স" },
+    {
+      id: "Physics",
+      nameEn: "Varsity & Medical Entrance",
+      nameBn: "মেডিকেল ও বিশ্ববিদ্যালয় ভর্তি",
+    },
+    {
+      id: "Safety & Compliance",
+      nameEn: "Public Service & Compliance",
+      nameBn: "পাবলিক সার্ভিস ও কমপ্লায়েন্স",
+    },
+    {
+      id: "Mathematics",
+      nameEn: "Mathematics & Analytical",
+      nameBn: "উচ্চতর গণিত ও অ্যানালিটিক্স",
+    },
     { id: "English Language", nameEn: "English & Linguistics", nameBn: "ইংরেজি ও লিঙ্গুইস্টিকস" },
     { id: "Science", nameEn: "General Science & ICT", nameBn: "সাধারণ বিজ্ঞান ও আইসিটি" },
   ];
@@ -54,7 +77,9 @@ function KnowledgeVaultCatalogPage() {
   const filteredPacks = allQuizzes.filter((pack) => {
     if (!isStaff && isQuizPrivate(pack, courses)) return false;
     const matchesCategory =
-      selectedCurriculum === "all" || pack.categoryEn === selectedCurriculum || (pack.tags && pack.tags.includes(selectedCurriculum));
+      selectedCurriculum === "all" ||
+      pack.categoryEn === selectedCurriculum ||
+      (pack.tags && pack.tags.includes(selectedCurriculum));
     const matchesSearch =
       pack.titleBn.toLowerCase().includes(searchQuery.toLowerCase()) ||
       pack.titleEn.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -75,7 +100,9 @@ function KnowledgeVaultCatalogPage() {
             <span>Onnesha Knowledge Vault</span>
           </div>
           <h1 className="font-display text-3xl sm:text-4xl font-extrabold text-foreground tracking-tight">
-            {lang === "bn" ? "জাতীয় কারিকুলাম ও মূল্যায়ন ভল্ট" : "National Assessment Knowledge Vault"}
+            {lang === "bn"
+              ? "জাতীয় কারিকুলাম ও মূল্যায়ন ভল্ট"
+              : "National Assessment Knowledge Vault"}
           </h1>
           <p className="mt-2 text-xs sm:text-sm text-muted-foreground leading-relaxed">
             {lang === "bn"
@@ -92,7 +119,11 @@ function KnowledgeVaultCatalogPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={lang === "bn" ? "বিষয় বা টপিক খুঁজুন (যেমন: মুক্তিযুদ্ধ, পদার্থবিজ্ঞান)..." : "Search topics, categories, or keywords..."}
+              placeholder={
+                lang === "bn"
+                  ? "বিষয় বা টপিক খুঁজুন (যেমন: মুক্তিযুদ্ধ, পদার্থবিজ্ঞান)..."
+                  : "Search topics, categories, or keywords..."
+              }
               className="w-full rounded-2xl border border-border bg-card pl-10 pr-4 py-2.5 text-xs sm:text-sm font-semibold text-foreground outline-none focus:border-primary shadow-sm"
             />
           </div>

@@ -89,6 +89,7 @@ import {
   deleteQuizInStore,
   filterActiveRoomsFromSessions,
   findRosterCandidate,
+  handlePublicStandardEndpoint,
   isCertificateRevoked,
   isQuestionSubmissionClosed,
   mergeSeededStoreData,
@@ -212,7 +213,8 @@ describe("server-security: signed HTTP-only session tokens & RBAC", () => {
       canActorMutateStoreAction({ id: "adm-1", role: "admin" }, "purge_dummy_data").allowed,
     ).toBe(true);
     expect(
-      canActorMutateStoreAction({ id: "inst-1", role: "instructor" }, "restore_certificate").allowed,
+      canActorMutateStoreAction({ id: "inst-1", role: "instructor" }, "restore_certificate")
+        .allowed,
     ).toBe(false);
     expect(
       canActorMutateStoreAction({ id: "adm-1", role: "admin" }, "restore_certificate").allowed,
@@ -1625,11 +1627,7 @@ describe("course-instructor bidirectional sync & certificate revocation", () => 
     createdAt: "2026-01-01T00:00:00Z",
   });
 
-  const mkCourse = (
-    id: string,
-    instructorIds: string[],
-    instructorNames: string[],
-  ): Course => ({
+  const mkCourse = (id: string, instructorIds: string[], instructorNames: string[]): Course => ({
     id,
     code: id.toUpperCase(),
     titleEn: `Course ${id}`,
@@ -1643,10 +1641,7 @@ describe("course-instructor bidirectional sync & certificate revocation", () => 
   });
 
   it("adds and removes assignedCourseIds across users when course instructors change", () => {
-    const users = [
-      mkUser("u1", "Dr. A", ["c-old", "c-1"]),
-      mkUser("u2", "Prof. B", []),
-    ];
+    const users = [mkUser("u1", "Dr. A", ["c-old", "c-1"]), mkUser("u2", "Prof. B", [])];
     const course = mkCourse("c-1", ["u2"], ["Prof. B"]);
 
     const updatedUsers = syncCourseInstructorsInStore(users, course);
@@ -1655,14 +1650,8 @@ describe("course-instructor bidirectional sync & certificate revocation", () => 
   });
 
   it("syncs course instructorIds and instructorNames when user assignments change", () => {
-    const users = [
-      mkUser("u1", "Dr. A", []),
-      mkUser("u2", "Prof. B Updated", ["c-1", "c-2"]),
-    ];
-    const courses = [
-      mkCourse("c-1", ["u1", "u2"], ["Dr. A", "Prof. B"]),
-      mkCourse("c-2", [], []),
-    ];
+    const users = [mkUser("u1", "Dr. A", []), mkUser("u2", "Prof. B Updated", ["c-1", "c-2"])];
+    const courses = [mkCourse("c-1", ["u1", "u2"], ["Dr. A", "Prof. B"]), mkCourse("c-2", [], [])];
 
     const updatedCourses = syncUserCoursesInStore(courses, users, users[1]!);
     // u2 already on c-1 -> unchanged; u2 added to c-2 -> appended
@@ -1702,7 +1691,13 @@ describe("public join directory scoping, phone masking & active rooms filter", (
   };
   const regions: Region[] = [
     { id: "reg-dhk", code: "DHK", nameEn: "Dhaka", nameBn: "ঢাকা", createdAt: "2026-01-01" },
-    { id: "reg-ctg", code: "CTG", nameEn: "Chattogram", nameBn: "চট্টগ্রাম", createdAt: "2026-01-01" },
+    {
+      id: "reg-ctg",
+      code: "CTG",
+      nameEn: "Chattogram",
+      nameBn: "চট্টগ্রাম",
+      createdAt: "2026-01-01",
+    },
   ];
   const roster: RosterStudent[] = [
     {
@@ -1724,7 +1719,9 @@ describe("public join directory scoping, phone masking & active rooms filter", (
   ];
 
   it("rejects finished/podium/missing rooms and hides roster on self-practice", () => {
-    expect(buildJoinDirectoryForSession({ roster, regions, session: undefined }).success).toBe(false);
+    expect(buildJoinDirectoryForSession({ roster, regions, session: undefined }).success).toBe(
+      false,
+    );
     expect(
       buildJoinDirectoryForSession({
         roster,
@@ -1891,9 +1888,9 @@ describe("server-session domain state transitions & safeguards", () => {
     });
     expect(createdNew.success).toBe(true);
     expect(createdNew.savedUser?.passwordHash?.startsWith("scrypt:")).toBe(true);
-    expect(
-      verifyPasswordScrypt("StrongPass!2026", createdNew.savedUser!.passwordHash!).valid,
-    ).toBe(true);
+    expect(verifyPasswordScrypt("StrongPass!2026", createdNew.savedUser!.passwordHash!).valid).toBe(
+      true,
+    );
   });
 
   it("archives revoked certificates on delete and restores them cleanly", () => {
@@ -1955,10 +1952,7 @@ describe("server-session domain state transitions & safeguards", () => {
       isQuestionSubmissionClosed({ phase: "chart", currentQuestion: currentQ }, "q-live-1"),
     ).toBe(true);
     expect(
-      isQuestionSubmissionClosed(
-        { phase: "leaderboard", currentQuestion: currentQ },
-        "q-live-1",
-      ),
+      isQuestionSubmissionClosed({ phase: "leaderboard", currentQuestion: currentQ }, "q-live-1"),
     ).toBe(true);
     expect(
       isQuestionSubmissionClosed({ phase: "chart", currentQuestion: currentQ }, "q-other"),
@@ -2178,8 +2172,16 @@ describe("server-session domain state transitions & safeguards", () => {
   });
 
   it("purges taken exam sessions with < 50 examinees and all related records while preserving >= 50 sessions and curriculum", () => {
-    expect(canActorMutateStoreAction({ id: "usr-super-admin", role: "admin" }, "purge_under_50_sessions").allowed).toBe(true);
-    expect(canActorMutateStoreAction({ id: "usr-instructor-1", role: "instructor" }, "purge_under_50_sessions").allowed).toBe(false);
+    expect(
+      canActorMutateStoreAction({ id: "usr-super-admin", role: "admin" }, "purge_under_50_sessions")
+        .allowed,
+    ).toBe(true);
+    expect(
+      canActorMutateStoreAction(
+        { id: "usr-instructor-1", role: "instructor" },
+        "purge_under_50_sessions",
+      ).allowed,
+    ).toBe(false);
     expect(canActorMutateStoreAction(null, "purge_under_50_sessions").allowed).toBe(false);
 
     const makeResult = (
@@ -2331,7 +2333,12 @@ describe("server-session domain state transitions & safeguards", () => {
 
     const store = {
       examSessions: [keptSession, smallRealSession, legacySmallMetadataOnly],
-      examResults: [...largeResults, ...smallRealResults, ...smallBotResults, ...orphanSmallResults],
+      examResults: [
+        ...largeResults,
+        ...smallRealResults,
+        ...smallBotResults,
+        ...orphanSmallResults,
+      ],
       certificates: [keptCert, smallCert, unrelatedManualCert],
       revokedCertificates: ["ONN-4455-SML102", "ONN-2026-KEPTREV"],
       revokedCertificateArchive: {
@@ -2433,7 +2440,13 @@ describe("supplementary retake diagnostics, completion exclusion & result mergin
   const regions: Region[] = [
     { id: "reg-dhaka", code: "DHK", nameEn: "Dhaka", nameBn: "ঢাকা", createdAt: "2026-01-01" },
     { id: "reg-sylhet", code: "SYL", nameEn: "Sylhet", nameBn: "সিলেট", createdAt: "2026-01-01" },
-    { id: "reg-ctg", code: "CTG", nameEn: "Chattogram", nameBn: "চট্টগ্রাম", createdAt: "2026-01-01" },
+    {
+      id: "reg-ctg",
+      code: "CTG",
+      nameEn: "Chattogram",
+      nameBn: "চট্টগ্রাম",
+      createdAt: "2026-01-01",
+    },
   ];
 
   const roster: RosterStudent[] = [
@@ -2541,12 +2554,10 @@ describe("supplementary retake diagnostics, completion exclusion & result mergin
     expect(index.completedCount).toBe(1);
     expect(index.zeroAttemptCount).toBe(1);
 
-    expect(
-      findCompletedMatchInIndex(index, { rollNumber: "onn 101" })?.rollNumber,
-    ).toBe("ONN-101");
-    expect(
-      findCompletedMatchInIndex(index, { phone: "+8801711111111" })?.name,
-    ).toBe("Completed Dhaka");
+    expect(findCompletedMatchInIndex(index, { rollNumber: "onn 101" })?.rollNumber).toBe("ONN-101");
+    expect(findCompletedMatchInIndex(index, { phone: "+8801711111111" })?.name).toBe(
+      "Completed Dhaka",
+    );
     expect(
       findCompletedMatchInIndex(index, {
         rollNumber: "ONN-102",
@@ -2886,7 +2897,9 @@ describe("dashboard quiz deletion persistence and real AI generation (no dummy f
         delete memStorage[k];
       },
     };
-    (globalThis as Record<string, unknown>)["window"] = { location: { origin: "http://localhost" } };
+    (globalThis as Record<string, unknown>)["window"] = {
+      location: { origin: "http://localhost" },
+    };
     (globalThis as Record<string, unknown>)["localStorage"] = lsMock;
 
     try {
@@ -2942,7 +2955,8 @@ describe("dashboard quiz deletion persistence and real AI generation (no dummy f
       // Must NOT charge AI credit when key is missing / generation did not run
       expect(getAiCredits()).toBe(50);
 
-      const fenced = '```json\n{"titleEn":"Flow Test","titleBn":"ফ্লো টেস্ট","questions":[{"type":"single_mcq","textEn":"Start Frame?","textBn":"স্টার্ট ফ্রেম?","options":[{"textEn":"A","textBn":"ক","isCorrect":false},{"textEn":"B","textBn":"খ","isCorrect":true}]}]}\n```';
+      const fenced =
+        '```json\n{"titleEn":"Flow Test","titleBn":"ফ্লো টেস্ট","questions":[{"type":"single_mcq","textEn":"Start Frame?","textBn":"স্টার্ট ফ্রেম?","options":[{"textEn":"A","textBn":"ক","isCorrect":false},{"textEn":"B","textBn":"খ","isCorrect":true}]}]}\n```';
       const cleaned = stripMarkdownJsonFence(fenced);
       const quiz = normalizeGeneratedQuizPayload(JSON.parse(cleaned), {
         topic: "Google Flow",
@@ -2965,5 +2979,45 @@ describe("dashboard quiz deletion persistence and real AI generation (no dummy f
         (globalThis as Record<string, unknown>)["localStorage"] = origLocalStorage;
       }
     }
+  });
+
+  it("prevents deleted default regions and courses from resurrecting on mergeSeededStoreData", () => {
+    const merged = mergeSeededStoreData({
+      regions: [] as Region[],
+      courses: [] as Course[],
+      roster: [] as RosterStudent[],
+      deletedRegionIds: ["reg-dhaka", "reg-chattogram"],
+      deletedCourseIds: ["course-bcs-foundation"],
+    });
+    expect(merged.regions.some((r) => r.id === "reg-dhaka")).toBe(false);
+    expect(merged.regions.some((r) => r.id === "reg-chattogram")).toBe(false);
+    expect(merged.courses.some((c) => c.id === "course-bcs-foundation")).toBe(false);
+  });
+
+  it("serves public REST v1 catalog endpoints and returns 404 for unknown certificates", async () => {
+    const healthRes = await handlePublicStandardEndpoint(
+      new Request("https://arena.onnesha.courses/api/v1/health"),
+    );
+    expect(healthRes?.status).toBe(200);
+    const healthBody = (await healthRes?.json()) as { status: string };
+    expect(healthBody.status).toBe("ok");
+
+    const quizzesRes = await handlePublicStandardEndpoint(
+      new Request("https://arena.onnesha.courses/api/v1/quizzes"),
+    );
+    expect(quizzesRes?.status).toBe(200);
+    const quizzesBody = (await quizzesRes?.json()) as { status: string; data: Quiz[] };
+    expect(quizzesBody.status).toBe("success");
+    expect(Array.isArray(quizzesBody.data)).toBe(true);
+
+    const coursesRes = await handlePublicStandardEndpoint(
+      new Request("https://arena.onnesha.courses/api/v1/courses"),
+    );
+    expect(coursesRes?.status).toBe(200);
+
+    const missingCertRes = await handlePublicStandardEndpoint(
+      new Request("https://arena.onnesha.courses/api/v1/certificates/ONN-0000-NONE"),
+    );
+    expect(missingCertRes?.status).toBe(404);
   });
 });

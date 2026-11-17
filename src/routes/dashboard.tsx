@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLanguage } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
 import { Navbar } from "@/components/layout/Navbar";
@@ -42,6 +42,7 @@ import {
   FileSpreadsheet,
   KeyRound,
   LayoutDashboard,
+  Loader2,
   Lock,
   MapPin,
   MessageSquare,
@@ -68,7 +69,18 @@ import {
   X,
 } from "lucide-react";
 
+interface DashboardSearch {
+  tab?: string | undefined;
+  courseId?: string | undefined;
+  editQuizId?: string | undefined;
+}
+
 export const Route = createFileRoute("/dashboard")({
+  validateSearch: (search: Record<string, unknown>): DashboardSearch => ({
+    tab: typeof search["tab"] === "string" ? search["tab"] : undefined,
+    courseId: typeof search["courseId"] === "string" ? search["courseId"] : undefined,
+    editQuizId: typeof search["editQuizId"] === "string" ? search["editQuizId"] : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Instructor Studio & Regional Assessment Command · Onnesha Arena" },
@@ -138,6 +150,15 @@ function DashboardPage() {
   const [selectedResultsRegionId, setSelectedResultsRegionId] = useState<string>("all");
   const [retakeSkipCompleted, setRetakeSkipCompleted] = useState<boolean>(true);
   const [retakeMinAnswers, setRetakeMinAnswers] = useState<number>(1);
+  const [retakeMinAnswersDraft, setRetakeMinAnswersDraft] = useState<string>("1");
+  const editQuizParamAppliedRef = useRef<boolean>(false);
+  const editingOriginalMetaRef = useRef<{
+    id: string;
+    instructorId?: string | undefined;
+    instructorName?: string | undefined;
+    titleEn: string;
+    titleBn: string;
+  } | null>(null);
 
   const [showAiModal, setShowAiModal] = useState(false);
   const [selectedQuizForOmr, setSelectedQuizForOmr] = useState<Quiz | null>(null);
@@ -257,8 +278,7 @@ function DashboardPage() {
     );
   }, [quizzes, courses, isSuperAdmin, showAllModelPacks, assignedCourses, user?.id]);
 
-  const primaryHostQuizSlug =
-    scopedQuizzes[0]?.slug || scopedQuizzes[0]?.id || "bcs-gk";
+  const primaryHostQuizSlug = scopedQuizzes[0]?.slug || scopedQuizzes[0]?.id || "bcs-gk";
 
   // Filtered Roster by Region & Search Query
   const filteredRoster = useMemo(() => {
@@ -318,9 +338,8 @@ function DashboardPage() {
     () =>
       selectedSessionId === "all"
         ? null
-        : examSessions.find(
-            (s) => s.id === selectedSessionId || s.pin === selectedSessionId,
-          ) || null,
+        : examSessions.find((s) => s.id === selectedSessionId || s.pin === selectedSessionId) ||
+          null,
     [examSessions, selectedSessionId],
   );
 
@@ -368,16 +387,27 @@ function DashboardPage() {
       !!quiz.isTemplate ||
       (user?.role !== "admin" && !!quiz.instructorId && quiz.instructorId !== user?.id);
     const cloneMode = forceClone || isForeignOrTemplate;
-    const cid = quiz.courseId || courses[0]?.id || "course-bcs-foundation";
+    const fallbackCourseId = courses[0]?.id || "course-bcs-foundation";
+    const cid = quiz.courseId || fallbackCourseId;
     const nextCourseQuizNum =
       quizzes
         .filter((q) => q.courseId === cid)
         .reduce((m, q) => Math.max(m, q.quizNumber || 0), 0) + 1;
 
+    editingOriginalMetaRef.current = cloneMode
+      ? null
+      : {
+          id: quiz.id,
+          instructorId: quiz.instructorId,
+          instructorName: quiz.instructorName,
+          titleEn: quiz.titleEn || quiz.titleBn,
+          titleBn: quiz.titleBn || quiz.titleEn,
+        };
+
     setEditingQuizId(cloneMode ? null : quiz.id);
     setEditingQuizSlug(cloneMode ? null : quiz.slug || quiz.id);
     setNewQuizTitle(
-      cloneMode ? `${quiz.titleEn || quiz.titleBn} (Custom Copy)` : quiz.titleEn || quiz.titleBn,
+      cloneMode ? `${quiz.titleEn || quiz.titleBn} (Custom Copy)` : quiz.titleBn || quiz.titleEn,
     );
     setNewQuizCourseId(cid);
     setNewQuizNumber(cloneMode ? nextCourseQuizNum : quiz.quizNumber || 1);
@@ -407,8 +437,12 @@ function DashboardPage() {
     setActiveTab("ai_creator");
   };
 
+  const loadQuizIntoEditorRef = useRef(handleLoadQuizIntoEditor);
+  loadQuizIntoEditorRef.current = handleLoadQuizIntoEditor;
+
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || authLoading) return;
+    if (editQuizParamAppliedRef.current) return;
     const params = new URLSearchParams(window.location.search);
     const tabParam = params.get("tab") as TabType | null;
     const editQuizIdParam = params.get("editQuizId");
@@ -425,43 +459,71 @@ function DashboardPage() {
     if (editQuizIdParam) {
       const target = db.getQuizBySlug(editQuizIdParam);
       if (target) {
-        handleLoadQuizIntoEditor(target);
+        editQuizParamAppliedRef.current = true;
+        loadQuizIntoEditorRef.current(target);
       }
+      return;
     }
-  }, []);
+    editQuizParamAppliedRef.current = true;
+  }, [authLoading, quizzes.length]);
 
   const handleSaveQuiz = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newQuizTitle) return;
 
+    const existingQuiz = editingQuizId
+      ? quizzes.find((q) => q.id === editingQuizId || q.slug === editingQuizSlug)
+      : undefined;
     const selectedCourse = courses.find((c) => c.id === newQuizCourseId);
     const quizId = editingQuizId || `custom-quiz-${Date.now()}`;
     const quizSlug = editingQuizSlug || `custom-${Date.now().toString(36)}`;
+    const origMeta =
+      editingOriginalMetaRef.current && editingOriginalMetaRef.current.id === editingQuizId
+        ? editingOriginalMetaRef.current
+        : null;
+    const preserveTitleEn =
+      origMeta &&
+      origMeta.titleEn &&
+      origMeta.titleEn !== origMeta.titleBn &&
+      newQuizTitle === origMeta.titleBn
+        ? origMeta.titleEn
+        : newQuizTitle;
+    const ownerId = editingQuizId
+      ? origMeta?.instructorId || existingQuiz?.instructorId || user?.id || "usr-instructor-1"
+      : user?.id || "usr-instructor-1";
+    const ownerName = editingQuizId
+      ? origMeta?.instructorName || existingQuiz?.instructorName || user?.name || "Instructor"
+      : user?.name || "Instructor";
+
     const newQuiz: Quiz = {
       id: quizId,
       slug: quizSlug,
-      courseId: selectedCourse?.id,
-      courseTitle: selectedCourse?.titleEn,
+      courseId: selectedCourse?.id || (editingQuizId ? newQuizCourseId : undefined),
+      courseTitle: selectedCourse?.titleEn || existingQuiz?.courseTitle,
       quizNumber: newQuizNumber || 1,
-      instructorId: user?.id || "usr-instructor-1",
-      instructorName: user?.name || "Instructor",
-      titleEn: newQuizTitle,
+      instructorId: ownerId,
+      instructorName: ownerName,
+      titleEn: preserveTitleEn,
       titleBn: newQuizTitle,
-      descriptionEn: `${selectedCourse ? `${selectedCourse.titleEn} · Quiz #${newQuizNumber || 1} · ` : ""}Created by ${user?.name || "Instructor"}.`,
-      descriptionBn: `${selectedCourse ? `${selectedCourse.titleBn} · কুইজ #${newQuizNumber || 1} · ` : ""}ইন্সট্রাক্টর ${user?.name || "শিক্ষক"} কর্তৃক তৈরি মডেল টেস্ট।`,
-      icon: selectedCourse?.icon || "🎯",
+      descriptionEn:
+        existingQuiz?.descriptionEn && existingQuiz.descriptionEn !== existingQuiz.descriptionBn
+          ? existingQuiz.descriptionEn
+          : `${selectedCourse ? `${selectedCourse.titleEn} · Quiz #${newQuizNumber || 1} · ` : ""}Created by ${ownerName}.`,
+      descriptionBn: `${selectedCourse ? `${selectedCourse.titleBn} · কুইজ #${newQuizNumber || 1} · ` : ""}ইন্সট্রাক্টর ${ownerName} কর্তৃক তৈরি মডেল টেস্ট।`,
+      icon: selectedCourse?.icon || existingQuiz?.icon || "🎯",
       categoryEn: selectedCourse?.categoryEn || newQuizCategory,
-      categoryBn: selectedCourse?.categoryBn || newQuizCategory,
+      categoryBn: selectedCourse?.categoryBn || existingQuiz?.categoryBn || newQuizCategory,
       questions: newQuestions,
       isTemplate: false,
       isPrivate: selectedCourse
         ? isCoursePrivate(selectedCourse)
-        : Boolean(editingQuizId && quizzes.find((q) => q.id === editingQuizId)?.isPrivate),
+        : Boolean(existingQuiz?.isPrivate),
       tags: ["Custom", `Quiz ${newQuizNumber || 1}`, "Multi-Format"],
     };
 
     db.saveCustomQuiz(newQuiz);
     setQuizzes(db.getQuizzes());
+    editingOriginalMetaRef.current = null;
     setEditingQuizId(null);
     setEditingQuizSlug(null);
     setNewQuizTitle("");
@@ -766,6 +828,21 @@ function DashboardPage() {
       setTimeout(() => setSettingsSavedMsg(null), 3500);
     }
   };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background text-foreground bg-grid flex flex-col transition-colors">
+        <Navbar />
+        <main className="flex-1 flex items-center justify-center px-4 py-12">
+          <div className="flex items-center gap-3 font-display text-base font-bold text-foreground">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <span>Loading Instructor Studio...</span>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
 
   if (
     !authLoading &&
@@ -1576,6 +1653,28 @@ function DashboardPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => {
+                    editingOriginalMetaRef.current = null;
+                    setEditingQuizId(null);
+                    setEditingQuizSlug(null);
+                    setNewQuizTitle("");
+                    setNewQuestions([
+                      {
+                        id: `nq-${Date.now()}`,
+                        textEn: "Sample Question #1",
+                        textBn: "নমুনা প্রশ্ন #১",
+                        type: "single_mcq",
+                        timeLimitSec: 20,
+                        points: 1000,
+                        negativeMarks: 0.25,
+                        options: [
+                          { id: "o1", textEn: "Option A", textBn: "অপশন ক", isCorrect: true },
+                          { id: "o2", textEn: "Option B", textBn: "অপশন খ" },
+                          { id: "o3", textEn: "Option C", textBn: "অপশন গ" },
+                          { id: "o4", textEn: "Option D", textBn: "অপশন ঘ" },
+                        ],
+                        correctOptionIds: ["o1"],
+                      },
+                    ]);
                     if (selectedCourseFilter !== "all") {
                       setNewQuizCourseId(selectedCourseFilter);
                       const courseQuizzes = quizzes.filter(
@@ -1753,7 +1852,7 @@ function DashboardPage() {
                           {!isQuizPrivate(quiz, courses) && (
                             <Link
                               to="/play"
-                              search={{ practice: quiz.slug || quiz.id } as any}
+                              search={{ practice: quiz.slug || quiz.id, pin: undefined }}
                               className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 transition"
                             >
                               Practice
@@ -1795,6 +1894,7 @@ function DashboardPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    editingOriginalMetaRef.current = null;
                     setEditingQuizId(null);
                     setEditingQuizSlug(null);
                     setNewQuizTitle("");
@@ -1824,11 +1924,18 @@ function DashboardPage() {
                     }}
                     className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs sm:text-sm font-bold text-foreground outline-none focus:border-primary"
                   >
-                    {assignedCourses.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        [{c.code}] {c.titleEn} ({c.instructorNames.join(", ")})
-                      </option>
-                    ))}
+                    {(() => {
+                      const opts = [...assignedCourses];
+                      if (newQuizCourseId && !opts.some((c) => c.id === newQuizCourseId)) {
+                        const currentCourse = courses.find((c) => c.id === newQuizCourseId);
+                        if (currentCourse) opts.unshift(currentCourse);
+                      }
+                      return opts.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          [{c.code}] {c.titleEn} ({c.instructorNames.join(", ")})
+                        </option>
+                      ));
+                    })()}
                   </select>
                 </div>
 
@@ -2063,8 +2170,11 @@ function DashboardPage() {
                         const updated = [...newQuestions];
                         const target = updated[qIdx];
                         if (!target) return;
+                        const prevBn = target.textBn;
                         target.textBn = e.target.value;
-                        target.textEn = e.target.value;
+                        if (!target.textEn || target.textEn === prevBn) {
+                          target.textEn = e.target.value;
+                        }
                         setNewQuestions(updated);
                       }}
                       placeholder="প্রশ্ন বাংলায় বা ইংরেজিতে লিখুন..."
@@ -2128,8 +2238,11 @@ function DashboardPage() {
                                   const target = updated[qIdx];
                                   const optTarget = target?.options[optIdx];
                                   if (!optTarget) return;
+                                  const prevBn = optTarget.textBn;
                                   optTarget.textBn = e.target.value;
-                                  optTarget.textEn = e.target.value;
+                                  if (!optTarget.textEn || optTarget.textEn === prevBn) {
+                                    optTarget.textEn = e.target.value;
+                                  }
                                   setNewQuestions(updated);
                                 }}
                                 className="flex-1 rounded-xl border border-border bg-card px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
@@ -2149,8 +2262,11 @@ function DashboardPage() {
                           const updated = [...newQuestions];
                           const target = updated[qIdx];
                           if (!target) return;
+                          const prevBn = target.explanationBn || "";
                           target.explanationBn = e.target.value;
-                          target.explanationEn = e.target.value;
+                          if (!target.explanationEn || target.explanationEn === prevBn) {
+                            target.explanationEn = e.target.value;
+                          }
                           setNewQuestions(updated);
                         }}
                         placeholder="ঐচ্ছিক: সঠিক উত্তরের ব্যাখ্যা / Rationale (সমাধান শীটে প্রদর্শিত হবে)..."
@@ -2382,7 +2498,10 @@ function DashboardPage() {
                           <button
                             key={preset}
                             type="button"
-                            onClick={() => setRetakeMinAnswers(preset)}
+                            onClick={() => {
+                              setRetakeMinAnswers(preset);
+                              setRetakeMinAnswersDraft(String(preset));
+                            }}
                             className={`rounded-lg px-2 py-0.5 font-mono text-[11px] font-bold transition ${
                               retakeMinAnswers === preset
                                 ? "bg-amber-600 text-white shadow-xs"
@@ -2397,12 +2516,22 @@ function DashboardPage() {
                           min={1}
                           max={500}
                           aria-label="Custom minimum completed answers"
-                          value={retakeMinAnswers}
+                          value={retakeMinAnswersDraft}
                           onChange={(e) => {
-                            const val = parseInt(e.target.value, 10);
-                            setRetakeMinAnswers(
-                              Number.isFinite(val) ? Math.max(1, Math.min(500, val)) : 1,
-                            );
+                            const raw = e.target.value;
+                            setRetakeMinAnswersDraft(raw);
+                            const val = parseInt(raw, 10);
+                            if (Number.isFinite(val) && val >= 1) {
+                              setRetakeMinAnswers(Math.max(1, Math.min(500, val)));
+                            }
+                          }}
+                          onBlur={() => {
+                            const val = parseInt(retakeMinAnswersDraft, 10);
+                            const clamped = Number.isFinite(val)
+                              ? Math.max(1, Math.min(500, val))
+                              : 1;
+                            setRetakeMinAnswers(clamped);
+                            setRetakeMinAnswersDraft(String(clamped));
                           }}
                           className="w-12 rounded-lg border border-border bg-card px-1.5 py-0.5 text-center font-mono text-[11px] font-bold text-foreground outline-none focus:border-amber-500"
                           title="Custom minimum submitted answers threshold"
@@ -3146,7 +3275,9 @@ function DashboardPage() {
         (() => {
           const allCourses = db.getCourses();
           const brandingDefault = db.getBranding().defaultPassThresholdPct;
-          const gazetteSess = examSessions.find((s) => s.id === selectedSessionId);
+          const gazetteSess = examSessions.find(
+            (s) => s.id === selectedSessionId || s.pin === selectedSessionId,
+          );
           const gazetteQuiz = gazetteSess
             ? quizzes.find((q) => q.id === gazetteSess.quizId || q.slug === gazetteSess.quizId)
             : undefined;
@@ -3179,6 +3310,11 @@ function DashboardPage() {
                   courseThreshold: gazetteCourse?.passThresholdPct,
                   brandingDefaultThreshold: brandingDefault,
                 });
+          const gazetteNegativeMarking = gazetteQuiz?.questions?.[0]?.negativeMarks ?? 0.25;
+          const gazetteRosterFallback =
+            selectedResultsRegionId === "all"
+              ? roster
+              : roster.filter((s) => s.regionId === selectedResultsRegionId);
           return (
             <MeritGazetteView
               quizTitle={
@@ -3188,6 +3324,7 @@ function DashboardPage() {
               }
               passThresholdPct={gazetteThreshold}
               thresholdLabel={hasMixedThresholds ? "Mixed / Course-Specific" : undefined}
+              negativeMarking={gazetteNegativeMarking}
               participants={
                 activeResults.length > 0
                   ? activeResults.map((r) => ({
@@ -3207,7 +3344,7 @@ function DashboardPage() {
                           ? r.passed
                           : isPassingScore(r.accuracyPct, gazetteThreshold),
                     }))
-                  : filteredRoster.map((s, idx) => ({
+                  : gazetteRosterFallback.map((s, idx) => ({
                       id: s.id,
                       nickname: s.name,
                       rollNumber: s.rollNumber,

@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from "react";
 
 interface PinInputProps {
   length?: number;
@@ -17,23 +17,23 @@ export const PinInput: React.FC<PinInputProps> = ({
   onComplete,
   autoFocus = true,
   disabled = false,
-  className = '',
+  className = "",
 }) => {
   const inputsRef = useRef<(HTMLInputElement | null)[]>([]);
   const [digits, setDigits] = useState<string[]>(() =>
-    Array.from({ length }, (_, i) => value[i] || ''),
+    Array.from({ length }, (_, i) => value[i] || ""),
   );
 
   useEffect(() => {
-    const chars = value.slice(0, length).split('');
+    const chars = value.slice(0, length).split("");
     const newDigits = Array(length)
-      .fill('')
-      .map((_, i) => chars[i] || '');
+      .fill("")
+      .map((_, i) => chars[i] || "");
     setDigits(newDigits);
   }, [value, length]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>, idx: number) => {
-    const val = e.target.value.replace(/\D/g, '');
+    const val = e.target.value.replace(/\D/g, "");
     if (!val) return;
 
     const char = val.slice(-1);
@@ -41,7 +41,7 @@ export const PinInput: React.FC<PinInputProps> = ({
     newDigits[idx] = char;
     setDigits(newDigits);
 
-    const pinStr = newDigits.join('');
+    const pinStr = newDigits.join("");
     onChange(pinStr);
 
     if (pinStr.length === length && onComplete) {
@@ -54,34 +54,34 @@ export const PinInput: React.FC<PinInputProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => {
-    if (e.key === 'Backspace') {
+    if (e.key === "Backspace") {
       if (!digits[idx] && idx > 0) {
         inputsRef.current[idx - 1]?.focus();
       } else {
         const newDigits = [...digits];
-        newDigits[idx] = '';
+        newDigits[idx] = "";
         setDigits(newDigits);
-        onChange(newDigits.join(''));
+        onChange(newDigits.join(""));
       }
-    } else if (e.key === 'ArrowLeft' && idx > 0) {
+    } else if (e.key === "ArrowLeft" && idx > 0) {
       inputsRef.current[idx - 1]?.focus();
-    } else if (e.key === 'ArrowRight' && idx < length - 1) {
+    } else if (e.key === "ArrowRight" && idx < length - 1) {
       inputsRef.current[idx + 1]?.focus();
     }
   };
 
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
-    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, length);
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, length);
     if (!pasted) return;
 
-    const chars = pasted.split('');
+    const chars = pasted.split("");
     const newDigits = Array(length)
-      .fill('')
-      .map((_, i) => chars[i] || '');
+      .fill("")
+      .map((_, i) => chars[i] || "");
     setDigits(newDigits);
 
-    const pinStr = newDigits.join('');
+    const pinStr = newDigits.join("");
     onChange(pinStr);
 
     if (pinStr.length === length && onComplete) {
@@ -112,7 +112,7 @@ export const PinInput: React.FC<PinInputProps> = ({
           autoComplete="off"
           autoFocus={autoFocus && idx === 0}
           disabled={disabled}
-          value={digits[idx] || ''}
+          value={digits[idx] || ""}
           onChange={(e) => handleChange(e, idx)}
           onKeyDown={(e) => handleKeyDown(e, idx)}
           aria-label={`Digit ${idx + 1}`}

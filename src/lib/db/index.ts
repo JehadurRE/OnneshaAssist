@@ -203,18 +203,22 @@ class OnneshaDatabase {
           }))
         : [];
 
-      const rawSmsLogs = (res as { smsLogs?: Array<{
-        id: string;
-        recipientPhone: string;
-        studentName: string;
-        rollNumber: string;
-        quizTitle: string;
-        score: number;
-        rank: number;
-        messageText: string;
-        status: "delivered" | "queued" | "failed";
-        createdAt: string;
-      }> }).smsLogs;
+      const rawSmsLogs = (
+        res as {
+          smsLogs?: Array<{
+            id: string;
+            recipientPhone: string;
+            studentName: string;
+            rollNumber: string;
+            quizTitle: string;
+            score: number;
+            rank: number;
+            messageText: string;
+            status: "delivered" | "queued" | "failed";
+            createdAt: string;
+          }>;
+        }
+      ).smsLogs;
       const mappedSmsLogs: DbSmsLog[] | undefined = Array.isArray(rawSmsLogs)
         ? rawSmsLogs.map((s) => ({
             id: s.id,
@@ -268,13 +272,7 @@ class OnneshaDatabase {
           run("DELETE FROM courses");
           res.courses.forEach((c) => {
             const privFlag =
-              typeof c.isPrivate === "boolean"
-                ? c.isPrivate
-                  ? 1
-                  : 0
-                : isCoursePrivate(c)
-                  ? 1
-                  : 0;
+              typeof c.isPrivate === "boolean" ? (c.isPrivate ? 1 : 0) : isCoursePrivate(c) ? 1 : 0;
             const thresholdVal =
               typeof c.passThresholdPct === "number" && Number.isFinite(c.passThresholdPct)
                 ? c.passThresholdPct
@@ -307,7 +305,7 @@ class OnneshaDatabase {
           run("DELETE FROM users");
           res.users.forEach((u) => {
             run(
-              "INSERT OR REPLACE INTO users (id, email, name, role, institution, designation, phone, passwordHash, plan, assignedCourseIdsJson, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              "INSERT OR REPLACE INTO users (id, email, name, role, institution, designation, phone, passwordHash, plan, assignedCourseIdsJson, status, aiCredits, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
               [
                 u.id,
                 u.email,
@@ -320,6 +318,7 @@ class OnneshaDatabase {
                 u.plan || "institution_max",
                 JSON.stringify(u.assignedCourseIds || []),
                 u.status || "active",
+                typeof u.aiCredits === "number" ? u.aiCredits : 50,
                 u.createdAt || new Date().toISOString(),
               ],
             );
@@ -493,7 +492,22 @@ class OnneshaDatabase {
       if (Array.isArray(res.courses)) this.setStorage("courses", res.courses);
       if (Array.isArray(res.users)) this.setStorage("users", res.users);
       if (Array.isArray(res.customQuizzes)) this.setStorage("custom_quizzes", res.customQuizzes);
-      if (Array.isArray(res.deletedQuizIds)) this.setStorage("deleted_quiz_ids", res.deletedQuizIds);
+      if (Array.isArray(res.deletedQuizIds))
+        this.setStorage("deleted_quiz_ids", res.deletedQuizIds);
+      const extRes = res as {
+        deletedRegionIds?: string[];
+        deletedCourseIds?: string[];
+        purgedSampleData?: boolean;
+      };
+      if (Array.isArray(extRes.deletedRegionIds)) {
+        this.setStorage("deleted_region_ids", extRes.deletedRegionIds);
+      }
+      if (Array.isArray(extRes.deletedCourseIds)) {
+        this.setStorage("deleted_course_ids", extRes.deletedCourseIds);
+      }
+      if (typeof extRes.purgedSampleData === "boolean") {
+        this.setStorage("purged_sample_data", extRes.purgedSampleData);
+      }
       if (typeof res.hasServerGeminiKey === "boolean") {
         this.setStorage("has_server_gemini_key", res.hasServerGeminiKey);
       }
@@ -536,9 +550,13 @@ class OnneshaDatabase {
           .replace(/[^a-z0-9]/g, ""),
       ),
     );
+    const deletedRegionSet = new Set(this.getStorage<string[]>("deleted_region_ids", []));
+    const deletedCourseSet = new Set(this.getStorage<string[]>("deleted_course_ids", []));
+    const purgedSampleData = this.getStorage<boolean>("purged_sample_data", false);
 
     sqliteEngine.runBatch((run) => {
       DEFAULT_REGIONS.forEach((reg) => {
+        if (deletedRegionSet.has(reg.id)) return;
         const prev = existingRegMap.get(reg.id);
         if (!prev) {
           run(
@@ -559,71 +577,71 @@ class OnneshaDatabase {
         }
       });
 
-      DEFAULT_COURSES.forEach((c) => {
-        if (!existingCourseIds.has(c.id)) {
-          const privFlag =
-            typeof c.isPrivate === "boolean"
-              ? c.isPrivate
-                ? 1
-                : 0
-              : isCoursePrivate(c)
-                ? 1
-                : 0;
-          const thresholdVal =
-            typeof c.passThresholdPct === "number" && Number.isFinite(c.passThresholdPct)
-              ? c.passThresholdPct
-              : null;
-          run(
-            "INSERT OR IGNORE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, isPrivate, passThresholdPct, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-              c.id,
-              c.code,
-              c.titleEn,
-              c.titleBn,
-              c.descriptionEn,
-              c.descriptionBn,
-              c.categoryEn || "",
-              c.categoryBn || "",
-              c.icon || "📚",
-              c.color || "from-emerald-500/20 to-teal-500/20",
-              JSON.stringify(c.instructorIds || []),
-              JSON.stringify(c.instructorNames || []),
-              privFlag,
-              thresholdVal,
-              c.status || "active",
-              c.createdAt || new Date().toISOString(),
-            ],
-          );
-        }
-      });
+      if (!purgedSampleData) {
+        DEFAULT_COURSES.forEach((c) => {
+          if (deletedCourseSet.has(c.id)) return;
+          if (!existingCourseIds.has(c.id)) {
+            const privFlag =
+              typeof c.isPrivate === "boolean" ? (c.isPrivate ? 1 : 0) : isCoursePrivate(c) ? 1 : 0;
+            const thresholdVal =
+              typeof c.passThresholdPct === "number" && Number.isFinite(c.passThresholdPct)
+                ? c.passThresholdPct
+                : null;
+            run(
+              "INSERT OR IGNORE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, isPrivate, passThresholdPct, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              [
+                c.id,
+                c.code,
+                c.titleEn,
+                c.titleBn,
+                c.descriptionEn,
+                c.descriptionBn,
+                c.categoryEn || "",
+                c.categoryBn || "",
+                c.icon || "📚",
+                c.color || "from-emerald-500/20 to-teal-500/20",
+                JSON.stringify(c.instructorIds || []),
+                JSON.stringify(c.instructorNames || []),
+                privFlag,
+                thresholdVal,
+                c.status || "active",
+                c.createdAt || new Date().toISOString(),
+              ],
+            );
+          }
+        });
 
-      SAMPLE_ROSTER.forEach((s) => {
-        const cleanRoll = (s.rollNumber || "")
-          .trim()
-          .toLowerCase()
-          .replace(/[^a-z0-9]/g, "");
-        if (!existingStudentIds.has(s.id) && (!cleanRoll || !existingStudentRolls.has(cleanRoll))) {
-          run(
-            "INSERT OR IGNORE INTO roster_students (id, rollNumber, name, phone, regionId, regionName, section, batch, guardianPhone, email, passcode, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-              s.id,
-              s.rollNumber,
-              s.name,
-              s.phone || s.guardianPhone || "",
-              s.regionId || "reg-dhaka",
-              s.regionName || "Dhaka Range",
-              s.section || "",
-              s.batch || "Ansar VDP Digital Marketing Batch -04",
-              s.guardianPhone || s.phone || "",
-              s.email || `${s.rollNumber}@sanjibon.onnesha.courses`,
-              s.passcode || "",
-              s.createdAt || new Date().toISOString(),
-            ],
-          );
-          existingStudentIds.add(s.id);
-          if (cleanRoll) existingStudentRolls.add(cleanRoll);
-        }
-      });
+        SAMPLE_ROSTER.forEach((s) => {
+          const cleanRoll = (s.rollNumber || "")
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, "");
+          if (
+            !existingStudentIds.has(s.id) &&
+            (!cleanRoll || !existingStudentRolls.has(cleanRoll))
+          ) {
+            run(
+              "INSERT OR IGNORE INTO roster_students (id, rollNumber, name, phone, regionId, regionName, section, batch, guardianPhone, email, passcode, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              [
+                s.id,
+                s.rollNumber,
+                s.name,
+                s.phone || s.guardianPhone || "",
+                s.regionId || "reg-dhaka",
+                s.regionName || "Dhaka Range",
+                s.section || "",
+                s.batch || "Ansar VDP Digital Marketing Batch -04",
+                s.guardianPhone || s.phone || "",
+                s.email || `${s.rollNumber}@sanjibon.onnesha.courses`,
+                s.passcode || "",
+                s.createdAt || new Date().toISOString(),
+              ],
+            );
+            existingStudentIds.add(s.id);
+            if (cleanRoll) existingStudentRolls.add(cleanRoll);
+          }
+        });
+      }
 
       // Backfill any older custom rows missing regionId or phone
       existingRoster.forEach((s, idx) => {
@@ -661,9 +679,13 @@ class OnneshaDatabase {
 
   // ---------------- REGIONS REPOSITORY ----------------
   getRegions(): Region[] {
+    const deletedSet = new Set(this.getStorage<string[]>("deleted_region_ids", []));
     const rows = sqliteEngine.query<Region>("SELECT * FROM regions ORDER BY nameEn ASC");
-    if (rows.length > 0) return rows;
-    return this.getStorage<Region[]>("regions", DEFAULT_REGIONS);
+    if (rows.length > 0) {
+      return rows.filter((r) => !deletedSet.has(r.id));
+    }
+    const stored = this.getStorage<Region[]>("regions", DEFAULT_REGIONS);
+    return stored.filter((r) => !deletedSet.has(r.id));
   }
 
   addRegion(regionInput: {
@@ -683,6 +705,11 @@ class OnneshaDatabase {
       centerName: regionInput.centerName?.trim() || "",
       createdAt,
     };
+
+    const nextDeleted = this.getStorage<string[]>("deleted_region_ids", []).filter(
+      (rid) => rid !== newRegion.id,
+    );
+    this.setStorage("deleted_region_ids", nextDeleted);
 
     sqliteEngine.run(
       "INSERT OR REPLACE INTO regions (id, code, nameEn, nameBn, centerName, createdAt) VALUES (?, ?, ?, ?, ?, ?)",
@@ -707,52 +734,106 @@ class OnneshaDatabase {
     return newRegion;
   }
 
-  deleteRegion(id: string): void {
+  async deleteRegion(id: string): Promise<{ success: boolean; error?: string }> {
+    const prevRegions = this.getStorage<Region[]>("regions", DEFAULT_REGIONS);
+    const prevDeleted = this.getStorage<string[]>("deleted_region_ids", []);
+    const targetRegion =
+      sqliteEngine.queryOne<Region>("SELECT * FROM regions WHERE id = ?", [id]) ||
+      prevRegions.find((r) => r.id === id);
+
     sqliteEngine.run("DELETE FROM regions WHERE id = ?", [id]);
+    const nextDeleted = Array.from(new Set([...prevDeleted, id]));
+    this.setStorage("deleted_region_ids", nextDeleted);
     const regions = this.getRegions().filter((r) => r.id !== id);
     this.setStorage("regions", regions);
-
-    serverAdminMutateStore({ data: { action: "delete_region", regionId: id } }).catch((err) =>
-      console.warn("Region delete sync notice:", err),
-    );
     this.notifyListeners();
+
+    try {
+      const res = await serverAdminMutateStore({ data: { action: "delete_region", regionId: id } });
+      if (res && !res.success) {
+        this.setStorage("regions", prevRegions);
+        this.setStorage("deleted_region_ids", prevDeleted);
+        if (targetRegion) {
+          sqliteEngine.run(
+            "INSERT OR REPLACE INTO regions (id, code, nameEn, nameBn, centerName, createdAt) VALUES (?, ?, ?, ?, ?, ?)",
+            [
+              targetRegion.id,
+              targetRegion.code,
+              targetRegion.nameEn,
+              targetRegion.nameBn,
+              targetRegion.centerName || "",
+              targetRegion.createdAt,
+            ],
+          );
+        }
+        this.notifyListeners();
+        return { success: false, error: res.error || "Could not delete region from server." };
+      }
+      return { success: true };
+    } catch (err) {
+      console.warn("Region delete sync notice:", err);
+      return { success: true };
+    }
   }
 
   // ---------------- COURSES & MULTI-INSTRUCTOR REPOSITORY ----------------
   getCourses(): Course[] {
-    const rows = sqliteEngine.query<any>("SELECT * FROM courses ORDER BY createdAt ASC");
-    if (rows.length > 0) {
-      return rows.map((r) => {
-        const baseCourse: Course = {
-          id: r.id,
-          code: r.code,
-          titleEn: r.titleEn,
-          titleBn: r.titleBn,
-          descriptionEn: r.descriptionEn,
-          descriptionBn: r.descriptionBn,
-          categoryEn: r.categoryEn,
-          categoryBn: r.categoryBn,
-          icon: r.icon || "📚",
-          color: r.color || "from-emerald-500/20 to-teal-500/20",
-          instructorIds: r.instructorIdsJson ? JSON.parse(r.instructorIdsJson) : [],
-          instructorNames: r.instructorNamesJson ? JSON.parse(r.instructorNamesJson) : [],
-          status: (r.status as "active" | "archived") || "active",
-          createdAt: r.createdAt,
-        };
-        const resolvedPrivate =
-          typeof r.isPrivate === "number" ? r.isPrivate !== 0 : isCoursePrivate(baseCourse);
-        return {
-          ...baseCourse,
-          isPrivate: resolvedPrivate,
-          passThresholdPct:
-            typeof r.passThresholdPct === "number" ? r.passThresholdPct : undefined,
-        };
-      });
+    interface RawCourseRow {
+      id: string;
+      code: string;
+      titleEn: string;
+      titleBn: string;
+      descriptionEn: string;
+      descriptionBn: string;
+      categoryEn: string;
+      categoryBn: string;
+      icon?: string | null;
+      color?: string | null;
+      instructorIdsJson?: string | null;
+      instructorNamesJson?: string | null;
+      isPrivate?: number | null;
+      passThresholdPct?: number | null;
+      status?: string | null;
+      createdAt: string;
     }
-    return this.getStorage<Course[]>("courses", DEFAULT_COURSES).map((c) => ({
-      ...c,
-      isPrivate: isCoursePrivate(c),
-    }));
+    const deletedSet = new Set(this.getStorage<string[]>("deleted_course_ids", []));
+    const rows = sqliteEngine.query<RawCourseRow>("SELECT * FROM courses ORDER BY createdAt ASC");
+    if (rows.length > 0) {
+      return rows
+        .filter((r) => !deletedSet.has(r.id))
+        .map((r) => {
+          const baseCourse: Course = {
+            id: r.id,
+            code: r.code,
+            titleEn: r.titleEn,
+            titleBn: r.titleBn,
+            descriptionEn: r.descriptionEn,
+            descriptionBn: r.descriptionBn,
+            categoryEn: r.categoryEn,
+            categoryBn: r.categoryBn,
+            icon: r.icon || "📚",
+            color: r.color || "from-emerald-500/20 to-teal-500/20",
+            instructorIds: r.instructorIdsJson ? JSON.parse(r.instructorIdsJson) : [],
+            instructorNames: r.instructorNamesJson ? JSON.parse(r.instructorNamesJson) : [],
+            status: (r.status as "active" | "archived") || "active",
+            createdAt: r.createdAt,
+          };
+          const resolvedPrivate =
+            typeof r.isPrivate === "number" ? r.isPrivate !== 0 : isCoursePrivate(baseCourse);
+          return {
+            ...baseCourse,
+            isPrivate: resolvedPrivate,
+            passThresholdPct:
+              typeof r.passThresholdPct === "number" ? r.passThresholdPct : undefined,
+          };
+        });
+    }
+    return this.getStorage<Course[]>("courses", DEFAULT_COURSES)
+      .filter((c) => !deletedSet.has(c.id))
+      .map((c) => ({
+        ...c,
+        isPrivate: isCoursePrivate(c),
+      }));
   }
 
   saveCourse(course: Course): Course {
@@ -766,6 +847,11 @@ class OnneshaDatabase {
       isPrivate: resolvedPrivate,
       passThresholdPct: resolvedThreshold,
     };
+
+    const nextDeleted = this.getStorage<string[]>("deleted_course_ids", []).filter(
+      (cid) => cid !== normalizedCourse.id,
+    );
+    this.setStorage("deleted_course_ids", nextDeleted);
 
     sqliteEngine.run(
       "INSERT OR REPLACE INTO courses (id, code, titleEn, titleBn, descriptionEn, descriptionBn, categoryEn, categoryBn, icon, color, instructorIdsJson, instructorNamesJson, isPrivate, passThresholdPct, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -814,16 +900,23 @@ class OnneshaDatabase {
       this.setStorage("users", updatedUsers);
     }
 
-    serverAdminMutateStore({ data: { action: "save_course", course: normalizedCourse } }).catch((err) =>
-      console.warn("Course server sync notice:", err),
+    serverAdminMutateStore({ data: { action: "save_course", course: normalizedCourse } }).catch(
+      (err) => console.warn("Course server sync notice:", err),
     );
     this.notifyListeners();
     return normalizedCourse;
   }
 
-  deleteCourse(id: string): void {
+  async deleteCourse(id: string): Promise<{ success: boolean; error?: string }> {
+    const prevCourses = this.getCourses();
+    const prevDeleted = this.getStorage<string[]>("deleted_course_ids", []);
+    const targetCourse = prevCourses.find((c) => c.id === id);
+
     sqliteEngine.run("DELETE FROM courses WHERE id = ?", [id]);
-    const courses = this.getCourses().filter((c) => c.id !== id);
+    sqliteEngine.run("UPDATE quizzes SET courseId = '', courseTitle = '' WHERE courseId = ?", [id]);
+    const nextDeleted = Array.from(new Set([...prevDeleted, id]));
+    this.setStorage("deleted_course_ids", nextDeleted);
+    const courses = prevCourses.filter((c) => c.id !== id);
     this.setStorage("courses", courses);
 
     const updatedUsers = this.getUsers().map((u) => ({
@@ -839,16 +932,44 @@ class OnneshaDatabase {
       });
     });
     this.setStorage("users", updatedUsers);
-
-    serverAdminMutateStore({ data: { action: "delete_course", courseId: id } }).catch((err) =>
-      console.warn("Course delete sync notice:", err),
-    );
     this.notifyListeners();
+
+    try {
+      const res = await serverAdminMutateStore({ data: { action: "delete_course", courseId: id } });
+      if (res && !res.success) {
+        this.setStorage("courses", prevCourses);
+        this.setStorage("deleted_course_ids", prevDeleted);
+        if (targetCourse) {
+          this.saveCourse(targetCourse);
+        }
+        this.notifyListeners();
+        return { success: false, error: res.error || "Could not delete course from server." };
+      }
+      return { success: true };
+    } catch (err) {
+      console.warn("Course delete sync notice:", err);
+      return { success: true };
+    }
   }
 
   // ---------------- USERS & INSTRUCTORS REPOSITORY ----------------
   getUsers(): ManagedUser[] {
-    const rows = sqliteEngine.query<any>("SELECT * FROM users ORDER BY createdAt ASC");
+    interface RawUserRow {
+      id: string;
+      name: string;
+      email: string;
+      passwordHash?: string | null;
+      role?: string | null;
+      institution?: string | null;
+      designation?: string | null;
+      phone?: string | null;
+      plan?: string | null;
+      assignedCourseIdsJson?: string | null;
+      status?: string | null;
+      aiCredits?: number | null;
+      createdAt?: string | null;
+    }
+    const rows = sqliteEngine.query<RawUserRow>("SELECT * FROM users ORDER BY createdAt ASC");
     if (rows.length > 0) {
       return rows.map((r) => ({
         id: r.id,
@@ -859,9 +980,10 @@ class OnneshaDatabase {
         institution: r.institution || "Onnesha Academic Wing",
         designation: r.designation || "Faculty Instructor",
         phone: r.phone || "",
-        plan: (r.plan as any) || "institution_max",
+        plan: r.plan || "institution_max",
         assignedCourseIds: r.assignedCourseIdsJson ? JSON.parse(r.assignedCourseIdsJson) : [],
         status: (r.status as "active" | "suspended") || "active",
+        aiCredits: typeof r.aiCredits === "number" ? r.aiCredits : 50,
         createdAt: r.createdAt || new Date().toISOString(),
       }));
     }
@@ -874,8 +996,9 @@ class OnneshaDatabase {
   saveUser(user: ManagedUser): ManagedUser {
     const cleanPass =
       user.passwordHash && user.passwordHash !== "instructor123" ? user.passwordHash : "";
+    const resolvedCredits = typeof user.aiCredits === "number" ? user.aiCredits : 50;
     sqliteEngine.run(
-      "INSERT OR REPLACE INTO users (id, email, name, role, institution, designation, phone, passwordHash, plan, assignedCourseIdsJson, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT OR REPLACE INTO users (id, email, name, role, institution, designation, phone, passwordHash, plan, assignedCourseIdsJson, status, aiCredits, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         user.id,
         user.email,
@@ -888,6 +1011,7 @@ class OnneshaDatabase {
         user.plan || "institution_max",
         JSON.stringify(user.assignedCourseIds || []),
         user.status || "active",
+        resolvedCredits,
         user.createdAt || new Date().toISOString(),
       ],
     );
@@ -925,8 +1049,28 @@ class OnneshaDatabase {
 
   // ---------------- QUIZZES REPOSITORY (SQLite + Server) ----------------
   getQuizzes(): Quiz[] {
+    interface RawQuizRow {
+      id: string;
+      slug: string;
+      courseId?: string | null;
+      courseTitle?: string | null;
+      quizNumber?: number | null;
+      instructorId?: string | null;
+      instructorName?: string | null;
+      titleEn: string;
+      titleBn: string;
+      descriptionEn: string;
+      descriptionBn: string;
+      categoryEn: string;
+      categoryBn: string;
+      icon?: string | null;
+      questionsJson?: string | null;
+      isTemplate?: number | null;
+      isPrivate?: number | null;
+      createdAt?: string | null;
+    }
     const courses = this.getCourses();
-    const mapRow = (r: any): Quiz => {
+    const mapRow = (r: RawQuizRow): Quiz => {
       const baseQuiz: Quiz = {
         id: r.id,
         slug: r.slug,
@@ -945,7 +1089,7 @@ class OnneshaDatabase {
         questions: r.questionsJson ? JSON.parse(r.questionsJson) : [],
         isTemplate: !!r.isTemplate,
         isPrivate: typeof r.isPrivate === "number" ? r.isPrivate !== 0 : undefined,
-        createdAt: r.createdAt,
+        createdAt: r.createdAt || undefined,
       };
       return {
         ...baseQuiz,
@@ -957,7 +1101,9 @@ class OnneshaDatabase {
     const isNotDeleted = (q: Pick<Quiz, "id" | "slug">) =>
       !deletedSet.has(q.id) && (!q.slug || !deletedSet.has(q.slug));
 
-    const sqliteRows = sqliteEngine.query<any>("SELECT * FROM quizzes ORDER BY createdAt DESC");
+    const sqliteRows = sqliteEngine.query<RawQuizRow>(
+      "SELECT * FROM quizzes ORDER BY createdAt DESC",
+    );
     if (sqliteRows.length > 0) {
       const customQuizzes: Quiz[] = sqliteRows.map(mapRow).filter(isNotDeleted);
       const customIds = new Set(customQuizzes.map((q) => q.id));
@@ -1016,12 +1162,32 @@ class OnneshaDatabase {
   }
 
   getQuizBySlug(slug: string): Quiz | undefined {
+    interface RawQuizRow {
+      id: string;
+      slug: string;
+      courseId?: string | null;
+      courseTitle?: string | null;
+      quizNumber?: number | null;
+      instructorId?: string | null;
+      instructorName?: string | null;
+      titleEn: string;
+      titleBn: string;
+      descriptionEn: string;
+      descriptionBn: string;
+      categoryEn: string;
+      categoryBn: string;
+      icon?: string | null;
+      questionsJson?: string | null;
+      isTemplate?: number | null;
+      isPrivate?: number | null;
+      createdAt?: string | null;
+    }
     const courses = this.getCourses();
     const deletedSet = this.getDeletedQuizIds();
-    const row = sqliteEngine.queryOne<any>("SELECT * FROM quizzes WHERE slug = ? OR id = ?", [
-      slug,
-      slug,
-    ]);
+    const row = sqliteEngine.queryOne<RawQuizRow>(
+      "SELECT * FROM quizzes WHERE slug = ? OR id = ?",
+      [slug, slug],
+    );
     if (row && !deletedSet.has(row.id) && (!row.slug || !deletedSet.has(row.slug))) {
       const baseQuiz: Quiz = {
         id: row.id,
@@ -1041,7 +1207,7 @@ class OnneshaDatabase {
         questions: row.questionsJson ? JSON.parse(row.questionsJson) : [],
         isTemplate: !!row.isTemplate,
         isPrivate: typeof row.isPrivate === "number" ? row.isPrivate !== 0 : undefined,
-        createdAt: row.createdAt,
+        createdAt: row.createdAt || undefined,
       };
       return {
         ...baseQuiz,
@@ -1059,7 +1225,8 @@ class OnneshaDatabase {
       isPrivate: resolvedPrivate,
     };
 
-    const nextDeleted = Array.from(this.getDeletedQuizIds()).filter(
+    const prevDeleted = this.getStorage<string[]>("deleted_quiz_ids", []);
+    const nextDeleted = prevDeleted.filter(
       (tok) => tok !== normalizedQuiz.id && (!normalizedQuiz.slug || tok !== normalizedQuiz.slug),
     );
     this.setStorage("deleted_quiz_ids", nextDeleted);
@@ -1088,7 +1255,8 @@ class OnneshaDatabase {
       ],
     );
 
-    const custom = this.getStorage<Quiz[]>("custom_quizzes", []);
+    const prevCustom = this.getStorage<Quiz[]>("custom_quizzes", []);
+    const custom = [...prevCustom];
     const existingIndex = custom.findIndex(
       (q) => q.id === normalizedQuiz.id || q.slug === normalizedQuiz.slug,
     );
@@ -1101,10 +1269,15 @@ class OnneshaDatabase {
 
     serverAdminMutateStore({ data: { action: "save_quiz", quiz: normalizedQuiz } })
       .then((res) => {
+        if (res && !res.success) {
+          console.warn("Quiz save rejected by server:", res.error);
+          return this.syncFromServerStore();
+        }
         if (res?.success && Array.isArray(res.deletedQuizIds)) {
           this.setStorage("deleted_quiz_ids", res.deletedQuizIds);
           this.notifyListeners();
         }
+        return undefined;
       })
       .catch((err) => console.warn("Quiz server sync notice:", err));
     this.notifyListeners();
@@ -1116,10 +1289,26 @@ class OnneshaDatabase {
 
     const prevCustom = this.getStorage<Quiz[]>("custom_quizzes", []);
     const prevDeleted = this.getStorage<string[]>("deleted_quiz_ids", []);
-    const prevSqliteRow = sqliteEngine.queryOne<any>("SELECT * FROM quizzes WHERE id = ? OR slug = ?", [
-      cleanId,
-      cleanId,
-    ]);
+    const prevSqliteRow = sqliteEngine.queryOne<{
+      id: string;
+      slug: string;
+      courseId?: string | null;
+      courseTitle?: string | null;
+      quizNumber?: number | null;
+      instructorId?: string | null;
+      instructorName?: string | null;
+      titleEn: string;
+      titleBn: string;
+      descriptionEn: string;
+      descriptionBn: string;
+      categoryEn: string;
+      categoryBn: string;
+      icon?: string | null;
+      questionsJson?: string | null;
+      isTemplate?: number | null;
+      isPrivate?: number | null;
+      createdAt?: string | null;
+    }>("SELECT * FROM quizzes WHERE id = ? OR slug = ?", [cleanId, cleanId]);
 
     const tokens = new Set<string>([cleanId]);
     const matchedCustom = prevCustom.find((q) => q.id === cleanId || q.slug === cleanId);
@@ -1149,7 +1338,9 @@ class OnneshaDatabase {
     this.notifyListeners();
 
     try {
-      const res = await serverAdminMutateStore({ data: { action: "delete_quiz", quizId: cleanId } });
+      const res = await serverAdminMutateStore({
+        data: { action: "delete_quiz", quizId: cleanId },
+      });
       if (res && !res.success) {
         // Revert optimistic deletion if server denied permission
         this.setStorage("custom_quizzes", prevCustom);
@@ -1204,7 +1395,11 @@ class OnneshaDatabase {
       "SELECT * FROM roster_students ORDER BY rollNumber ASC",
     );
     if (rows.length === 0) {
-      rows = this.getStorage<RosterStudent[]>("roster_students", SAMPLE_ROSTER);
+      const purgedSampleData = this.getStorage<boolean>("purged_sample_data", false);
+      rows = this.getStorage<RosterStudent[]>(
+        "roster_students",
+        purgedSampleData ? [] : SAMPLE_ROSTER,
+      );
     }
     if (regionId && regionId !== "all") {
       return rows.filter((r) => r.regionId === regionId);
@@ -1507,18 +1702,21 @@ class OnneshaDatabase {
   }
 
   getExamSessions(): ExamSessionRecord[] {
-    const rows = sqliteEngine.query<any>("SELECT * FROM exam_sessions ORDER BY createdAt DESC");
+    const rows = sqliteEngine.query<ExamSessionRecord>(
+      "SELECT * FROM exam_sessions ORDER BY createdAt DESC",
+    );
     if (rows.length > 0) {
       return rows.map((r) => ({
         ...r,
-        passThresholdPct:
-          typeof r.passThresholdPct === "number" ? r.passThresholdPct : undefined,
+        passThresholdPct: typeof r.passThresholdPct === "number" ? r.passThresholdPct : undefined,
       }));
     }
     return this.getStorage<ExamSessionRecord[]>("exam_sessions", []);
   }
 
-  private normalizeExamResultRow(r: any): ExamResultRecord {
+  private normalizeExamResultRow(
+    r: Omit<ExamResultRecord, "passed"> & { passed?: number | boolean | null },
+  ): ExamResultRecord {
     return {
       ...r,
       passed:
@@ -1531,21 +1729,23 @@ class OnneshaDatabase {
   }
 
   getExamResults(sessionId?: string): ExamResultRecord[] {
+    type RawResultRow = Omit<ExamResultRecord, "passed"> & { passed?: number | boolean | null };
     if (sessionId) {
       return sqliteEngine
-        .query<any>(
+        .query<RawResultRow>(
           "SELECT * FROM exam_results WHERE sessionId = ? OR pin = ? ORDER BY rank ASC",
           [sessionId, sessionId],
         )
         .map((r) => this.normalizeExamResultRow(r));
     }
     return sqliteEngine
-      .query<any>("SELECT * FROM exam_results ORDER BY createdAt DESC, rank ASC")
+      .query<RawResultRow>("SELECT * FROM exam_results ORDER BY createdAt DESC, rank ASC")
       .map((r) => this.normalizeExamResultRow(r));
   }
 
   getAllExamResults(): ExamResultRecord[] {
-    const rows = sqliteEngine.query<any>(
+    type RawResultRow = Omit<ExamResultRecord, "passed"> & { passed?: number | boolean | null };
+    const rows = sqliteEngine.query<RawResultRow>(
       "SELECT * FROM exam_results ORDER BY createdAt DESC, rank ASC",
     );
     if (rows.length > 0) return rows.map((r) => this.normalizeExamResultRow(r));
@@ -1554,7 +1754,9 @@ class OnneshaDatabase {
 
   // ---------------- VERIFIABLE CERTIFICATES ----------------
   getCertificates(): CertificateData[] {
-    const rows = sqliteEngine.query<any>("SELECT * FROM certificates ORDER BY issueDate DESC");
+    const rows = sqliteEngine.query<CertificateData & { verified?: number | boolean }>(
+      "SELECT * FROM certificates ORDER BY issueDate DESC",
+    );
     if (rows.length > 0) {
       return rows.map((r) => ({
         ...r,
@@ -1565,9 +1767,20 @@ class OnneshaDatabase {
   }
 
   getCertificateById(certNo: string): CertificateData | undefined {
-    const row = sqliteEngine.queryOne<any>(
+    const cleanCertNo = certNo.trim();
+    const certNoUpper = cleanCertNo.toUpperCase();
+    if (!certNoUpper) return undefined;
+
+    const revokedSet = new Set(
+      this.getStorage<string[]>("revoked_certificates", []).map((c) => c.trim().toUpperCase()),
+    );
+    if (revokedSet.has(certNoUpper)) {
+      return undefined;
+    }
+
+    const row = sqliteEngine.queryOne<CertificateData & { verified?: number | boolean }>(
       "SELECT * FROM certificates WHERE LOWER(certificateNumber) = LOWER(?)",
-      [certNo],
+      [cleanCertNo],
     );
     if (row) {
       return {
@@ -1577,17 +1790,14 @@ class OnneshaDatabase {
     }
 
     const certs = this.getCertificates();
-    const matched = certs.find((c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase());
-    if (matched) return matched;
-
-    const revokedSet = new Set(
-      this.getStorage<string[]>("revoked_certificates", []).map((c) => c.toUpperCase()),
+    const matched = certs.find(
+      (c) => c.certificateNumber.toLowerCase() === cleanCertNo.toLowerCase(),
     );
-    const certNoUpper = certNo.trim().toUpperCase();
+    if (matched) return matched;
 
     // Deterministic resolution ONLY when backed by a passing examResult record and not revoked
     const match = certNoUpper.match(/^ONN-([A-Z0-9]{4})-([A-Z0-9]{4,6})$/);
-    if (!revokedSet.has(certNoUpper) && match && match[1] && match[2]) {
+    if (match && match[1] && match[2]) {
       const pinPrefix = match[1];
       const rollSuffix = match[2];
       const results = this.getAllExamResults();
@@ -1672,7 +1882,7 @@ class OnneshaDatabase {
     cert: Omit<CertificateData, "id">,
     options?: { skipStorageRefresh?: boolean },
   ): CertificateData {
-    const existingRow = sqliteEngine.queryOne<any>(
+    const existingRow = sqliteEngine.queryOne<CertificateData & { verified?: number | boolean }>(
       "SELECT * FROM certificates WHERE LOWER(certificateNumber) = LOWER(?)",
       [cert.certificateNumber],
     );
@@ -1780,7 +1990,8 @@ class OnneshaDatabase {
     } catch (err) {
       return {
         success: false,
-        error: err instanceof Error ? err.message : "Network error while sealing certificate on server.",
+        error:
+          err instanceof Error ? err.message : "Network error while sealing certificate on server.",
       };
     }
   }
@@ -1940,7 +2151,9 @@ class OnneshaDatabase {
     try {
       await serverAdminMutateStore({ data: { action: "purge_dummy_data" } });
       await this.syncFromServerStore();
-    } catch {}
+    } catch {
+      // ignore offline dummy purge notice
+    }
     this.notifyListeners();
   }
 
@@ -2003,7 +2216,9 @@ class OnneshaDatabase {
         serverError = res.error || "Permission denied";
       }
       await this.syncFromServerStore();
-    } catch {}
+    } catch {
+      // ignore offline under-50 purge sync notice
+    }
 
     this.notifyListeners();
     return serverError

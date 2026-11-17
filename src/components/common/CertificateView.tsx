@@ -28,6 +28,7 @@ export const CertificateView: React.FC<CertificateViewProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const zoomCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [isZoomOpen, setIsZoomOpen] = useState(false);
 
@@ -38,25 +39,44 @@ export const CertificateView: React.FC<CertificateViewProps> = ({
         `https://arena.onnesha.courses/verify/${certificate.certificateNumber}`;
 
   useEffect(() => {
-    if (canvasRef.current) {
-      populateCertificateCanvas(canvasRef.current, certificate, branding);
-    }
+    let active = true;
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+    void (async () => {
+      if (!active) return;
+      await populateCertificateCanvas(canvas, certificate, branding);
+    })();
+    return () => {
+      active = false;
+    };
   }, [certificate, branding]);
 
   useEffect(() => {
-    if (isZoomOpen && zoomCanvasRef.current) {
-      populateCertificateCanvas(zoomCanvasRef.current, certificate, branding);
-    }
+    let active = true;
+    const canvas = zoomCanvasRef.current;
+    if (!isZoomOpen || !canvas) return undefined;
+    void (async () => {
+      if (!active) return;
+      await populateCertificateCanvas(canvas, certificate, branding);
+    })();
+    return () => {
+      active = false;
+    };
   }, [isZoomOpen, certificate, branding]);
 
   const handleDownloadPdf = async () => {
     if (isGeneratingPdf) return;
+    setPdfError(null);
     setIsGeneratingPdf(true);
     try {
       await downloadCertificatePdf(certificate, branding);
       if (onDownload) {
         onDownload();
       }
+    } catch (err) {
+      setPdfError(
+        err instanceof Error ? err.message : "Failed to generate certificate PDF. Please retry.",
+      );
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -94,6 +114,11 @@ export const CertificateView: React.FC<CertificateViewProps> = ({
       </div>
 
       {/* Action Controls — Real PDF Binary Download + Shareable Link */}
+      {pdfError && (
+        <div className="mt-4 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-2.5 text-center text-xs font-semibold text-destructive print:hidden">
+          {pdfError}
+        </div>
+      )}
       <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-center gap-2.5 sm:gap-3 print:hidden">
         <button
           onClick={handleDownloadPdf}

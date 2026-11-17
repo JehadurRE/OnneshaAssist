@@ -99,7 +99,9 @@ export function normalizeGeneratedQuizPayload(
 ): Quiz {
   const rawQuestions = Array.isArray(parsed.questions) ? parsed.questions : [];
   if (rawQuestions.length === 0) {
-    throw new Error("Gemini returned zero questions. Refine your topic or syllabus notes and try again.");
+    throw new Error(
+      "Gemini returned zero questions. Refine your topic or syllabus notes and try again.",
+    );
   }
 
   const nowTs = Date.now();
@@ -128,7 +130,8 @@ export function normalizeGeneratedQuizPayload(
       return {
         id: qId,
         textEn: q.textEn?.trim() || `${data.topic} Short Answer #${idx + 1}`,
-        textBn: q.textBn?.trim() || q.textEn?.trim() || `${data.topic} সংক্ষিপ্ত প্রশ্ন #${idx + 1}`,
+        textBn:
+          q.textBn?.trim() || q.textEn?.trim() || `${data.topic} সংক্ষিপ্ত প্রশ্ন #${idx + 1}`,
         type: "written",
         timeLimitSec: 30,
         points: 1000,
@@ -240,7 +243,9 @@ export async function generateQuizViaGeminiRest(
         if (errBody?.error?.message) {
           apiErrMsg = `Gemini API (${response.status}): ${errBody.error.message}`;
         }
-      } catch {}
+      } catch {
+        // ignore JSON error body parse failure
+      }
       lastError = apiErrMsg;
       // Retry next model only if this model endpoint is unavailable or overloaded
       if ((response.status === 404 || response.status === 503) && i < GEMINI_MODELS.length - 1) {

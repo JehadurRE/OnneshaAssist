@@ -12,7 +12,10 @@ export const Route = createFileRoute("/contact-sales")({
   head: () => ({
     meta: [
       { title: "Contact Sales & Custom Plans · Onnesha Arena" },
-      { name: "description", content: "Talk to our team for custom institutional plans, PO billing and support." },
+      {
+        name: "description",
+        content: "Talk to our team for custom institutional plans, PO billing and support.",
+      },
     ],
   }),
   component: ContactSalesPage,

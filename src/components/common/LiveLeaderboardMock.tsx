@@ -1,7 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { useLanguage } from '@/lib/i18n';
-import { gameEngine } from '@/lib/game-engine';
-import { Activity, Award, Eye, Flame, Play, ShieldAlert, Sparkles, Trophy, Users, Zap } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { useLanguage } from "@/lib/i18n";
+import { gameEngine } from "@/lib/game-engine";
+import {
+  Activity,
+  Award,
+  Eye,
+  Flame,
+  Play,
+  ShieldAlert,
+  Sparkles,
+  Trophy,
+  Users,
+  Zap,
+} from "lucide-react";
 
 interface CandidateTelemetry {
   id: string;
@@ -12,15 +23,65 @@ interface CandidateTelemetry {
   accuracy: number;
   avatar: string;
   bg: string;
-  status: 'transmitting' | 'ready' | 'focused';
+  status: "transmitting" | "ready" | "focused";
 }
 
 const INITIAL_CANDIDATES: CandidateTelemetry[] = [
-  { id: '1', name: 'Cadet Tanvir Hossain', roll: '2026-104', score: 1850, streak: 5, accuracy: 96, avatar: '🦅', bg: '#6366f1', status: 'focused' },
-  { id: '2', name: 'Cadet Sumaiya Akter', roll: '2026-102', score: 1720, streak: 4, accuracy: 92, avatar: '⚡', bg: '#10b981', status: 'focused' },
-  { id: '3', name: 'Cadet Safwan Ahmed', roll: '2026-108', score: 1640, streak: 3, accuracy: 88, avatar: '🛡️', bg: '#f59e0b', status: 'transmitting' },
-  { id: '4', name: 'Cadet Nusrat Jahan', roll: '2026-115', score: 1520, streak: 2, accuracy: 85, avatar: '🎯', bg: '#ec4899', status: 'focused' },
-  { id: '5', name: 'Cadet Badhon Mia', roll: '2026-120', score: 1410, streak: 2, accuracy: 80, avatar: '🚀', bg: '#06b6d4', status: 'ready' },
+  {
+    id: "1",
+    name: "Cadet Tanvir Hossain",
+    roll: "2026-104",
+    score: 1850,
+    streak: 5,
+    accuracy: 96,
+    avatar: "🦅",
+    bg: "#6366f1",
+    status: "focused",
+  },
+  {
+    id: "2",
+    name: "Cadet Sumaiya Akter",
+    roll: "2026-102",
+    score: 1720,
+    streak: 4,
+    accuracy: 92,
+    avatar: "⚡",
+    bg: "#10b981",
+    status: "focused",
+  },
+  {
+    id: "3",
+    name: "Cadet Safwan Ahmed",
+    roll: "2026-108",
+    score: 1640,
+    streak: 3,
+    accuracy: 88,
+    avatar: "🛡️",
+    bg: "#f59e0b",
+    status: "transmitting",
+  },
+  {
+    id: "4",
+    name: "Cadet Nusrat Jahan",
+    roll: "2026-115",
+    score: 1520,
+    streak: 2,
+    accuracy: 85,
+    avatar: "🎯",
+    bg: "#ec4899",
+    status: "focused",
+  },
+  {
+    id: "5",
+    name: "Cadet Badhon Mia",
+    roll: "2026-120",
+    score: 1410,
+    streak: 2,
+    accuracy: 80,
+    avatar: "🚀",
+    bg: "#06b6d4",
+    status: "ready",
+  },
 ];
 
 export const LiveLeaderboardMock: React.FC<{ sessionPin?: string }> = ({ sessionPin }) => {
@@ -45,17 +106,18 @@ export const LiveLeaderboardMock: React.FC<{ sessionPin?: string }> = ({ session
               .map((p) => {
                 const totalAnswers = Object.keys(p.answers).length;
                 const correctCount = Object.values(p.answers).filter((a) => a.isCorrect).length;
-                const acc = totalAnswers > 0 ? Math.round((correctCount / totalAnswers) * 100) : 100;
+                const acc =
+                  totalAnswers > 0 ? Math.round((correctCount / totalAnswers) * 100) : 100;
                 return {
                   id: p.id,
                   name: p.nickname || p.name,
-                  roll: p.rollNumber || '2026-CADET',
+                  roll: p.rollNumber || "2026-CADET",
                   score: p.score,
                   streak: p.streak,
                   accuracy: acc,
-                  avatar: p.avatarEmoji || '🦅',
-                  bg: p.avatarBg || '#6366f1',
-                  status: p.connected ? 'focused' : 'ready',
+                  avatar: p.avatarEmoji || "🦅",
+                  bg: p.avatarBg || "#6366f1",
+                  status: p.connected ? "focused" : "ready",
                 };
               });
             setCandidates(mapped);
@@ -79,7 +141,7 @@ export const LiveLeaderboardMock: React.FC<{ sessionPin?: string }> = ({ session
             ...target,
             score: target.score + bonus,
             streak: Math.min(8, target.streak + 1),
-            status: 'transmitting',
+            status: "transmitting",
           };
           return next.sort((a, b) => b.score - a.score);
         });
@@ -102,7 +164,8 @@ export const LiveLeaderboardMock: React.FC<{ sessionPin?: string }> = ({ session
               Mission Control HUD · Live Telemetry
             </div>
             <div className="text-[10px] font-mono text-muted-foreground">
-              Item #{activeItem} of 25 · Arena Pass: <span className="font-bold text-primary">{sessionPin || '482 910'}</span>
+              Item #{activeItem} of 25 · Arena Pass:{" "}
+              <span className="font-bold text-primary">{sessionPin || "482 910"}</span>
             </div>
           </div>
         </div>
@@ -120,15 +183,23 @@ export const LiveLeaderboardMock: React.FC<{ sessionPin?: string }> = ({ session
             key={cand.id}
             className={`flex items-center justify-between gap-3 rounded-2xl border p-2.5 px-3.5 transition-all duration-300 ${
               idx === 0
-                ? 'border-amber-500/50 bg-amber-500/10 shadow-sm'
-                : 'border-border/80 bg-background/80'
+                ? "border-amber-500/50 bg-amber-500/10 shadow-sm"
+                : "border-border/80 bg-background/80"
             }`}
           >
             {/* Rank & Cadet Crest */}
             <div className="flex items-center gap-2.5 min-w-0">
-              <span className={`font-mono text-xs font-black tabular-nums w-4 text-center ${
-                idx === 0 ? 'text-amber-500' : idx === 1 ? 'text-slate-400' : idx === 2 ? 'text-amber-700' : 'text-muted-foreground'
-              }`}>
+              <span
+                className={`font-mono text-xs font-black tabular-nums w-4 text-center ${
+                  idx === 0
+                    ? "text-amber-500"
+                    : idx === 1
+                      ? "text-slate-400"
+                      : idx === 2
+                        ? "text-amber-700"
+                        : "text-muted-foreground"
+                }`}
+              >
                 #{idx + 1}
               </span>
 
@@ -158,7 +229,8 @@ export const LiveLeaderboardMock: React.FC<{ sessionPin?: string }> = ({ session
             {/* Score & Pulse */}
             <div className="text-right shrink-0">
               <div className="font-mono text-xs sm:text-sm font-black text-foreground tabular-nums">
-                {cand.score.toLocaleString()} <span className="text-[9px] font-normal text-muted-foreground">pts</span>
+                {cand.score.toLocaleString()}{" "}
+                <span className="text-[9px] font-normal text-muted-foreground">pts</span>
               </div>
               <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
                 {cand.accuracy}% acc
@@ -174,9 +246,7 @@ export const LiveLeaderboardMock: React.FC<{ sessionPin?: string }> = ({ session
           <Users className="h-3 w-3 text-primary" />
           <span>{totalExaminees} Candidates Testing</span>
         </span>
-        <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-          ⚡ Latency: 18ms
-        </span>
+        <span className="text-emerald-600 dark:text-emerald-400 font-bold">⚡ Latency: 18ms</span>
       </div>
     </div>
   );

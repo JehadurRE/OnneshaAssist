@@ -1,9 +1,5 @@
 export type ProctorIncidentType =
-  | 'tab_switch'
-  | 'window_blur'
-  | 'fullscreen_exit'
-  | 'copy_attempt'
-  | 'devtools_attempt';
+  "tab_switch" | "window_blur" | "fullscreen_exit" | "copy_attempt" | "devtools_attempt";
 
 export interface ProctorIncident {
   id: string;
@@ -22,10 +18,12 @@ export interface ProctorOptions {
 
 type ProctorCallback = (incident: ProctorIncident) => void;
 
+type WakeLockSentinelLike = { release: () => Promise<void> | void };
+
 class ProctorEngine {
   private active = false;
-  private candidateId = '';
-  private candidateName = '';
+  private candidateId = "";
+  private candidateName = "";
   private callback: ProctorCallback | null = null;
   private options: ProctorOptions = {
     enforceFullscreen: false,
@@ -33,16 +31,16 @@ class ProctorEngine {
   };
   private blurStartTime: number | null = null;
   private lastIncidentAt = 0;
-  private wakeLockSentinel: any = null;
+  private wakeLockSentinel: WakeLockSentinelLike | null = null;
   private pendingBlurTimer: ReturnType<typeof setTimeout> | null = null;
 
   start(
     candidateId: string,
     candidateName: string,
     onIncident: ProctorCallback,
-    options?: ProctorOptions
+    options?: ProctorOptions,
   ) {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
     this.stop();
 
     this.active = true;
@@ -55,56 +53,56 @@ class ProctorEngine {
       onFullscreenChange: options?.onFullscreenChange,
     };
 
-    document.addEventListener('visibilitychange', this.handleVisibilityChange);
-    window.addEventListener('blur', this.handleWindowBlur);
-    window.addEventListener('focus', this.handleWindowFocus);
-    document.addEventListener('fullscreenchange', this.handleFullscreenChange);
+    document.addEventListener("visibilitychange", this.handleVisibilityChange);
+    window.addEventListener("blur", this.handleWindowBlur);
+    window.addEventListener("focus", this.handleWindowFocus);
+    document.addEventListener("fullscreenchange", this.handleFullscreenChange);
 
     if (this.options.blockCopyPaste) {
-      document.addEventListener('copy', this.handleClipboardBlock);
-      document.addEventListener('cut', this.handleClipboardBlock);
-      document.addEventListener('paste', this.handleClipboardBlock);
-      document.addEventListener('contextmenu', this.handleContextMenuBlock);
-      window.addEventListener('keydown', this.handleKeyDownGuard, true);
+      document.addEventListener("copy", this.handleClipboardBlock);
+      document.addEventListener("cut", this.handleClipboardBlock);
+      document.addEventListener("paste", this.handleClipboardBlock);
+      document.addEventListener("contextmenu", this.handleContextMenuBlock);
+      window.addEventListener("keydown", this.handleKeyDownGuard, true);
     }
 
     this.acquireWakeLock();
   }
 
   stop() {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
     this.active = false;
     if (this.pendingBlurTimer) {
       clearTimeout(this.pendingBlurTimer);
       this.pendingBlurTimer = null;
     }
-    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
-    window.removeEventListener('blur', this.handleWindowBlur);
-    window.removeEventListener('focus', this.handleWindowFocus);
-    document.removeEventListener('fullscreenchange', this.handleFullscreenChange);
-    document.removeEventListener('copy', this.handleClipboardBlock);
-    document.removeEventListener('cut', this.handleClipboardBlock);
-    document.removeEventListener('paste', this.handleClipboardBlock);
-    document.removeEventListener('contextmenu', this.handleContextMenuBlock);
-    window.removeEventListener('keydown', this.handleKeyDownGuard, true);
+    document.removeEventListener("visibilitychange", this.handleVisibilityChange);
+    window.removeEventListener("blur", this.handleWindowBlur);
+    window.removeEventListener("focus", this.handleWindowFocus);
+    document.removeEventListener("fullscreenchange", this.handleFullscreenChange);
+    document.removeEventListener("copy", this.handleClipboardBlock);
+    document.removeEventListener("cut", this.handleClipboardBlock);
+    document.removeEventListener("paste", this.handleClipboardBlock);
+    document.removeEventListener("contextmenu", this.handleContextMenuBlock);
+    window.removeEventListener("keydown", this.handleKeyDownGuard, true);
     this.releaseWakeLock();
   }
 
   public isFullscreenSupported(): boolean {
-    if (typeof document === 'undefined') return false;
+    if (typeof document === "undefined") return false;
     return !!(
       document.fullscreenEnabled &&
-      typeof document.documentElement?.requestFullscreen === 'function'
+      typeof document.documentElement?.requestFullscreen === "function"
     );
   }
 
   public isInFullscreen(): boolean {
-    if (typeof document === 'undefined') return false;
+    if (typeof document === "undefined") return false;
     return !!document.fullscreenElement;
   }
 
   public async requestExamFullscreen(): Promise<boolean> {
-    if (typeof document === 'undefined') return false;
+    if (typeof document === "undefined") return false;
     try {
       if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
         await document.documentElement.requestFullscreen();
@@ -116,7 +114,7 @@ class ProctorEngine {
   }
 
   public async exitExamFullscreen(): Promise<void> {
-    if (typeof document === 'undefined') return;
+    if (typeof document === "undefined") return;
     try {
       if (document.fullscreenElement && document.exitFullscreen) {
         await document.exitFullscreen();
@@ -127,9 +125,14 @@ class ProctorEngine {
   }
 
   private async acquireWakeLock() {
-    if (typeof navigator === 'undefined' || !('wakeLock' in navigator)) return;
+    if (typeof navigator === "undefined" || !("wakeLock" in navigator)) return;
     try {
-      this.wakeLockSentinel = await (navigator as any).wakeLock.request('screen');
+      const nav = navigator as unknown as {
+        wakeLock?: { request: (type: "screen") => Promise<WakeLockSentinelLike> };
+      };
+      if (nav.wakeLock) {
+        this.wakeLockSentinel = await nav.wakeLock.request("screen");
+      }
     } catch {
       // wakeLock not supported or declined
     }
@@ -139,7 +142,9 @@ class ProctorEngine {
     if (this.wakeLockSentinel) {
       try {
         this.wakeLockSentinel.release();
-      } catch {}
+      } catch {
+        // ignore wakeLock release error
+      }
       this.wakeLockSentinel = null;
     }
   }
@@ -156,7 +161,7 @@ class ProctorEngine {
     if (document.hidden) {
       this.clearPendingBlur();
       this.blurStartTime = Date.now();
-      this.triggerIncident('tab_switch');
+      this.triggerIncident("tab_switch");
     } else {
       this.clearPendingBlur();
       if (this.blurStartTime) {
@@ -173,7 +178,7 @@ class ProctorEngine {
     this.pendingBlurTimer = setTimeout(() => {
       this.pendingBlurTimer = null;
       if (this.active && !document.hidden && !document.hasFocus()) {
-        this.triggerIncident('window_blur');
+        this.triggerIncident("window_blur");
       }
     }, 1500);
   };
@@ -189,23 +194,23 @@ class ProctorEngine {
       this.options.onFullscreenChange(isFull);
     }
     if (this.active && this.options.enforceFullscreen && !isFull) {
-      this.triggerIncident('fullscreen_exit');
+      this.triggerIncident("fullscreen_exit");
     }
   };
 
   private handleClipboardBlock = (e: ClipboardEvent) => {
     if (!this.active || !this.options.blockCopyPaste) return;
     const target = e.target as HTMLElement | null;
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
       // Block pasting external answers into written input fields
-      if (e.type === 'paste') {
+      if (e.type === "paste") {
         e.preventDefault();
-        this.triggerIncident('copy_attempt');
+        this.triggerIncident("copy_attempt");
       }
       return;
     }
     e.preventDefault();
-    this.triggerIncident('copy_attempt');
+    this.triggerIncident("copy_attempt");
   };
 
   private handleContextMenuBlock = (e: MouseEvent) => {
@@ -219,23 +224,20 @@ class ProctorEngine {
 
     // Block F12, Ctrl+Shift+I/J/C, Ctrl+U (DevTools / View Source)
     if (
-      e.key === 'F12' ||
-      ((e.ctrlKey || e.metaKey) && e.shiftKey && ['i', 'j', 'c'].includes(key)) ||
-      ((e.ctrlKey || e.metaKey) && key === 'u')
+      e.key === "F12" ||
+      ((e.ctrlKey || e.metaKey) && e.shiftKey && ["i", "j", "c"].includes(key)) ||
+      ((e.ctrlKey || e.metaKey) && key === "u")
     ) {
       e.preventDefault();
       e.stopPropagation();
-      this.triggerIncident('devtools_attempt');
+      this.triggerIncident("devtools_attempt");
       return;
     }
 
     // Block PrintScreen or Ctrl+P / Ctrl+C
-    if (
-      e.key === 'PrintScreen' ||
-      ((e.ctrlKey || e.metaKey) && ['p', 'c', 'x'].includes(key))
-    ) {
+    if (e.key === "PrintScreen" || ((e.ctrlKey || e.metaKey) && ["p", "c", "x"].includes(key))) {
       e.preventDefault();
-      this.triggerIncident('copy_attempt');
+      this.triggerIncident("copy_attempt");
     }
   };
 

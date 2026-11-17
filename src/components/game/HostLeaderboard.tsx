@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { GameSession } from '@/lib/types';
-import { useLanguage } from '@/lib/i18n';
-import { db } from '@/lib/db';
-import { compareParticipantsByMerit, computeParticipantTotalTimeSec } from '@/lib/scoring';
-import { ChevronRight, Clock, Flame, MapPin, Pause, Play, Trophy } from 'lucide-react';
-import { audioEngine } from '@/lib/audio-engine';
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { GameSession } from "@/lib/types";
+import { useLanguage } from "@/lib/i18n";
+import { db } from "@/lib/db";
+import { compareParticipantsByMerit, computeParticipantTotalTimeSec } from "@/lib/scoring";
+import { ChevronRight, Clock, Flame, MapPin, Pause, Play, Trophy } from "lucide-react";
+import { audioEngine } from "@/lib/audio-engine";
 
 interface HostLeaderboardProps {
   session: GameSession;
@@ -20,7 +20,7 @@ export const HostLeaderboard: React.FC<HostLeaderboardProps> = ({
   autoAdvanceSec,
 }) => {
   const { lang, t } = useLanguage();
-  const [selectedRegionId, setSelectedRegionId] = useState<string>('all');
+  const [selectedRegionId, setSelectedRegionId] = useState<string>("all");
   const [autoPaused, setAutoPaused] = useState(false);
   const [autoLeft, setAutoLeft] = useState<number>(
     autoAdvanceSec && autoAdvanceSec > 0 ? autoAdvanceSec : 0,
@@ -54,11 +54,11 @@ export const HostLeaderboard: React.FC<HostLeaderboardProps> = ({
 
   const allSorted = useMemo(
     () => Object.values(session.participants).sort(compareParticipantsByMerit),
-    [session.participants]
+    [session.participants],
   );
 
   const filteredSorted = useMemo(() => {
-    if (selectedRegionId === 'all') return allSorted;
+    if (selectedRegionId === "all") return allSorted;
     return allSorted.filter((p) => p.regionId === selectedRegionId);
   }, [allSorted, selectedRegionId]);
 
@@ -71,7 +71,7 @@ export const HostLeaderboard: React.FC<HostLeaderboardProps> = ({
         <div className="flex items-center gap-3">
           <Trophy className="h-5 w-5 text-primary" />
           <h2 className="font-display text-base font-bold text-foreground">
-            {lang === 'bn' ? 'লাইভ মেধা তালিকা' : 'Live Merit Leaderboard'}
+            {lang === "bn" ? "লাইভ মেধা তালিকা" : "Live Merit Leaderboard"}
           </h2>
 
           {/* Region Filter */}
@@ -102,21 +102,21 @@ export const HostLeaderboard: React.FC<HostLeaderboardProps> = ({
               type="button"
               onClick={() => setAutoPaused((p) => !p)}
               className="flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-mono font-bold text-foreground hover:bg-accent"
-              title={autoPaused ? 'Resume auto-advance' : 'Pause auto-advance'}
+              title={autoPaused ? "Resume auto-advance" : "Pause auto-advance"}
             >
               {autoPaused ? (
                 <Play className="h-3.5 w-3.5 text-emerald-500" />
               ) : (
                 <Pause className="h-3.5 w-3.5 text-amber-500" />
               )}
-              <span>{autoPaused ? 'Paused' : `Next in ${autoLeft}s`}</span>
+              <span>{autoPaused ? "Paused" : `Next in ${autoLeft}s`}</span>
             </button>
           )}
           <button
             onClick={onNextQuestion}
             className="flex items-center gap-2 rounded-2xl bg-primary px-6 py-2.5 text-xs font-bold text-primary-foreground shadow-md transition-all hover:bg-primary/90"
           >
-            <span>{isLastQuestion ? t('end_game') : t('next_question')}</span>
+            <span>{isLastQuestion ? t("end_game") : t("next_question")}</span>
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>
@@ -140,22 +140,22 @@ export const HostLeaderboard: React.FC<HostLeaderboardProps> = ({
                 key={player.id}
                 className={`flex items-center gap-4 rounded-2xl border p-4 px-5 transition-all duration-500 ease-out shadow-sm ${
                   isTop1
-                    ? 'border-amber-500/50 bg-amber-500/10'
+                    ? "border-amber-500/50 bg-amber-500/10"
                     : isTop3
-                    ? 'border-primary/40 bg-primary/5'
-                    : 'border-border bg-background'
+                      ? "border-primary/40 bg-primary/5"
+                      : "border-border bg-background"
                 }`}
               >
                 {/* Rank pill */}
                 <div
                   className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-mono text-base font-extrabold shadow-sm ${
                     isTop1
-                      ? 'bg-amber-500 text-amber-950 ring-2 ring-amber-400'
+                      ? "bg-amber-500 text-amber-950 ring-2 ring-amber-400"
                       : rank === 2
-                      ? 'bg-slate-300 dark:bg-slate-700 text-foreground'
-                      : rank === 3
-                      ? 'bg-amber-700 text-white'
-                      : 'bg-muted text-muted-foreground'
+                        ? "bg-slate-300 dark:bg-slate-700 text-foreground"
+                        : rank === 3
+                          ? "bg-amber-700 text-white"
+                          : "bg-muted text-muted-foreground"
                   }`}
                 >
                   #{rank}
@@ -164,7 +164,7 @@ export const HostLeaderboard: React.FC<HostLeaderboardProps> = ({
                 {/* Avatar Emoji */}
                 <div
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-2xl shadow-sm ring-1 ring-border"
-                  style={{ backgroundColor: player.avatarBg + '25' }}
+                  style={{ backgroundColor: player.avatarBg + "25" }}
                 >
                   {player.avatarEmoji}
                 </div>
@@ -206,7 +206,7 @@ export const HostLeaderboard: React.FC<HostLeaderboardProps> = ({
                   <div className="font-mono text-xl sm:text-2xl font-black text-foreground tabular-nums">
                     {player.score.toLocaleString()}
                   </div>
-                  <span className="text-[11px] text-muted-foreground">{t('pts')}</span>
+                  <span className="text-[11px] text-muted-foreground">{t("pts")}</span>
                 </div>
               </div>
             );

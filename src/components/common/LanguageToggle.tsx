@@ -1,7 +1,7 @@
-import React from 'react';
-import { useLanguage } from '@/lib/i18n';
+import React from "react";
+import { useLanguage } from "@/lib/i18n";
 
-export const LanguageToggle: React.FC<{ className?: string }> = ({ className = '' }) => {
+export const LanguageToggle: React.FC<{ className?: string }> = ({ className = "" }) => {
   const { lang, setLang } = useLanguage();
 
   return (
@@ -12,25 +12,25 @@ export const LanguageToggle: React.FC<{ className?: string }> = ({ className = '
     >
       <button
         type="button"
-        onClick={() => setLang('bn')}
+        onClick={() => setLang("bn")}
         className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-          lang === 'bn'
-            ? 'bg-primary text-primary-foreground shadow-sm'
-            : 'text-muted-foreground hover:text-foreground'
+          lang === "bn"
+            ? "bg-primary text-primary-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground"
         }`}
-        aria-pressed={lang === 'bn'}
+        aria-pressed={lang === "bn"}
       >
         বাংলা
       </button>
       <button
         type="button"
-        onClick={() => setLang('en')}
+        onClick={() => setLang("en")}
         className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-          lang === 'en'
-            ? 'bg-primary text-primary-foreground shadow-sm'
-            : 'text-muted-foreground hover:text-foreground'
+          lang === "en"
+            ? "bg-primary text-primary-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground"
         }`}
-        aria-pressed={lang === 'en'}
+        aria-pressed={lang === "en"}
       >
         EN
       </button>

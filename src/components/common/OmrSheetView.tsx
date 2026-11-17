@@ -159,7 +159,8 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
       setSavedCertNumber(res.certificate.certificateNumber);
     } else {
       setCertSaveError(
-        res.error || "Server rejected OMR certificate issuance. Please verify staff login and retry.",
+        res.error ||
+          "Server rejected OMR certificate issuance. Please verify staff login and retry.",
       );
     }
   };
@@ -391,9 +392,7 @@ export const OmrSheetView: React.FC<OmrSheetViewProps> = ({ quiz, onClose }) => 
                 <div className="flex items-center gap-2">
                   <span
                     className={`rounded-lg px-2 py-0.5 text-[11px] font-black uppercase ${
-                      didPass
-                        ? "bg-emerald-700 text-white"
-                        : "bg-red-600 text-white"
+                      didPass ? "bg-emerald-700 text-white" : "bg-red-600 text-white"
                     }`}
                   >
                     {didPass ? `PASS (≥${passThresholdPct}%)` : `FAIL (<${passThresholdPct}%)`}

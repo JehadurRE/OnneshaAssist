@@ -121,7 +121,7 @@ function HostPage() {
           attachSession(existingSession);
         } else {
           setRoomError(
-            `Live room PIN ${trimmedPin} has expired or been closed. You can start a fresh examination room below.`
+            `Live room PIN ${trimmedPin} has expired or been closed. You can start a fresh examination room below.`,
           );
         }
         return;
@@ -129,7 +129,9 @@ function HostPage() {
 
       try {
         await sqliteEngine.ready();
-      } catch {}
+      } catch {
+        // ignore sqlite init notice
+      }
 
       let quiz =
         db.getQuizBySlug(quizId) ||
@@ -143,12 +145,16 @@ function HostPage() {
             db.getQuizBySlug(quizId) ||
             db.getQuizzes().find((p) => p.id === quizId || p.slug === quizId) ||
             READY_MADE_PACKS.find((p) => p.id === quizId || p.slug === quizId);
-        } catch {}
+        } catch {
+          // ignore server sync fallback notice
+        }
       }
 
       if (!active) return;
       if (!quiz) {
-        setRoomError("Requested assessment pack could not be found. Return to the dashboard and launch an active quiz.");
+        setRoomError(
+          "Requested assessment pack could not be found. Return to the dashboard and launch an active quiz.",
+        );
         return;
       }
 
@@ -195,7 +201,7 @@ function HostPage() {
       } catch (err) {
         if (!active) return;
         setRoomError(
-          err instanceof Error ? err.message : "Could not initialize live examination room."
+          err instanceof Error ? err.message : "Could not initialize live examination room.",
         );
       }
     };
@@ -250,7 +256,8 @@ function HostPage() {
               Examiner Authorization Required
             </h1>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Only verified Instructors and Super Admins can launch or control live examination rooms.
+              Only verified Instructors and Super Admins can launch or control live examination
+              rooms.
             </p>
             <div className="flex flex-col sm:flex-row gap-2 pt-2">
               <Link
@@ -390,7 +397,7 @@ function HostPage() {
             onStartGame={handleStartGame}
             onAddBots={handleAddBots}
             onKickPlayer={handleKickPlayer}
-            onToggleSound={() => audioEngine.toggleMute()}
+            onToggleSound={() => {}}
             onUpdateSettings={handleUpdateSettings}
             onCloseRoom={handleCloseRoom}
           />
@@ -435,29 +442,30 @@ function HostPage() {
           />
         )}
 
-        {(session.phase === "question" || session.phase === "chart") && !session.currentQuestion && (
-          <div className="mx-auto max-w-xl rounded-3xl border border-border bg-card p-8 text-center shadow-tactical space-y-4">
-            <p className="font-display text-lg font-extrabold text-foreground">
-              Synchronizing Question Slide...
-            </p>
-            <div className="flex flex-wrap justify-center gap-3">
-              <button
-                type="button"
-                onClick={handleNextQuestion}
-                className="rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-primary-foreground"
-              >
-                Advance Question →
-              </button>
-              <button
-                type="button"
-                onClick={handleEndExamEarly}
-                className="rounded-xl border border-border bg-background px-4 py-2 text-xs font-bold text-foreground"
-              >
-                Conclude Exam
-              </button>
+        {(session.phase === "question" || session.phase === "chart") &&
+          !session.currentQuestion && (
+            <div className="mx-auto max-w-xl rounded-3xl border border-border bg-card p-8 text-center shadow-tactical space-y-4">
+              <p className="font-display text-lg font-extrabold text-foreground">
+                Synchronizing Question Slide...
+              </p>
+              <div className="flex flex-wrap justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleNextQuestion}
+                  className="rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-primary-foreground"
+                >
+                  Advance Question →
+                </button>
+                <button
+                  type="button"
+                  onClick={handleEndExamEarly}
+                  className="rounded-xl border border-border bg-background px-4 py-2 text-xs font-bold text-foreground"
+                >
+                  Conclude Exam
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
         {/* PHASE 5: Leaderboard */}
         {session.phase === "leaderboard" && (

@@ -160,9 +160,7 @@ export function evaluateQuestionAnswer(input: EvaluateAnswerInput): EvaluateAnsw
     const streakMultiplier = newStreak >= 3 ? 1.5 : newStreak >= 2 ? 1.2 : 1.0;
     const limit = Math.max(1, question.timeLimitSec || 20);
     const clampedTime = Math.max(0.1, Math.min(limit, timeTakenSec));
-    const speedFactor = speedBonus
-      ? Math.max(0.5, 1 - (clampedTime / limit) * 0.5)
-      : 1;
+    const speedFactor = speedBonus ? Math.max(0.5, 1 - (clampedTime / limit) * 0.5) : 1;
     pointsAwarded = Math.round((question.points || 1000) * speedFactor * streakMultiplier);
   } else {
     newStreak = 0;
@@ -339,7 +337,10 @@ export function computeParticipantTotalTimeSec(
   if (answersList.length > 0) {
     const sum = answersList.reduce(
       (acc, ans) =>
-        acc + (typeof ans?.timeTakenSec === "number" && Number.isFinite(ans.timeTakenSec) ? Math.max(0, ans.timeTakenSec) : 0),
+        acc +
+        (typeof ans?.timeTakenSec === "number" && Number.isFinite(ans.timeTakenSec)
+          ? Math.max(0, ans.timeTakenSec)
+          : 0),
       0,
     );
     return Math.round(sum * 100) / 100;

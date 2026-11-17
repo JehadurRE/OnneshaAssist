@@ -108,7 +108,11 @@ export async function generateQuizWithAi(params: AiGenerateParams): Promise<Quiz
   } catch (err) {
     // Only fall back to direct REST call if Start RPC endpoint itself is unreachable (e.g., unit/offline mode)
     const msg = err instanceof Error ? err.message : "";
-    if (msg && !msg.toLowerCase().includes("fetch") && !msg.toLowerCase().includes("start context")) {
+    if (
+      msg &&
+      !msg.toLowerCase().includes("fetch") &&
+      !msg.toLowerCase().includes("start context")
+    ) {
       serverError = msg;
     }
   }

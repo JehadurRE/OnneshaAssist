@@ -163,3 +163,45 @@
     box-shadow: var(--shadow-tactical);
   }
 }
+
+@page {
+  size: A4;
+  margin: 12mm;
+}
+
+@media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  header,
+  nav,
+  aside,
+  .no-print,
+  [data-no-print="true"] {
+    display: none !important;
+  }
+
+  main,
+  .print-container {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  .print-avoid-break,
+  .bento-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

@@ -127,7 +127,10 @@ describe("client SQLite & localStorage synchronization from server bootstrap", (
     const { db } = await import("../db");
 
     await sqliteEngine.init();
-    ls.setItem("onnesha_db_revoked_certificates", JSON.stringify(["ONN-4455-0101", "ONN-9999-0202"]));
+    ls.setItem(
+      "onnesha_db_revoked_certificates",
+      JSON.stringify(["ONN-4455-0101", "ONN-9999-0202"]),
+    );
 
     serverAdminMutateStore.mockResolvedValueOnce({ success: true });
     serverGetBootstrapData.mockResolvedValueOnce({
@@ -141,5 +144,88 @@ describe("client SQLite & localStorage synchronization from server bootstrap", (
       data: { action: "restore_certificate", certificateNumber: "ONN-4455-0101" },
     });
     expect(db.getRevokedCertificates()).toEqual(["ONN-9999-0202"]);
+  });
+
+  it("blocks revoked certificates in getCertificateById even if a stale SQLite row exists", async () => {
+    const ls = installMockWindowStorage();
+    const { sqliteEngine } = await import("../db/sqlite-engine");
+    const { db } = await import("../db");
+
+    await sqliteEngine.init();
+    sqliteEngine.run(
+      "INSERT OR REPLACE INTO certificates (id, certificateNumber, studentName, studentRoll, regionName, quizTitle, score, totalPoints, rank, totalParticipants, accuracyPercent, issueDate, organizationName, instructorName, verificationUrl, verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [
+        "cert-stale-1",
+        "ONN-7788-0101",
+        "Stale Candidate",
+        "2026-101",
+        "Dhaka Range",
+        "Mock Test",
+        1000,
+        1000,
+        1,
+        1,
+        100,
+        "2026-11-17",
+        "Onnesha",
+        "Instructor",
+        "/verify/ONN-7788-0101",
+        1,
+      ],
+    );
+    ls.setItem("onnesha_db_revoked_certificates", JSON.stringify(["ONN-7788-0101"]));
+
+    expect(db.getCertificateById("ONN-7788-0101")).toBeUndefined();
+    expect(db.getCertificateById("onn-7788-0101")).toBeUndefined();
+  });
+
+  it("syncs user aiCredits and keeps roster empty when purgedSampleData is true", async () => {
+    installMockWindowStorage();
+    const { sqliteEngine } = await import("../db/sqlite-engine");
+    const { db } = await import("../db");
+
+    await sqliteEngine.init();
+    serverGetBootstrapData.mockResolvedValueOnce({
+      success: true,
+      regions: [
+        {
+          id: "reg-custom",
+          code: "CUS",
+          nameEn: "Custom",
+          nameBn: "কাস্টম",
+          createdAt: "2026-11-17",
+        },
+      ],
+      roster: [],
+      courses: [],
+      users: [
+        {
+          id: "usr-instructor-1",
+          email: "instructor@onnesha.app",
+          name: "Chief Instructor",
+          role: "instructor",
+          aiCredits: 37,
+          createdAt: "2026-11-17",
+        },
+      ],
+      customQuizzes: [],
+      deletedQuizIds: [],
+      deletedRegionIds: ["reg-dhaka"],
+      deletedCourseIds: ["course-bcs-foundation"],
+      purgedSampleData: true,
+      examSessions: [],
+      examResults: [],
+      certificates: [],
+      revokedCertificates: [],
+      transactions: [],
+      salesLeads: [],
+      smsLogs: [],
+    });
+
+    await db.syncFromServerStore();
+
+    expect(db.getRoster()).toEqual([]);
+    const users = db.getUsers();
+    expect(users[0]?.aiCredits).toBe(37);
   });
 });

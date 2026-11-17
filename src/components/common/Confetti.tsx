@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from "react";
 
 export const Confetti: React.FC<{ active?: boolean }> = ({ active = true }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -8,19 +8,19 @@ export const Confetti: React.FC<{ active?: boolean }> = ({ active = true }) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
-    const colors = ['#84cc16', '#6366f1', '#f59e0b', '#ec4899', '#3b82f6', '#10b981', '#ef4444'];
+    const colors = ["#84cc16", "#6366f1", "#f59e0b", "#ec4899", "#3b82f6", "#10b981", "#ef4444"];
     const particleCount = 120;
     const particles = Array.from({ length: particleCount }).map(() => ({
       x: Math.random() * canvas.width,
       y: Math.random() * -canvas.height,
       size: Math.random() * 8 + 4,
-      color: colors[Math.floor(Math.random() * colors.length)] || '#10b981',
+      color: colors[Math.floor(Math.random() * colors.length)] || "#10b981",
       speedY: Math.random() * 4 + 2,
       speedX: (Math.random() - 0.5) * 4,
       rotation: Math.random() * 360,
@@ -61,20 +61,17 @@ export const Confetti: React.FC<{ active?: boolean }> = ({ active = true }) => {
       canvas.height = window.innerHeight;
     };
 
-    window.addEventListener('resize', handleResize);
+    window.addEventListener("resize", handleResize);
 
     return () => {
       cancelAnimationFrame(animationFrameId);
-      window.removeEventListener('resize', handleResize);
+      window.removeEventListener("resize", handleResize);
     };
   }, [active]);
 
   if (!active) return null;
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="pointer-events-none fixed inset-0 z-50 h-full w-full"
-    />
+    <canvas ref={canvasRef} className="pointer-events-none fixed inset-0 z-50 h-full w-full" />
   );
 };

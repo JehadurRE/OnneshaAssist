@@ -96,7 +96,6 @@ function SignupPage() {
           )}
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-
             {/* Name */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">

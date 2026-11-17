@@ -1,0 +1,27 @@
+{
+  "name": "Onnesha Arena — Institutional AI Examination Engine",
+  "short_name": "Onnesha Arena",
+  "description": "Bilingual live model tests, exact negative marking, retake merit merging, OMR generation, and verifiable digital certificates.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#051412",
+  "theme_color": "#051412",
+  "icons": [
+    {
+      "src": "/favicon.png?v=3",
+      "sizes": "64x64",
+      "type": "image/png"
+    },
+    {
+      "src": "/apple-touch-icon.png?v=3",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/assets/onnesha-mark.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

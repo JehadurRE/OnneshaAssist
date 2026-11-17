@@ -564,13 +564,11 @@ function VerifyCertPage() {
             <div className="mx-auto mb-4 flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-500">
               <ShieldAlert className="h-6 w-6 sm:h-7 sm:w-7" />
             </div>
-            <h1 className="text-lg sm:text-xl font-black text-foreground">
-              Certificate Revoked
-            </h1>
+            <h1 className="text-lg sm:text-xl font-black text-foreground">Certificate Revoked</h1>
             <p className="mt-2 text-xs sm:text-sm text-muted-foreground leading-relaxed">
               Credential serial{" "}
-              <span className="font-mono font-bold text-amber-500 break-all">{certId}</span> has been
-              formally revoked or withdrawn by the issuing authority and is no longer valid.
+              <span className="font-mono font-bold text-amber-500 break-all">{certId}</span> has
+              been formally revoked or withdrawn by the issuing authority and is no longer valid.
             </p>
           </div>
         ) : (

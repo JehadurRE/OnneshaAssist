@@ -4,15 +4,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // The player feed relies 100% on delta polling for remote examinees, so these lock in that
 // the polling loop survives across exams, slow networks and client clock skew.
 
+import type { GameEvent } from "../game-engine";
+import type { GameSession } from "../types";
+
 const serverGetSession = vi.fn();
-const serverHostControl = vi.fn(async (..._args: any[]): Promise<any> => ({ success: false }));
+const serverHostControl = vi.fn(
+  async (_arg?: {
+    data?: { pin?: string; action?: string };
+  }): Promise<{
+    success: boolean;
+    session?: GameSession | null;
+    closed?: boolean;
+    serverNow?: number;
+  }> => ({
+    success: false,
+  }),
+);
 const serverSubmitAnswer = vi.fn();
 const serverSyncSession = vi.fn(async () => ({ success: true }));
 
 vi.mock("../server-session", () => ({
   serverCreateSession: vi.fn(),
   serverGetSession: (...args: unknown[]) => serverGetSession(...args),
-  serverHostControl: (...args: unknown[]) => serverHostControl(...(args as [])),
+  serverHostControl: (arg?: { data?: { pin?: string; action?: string } }) => serverHostControl(arg),
   serverJoinSession: vi.fn(),
   serverReportProctorIncident: vi.fn(),
   serverSubmitAnswer: (...args: unknown[]) => serverSubmitAnswer(...(args as [])),
@@ -34,19 +48,28 @@ vi.mock("../mock-data", () => ({ DEFAULT_REGIONS: [], READY_MADE_PACKS: [] }));
 function installBrowserStubs() {
   const store = new Map<string, string>();
   const storage = {
+    get length() {
+      return store.size;
+    },
+    key: (i: number) => Array.from(store.keys())[i] ?? null,
     getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
     setItem: (k: string, v: string) => void store.set(k, String(v)),
     removeItem: (k: string) => void store.delete(k),
     clear: () => store.clear(),
   };
-  const g = globalThis as any;
-  g.window = { addEventListener: () => {} };
-  g.document = { addEventListener: () => {}, visibilityState: "visible" };
-  g.localStorage = storage;
-  g.sessionStorage = storage;
+  const g = globalThis as unknown as Record<string, unknown>;
+  g["window"] = { addEventListener: () => {} };
+  g["document"] = { addEventListener: () => {}, visibilityState: "visible" };
+  g["localStorage"] = storage;
+  g["sessionStorage"] = storage;
 }
 
-function makeSession(pin: string, updatedAt: number, phase = "lobby", extra: any = {}) {
+function makeSession(
+  pin: string,
+  updatedAt: number,
+  phase: GameSession["phase"] = "lobby",
+  extra: Partial<GameSession> = {},
+): GameSession {
   return {
     pin,
     quizId: "quiz-1",
@@ -55,7 +78,19 @@ function makeSession(pin: string, updatedAt: number, phase = "lobby", extra: any
     hostId: "host",
     phase,
     currentQuestionIndex: 0,
-    settings: {},
+    questionStartTime: 0,
+    questionEndTime: 0,
+    settings: {
+      timePerQuestion: 20,
+      speedBonus: true,
+      negativeMarking: 0,
+      shuffleQuestions: false,
+      shuffleOptions: false,
+      soundEnabled: true,
+      musicEnabled: false,
+      isFormalAssessment: true,
+      requireRollNumber: false,
+    },
     participants: {},
     totalQuestions: 20,
     createdAt: 1,
@@ -88,12 +123,18 @@ describe("player delta polling resilience", () => {
   it("does not leak Exam 1's delta watermark into Exam 2 (different PIN)", async () => {
     const engine = await loadEngine();
     // Exam 1 finished late → large server timestamp cached
-    serverGetSession.mockResolvedValueOnce({ success: true, session: makeSession("111111", 9_000) });
+    serverGetSession.mockResolvedValueOnce({
+      success: true,
+      session: makeSession("111111", 9_000),
+    });
     await engine.getSessionAsync("111111", "player");
     expect(engine.getLastKnownUpdatedAt("111111")).toBe(9_000);
 
     // Exam 2 room was created earlier (older updatedAt) — must still be fetched in full
-    serverGetSession.mockResolvedValueOnce({ success: true, session: makeSession("222222", 5_000) });
+    serverGetSession.mockResolvedValueOnce({
+      success: true,
+      session: makeSession("222222", 5_000),
+    });
     await engine.getSessionAsync("222222", "player");
     expect(engine.getLastKnownUpdatedAt("222222")).toBe(5_000);
 
@@ -114,7 +155,18 @@ describe("player delta polling resilience", () => {
 
     serverGetSession.mockResolvedValueOnce({
       success: true,
-      session: makeSession("333333", 2_000, "question", { currentQuestion: { id: "q1" } }),
+      session: makeSession("333333", 2_000, "question", {
+        currentQuestion: {
+          id: "q1",
+          textEn: "Q1",
+          textBn: "Q1",
+          type: "single_mcq",
+          timeLimitSec: 20,
+          points: 1000,
+          options: [],
+          correctOptionIds: [],
+        },
+      }),
     });
     await engine.getSessionAsync("333333", "player");
 
@@ -133,7 +185,10 @@ describe("player delta polling resilience", () => {
 
   it("never stacks overlapping poll requests on slow networks, but recovers from a hung request", async () => {
     const engine = await loadEngine();
-    serverGetSession.mockResolvedValueOnce({ success: true, session: makeSession("444444", 1_000) });
+    serverGetSession.mockResolvedValueOnce({
+      success: true,
+      session: makeSession("444444", 1_000),
+    });
     await engine.getSessionAsync("444444", "player");
     serverGetSession.mockClear();
 
@@ -152,18 +207,24 @@ describe("player delta polling resilience", () => {
 
   it("does not let a locally-stamped (client clock) snapshot suppress server updates", async () => {
     const engine = await loadEngine();
-    serverGetSession.mockResolvedValueOnce({ success: true, session: makeSession("555555", 1_000) });
+    serverGetSession.mockResolvedValueOnce({
+      success: true,
+      session: makeSession("555555", 1_000),
+    });
     const s = await engine.getSessionAsync("555555", "host");
     // Host device clock far in the future
     vi.setSystemTime(new Date(Date.now() + 10 * 60_000));
-    engine.saveSession({ ...(s as any) });
+    engine.saveSession({ ...s! });
     expect(engine.getLastKnownUpdatedAt("555555")).toBe(1_000);
     engine.stopPolling();
   });
 
   it("periodically performs a full (non-delta) resync as a safety net", async () => {
     const engine = await loadEngine();
-    serverGetSession.mockResolvedValueOnce({ success: true, session: makeSession("666666", 1_000) });
+    serverGetSession.mockResolvedValueOnce({
+      success: true,
+      session: makeSession("666666", 1_000),
+    });
     await engine.getSessionAsync("666666", "player");
     serverGetSession.mockClear();
     serverGetSession.mockResolvedValue({ success: true, unchanged: true, session: null });
@@ -178,7 +239,10 @@ describe("player delta polling resilience", () => {
 
   it("stopPolling clears the active room even if no timer was running", async () => {
     const engine = await loadEngine();
-    serverGetSession.mockResolvedValueOnce({ success: true, session: makeSession("777777", 1_000) });
+    serverGetSession.mockResolvedValueOnce({
+      success: true,
+      session: makeSession("777777", 1_000),
+    });
     await engine.getSessionAsync("777777", "player");
     expect(engine.isPolling("777777")).toBe(true);
     engine.stopPolling();
@@ -337,7 +401,7 @@ describe("live engine timing, offline recovery & token security", () => {
 
   it("clears ejected seat on seatRemoved and emits SESSION_ENDED during polling", async () => {
     const engine = await loadEngine();
-    const events: any[] = [];
+    const events: GameEvent[] = [];
     const unsub = engine.subscribe((e) => events.push(e));
 
     localStorage.setItem("onnesha_seat_pid_334455", "kicked-pid");
@@ -485,5 +549,31 @@ describe("host pause/resume & QUESTION_CLOSED outbox handling", () => {
     });
     await engine.flushOfflineOutbox();
     expect(engine.getOfflineOutbox()).toHaveLength(0);
+  });
+
+  it("purges stale local session keys and orphaned participant tokens after TTL", async () => {
+    const engine = await loadEngine();
+    const oldStamp = Date.now() - 30 * 60 * 60 * 1000;
+    const freshStamp = Date.now() - 60_000;
+
+    localStorage.setItem(
+      "onnesha_session_111111",
+      JSON.stringify(makeSession("111111", oldStamp, "lobby", { createdAt: oldStamp })),
+    );
+    localStorage.setItem("onnesha_pid_111111", "old-pid");
+    localStorage.setItem(
+      "onnesha_session_222222",
+      JSON.stringify(makeSession("222222", freshStamp, "lobby", { createdAt: freshStamp })),
+    );
+    localStorage.setItem("onnesha_pid_222222", "fresh-pid");
+    localStorage.setItem("onnesha_seat_token_999999", "orphan-tok");
+
+    const removed = engine.cleanupStaleLocalSessions();
+    expect(removed).toBeGreaterThanOrEqual(2);
+    expect(localStorage.getItem("onnesha_session_111111")).toBeNull();
+    expect(localStorage.getItem("onnesha_pid_111111")).toBeNull();
+    expect(localStorage.getItem("onnesha_seat_token_999999")).toBeNull();
+    expect(localStorage.getItem("onnesha_session_222222")).not.toBeNull();
+    expect(localStorage.getItem("onnesha_pid_222222")).toBe("fresh-pid");
   });
 });

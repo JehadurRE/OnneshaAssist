@@ -41,7 +41,10 @@ export function resolveRetakeMinCompletedAnswers(value?: unknown): number {
 }
 
 export function normalizeMatchRoll(roll?: string): string {
-  return (roll || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return (roll || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
 }
 
 export function normalizeMatchPhone(phone?: string): string {
@@ -118,8 +121,7 @@ export function buildOriginalCompletionIndex(
   for (const r of examResults) {
     const matchesSession =
       (!!retakeForSessionId && r.sessionId === retakeForSessionId) ||
-      (!r.sessionId && !!retakeOriginPin && r.pin === retakeOriginPin) ||
-      (!!retakeOriginPin && r.pin === retakeOriginPin && (!retakeForSessionId || r.sessionId === retakeForSessionId));
+      (!!retakeOriginPin && r.pin === retakeOriginPin);
     if (!matchesSession) continue;
     if ((r.participantId || "").startsWith("bot-")) continue;
 
@@ -189,12 +191,7 @@ export function computeSessionRetakeDiagnostics(params: {
       (r.sessionId === session.id || r.pin === session.pin),
   );
 
-  const index = buildOriginalCompletionIndex(
-    sessionResults,
-    session.id,
-    session.pin,
-    threshold,
-  );
+  const index = buildOriginalCompletionIndex(sessionResults, session.id, session.pin, threshold);
   const nonCompletedByRoll = new Set<string>();
   const nonCompletedByPhone = new Set<string>();
 
@@ -273,7 +270,9 @@ export function computeSessionRetakeDiagnostics(params: {
   );
   regionBreakdown.sort(
     (a, b) =>
-      b.zeroAttemptCount + b.partialBelowThresholdCount - (a.zeroAttemptCount + a.partialBelowThresholdCount) ||
+      b.zeroAttemptCount +
+        b.partialBelowThresholdCount -
+        (a.zeroAttemptCount + a.partialBelowThresholdCount) ||
       b.eligibleRetakeCount - a.eligibleRetakeCount ||
       b.completedCount - a.completedCount,
   );
@@ -340,7 +339,8 @@ export function mergeRetakeExamResults(params: {
   });
 
   const keptExisting = existingResults.filter((r) => {
-    const belongsToOrig = r.sessionId === origSession.id || (!r.sessionId && r.pin === origSession.pin);
+    const belongsToOrig =
+      r.sessionId === origSession.id || (!!origSession.pin && r.pin === origSession.pin);
     if (!belongsToOrig) return false;
     if ((r.participantId || "").startsWith("bot-")) return false;
     const rk = normalizeMatchRoll(r.rollNumber);
@@ -358,7 +358,7 @@ export function mergeRetakeExamResults(params: {
     if (timeA > 0 && timeB > 0 && Math.abs(timeA - timeB) > 0.005) {
       return timeA - timeB;
     }
-    if ((timeA > 0) !== (timeB > 0)) {
+    if (timeA > 0 !== timeB > 0) {
       return timeA > 0 ? -1 : 1;
     }
     return (a.createdAt || "").localeCompare(b.createdAt || "");

@@ -525,7 +525,9 @@ function PlayPage() {
 
     try {
       audioEngine.playTick();
-    } catch {}
+    } catch {
+      // ignore audio context error
+    }
 
     // In Self-Practice mode, show immediate feedback & rationale 650ms after submitting!
     if (isSelfPractice || session.isSelfPractice) {
@@ -950,14 +952,18 @@ function PlayPage() {
                             to="/dashboard"
                             className="shrink-0 rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 transition"
                           >
-                            {lang === "bn" ? "স্টুডিও থেকে পরীক্ষা চালু করুন →" : "Open Studio to Host →"}
+                            {lang === "bn"
+                              ? "স্টুডিও থেকে পরীক্ষা চালু করুন →"
+                              : "Open Studio to Host →"}
                           </Link>
                         ) : (
                           <Link
                             to="/auth/login"
                             className="shrink-0 rounded-xl border border-border bg-background px-3.5 py-2 text-xs font-bold text-foreground hover:bg-accent transition"
                           >
-                            {lang === "bn" ? "ইন্সট্রাক্টর / অ্যাডমিন লগইন →" : "Sign In as Instructor / Admin to Host →"}
+                            {lang === "bn"
+                              ? "ইন্সট্রাক্টর / অ্যাডমিন লগইন →"
+                              : "Sign In as Instructor / Admin to Host →"}
                           </Link>
                         )}
                       </div>
@@ -988,7 +994,9 @@ function PlayPage() {
                                 </h3>
                                 <p className="text-[11px] font-mono text-muted-foreground">
                                   {courseQuizzes.length}{" "}
-                                  {lang === "bn" ? "টি নির্ধারিত কুইজ · হোস্ট পিন প্রয়োজন" : "locked modules · Instructor PIN required"}
+                                  {lang === "bn"
+                                    ? "টি নির্ধারিত কুইজ · হোস্ট পিন প্রয়োজন"
+                                    : "locked modules · Instructor PIN required"}
                                 </p>
                               </div>
 
@@ -1025,7 +1033,9 @@ function PlayPage() {
                           <div className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-0.5 text-[11px] font-bold text-primary mb-1">
                             <Sparkles className="h-3 w-3" />
                             <span>
-                              {lang === "bn" ? "পাবলিক ডেমো সেলফ-প্র্যাকটিস" : "Public Demo Self-Practice"}
+                              {lang === "bn"
+                                ? "পাবলিক ডেমো সেলফ-প্র্যাকটিস"
+                                : "Public Demo Self-Practice"}
                             </span>
                           </div>
                           <h2 className="font-display text-lg sm:text-xl font-extrabold text-foreground">
@@ -1052,7 +1062,8 @@ function PlayPage() {
                                 : "border border-border bg-background text-muted-foreground hover:text-foreground"
                             }`}
                           >
-                            {lang === "bn" ? "সকল পাবলিক কুইজ" : "All Public Quizzes"} ({publicQuizzes.length})
+                            {lang === "bn" ? "সকল পাবলিক কুইজ" : "All Public Quizzes"} (
+                            {publicQuizzes.length})
                           </button>
                           {publicCourses.map((c) => (
                             <button
@@ -1116,7 +1127,9 @@ function PlayPage() {
                                 className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary/10 border border-primary/30 py-2 text-xs font-extrabold text-primary hover:bg-primary hover:text-primary-foreground transition disabled:opacity-50"
                               >
                                 <Play className="h-3.5 w-3.5 fill-current" />
-                                <span>{lang === "bn" ? "অনুশীলন শুরু করুন" : "Start Practice Exam"}</span>
+                                <span>
+                                  {lang === "bn" ? "অনুশীলন শুরু করুন" : "Start Practice Exam"}
+                                </span>
                               </button>
                             </div>
                           ))}
@@ -1458,7 +1471,9 @@ function PlayPage() {
             <div className="w-full max-w-md rounded-3xl border border-border bg-card p-6 sm:p-8 shadow-tactical text-center space-y-3">
               <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
               <p className="font-display text-base font-extrabold text-foreground">
-                {lang === "bn" ? "পরবর্তী প্রশ্ন সিঙ্ক হচ্ছে..." : "Synchronizing Examination Feed..."}
+                {lang === "bn"
+                  ? "পরবর্তী প্রশ্ন সিঙ্ক হচ্ছে..."
+                  : "Synchronizing Examination Feed..."}
               </p>
               <p className="font-mono text-xs text-muted-foreground">
                 Current Rank #{participant.rank} · {participant.score} {t("pts")}

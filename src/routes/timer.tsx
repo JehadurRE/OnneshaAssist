@@ -13,8 +13,7 @@ export const Route = createFileRoute("/timer")({
       { title: "Exam Countdown Timer — Onnesha Assessment Arena" },
       {
         name: "description",
-        content:
-          "Projector-ready examination countdown timer by Onnesha LMS and Cloud Connect AI.",
+        content: "Projector-ready examination countdown timer by Onnesha LMS and Cloud Connect AI.",
       },
     ],
   }),
@@ -109,7 +108,9 @@ function TimerPage() {
                     ? `${branding.partnerName} · Exam Hall Timer`
                     : branding.institutionTitle || "Onnesha Assessment — Exam Hall Timer"}
                 </h1>
-                <p className="text-xs text-muted-foreground">Official Examination Clock · Onnesha LMS &amp; CCAI</p>
+                <p className="text-xs text-muted-foreground">
+                  Official Examination Clock · Onnesha LMS &amp; CCAI
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -137,10 +138,16 @@ function TimerPage() {
               }`}
             >
               {finished
-                ? (lang === 'bn' ? 'সময় সমাপ্ত — লেখা বন্ধ করুন' : 'Time is over — stop writing')
+                ? lang === "bn"
+                  ? "সময় সমাপ্ত — লেখা বন্ধ করুন"
+                  : "Time is over — stop writing"
                 : running
-                  ? (lang === 'bn' ? 'পরীক্ষা চলছে' : 'Exam in progress')
-                  : (lang === 'bn' ? 'প্রস্তুত' : 'Ready')}
+                  ? lang === "bn"
+                    ? "পরীক্ষা চলছে"
+                    : "Exam in progress"
+                  : lang === "bn"
+                    ? "প্রস্তুত"
+                    : "Ready"}
             </p>
 
             <div
@@ -179,7 +186,13 @@ function TimerPage() {
                 className="rounded-2xl bg-primary px-8 py-3.5 text-sm font-bold uppercase tracking-wider text-primary-foreground shadow-md transition hover:opacity-90 disabled:opacity-40"
                 disabled={left === 0}
               >
-                {running ? (lang === 'bn' ? 'থামুন' : 'Pause') : (lang === 'bn' ? 'শুরু করুন' : 'Start')}
+                {running
+                  ? lang === "bn"
+                    ? "থামুন"
+                    : "Pause"
+                  : lang === "bn"
+                    ? "শুরু করুন"
+                    : "Start"}
               </button>
               <button
                 onClick={() => {
@@ -188,7 +201,7 @@ function TimerPage() {
                 }}
                 className="rounded-2xl border border-border bg-card px-8 py-3.5 text-sm font-bold uppercase tracking-wider text-foreground shadow-sm transition hover:bg-accent"
               >
-                {lang === 'bn' ? 'রিসেট' : 'Reset'}
+                {lang === "bn" ? "রিসেট" : "Reset"}
               </button>
               <button
                 onClick={() => {
@@ -199,11 +212,19 @@ function TimerPage() {
                     } else if (document.exitFullscreen) {
                       Promise.resolve(document.exitFullscreen()).catch(() => {});
                     }
-                  } catch {}
+                  } catch {
+                    // ignore fullscreen refusal
+                  }
                 }}
                 className="rounded-2xl border border-border bg-card px-8 py-3.5 text-sm font-bold uppercase tracking-wider text-foreground shadow-sm transition hover:bg-accent"
               >
-                {isFullscreen ? (lang === 'bn' ? 'ফুলস্ক্রিন বন্ধ' : 'Exit Fullscreen') : (lang === 'bn' ? 'ফুলস্ক্রিন' : 'Fullscreen')}
+                {isFullscreen
+                  ? lang === "bn"
+                    ? "ফুলস্ক্রিন বন্ধ"
+                    : "Exit Fullscreen"
+                  : lang === "bn"
+                    ? "ফুলস্ক্রিন"
+                    : "Fullscreen"}
               </button>
             </div>
           </div>
@@ -216,7 +237,7 @@ function TimerPage() {
           }`}
         >
           <h2 className="font-display text-sm font-bold uppercase tracking-[0.2em] text-muted-foreground">
-            {lang === 'bn' ? 'পরীক্ষার সময়সীমা নির্বাচন করুন' : 'Set Exam Duration'}
+            {lang === "bn" ? "পরীক্ষার সময়সীমা নির্বাচন করুন" : "Set Exam Duration"}
           </h2>
           <div className="mt-4 flex flex-wrap gap-2">
             {PRESETS.map((p) => (
@@ -236,7 +257,9 @@ function TimerPage() {
 
           <div className="mt-6 flex flex-wrap items-end gap-3">
             <label className="text-xs font-semibold">
-              <span className="mb-1 block text-muted-foreground">{lang === 'bn' ? 'মিনিট' : 'Minutes'}</span>
+              <span className="mb-1 block text-muted-foreground">
+                {lang === "bn" ? "মিনিট" : "Minutes"}
+              </span>
               <input
                 type="number"
                 min={0}
@@ -246,7 +269,9 @@ function TimerPage() {
               />
             </label>
             <label className="text-xs font-semibold">
-              <span className="mb-1 block text-muted-foreground">{lang === 'bn' ? 'সেকেন্ড' : 'Seconds'}</span>
+              <span className="mb-1 block text-muted-foreground">
+                {lang === "bn" ? "সেকেন্ড" : "Seconds"}
+              </span>
               <input
                 type="number"
                 min={0}
@@ -258,11 +283,14 @@ function TimerPage() {
             </label>
             <button
               onClick={() =>
-                apply((parseInt(minsInput || "0", 10) || 0) * 60 + (parseInt(secsInput || "0", 10) || 0))
+                apply(
+                  (parseInt(minsInput || "0", 10) || 0) * 60 +
+                    (parseInt(secsInput || "0", 10) || 0),
+                )
               }
               className="rounded-xl bg-secondary px-6 py-2.5 text-xs font-bold text-secondary-foreground shadow-sm transition hover:opacity-90"
             >
-              {lang === 'bn' ? 'প্রয়োগ করুন' : 'Apply Duration'}
+              {lang === "bn" ? "প্রয়োগ করুন" : "Apply Duration"}
             </button>
           </div>
         </section>
