@@ -161,6 +161,7 @@ type ServerLiveSession = GameSession & {
   fullQuiz?: Quiz | undefined;
   cachedTop5?: Participant[] | undefined;
   cachedSanitizedQuestion?: Question | undefined;
+  questionStartTimes?: Record<string, number> | undefined;
 };
 
 interface PendingPhoneOtp {
@@ -1080,6 +1081,49 @@ export function isQuestionSubmissionClosed(
   return false;
 }
 
+/**
+ * Computes tamper-resistant, clock-skew-safe response duration in seconds.
+ * - Live online submissions anchor around server receipt time (`nowRef`) with up to 1.5s
+ *   network transit compensation so slow client clocks can never collapse all times to 0.1s.
+ * - Offline outbox submissions (`isOfflineQueued`) retain their server-offset client tap time
+ *   clamped safely inside `[questionStartTime, nowRef]`.
+ */
+export function computeAnswerElapsedSec(params: {
+  questionStartTime: number;
+  effectiveLimitSec: number;
+  serverNow?: number | undefined;
+  pausedAt?: number | undefined;
+  clientAnsweredAt?: number | undefined;
+  isOfflineQueued?: boolean | undefined;
+}): { effectiveTimestamp: number; timeTakenSec: number } {
+  const rawNow =
+    typeof params.serverNow === "number" && Number.isFinite(params.serverNow)
+      ? params.serverNow
+      : Date.now();
+  const nowRef =
+    typeof params.pausedAt === "number" && params.pausedAt > 0
+      ? Math.min(rawNow, params.pausedAt)
+      : rawNow;
+  const limit = Math.max(1, params.effectiveLimitSec || 20);
+
+  if (!params.questionStartTime || params.questionStartTime <= 0) {
+    return { effectiveTimestamp: nowRef, timeTakenSec: 0.1 };
+  }
+
+  const start = Math.min(params.questionStartTime, nowRef);
+  const maxLookbackMs = params.isOfflineQueued ? limit * 1000 : 1500;
+  const lowerBound = Math.max(start, nowRef - maxLookbackMs);
+  const effectiveTimestamp =
+    typeof params.clientAnsweredAt === "number" && Number.isFinite(params.clientAnsweredAt)
+      ? Math.max(lowerBound, Math.min(nowRef, params.clientAnsweredAt))
+      : nowRef;
+
+  const elapsedSec = (effectiveTimestamp - start) / 1000;
+  const clampedElapsed = Math.max(0.1, Math.min(limit, elapsedSec));
+  const timeTakenSec = Math.round(clampedElapsed * 100) / 100;
+  return { effectiveTimestamp, timeTakenSec };
+}
+
 export function applyBetweenPhasePause(
   session: Pick<
     GameSession,
@@ -1174,6 +1218,12 @@ export function applyResumeGameToSession(session: ServerLiveSession, now = Date.
   }
   if (typeof session.questionEndTime === "number") {
     session.questionEndTime += pausedMs;
+  }
+  const qid = session.currentQuestion?.id;
+  const qStarts = session.questionStartTimes;
+  const curStart = qid && qStarts ? qStarts[qid] : undefined;
+  if (qid && qStarts && typeof curStart === "number") {
+    qStarts[qid] = curStart + pausedMs;
   }
   session.pausedAt = undefined;
   session.updatedAt = now;
@@ -1675,6 +1725,10 @@ function advanceSessionToQuestion(
   session.pausedAt = undefined;
   session.questionStartTime = now;
   session.questionEndTime = now + effectiveLimit * 1000;
+  session.questionStartTimes = {
+    ...(session.questionStartTimes || {}),
+    [effectiveQuestion.id]: now,
+  };
   recalculateSessionMetrics(session);
 
   // Simulate bot answers if any bots exist in the session
@@ -4039,18 +4093,41 @@ export const serverSyncSession = createServerFn({ method: "POST" })
       return { success: false, error: "Host authorization required." };
     }
 
+    const prevPhase = existing.phase;
+    const prevQIdx = existing.currentQuestionIndex;
+    const nowServer = Date.now();
+
     existing.phase = data.session.phase;
     existing.currentQuestionIndex = data.session.currentQuestionIndex;
     if (data.session.currentQuestion) {
       existing.currentQuestion = data.session.currentQuestion;
     }
-    existing.questionStartTime = data.session.questionStartTime;
-    existing.questionEndTime = data.session.questionEndTime;
+
+    const sameQuestionWindow =
+      prevPhase === data.session.phase &&
+      prevQIdx === data.session.currentQuestionIndex &&
+      existing.questionStartTime > 0;
+    if (!sameQuestionWindow) {
+      const safeStart =
+        data.session.questionStartTime && data.session.questionStartTime > 0
+          ? Math.min(nowServer, data.session.questionStartTime)
+          : data.session.phase === "question"
+            ? nowServer
+            : 0;
+      existing.questionStartTime = safeStart;
+      existing.questionEndTime = data.session.questionEndTime;
+      if (data.session.currentQuestion?.id && safeStart > 0) {
+        existing.questionStartTimes = {
+          ...(existing.questionStartTimes || {}),
+          [data.session.currentQuestion.id]: safeStart,
+        };
+      }
+    }
     existing.pausedAt = data.session.pausedAt;
     existing.settings = { ...existing.settings, ...data.session.settings };
     recalculateSessionMetrics(existing);
     scheduleLiveSessionsPersist();
-    return { success: true, session: toHostSessionView(existing) };
+    return { success: true, serverNow: nowServer, session: toHostSessionView(existing) };
   });
 
 export const serverJoinSession = createServerFn({ method: "POST" })
@@ -4294,6 +4371,7 @@ export const serverSubmitAnswer = createServerFn({ method: "POST" })
       writtenAnswer?: string | undefined;
       seatToken?: string | undefined;
       clientAnsweredAt?: number | undefined;
+      isOfflineQueued?: boolean | undefined;
       // Legacy fallback fields
       answer?: ParticipantAnswer | undefined;
       scoreDelta?: number | undefined;
@@ -4385,17 +4463,17 @@ export const serverSubmitAnswer = createServerFn({ method: "POST" })
     const selectedIds = data.selectedOptionIds || data.answer?.selectedOptionIds || [];
     const written = (data.writtenAnswer ?? data.answer?.writtenAnswer ?? "").trim();
 
-    // Support offline-queued answers with fair timestamp clamping & sub-second speed precision
-    const effectiveTimestamp = data.clientAnsweredAt
-      ? Math.max(
-          session.questionStartTime || Date.now(),
-          Math.min(Date.now(), data.clientAnsweredAt),
-        )
-      : Date.now();
-    const elapsedSec =
-      (effectiveTimestamp - (session.questionStartTime || effectiveTimestamp)) / 1000;
-    const clampedElapsed = Math.max(0.1, Math.min(effectiveLimit, elapsedSec));
-    const timeTakenSec = Math.round(clampedElapsed * 100) / 100;
+    // Clock-skew-resistant sub-second elapsed duration using per-question authoritative start time
+    const authoritativeQuestionStart =
+      session.questionStartTimes?.[data.questionId] ??
+      (session.currentQuestion?.id === data.questionId ? session.questionStartTime : 0);
+    const { effectiveTimestamp, timeTakenSec } = computeAnswerElapsedSec({
+      questionStartTime: authoritativeQuestionStart,
+      effectiveLimitSec: effectiveLimit,
+      pausedAt: session.pausedAt,
+      clientAnsweredAt: data.clientAnsweredAt,
+      isOfflineQueued: data.isOfflineQueued,
+    });
 
     const graded = evaluateQuestionAnswer({
       question: gradedQuestion,

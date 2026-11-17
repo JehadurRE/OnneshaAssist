@@ -1732,12 +1732,24 @@ function PlayPage() {
                             ) : isCorrect ? (
                               <>
                                 <CheckCircle2 className="h-3 w-3" />
-                                <span>Correct (+{ans.pointsAwarded} pts)</span>
+                                <span>
+                                  Correct (+{ans.pointsAwarded} pts
+                                  {typeof ans.timeTakenSec === "number"
+                                    ? ` · ${ans.timeTakenSec.toFixed(1)}s`
+                                    : ""}
+                                  )
+                                </span>
                               </>
                             ) : (
                               <>
                                 <XCircle className="h-3 w-3" />
-                                <span>Incorrect ({ans.pointsAwarded} pts)</span>
+                                <span>
+                                  Incorrect ({ans.pointsAwarded} pts
+                                  {typeof ans.timeTakenSec === "number"
+                                    ? ` · ${ans.timeTakenSec.toFixed(1)}s`
+                                    : ""}
+                                  )
+                                </span>
                               </>
                             )}
                           </span>

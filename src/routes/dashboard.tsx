@@ -34,10 +34,13 @@ import { gameEngine } from "@/lib/game-engine";
 import { serverGetActiveRooms } from "@/lib/server-session";
 import { SmsGateway } from "@/lib/sms-gateway";
 import { getAiCredits } from "@/lib/ai-generator";
+import { buildCopyableAiPrompt, parseQuestionsFromText } from "@/lib/question-text-parser";
 import {
   Award,
   BookOpen,
+  Check,
   ChevronRight,
+  Copy,
   Download,
   FileSpreadsheet,
   KeyRound,
@@ -161,6 +164,9 @@ function DashboardPage() {
   } | null>(null);
 
   const [showAiModal, setShowAiModal] = useState(false);
+  const [showStudioPasteBox, setShowStudioPasteBox] = useState(false);
+  const [studioPasteText, setStudioPasteText] = useState("");
+  const [studioCopiedPrompt, setStudioCopiedPrompt] = useState(false);
   const [selectedQuizForOmr, setSelectedQuizForOmr] = useState<Quiz | null>(null);
   const [showGazette, setShowGazette] = useState(false);
   const [aiCredits, setAiCredits] = useState(50);
@@ -1701,7 +1707,7 @@ function DashboardPage() {
                   className="inline-flex items-center gap-1.5 rounded-2xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90"
                 >
                   <Plus className="h-4 w-4" />
-                  <span>Create with AI</span>
+                  <span>Quick Paste / AI Quiz</span>
                 </button>
               </div>
             </div>
@@ -1998,42 +2004,153 @@ function DashboardPage() {
                   <h4 className="font-display text-sm font-bold text-foreground">
                     Questions ({newQuestions.length})
                   </h4>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextNum = newQuestions.length + 1;
-                      setNewQuestions([
-                        ...newQuestions,
-                        {
-                          id: `nq-${Date.now()}-${nextNum}`,
-                          textEn: `Question #${nextNum}`,
-                          textBn: `প্রশ্ন #${nextNum}`,
-                          type: "single_mcq",
-                          timeLimitSec: 20,
-                          points: 1000,
-                          negativeMarks: 0.25,
-                          options: [
-                            {
-                              id: `o-${nextNum}-1`,
-                              textEn: "Option A",
-                              textBn: "অপশন ক",
-                              isCorrect: true,
-                            },
-                            { id: `o-${nextNum}-2`, textEn: "Option B", textBn: "অপশন খ" },
-                            { id: `o-${nextNum}-3`, textEn: "Option C", textBn: "অপশন গ" },
-                            { id: `o-${nextNum}-4`, textEn: "Option D", textBn: "অপশন ঘ" },
-                          ],
-                          correctOptionIds: [`o-${nextNum}-1`],
-                          acceptedAnswers: [],
-                        },
-                      ]);
-                    }}
-                    className="inline-flex items-center gap-1 rounded-xl bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/20"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span>Add Question Item</span>
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const promptText = buildCopyableAiPrompt(lang, {
+                          topic: newQuizTitle.trim() || undefined,
+                          count: 15,
+                        });
+                        try {
+                          if (typeof navigator !== "undefined" && navigator.clipboard) {
+                            await navigator.clipboard.writeText(promptText);
+                          }
+                          setStudioCopiedPrompt(true);
+                          setTimeout(() => setStudioCopiedPrompt(false), 2500);
+                        } catch {
+                          setStudioPasteText(promptText);
+                          setShowStudioPasteBox(true);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:border-primary/40 transition"
+                    >
+                      {studioCopiedPrompt ? (
+                        <>
+                          <Check className="h-3.5 w-3.5 text-emerald-500" />
+                          <span className="text-emerald-600 dark:text-emerald-400">
+                            Prompt Copied!
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3.5 w-3.5 text-primary" />
+                          <span>Copy AI Prompt Format</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowStudioPasteBox((v) => !v)}
+                      className="inline-flex items-center gap-1 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 transition"
+                    >
+                      <Upload className="h-3.5 w-3.5" />
+                      <span>{showStudioPasteBox ? "Hide Paste Box" : "Paste & Import Qs"}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextNum = newQuestions.length + 1;
+                        setNewQuestions([
+                          ...newQuestions,
+                          {
+                            id: `nq-${Date.now()}-${nextNum}`,
+                            textEn: `Question #${nextNum}`,
+                            textBn: `প্রশ্ন #${nextNum}`,
+                            type: "single_mcq",
+                            timeLimitSec: 20,
+                            points: 1000,
+                            negativeMarks: 0.25,
+                            options: [
+                              {
+                                id: `o-${nextNum}-1`,
+                                textEn: "Option A",
+                                textBn: "অপশন ক",
+                                isCorrect: true,
+                              },
+                              { id: `o-${nextNum}-2`, textEn: "Option B", textBn: "অপশন খ" },
+                              { id: `o-${nextNum}-3`, textEn: "Option C", textBn: "অপশন গ" },
+                              { id: `o-${nextNum}-4`, textEn: "Option D", textBn: "অপশন ঘ" },
+                            ],
+                            correctOptionIds: [`o-${nextNum}-1`],
+                            acceptedAnswers: [],
+                          },
+                        ]);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-xl bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/20"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Add Question Item</span>
+                    </button>
+                  </div>
                 </div>
+
+                {showStudioPasteBox && (
+                  <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-4 space-y-3 animate-in fade-in">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <span className="font-bold text-foreground">
+                        Paste formatted questions from ChatGPT / Claude / Gemini (Question, A-D,
+                        Answer, Explanation):
+                      </span>
+                      <span className="font-mono text-[11px] font-bold text-primary">
+                        {parseQuestionsFromText(studioPasteText).stats.total} detected
+                      </span>
+                    </div>
+                    <textarea
+                      rows={8}
+                      value={studioPasteText}
+                      onChange={(e) => setStudioPasteText(e.target.value)}
+                      placeholder={`1. Question text?\nA. Option 1\nB. Option 2\nC. Option 3\nD. Option 4\nAnswer: B\nExplanation: Short explanation...`}
+                      className="w-full rounded-2xl border border-border bg-card p-3.5 text-xs sm:text-sm text-foreground outline-none focus:border-primary"
+                    />
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        disabled={parseQuestionsFromText(studioPasteText).questions.length === 0}
+                        onClick={() => {
+                          const parsed = parseQuestionsFromText(studioPasteText);
+                          if (parsed.questions.length === 0) return;
+                          if (!newQuizTitle.trim() && parsed.detectedTitle) {
+                            setNewQuizTitle(parsed.detectedTitle);
+                          }
+                          setNewQuestions([...newQuestions, ...parsed.questions]);
+                          setStudioPasteText("");
+                          setShowStudioPasteBox(false);
+                          setSmsSuccessMsg(
+                            `✓ Appended ${parsed.questions.length} imported questions into editor.`,
+                          );
+                          setTimeout(() => setSmsSuccessMsg(null), 4000);
+                        }}
+                        className="rounded-xl border border-border bg-card px-3.5 py-2 text-xs font-bold text-foreground hover:bg-accent disabled:opacity-40"
+                      >
+                        Append ({parseQuestionsFromText(studioPasteText).stats.total})
+                      </button>
+                      <button
+                        type="button"
+                        disabled={parseQuestionsFromText(studioPasteText).questions.length === 0}
+                        onClick={() => {
+                          const parsed = parseQuestionsFromText(studioPasteText);
+                          if (parsed.questions.length === 0) return;
+                          if (!newQuizTitle.trim() && parsed.detectedTitle) {
+                            setNewQuizTitle(parsed.detectedTitle);
+                          }
+                          setNewQuestions(parsed.questions);
+                          setStudioPasteText("");
+                          setShowStudioPasteBox(false);
+                          setSmsSuccessMsg(
+                            `✓ Loaded ${parsed.questions.length} imported questions into editor.`,
+                          );
+                          setTimeout(() => setSmsSuccessMsg(null), 4000);
+                        }}
+                        className="rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+                      >
+                        Replace All with {parseQuestionsFromText(studioPasteText).stats.total} Qs
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {newQuestions.map((q, qIdx) => (
                   <div
@@ -2703,7 +2820,32 @@ function DashboardPage() {
                             {r.accuracyPct}%
                           </td>
                           <td className="p-4 text-center font-mono font-black text-foreground">
-                            {r.score.toLocaleString()}
+                            <div>{r.score.toLocaleString()}</div>
+                            {(() => {
+                              try {
+                                const parsed = r.answersJson
+                                  ? (JSON.parse(r.answersJson) as Record<
+                                      string,
+                                      { timeTakenSec?: number }
+                                    >)
+                                  : {};
+                                const vals = Object.values(parsed).filter(
+                                  (a) => typeof a?.timeTakenSec === "number",
+                                );
+                                if (vals.length === 0) return null;
+                                const totalSec = vals.reduce(
+                                  (acc, a) => acc + Math.max(0, a.timeTakenSec || 0),
+                                  0,
+                                );
+                                return (
+                                  <div className="text-[10px] font-semibold text-muted-foreground">
+                                    ⏱ {totalSec.toFixed(1)}s total
+                                  </div>
+                                );
+                              } catch {
+                                return null;
+                              }
+                            })()}
                           </td>
                           <td className="p-4 text-center">
                             {didPass ? (
@@ -3257,6 +3399,22 @@ function DashboardPage() {
           isOpen={showAiModal}
           defaultCourseId={selectedCourseFilter}
           onClose={() => setShowAiModal(false)}
+          onLoadIntoEditor={(quiz) => {
+            editingOriginalMetaRef.current = null;
+            setEditingQuizId(null);
+            setEditingQuizSlug(null);
+            setNewQuizTitle(quiz.titleBn || quiz.titleEn || `Quiz ${quiz.quizNumber || 1}`);
+            if (quiz.courseId) setNewQuizCourseId(quiz.courseId);
+            setNewQuizNumber(quiz.quizNumber || 1);
+            setNewQuizCategory(quiz.categoryEn || "Custom Assessment");
+            setNewQuestions(quiz.questions);
+            setShowAiModal(false);
+            setActiveTab("ai_creator");
+            setSmsSuccessMsg(
+              `✓ Loaded ${quiz.questions.length} parsed questions into Manual Question Studio. Review and Save when ready.`,
+            );
+            setTimeout(() => setSmsSuccessMsg(null), 4500);
+          }}
           onQuizGenerated={(quiz) => {
             db.saveCustomQuiz(quiz);
             setQuizzes(db.getQuizzes());
@@ -3264,7 +3422,7 @@ function DashboardPage() {
             setShowAiModal(false);
             setActiveTab("quizzes");
             setSmsSuccessMsg(
-              `✓ Generated "${quiz.titleEn}" (${quiz.courseTitle ? `${quiz.courseTitle} · Quiz #${quiz.quizNumber}` : "AI Module"}) and saved to server database.`,
+              `✓ Saved "${quiz.titleEn}" (${quiz.questions.length} Qs${quiz.courseTitle ? ` · ${quiz.courseTitle} #${quiz.quizNumber}` : ""}) to server database.`,
             );
             setTimeout(() => setSmsSuccessMsg(null), 4000);
           }}

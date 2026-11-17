@@ -154,6 +154,10 @@ export function evaluateQuestionAnswer(input: EvaluateAnswerInput): EvaluateAnsw
 
   let pointsAwarded = 0;
   let newStreak = currentStreak;
+  const basePoints =
+    typeof question.points === "number" && question.points > 0 ? question.points : 1000;
+  const roundMarks = (val: number) =>
+    basePoints < 100 ? Math.round(val * 100) / 100 : Math.round(val);
 
   if (isCorrect) {
     newStreak = currentStreak + 1;
@@ -161,11 +165,11 @@ export function evaluateQuestionAnswer(input: EvaluateAnswerInput): EvaluateAnsw
     const limit = Math.max(1, question.timeLimitSec || 20);
     const clampedTime = Math.max(0.1, Math.min(limit, timeTakenSec));
     const speedFactor = speedBonus ? Math.max(0.5, 1 - (clampedTime / limit) * 0.5) : 1;
-    pointsAwarded = Math.round((question.points || 1000) * speedFactor * streakMultiplier);
+    pointsAwarded = roundMarks(basePoints * speedFactor * streakMultiplier);
   } else {
     newStreak = 0;
     if (negativeMarking > 0) {
-      pointsAwarded = -Math.round((question.points || 1000) * negativeMarking);
+      pointsAwarded = -roundMarks(basePoints * negativeMarking);
     }
   }
 
@@ -463,5 +467,5 @@ export function computeParticipantTotalScore(answers: Participant["answers"] | u
         : 0),
     0,
   );
-  return Math.max(0, sum);
+  return Math.max(0, Math.round(sum * 100) / 100);
 }

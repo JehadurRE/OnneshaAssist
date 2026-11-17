@@ -576,4 +576,42 @@ describe("host pause/resume & QUESTION_CLOSED outbox handling", () => {
     expect(localStorage.getItem("onnesha_session_222222")).not.toBeNull();
     expect(localStorage.getItem("onnesha_pid_222222")).toBe("fresh-pid");
   });
+
+  it("submits answers using server-calibrated clock offset and flags offline queued retries", async () => {
+    const engine = await loadEngine();
+    vi.setSystemTime(100_000);
+    serverGetSession.mockResolvedValueOnce({
+      success: true,
+      serverNow: 135_000, // client clock is 35s slower than server
+      session: makeSession("776655", 130_000, "question", {
+        questionStartTime: 120_000,
+        questionEndTime: 145_000,
+      }),
+    });
+    await engine.getSessionAsync("776655", "player", "p-1");
+    engine.stopPolling();
+
+    serverSubmitAnswer.mockResolvedValueOnce({
+      success: true,
+      serverNow: 135_000,
+    });
+    engine.submitAnswer("776655", "p-1", "q-1", ["opt-a"]);
+    await flush();
+
+    const firstCallData = serverSubmitAnswer.mock.calls[0]?.[0]?.data as {
+      clientAnsweredAt?: number;
+      isOfflineQueued?: boolean;
+    };
+    expect(firstCallData.isOfflineQueued).toBe(false);
+    expect(firstCallData.clientAnsweredAt).toBeGreaterThanOrEqual(134_500);
+
+    // Network drop moves answer to offline outbox marked isOfflineQueued: true
+    serverSubmitAnswer.mockRejectedValueOnce(new Error("offline drop"));
+    engine.submitAnswer("776655", "p-1", "q-2", ["opt-b"]);
+    await flush();
+
+    const queued = engine.getOfflineOutbox();
+    expect(queued).toHaveLength(1);
+    expect(queued[0]?.isOfflineQueued).toBe(true);
+  });
 });

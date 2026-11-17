@@ -33,6 +33,7 @@ interface QueuedAnswerPayload {
   writtenAnswer?: string | undefined;
   seatToken?: string | undefined;
   clientAnsweredAt: number;
+  isOfflineQueued?: boolean | undefined;
 }
 
 const BOT_NAMES = [
@@ -232,15 +233,16 @@ class RealtimeGameEngine {
   }
 
   private enqueueOfflineAnswer(item: QueuedAnswerPayload) {
+    const queuedItem: QueuedAnswerPayload = { ...item, isOfflineQueued: true };
     const queue = this.getOfflineOutbox().filter(
       (q) =>
         !(
-          q.pin === item.pin &&
-          q.participantId === item.participantId &&
-          q.questionId === item.questionId
+          q.pin === queuedItem.pin &&
+          q.participantId === queuedItem.participantId &&
+          q.questionId === queuedItem.questionId
         ),
     );
-    queue.push(item);
+    queue.push(queuedItem);
     this.saveOfflineOutbox(queue);
   }
 
@@ -1021,7 +1023,8 @@ class RealtimeGameEngine {
     writtenAnswer?: string,
   ) {
     const seatToken = this.getStoredSeatToken(pin);
-    const clientAnsweredAt = Date.now();
+    const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
+    const clientAnsweredAt = this.getServerNow();
     const payload: QueuedAnswerPayload = {
       pin,
       participantId,
@@ -1030,9 +1033,10 @@ class RealtimeGameEngine {
       writtenAnswer,
       seatToken,
       clientAnsweredAt,
+      isOfflineQueued: isOffline,
     };
 
-    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    if (isOffline) {
       this.enqueueOfflineAnswer(payload);
       return;
     }

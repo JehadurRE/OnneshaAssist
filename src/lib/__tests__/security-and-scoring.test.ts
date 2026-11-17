@@ -87,6 +87,7 @@ import {
   applyResumeGameToSession,
   buildJoinDirectoryForSession,
   clearDeletedQuizTokensInStore,
+  computeAnswerElapsedSec,
   deleteCertificateInStore,
   deleteQuizInStore,
   enterBetweenPhase,
@@ -110,6 +111,7 @@ import { generateQuizWithAi, getAiCredits } from "../ai-generator";
 import { normalizeGeneratedQuizPayload, stripMarkdownJsonFence } from "../ai-quiz-core";
 import { sqliteEngine } from "../db/sqlite-engine";
 import { db, formatDeterministicCertNumber } from "../db";
+import { buildQuizFromParsedText, parseQuestionsFromText } from "../question-text-parser";
 
 describe("server-security: password hashing & user sanitization", () => {
   it("hashes passwords with unique per-user scrypt salts and verifies cleanly", () => {
@@ -3218,5 +3220,143 @@ describe("live exam hardening: commutative negative marking, deadline guard, pau
     const retakeSessionPin = "998877";
     const resolvedPin = retakeOriginPin || retakeSessionPin;
     expect(formatDeterministicCertNumber(resolvedPin, "ROLL-105", 1)).toBe(origCert);
+  });
+
+  it("prevents client clock skew from flattening speed-based marking and differentiates 1-mark custom weights", () => {
+    const startMs = 1_000_000;
+    // Fast candidate (answers online at 1.2s, clock synced)
+    const fast = computeAnswerElapsedSec({
+      questionStartTime: startMs,
+      effectiveLimitSec: 25,
+      serverNow: startMs + 1300,
+      clientAnsweredAt: startMs + 1200,
+      isOfflineQueued: false,
+    });
+    // Slow candidate (answers online at 18.0s) BUT device clock is 6 hours behind server UTC!
+    const slowSkewed = computeAnswerElapsedSec({
+      questionStartTime: startMs,
+      effectiveLimitSec: 25,
+      serverNow: startMs + 18_000,
+      clientAnsweredAt: startMs - 6 * 3600 * 1000,
+      isOfflineQueued: false,
+    });
+    expect(fast.timeTakenSec).toBe(1.2);
+    // Must stay near 18s (16.5s max lookback floor), NEVER collapse to 0.1s
+    expect(slowSkewed.timeTakenSec).toBeGreaterThanOrEqual(16.5);
+
+    const sampleQ: Question = {
+      id: "q-spd-skew",
+      textEn: "Sample",
+      textBn: "নমুনা",
+      type: "single_mcq",
+      timeLimitSec: 25,
+      points: 1000,
+      options: [{ id: "a", textEn: "A", textBn: "ক", isCorrect: true }],
+      correctOptionIds: ["a"],
+    };
+    const fastEval = evaluateQuestionAnswer({
+      question: sampleQ,
+      selectedOptionIds: ["a"],
+      currentStreak: 0,
+      timeTakenSec: fast.timeTakenSec,
+      speedBonus: true,
+      negativeMarking: 0,
+    });
+    const slowEval = evaluateQuestionAnswer({
+      question: sampleQ,
+      selectedOptionIds: ["a"],
+      currentStreak: 0,
+      timeTakenSec: slowSkewed.timeTakenSec,
+      speedBonus: true,
+      negativeMarking: 0,
+    });
+    expect(fastEval.pointsAwarded).toBeGreaterThan(slowEval.pointsAwarded + 200);
+
+    // Offline outbox preserves original server-calibrated tap timestamp
+    const offlineTap = computeAnswerElapsedSec({
+      questionStartTime: startMs,
+      effectiveLimitSec: 25,
+      serverNow: startMs + 22_000,
+      clientAnsweredAt: startMs + 3_500,
+      isOfflineQueued: true,
+    });
+    expect(offlineTap.timeTakenSec).toBe(3.5);
+
+    // Small custom weight (e.g. 1 mark per question) still differs by answering speed
+    const oneMarkQ: Question = { ...sampleQ, points: 1 };
+    const oneMarkFast = evaluateQuestionAnswer({
+      question: oneMarkQ,
+      selectedOptionIds: ["a"],
+      currentStreak: 0,
+      timeTakenSec: 1.0,
+      speedBonus: true,
+      negativeMarking: 0,
+    });
+    const oneMarkSlow = evaluateQuestionAnswer({
+      question: oneMarkQ,
+      selectedOptionIds: ["a"],
+      currentStreak: 0,
+      timeTakenSec: 24.0,
+      speedBonus: true,
+      negativeMarking: 0,
+    });
+    expect(oneMarkFast.pointsAwarded).toBeGreaterThan(oneMarkSlow.pointsAwarded);
+  });
+
+  it("parses Bangla/English formatted MCQs, explanations, and bottom answer tables without an API key", () => {
+    const pastedMixedPaper = `
+Quiz Title: Video Ad Production Assessment
+
+প্রশ্ন 1
+Google AI Studio ব্যবহার করে বাংলা উচ্চারণ ঠিক করার সেরা উপায় কোনটি?
+A. স্পিড বাড়ানো
+B. ভুল শব্দটি ধ্বনিগতভাবে ভেঙে লেখা
+C. মিউজিক যোগ করা
+D. রেজল্যুশন কমানো
+ব্যাখ্যা: ধ্বনিগত বানান দিলে TTS সঠিকভাবে উচ্চারণ করে।
+
+2. Which settings work best for Reels video ads?
+A. 16:9 24fps
+B. 9:16 1080p 30fps MP4
+C. 1:1 720p
+D. 4:3 GIF
+Answer: B
+Explanation: Vertical 9:16 at 1080p/30fps matches Reels specs.
+
+3. Select ALL valid transparency proofs:
+A. Ed25519 signature
+B. SHA-256 hash chain
+C. Random watermark
+D. Public guessing
+Answer: A, B
+Explanation: Cryptographic signatures and hash chains are verifiable.
+
+| প্রশ্ন | উত্তর | প্রশ্ন | উত্তর |
+| --- | --- | --- | --- |
+| ১ | B | ২ | B |
+`;
+    const res = parseQuestionsFromText(pastedMixedPaper);
+    expect(res.detectedTitle).toBe("Video Ad Production Assessment");
+    expect(res.questions).toHaveLength(3);
+    expect(res.stats.withAnswers).toBe(3);
+    expect(res.stats.withExplanations).toBe(3);
+    expect(res.questions[0]?.correctOptionIds).toEqual([res.questions[0]?.options[1]?.id]);
+    expect(res.questions[0]?.explanationBn).toContain("ধ্বনিগত বানান");
+    expect(res.questions[1]?.correctOptionIds).toEqual([res.questions[1]?.options[1]?.id]);
+    expect(res.questions[2]?.type).toBe("multi_mcq");
+    expect(res.questions[2]?.correctOptionIds).toEqual([
+      res.questions[2]?.options[0]?.id,
+      res.questions[2]?.options[1]?.id,
+    ]);
+
+    const built = buildQuizFromParsedText({
+      rawText: pastedMixedPaper,
+      courseId: "course-sanjibon-ai-dm",
+      courseTitle: "Sanjibon AI & DM",
+      quizNumber: 13,
+    });
+    expect(built.quiz?.titleEn).toBe("Video Ad Production Assessment");
+    expect(built.quiz?.quizNumber).toBe(13);
+    expect(built.quiz?.questions).toHaveLength(3);
   });
 });
