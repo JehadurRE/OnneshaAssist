@@ -5528,6 +5528,424 @@
       ]
     },
     {
+      "id": "quiz-sanjibon-s04",
+      "slug": "sanjibon-session-04-hard-synthesis",
+      "courseId": "course-sanjibon-ai-dm",
+      "courseTitle": "Applied AI & Autonomous Workflows — Digital Marketing Freelancer Training (Batch-04)",
+      "quizNumber": 4,
+      "instructorId": "usr-instructor-1",
+      "instructorName": "Course Instructor",
+      "icon": "🔥",
+      "titleEn": "Quiz 4 (Hard Applied Synthesis) — Combined Mastery Assessment of Quizzes 1, 2 & 3",
+      "titleBn": "কুইজ ০৪ (কঠিন সমন্বিত মূল্যায়ন) — কুইজ ১, ২ ও ৩-এর উচ্চতর প্রয়োগভিত্তিক পরীক্ষা (১০টি প্রশ্ন)",
+      "descriptionEn": "Scenario-based hard challenge (10 MCQs, not from slides) synthesizing Quiz 1, Quiz 2 & Quiz 3 mastery: epistemic grounding & anti-hallucination, PII hygiene in System Instructions, review-to-USP visual translation, multi-persona pipeline splits, camera optics/perspective & specular lighting physics, multi-ratio framing, multi-turn reference drift, vector overlay trade-offs over curved Bangla text, and full client QA audit.",
+      "descriptionBn": "স্লাইডের মুখস্থ প্রশ্নের বদলে কুইজ ১, ২ ও ৩-এর সম্মিলিত বাস্তব-দৃশ্যপটভিত্তিক কঠিন মূল্যায়ন (১০টি MCQ): তথ্যগত যাচাই ও হ্যালুসিনেশন নিয়ন্ত্রণ, প্রম্পটে PII সুরক্ষা, রিভিউ থেকে USP ভিজ্যুয়াল কৌশল, একাধিক পারসোনা বিভাজন, লেন্স বিকৃতি ও স্পেকুলার আলোর অপটিকস, মাল্টি-রেশিও কম্পোজিশন, Identity Drift রোধ, Magic Layers সীমাবদ্ধতা ও পূর্ণাঙ্গ ক্লায়েন্ট QA অডিট।",
+      "categoryEn": "Advanced Applied Synthesis",
+      "categoryBn": "উচ্চতর সমন্বিত প্রয়োগ",
+      "color": "from-rose-600/20 to-amber-500/20",
+      "tags": [
+        "Sanjibon",
+        "Quiz 4",
+        "Hard",
+        "Applied Synthesis",
+        "Q1+Q2+Q3",
+        "10 Questions"
+      ],
+      "createdAt": "2026-11-17T03:00:00Z",
+      "questions": [
+        {
+          "id": "sj-s04-q01",
+          "textEn": "A freelancer asks an ungrounded AI chat for exact monthly Daraz Bangladesh honey jar sales and return rates without attaching any marketplace CSV, and the AI replies '18,450 jars/month at a 6.2% return rate'. Why is trusting this metric riskier than a typo, and which prompt architecture prevents both silent fabrication and dead-end vagueness?",
+          "textBn": "কোনো সোর্স CSV ছাড়া একটি AI চ্যাটকে বাংলাদেশের Daraz-এ মধুর জারের মাসিক বিক্রয় ও রিটার্ন রেট জিজ্ঞেস করায় সেটি আত্মবিশ্বাসের সাথে 'মাসে ১৮,৪৫০টি ও ৬.২% রিটার্ন' উত্তর দেয়। এটি টাইপোর চেয়ে বেশি বিপজ্জনক কেন এবং নীরবে ভুয়া তথ্য বা অস্পষ্ট উত্তর—দুটোই এড়ানোর সঠিক প্রম্পট কৌশল কী?",
+          "type": "single_mcq",
+          "timeLimitSec": 35,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Applied Grounding & Metrics",
+          "difficulty": "hard",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Add 'Respond as a Senior Econometrician at temperature 0' so deterministic decoding guarantees true marketplace figures",
+              "textBn": "'Senior Econometrician হিসেবে temperature 0-তে উত্তর দাও' লিখলে ডিটারমিনিস্টিক ডিকোডিং আসল মার্কেটপ্লেস ডাটা নিশ্চিত করে"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Cross-verify by asking the same AI chat 'Are you 100% sure?'—if it confirms twice, cite it in your client deck",
+              "textBn": "একই চ্যাটে 'তুমি কি ১০০% নিশ্চিত?' জিজ্ঞেস করুন—দুবার হ্যাঁ বললে সেটিই ক্লায়েন্ট ডেকে ব্যবহার করুন"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "LLMs generate statistically fluent tokens rather than querying live Daraz ledgers (confidence ≠ fact); enforce 'use only provided numbers or return MISSING_DATA' and ask for a transparent estimation model using trainee-supplied review counts",
+              "textBn": "LLM লাইভ Daraz লেজার পড়ে না বরং সম্ভাব্য সংখ্যা সাজায় (আত্মবিশ্বাস মানেই সত্য নয়); 'শুধু প্রদত্ত ডাটা ব্যবহার করো অথবা MISSING_DATA লিখো' শর্ত দিয়ে নিজের সংগৃহীত রিভিউ/ডাটা থেকে যুক্তিসঙ্গত অনুমান মডেল চাইতে হবে",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Upload real competitor NID and merchant payout screenshots so AI calibrates its internal statistics",
+              "textBn": "এআইয়ের পরিসংখ্যান ঠিক করতে প্রতিযোগীর আসল NID ও পেমেন্ট স্ক্রিনশট আপলোড করুন"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-3"
+          ],
+          "explanationEn": "Temperature 0 or authoritative roleplay makes hallucinations sound even MORE confident. Only strict source-grounding rules ('output MISSING_DATA if unprovided') combined with user-supplied data proxies stop silent metric fabrication.",
+          "explanationBn": "Temperature 0 বা বিশেষজ্ঞ রোল দিলে কাল্পনিক সংখ্যা আরও বিশ্বাসযোগ্য শোনায়। একমাত্র 'শুধু প্রদত্ত তথ্য ব্যবহার করো, না থাকলে MISSING_DATA দেখাও' নিয়ম ও বাস্তব রিভিউ-ভিত্তিক হিসাবই নীরব ভুয়া ডাটা আটকাতে পারে।"
+        },
+        {
+          "id": "sj-s04-q02",
+          "textEn": "An entrepreneur copies 250 raw Facebook inbox transcripts—complete with buyer phone numbers, house addresses, and parcel COD prices—directly into their permanent Custom AI Helper's System Instructions so every future ad chat 'knows their buyers'. What TWO compounding failures does this create?",
+          "textBn": "একজন উদ্যোক্তা ২৫০ জন ক্রেতার ফেসবুক ইনবক্স মেসেজ—ফোন নম্বর, বাসার ঠিকানা ও COD দামসহ—সরাসরি Custom AI Helper-এর স্থায়ী System Instructions-এ পেস্ট করে রাখেন। এর ফলে কোন দুটি গুরুতর ও পরস্পর-সম্পর্কিত সমস্যা একসাথে তৈরি হয়?",
+          "type": "single_mcq",
+          "timeLimitSec": 35,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "System Architecture & Privacy",
+          "difficulty": "hard",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "System Instructions automatically hash phone numbers into unreadable MD5 strings and reduce output contrast",
+              "textBn": "System Instructions ফোন নম্বরগুলো স্বয়ংক্রিয়ভাবে MD5-এ রূপান্তর করে এবং ছবির কনট্রাস্ট কমিয়ে দেয়"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "It leaks sensitive customer PII outside consented channels AND bloats every future session's fixed instruction budget with noisy, stale order logs—diluting adherence to core brand tone and factuality rules",
+              "textBn": "এতে ক্রেতার সংবেদনশীল ব্যক্তিগত তথ্য (PII) ফাঁস হয় এবং প্রতিটি নতুন চ্যাটের স্থায়ী নির্দেশনায় বিশাল পুরোনো লগ জমে মডেল মূল ব্র্যান্ড ও নির্ভুলতার নিয়ম ভুলে যেতে শুরু করে",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-3",
+              "textEn": "AI refuses to generate square 1:1 images whenever Bangladeshi mobile digits appear in text instructions",
+              "textBn": "টেক্সট নির্দেশনায় বাংলাদেশি মোবাইল নম্বর থাকলে এআই 1:1 স্কয়ার ছবি বানানো বন্ধ করে দেয়"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Canva Magic Layers locks the chat history permanently so only CSV exports work afterward",
+              "textBn": "Canva Magic Layers চ্যাট হিস্ট্রি লক করে দেয় যাতে শুধু CSV কাজ করে"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-2"
+          ],
+          "explanationEn": "System Instructions must stay concise, static, and strictly PII-free (role, brand voice, guardrails). Scrubbed/anonymized review summaries should be supplied per analysis task—never raw buyer phones or addresses baked permanently into system prompts.",
+          "explanationBn": "System Instructions ছোট, স্থায়ী ও PII-মুক্ত হতে হয় (রোল, ব্র্যান্ড ভয়েস ও নিয়ম)। ক্রেতার নাম-নম্বর মুছে শুধু সারসংক্ষেপ নির্দিষ্ট কাজের চ্যাটে দেওয়া উচিত—স্থায়ী প্রম্পটে নয়।"
+        },
+        {
+          "id": "sj-s04-q03",
+          "textEn": "Analyzing 140 negative reviews on competitor mustard oil listings reveals: 68% complain of 'oil leaking inside courier boxes and turning rancid within 3 weeks', while 22% complain 'price is ৳40 above local market oil'. Using Q1–Q3 strategy together, how should your hero & carousel visuals convert skeptical buyers?",
+          "textBn": "প্রতিযোগী সরিষার তেলের ১৪০টি নেগেটিভ রিভিউয়ে দেখা গেল: ৬৮% অভিযোগ 'কুরিয়ারে বোতল লিক হয় ও ৩ সপ্তাহে গন্ধ হয়ে যায়', আর ২২% অভিযোগ 'স্থানীয় হাটের তেলের চেয়ে দাম ৪০ টাকা বেশি'। কুইজ ১–৩ সমন্বয়ে কীভাবে হিরো ও ক্যারোজাল ভিজ্যুয়াল তৈরি করলে ক্রেতার আস্থা জিতবে?",
+          "type": "single_mcq",
+          "timeLimitSec": 35,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Research-to-Visual Strategy",
+          "difficulty": "hard",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Use bright spotlight studio glare on a plain bottle and print '৳40 Cheapest in Bangladesh' in red gradient over the glass",
+              "textBn": "বোতলের গায়ে কড়া ফ্ল্যাশ লাইট ও লাল রঙে 'বাংলাদেশের সবচেয়ে সস্তা (৪০ টাকা কম)' লিখে ব্যানার বানানো"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Generate abstract cartoon oil drops holding shields with '100% Heart Disease Cure' baked into the AI image",
+              "textBn": "এআই দিয়ে কার্টুন তেলের ফোঁটার হাতে ঢাল ও '১০০% হৃদরোগ নিরাময়' লেখা ছবি জেনারেট করা"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Crop a tight 1:1 lifestyle breakfast photo directly into a 9:16 Story ad and delete all packaging shots",
+              "textBn": "টাইট 1:1 নাস্তার টেবিলের ছবি কেটে 9:16 স্টোরি বানিয়ে প্যাকেজিংয়ের সব ছবি বাদ দেওয়া"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Synthesize a visual USP targeting the dominant 68% trust barrier: macro proof of induction neck-seal & freshness batch tag plus structured foam courier-box packaging, keeping editable Bangla proof callouts in Canva",
+              "textBn": "প্রধান ৬৮% আস্থার বাধা দূর করতে ভিজ্যুয়াল USP সাজানো: ইন্ডাকশন সিল ও ব্যাচ-তারিখ ট্যাগের ম্যাক্রো শট এবং সুরক্ষিত ফোম কুরিয়ার প্যাকেজিং দেখিয়ে Canva-তে পরিষ্কার বাংলা আস্থার পয়েন্ট বসানো",
+              "isCorrect": true
+            }
+          ],
+          "correctOptionIds": [
+            "opt-4"
+          ],
+          "explanationEn": "Effective research-to-visual translation solves the #1 pain point (leakage/spoilage fear -> macro tamper-seal & courier-safe packaging proof) rather than racing to the bottom on price or making ungrounded medical claims.",
+          "explanationBn": "মার্কেট রিসার্চ থেকে ভিজ্যুয়াল রূপান্তরের মূল নীতি হলো সবচেয়ে বড় সমস্যার (লিক ও মেয়াদ-আশঙ্কা) দৃশ্যমান প্রমাণ (ইন্ডাকশন সিল ও সুরক্ষিত প্যাকেজিং শট) তুলে ধরা, অযথা দাম কমানো বা অবাস্তব দাবি করা নয়।"
+        },
+        {
+          "id": "sj-s04-q04",
+          "textEn": "A honey brand sells BOTH ৳250 pocket pouches to hostel students (Facebook feed impulse buys) AND ৳2,800 engraved wooden gift hampers to corporate HR teams (website & proposal decks). A marketer instructs their AI helper: 'Write one universal prompt and shoot style for every buyer.' Why does this fail, and how must the pipeline split?",
+          "textBn": "একই মধুর ব্র্যান্ড হোস্টেল ছাত্রদের কাছে ২৫০ টাকার পকেট পাউচ (ফেসবুক ফিড ইম্পালস বায়) এবং কর্পোরেট HR টিমের কাছে ২,৮০০ টাকার কাঠের গিফট হ্যাম্পার (ওয়েবসাইট/প্রপোজাল) বিক্রি করে। 'সবার জন্য এক প্রম্পট ও এক ফটো স্টাইল' নীতি কেন ব্যর্থ হয় এবং কীভাবে ভাগ করতে হবে?",
+          "type": "single_mcq",
+          "timeLimitSec": 35,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Multi-Persona Pipeline",
+          "difficulty": "hard",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Opposing value triggers require separated brief matrices: casual high-key / lifestyle mobile feed visuals (4:5) emphasizing portability & value for students, vs low-key luxury dark wood/rim-light wide or catalog visuals (16:9 / 1:1) proving corporate gifting prestige",
+              "textBn": "বিপরীত ক্রেতা মানসিকতার কারণে দুটি আলাদা ব্রিফ টেবিল দরকার: ছাত্রদের জন্য উজ্জ্বল লাইফস্টাইল 4:5 (সহজ ও সাশ্রয়ী লুক), আর কর্পোরেট HR-এর জন্য লো-কি লাক্সারি ও রিম-লাইট ক্যাটালগ/16:9 ব্যানার (আভিজাত্য ও বিশ্বাস)",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Corporate HR only buys from 9:16 TikTok unboxings shot under kitchen tube lights",
+              "textBn": "কর্পোরেট HR শুধু রান্নাঘরের টিউবলাইটে তোলা 9:16 টিকটক আনবক্সিং দেখেই কেনে"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Combining two contradictory buyer personas into one prompt forces AI to double output resolution cleanly",
+              "textBn": "দুটো বিপরীত পারসোনা এক প্রম্পটে দিলে এআই ছবির রেজ্যুলেশন দ্বিগুণ করে ফেলে"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Students require custom black marble luxury podiums while corporate buyers prefer amateur crooked smartphone photos",
+              "textBn": "ছাত্রদের জন্য কালো মার্বেল লাক্সারি পোডিয়াম আর কর্পোরেট ক্রেতাদের জন্য বাঁকা মোবাইল ছবি বেশি কাজ করে"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-1"
+          ],
+          "explanationEn": "Merging conflicting personas dilutes both visual authority and copy hooks. Splitting persona briefs with structured tables aligns lighting mood, props, aspect ratio, and persuasion proof to each buyer's real decision triggers.",
+          "explanationBn": "ভিন্ন ক্রেতা শ্রেণির ভিজ্যুয়াল কোড ও আস্থার সংকেত আলাদা—একত্রে মিশিয়ে ফেললে দুদিকেই রূপান্তর কমে যায়। আলাদা পারসোনা ব্রিফ টেবিল করলে স্টাইল, আলো ও রেশিও নিখুঁতভাবে মেলে।"
+        },
+        {
+          "id": "sj-s04-q05",
+          "textEn": "A designer writes: 'Extreme close-up of serum bottle using 24mm wide lens, bottle crisp in foreground, outer carton placed 20cm behind with every line of tiny Bangla ingredients legible, shallow bokeh background.' Why does AI repeatedly produce a warped, bloated bottle and garbled carton text?",
+          "textBn": "একজন ডিজাইনার লিখলেন: '24mm ওয়াইড লেন্সে সিরাম বোতলের একদম ক্লোজ-আপ, ২০ সেমি পেছনের কার্টনের ছোট বাংলা উপাদানও স্পষ্ট পড়া যাবে, আর পেছনে শ্যালো বোকেহ (bokeh)।' কেন এআই বারবার বোতল বিকৃত ও কার্টনের লেখা অস্পষ্ট করে?",
+          "type": "single_mcq",
+          "timeLimitSec": 35,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Optical Prompt Physics",
+          "difficulty": "hard",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Gemini ignores Bangla whenever the number 20cm is written next to serum bottles",
+              "textBn": "সিরাম বোতলের পাশে 20cm লিখলে Gemini সব টেক্সট ইগনোর করে"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Two physics contradictions: a 24mm lens up close causes perspective barrel distortion that bloats bottle shape, AND 'shallow bokeh' blurs mid-ground planes including the box behind; stepping to 50–85mm corrects geometry while Canva handles tiny readable Bangla text cleanly",
+              "textBn": "এতে দুটি অপটিক্যাল বিরোধ আছে: কাছ থেকে 24mm লেন্স প্রোডাক্টের আকার বিকৃত (distortion) করে এবং 'শ্যালো বোকেহ' পেছনের কার্টনকেও ঝাপসা করে দেয়; সঠিক জ্যামিতির জন্য 50–85mm লেন্স ও সূক্ষ্ম বাংলা লেখার জন্য Canva ব্যবহার করতে হবে",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-3",
+              "textEn": "White serum bottles require 200mm telephoto lenses inside small studio softboxes",
+              "textBn": "সাদা সিরাম বোতলের জন্য স্টুডিও সফটবক্সে সবসময় 200mm টেলিফটো লেন্স বাধ্যতামূলক"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Adding 'shallow bokeh' automatically shrinks canvas size below 300×250 pixels",
+              "textBn": "'শ্যালো বোকেহ' লিখলে ক্যানভাসের সাইজ স্বয়ংক্রিয়ভাবে ৩০০×২৫০ পিক্সেলের নিচে নেমে যায়"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-2"
+          ],
+          "explanationEn": "Close-distance wide-angle optics distort vertical bottle edges, shallow DoF blurs depth-offset packaging behind the focus plane, and image diffusion models still garble dense micro-Bangla text.",
+          "explanationBn": "কাছে 24mm লেন্স পণ্যের জ্যামিতি বিকৃত করে এবং shallow bokeh পেছনের প্যাকেটও ঝাপসা করে দেয়—আর ছোট বাংলা লেখা AI ছবিতে জেনারেট না করে Canva-তে বসানোই সঠিক পথ।"
+        },
+        {
+          "id": "sj-s04-q06",
+          "textEn": "When generating clear/frosted glass bottles on a pure white studio background, a prompt saying 'direct front camera flash, sharp mirror highlights, ultra shiny glass' creates dead white blotches erasing the bottle edges and making glass look like cheap plastic. What lighting adjustment fixes both issues?",
+          "textBn": "সাদা স্টুডিও ব্যাকগ্রাউন্ডে কাঁচের বোতলের প্রম্পটে 'সরাসরি সামনের ফ্ল্যাশ ও আল্ট্রা শাইনি রিফ্লেকশন' লিখলে বোতলের কিনারা সাদায় মিশে যায় এবং কাঁচকে সস্তা প্লাস্টিকের মতো দেখায়। কোন আলোর সমন্বয় দুটো সমস্যাই দূর করে?",
+          "type": "single_mcq",
+          "timeLimitSec": 35,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Lighting & Surface Optics",
+          "difficulty": "hard",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Double frontal flash intensity and switch background to high-key neon yellow",
+              "textBn": "সামনের ফ্ল্যাশের তীব্রতা দ্বিগুণ করে ব্যাকগ্রাউন্ড হাই-কি নিয়ন হলুদ করা"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Turn off all lights entirely and rely only on @Canva Magic Layers brightness slider",
+              "textBn": "সব আলো নিভিয়ে দিয়ে শুধু @Canva Magic Layers-এর ব্রাইটনেস বাড়ানো"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Replace harsh frontal flash with large diffused side softboxes plus subtle dark/edge refraction (or rear rim contrast) so glass keeps crisp edge separation while eliminating hard specular plastic hotspots",
+              "textBn": "কড়া সামনের ফ্ল্যাশ বাদ দিয়ে দুই পাশে নরম ডিফিউজড সফটবক্স ও পেছনের নিয়ন্ত্রিত এজ/রিম কনট্রাস্ট ব্যবহার করলে কাঁচের প্রান্ত স্পষ্ট থাকে এবং সস্তা প্লাস্টিকের মতো ঝলক দূর হয়",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Use 24mm extreme low-angle handheld POV inside a microwave",
+              "textBn": "24mm এক্সট্রিম লো-অ্যাঙ্গেল শটে হাতে ধরে ছবি তোলা"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-3"
+          ],
+          "explanationEn": "Direct frontal specular flash flattens form and clips highlights on curved glass into white/plastic blotches. Large diffused side light with dark-field / edge refraction defines curved glass boundaries cleanly on white.",
+          "explanationBn": "সরাসরি সামনের আলো কাঁচের গায়ে কড়া সাদা স্পট ও প্লাস্টিক ভাব তৈরি করে। বড় ডিফিউজড সাইড সফটবক্স ও প্রান্তের রিম-কনট্রাস্ট সাদা ব্যাকগ্রাউন্ডেও কাঁচের গঠন নিখুঁত রাখে।"
+        },
+        {
+          "id": "sj-s04-q07",
+          "textEn": "A team generates ONE ultra-tight 1:1 close-up jar photo where the wooden dipper touches the top border and the jar base touches the bottom edge, planning to crop that single image into a 16:9 Website Hero Banner and a 9:16 Instagram Story. Why does this fail, and how must the master shoot be planned?",
+          "textBn": "একটি টিম একদম বর্ডার-ঘেঁষা টাইট 1:1 জারের ছবি বানাল—যেখানে মধু-চামচ ওপরের কিনারায় ও জার নিচের কিনারায় লেগে আছে—যেন সেখান থেকেই কেটে 16:9 ওয়েব হিরো ব্যানার ও 9:16 স্টোরি বানানো যায়। এই পরিকল্পনা কেন ব্যর্থ হয় এবং মাস্টার শুট কীভাবে করতে হবে?",
+          "type": "single_mcq",
+          "timeLimitSec": 35,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Multi-Ratio Composition",
+          "difficulty": "hard",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Canva's PNG downloader automatically scales tight 1:1 crops to lossless 4K 16:9 banners without clipping",
+              "textBn": "Canva PNG ডাউনলোডার কোনো অংশ না কেটেই টাইট 1:1 ছবিকে নিখুঁত 4K 16:9 ব্যানারে রূপান্তর করে"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "16:9 banners require black marble and 9:16 Stories cannot show glass lids",
+              "textBn": "16:9 ব্যানারে কালো মার্বেল বাধ্যতামূলক ও 9:16 স্টোরিতে ঢাকনা দেখানো যায় না"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Cropping from 1:1 to 9:16 preserves the dipper fully because width increases relative to height",
+              "textBn": "1:1 থেকে 9:16 কাটলে প্রস্থ বাড়ে বলে মধু-চামচ সম্পূর্ণ অক্ষত থাকে"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Zero breathing room means converting 1:1 -> 16:9 slices off top/bottom product parts while 9:16 Story UI overlays cover a full-height jar; instead, shoot/generate dedicated native aspect ratios (or a zoomed-out master with directional negative space) inside the same reference chat",
+              "textBn": "কিনারায় বাড়তি ফাঁকা জায়গা না থাকায় 1:1 থেকে 16:9 কাটলে জারের ওপর-নিচ কেটে যায় এবং 9:16 স্টোরির বাটন-আইকন পণ্যের ওপর পড়ে; তাই একই রেফারেন্স চ্যাটে প্রতিটি প্ল্যাটফর্মের নিজস্ব রেশিওতে জুম-আউট ও দিক-নির্দেশিত নেগেটিভ স্পেস রেখে বানাতে হবে",
+              "isCorrect": true
+            }
+          ],
+          "correctOptionIds": [
+            "opt-4"
+          ],
+          "explanationEn": "You cannot invent missing pixels outside tight crop edges across radically opposite orientations (16:9 horizontal vs 9:16 vertical). Generating native aspect ratios—or composing wide breathable margins around one-third product placement—prevents lost packaging.",
+          "explanationBn": "টাইট 1:1 ছবি কেটে 16:9 বা 9:16 করলে পণ্য বা UI অংশ ঢাকা পড়ে/কেটে যায়। তাই প্রতিটি রেশিও আলাদাভাবে জেনারেট করা বা চারপাশে পর্যাপ্ত নেগেটিভ স্পেস রাখা জরুরি।"
+        },
+        {
+          "id": "sj-s04-q08",
+          "textEn": "After generating a spotless honey jar in Turn 1, an operator runs 6 sequential edits in the same chat ('Try beach -> try night -> try kitchen -> try snow -> try flat lay -> try dark marble') WITHOUT re-uploading the Turn-1 image. By Turn 6, the hexagonal jar morphed into a round squeeze bottle. Why did this occur?",
+          "textBn": "প্রথম ধাপে একটি নিখুঁত ষড়ভুজ মধুর জার বানানোর পর অপারেটর মূল প্রথম ছবিটি পুনরায় রেফারেন্স হিসেবে আপলোড না করেই একই চ্যাটে পরপর ৬ বার পরিবেশ বদলালেন। ৬ষ্ঠ ধাপে জারটি বদলে গোল প্লাস্টিক বোতল হয়ে গেল—এর প্রযুক্তিগত কারণ ও প্রতিরোধ কী?",
+          "type": "single_mcq",
+          "timeLimitSec": 35,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Reference Continuity & Drift",
+          "difficulty": "hard",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Each sequential edit conditions on the prior generation's small pixel/semantic compromises, causing compounding identity drift; re-anchoring every new prompt directly to the locked Turn-1 master image (with explicit invariance rules) eliminates cascading mutation",
+              "textBn": "প্রতিটি ধাপে আগের আউটপুটের সূক্ষ্ম বিকৃতি পরবর্তী ধাপে গুণিতক হারে বেড়ে Identity Drift তৈরি করে; মূল Turn-1 মাস্টার ছবিটিকে প্রতিটি নতুন প্রম্পটে সরাসরি রেফারেন্স হিসেবে লক রাখলে এই ক্রমবর্ধমান পরিবর্তন বন্ধ হয়",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Hexagonal shapes automatically melt into cylinders whenever more than 3 prompts use dark backgrounds",
+              "textBn": "৩ বারের বেশি ডার্ক ব্যাকগ্রাউন্ড লিখলে ষড়ভুজ জার স্বয়ংক্রিয়ভাবে সিলিন্ডার হয়ে যায়"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Adding 'photorealistic' more than twice resets packaging memory to factory plastic defaults",
+              "textBn": "দুইবারের বেশি 'photorealistic' লিখলে মডেল প্যাকেজিং রিসেট করে ফেলে"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Using a 50mm lens causes hexagonal glass corners to round out after Turn 4",
+              "textBn": "50mm লেন্স ব্যবহার করলে ৪ ধাপের পর কাঁচের কোণা গোল হয়ে যায়"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-1"
+          ],
+          "explanationEn": "Chaining edits off prior synthetic generations compounds small geometric/material errors ('telephone-game drift'). Always branch new scenes directly from the verified Turn-1 master reference image.",
+          "explanationBn": "আগের কৃত্রিম ছবির ওপর পরপর এডিট করলে সামান্য ত্রুটিগুলো জমতে জমতে আসল পণ্য বদলে যায় (Identity Drift)। মূল মাস্টার ছবিটিকে রেফারেন্স হিসেবে রেখে শাখা তৈরি করাই সঠিক পদ্ধতি।"
+        },
+        {
+          "id": "sj-s04-q09",
+          "textEn": "For a dynamic weekly discount campaign, a designer asks Gemini to curve decorative golden Bangla text '৳৫৫০ আজই' directly ON TOP of a shiny honey jar's belly and twine, planning to click '@Canva make this image editable' and swap prices weekly. Why does this create severe rework compared to a text-free AI base?",
+          "textBn": "সাপ্তাহিক পরিবর্তনশীল ডিসকাউন্ট ক্যাম্পেইনের জন্য এক ডিজাইনার Gemini-কে জারের চকচকে গা ও পাটের সুতার ওপরেই বাঁকানো সোনালি বাংলায় '৳৫৫০ আজই' বসাতে বললেন, ভেবেছিলেন পরে '@Canva make this image editable' দিয়ে দাম বদলাবেন। লেখা-মুক্ত AI ছবির চেয়ে এই পদ্ধতিতে জটিলতা বাড়ে কেন?",
+          "type": "single_mcq",
+          "timeLimitSec": 35,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "Hybrid AI + Vector Design",
+          "difficulty": "hard",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "@Canva cannot change colors unless prices end in odd digits like ৳555",
+              "textBn": "দামের শেষে বিজোড় সংখ্যা না থাকলে @Canva রং বদলাতে পারে না"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Canva does not allow Bengali Unicode fonts in 4:5 portrait canvases",
+              "textBn": "Canva 4:5 পোর্ট্রেট ক্যানভাসে বাংলা ইউনিকোড ফন্ট সাপোর্ট করে না"
+            },
+            {
+              "id": "opt-3",
+              "textEn": "AI rasterizes complex ligated Bangla curves across glass & twine texture, so Magic Layers separation leaves smudged glass inpainting holes and distorted glyphs; generating a clean text-free negative space and applying real Canva vector fonts (Noto Sans Bengali / Hind Siliguri) yields crisp 10-second edits",
+              "textBn": "সুতা ও কাঁচের প্রতিফলনের ওপর পেঁচানো বাংলা অক্ষর এআই রাস্টারাইজ করলে Magic Layers আলাদা করার সময় কাঁচের গায়ে দাগ/বিকৃতি থেকে যায়; বরং ফাঁকা নেগেটিভ স্পেসসহ লেখা-মুক্ত ছবি বানিয়ে Canva-তে আসল ভেক্টর বাংলা ফন্ট (Noto Sans Bengali / Hind Siliguri) বসালে মুহূর্তেই নিখুঁত এডিট হয়",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Putting text directly over product twine improves mobile OCR indexing inside Facebook",
+              "textBn": "সুতার ওপর লেখা রাখলে ফেসবুকে মোবাইল OCR র‍্যাংকিং বেড়ে যায়"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-3"
+          ],
+          "explanationEn": "While Magic Layers excels on clean separated headline zones and badges, overlapping curved glyphs directly across complex glass/twine textures causes messy inpainting scars. Keeping typography out of delicate product surfaces ensures spotless template reuse.",
+          "explanationBn": "ফাঁকা অংশে Magic Layers দারুণ কাজ করলেও কাঁচ বা সুতার টেক্সচারের ওপর বসানো ভাঙা বাংলা সরাতে গেলে পেছনে দাগ পড়ে। তাই পণ্যের অংশ লেখা-মুক্ত রেখে Canva ভেক্টর টেক্সট ব্যবহার করাই দ্রুত ও পেশাদার নিয়ম।"
+        },
+        {
+          "id": "sj-s04-q10",
+          "textEn": "As Senior QA Lead reviewing a trainee's ৳5,000 freelance client bundle before delivery, you uncover 4 flaws at once: (1) market research cites '92% of Dhaka mothers prefer dark jars' with zero source, (2) helper prompt embeds 80 customer mobile numbers, (3) carousel mixes warm product photos with 2 cartoon slides & cropped caps, and (4) exported file is named 'IMG_final(2).png'. What complete remediation sequence fixes ALL root causes?",
+          "textBn": "৫,০০০ টাকার ক্লায়েন্ট প্রজেক্ট জমা নেওয়ার আগে QA লিড হিসেবে আপনি একসাথে ৪টি ত্রুটি ধরলেন: (১) মার্কেট রিপোর্টে সূত্রহীন '৯২% মা কালো জার পছন্দ করেন', (২) হেল্পার প্রম্পটে ৮০টি ক্রেতার মোবাইল নম্বর, (৩) ক্যারোজালে বাস্তব জারের সাথে ২টি কার্টুন স্লাইড ও কাটা ঢাকনা, (৪) ফাইল নাম 'IMG_final(2).png'। মূল থেকে সবগুলো সমাধানের সঠিক পূর্ণাঙ্গ ক্রম কোনটি?",
+          "type": "single_mcq",
+          "timeLimitSec": 35,
+          "points": 1000,
+          "negativeMarks": 0,
+          "category": "End-to-End QA Audit",
+          "difficulty": "hard",
+          "options": [
+            {
+              "id": "opt-1",
+              "textEn": "Only rename the file to honey_final.png, delete Slide 3, and raise the discount badge from 25% to 50%",
+              "textBn": "শুধু ফাইলের নাম honey_final.png করে স্লাইড ৩ বাদ দিন ও ডিসকাউন্ট ব্যাজ ২৫% থেকে ৫০% বাড়িয়ে দিন"
+            },
+            {
+              "id": "opt-2",
+              "textEn": "Purge all 80 PII phone numbers immediately; audit & ground research solely on verified buyer reviews/explicitly mark missing stats; lock Turn-1 jar reference, warm palette & 4:5 zoomed-out framing for text-free carousel rebuild; typeset crisp Bangla in Canva; and rename files cleanly as product_style_size",
+              "textBn": "প্রথমেই ৮০টি PII ফোন নম্বর মুছে যাচাইযোগ্য রিভিউ-ভিত্তিক (ভুয়া % বাদ) রিপোর্ট সাজানো; Turn-1 রেফারেন্স জার, অভিন্ন প্যালেট ও জুম-আউট 4:5 ফ্রেমে সব স্লাইড পুনরায় গড়া; Canva-তে পরিষ্কার বাংলা টাইপোগ্রাফি বসানো এবং পণ্য_স্টাইল_সাইজ নামে ফাইল সেভ করা",
+              "isCorrect": true
+            },
+            {
+              "id": "opt-3",
+              "textEn": "Ask ChatGPT to change 92% to 88% so it looks natural, keep customer phone numbers for personalization, and blur out cropped lids",
+              "textBn": "ChatGPT-কে ৯২% বদলে ৮৮% বানাতে বলুন, পার্সোনালাইজেশনের জন্য ফোন নম্বর রেখে দিন ও কাটা ঢাকনা ঝাপসা করে দিন"
+            },
+            {
+              "id": "opt-4",
+              "textEn": "Export Canva slides as PDF, flatten all layers back into low-res JPEGs, and send customer numbers via courier",
+              "textBn": "Canva স্লাইড PDF করে লো-রেজুলেশন JPG-তে নামান এবং ক্রেতার নম্বর কুরিয়ারে পাঠান"
+            }
+          ],
+          "correctOptionIds": [
+            "opt-2"
+          ],
+          "explanationEn": "QA passes only when privacy hygiene (scrub PII), epistemic grounding (no invented percentages), visual brand consistency (locked reference jar, cohesive palette, uncropped 4:5), clean vector Bangla typography, and strict file naming (product_style_size) are all satisfied.",
+          "explanationBn": "পূর্ণাঙ্গ মান যাচাইয়ে PII সুরক্ষা, তথ্যগত সততা (বানানো % বাদ), রেফারেন্স-লক ভিজ্যুয়াল সামঞ্জস্য (জুম-আউট 4:5), Canva ভেক্টর বাংলা লেখা এবং সঠিক ফাইল নামকরণ (পণ্য_স্টাইল_সাইজ)—এই সবকটি ধাপ নিশ্চিত করতে হয়।"
+        }
+      ]
+    },
+    {
       "id": "quiz-sanjibon-s05",
       "slug": "sanjibon-session-05-video-ads",
       "courseId": "course-sanjibon-ai-dm",

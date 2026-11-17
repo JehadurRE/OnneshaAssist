@@ -711,7 +711,7 @@ describe("Sanjibon Batch-04 seed curriculum, 10 quizzes & 228 trainees roster", 
     const std11Digits = SANJIBON_ROSTER.filter((s) => /^01\d{9}$/.test(s.phone || ""));
     expect(std11Digits.length).toBeGreaterThanOrEqual(226);
 
-    expect(SANJIBON_QUIZZES).toHaveLength(10);
+    expect(SANJIBON_QUIZZES).toHaveLength(11);
     let totalQuestions = 0;
     for (const qz of SANJIBON_QUIZZES) {
       expect(qz.courseId).toBe("course-sanjibon-ai-dm");
@@ -723,18 +723,22 @@ describe("Sanjibon Batch-04 seed curriculum, 10 quizzes & 228 trainees roster", 
         expect(question.options.some((o) => o.id === corr && o.isCorrect)).toBe(true);
       }
     }
-    expect(totalQuestions).toBe(140);
+    expect(totalQuestions).toBe(150);
     expect(SANJIBON_QUIZZES[0]?.id).toBe("quiz-sanjibon-s00-baseline");
     expect(SANJIBON_QUIZZES[0]?.quizNumber).toBe(0);
     expect(SANJIBON_QUIZZES[0]?.questions).toHaveLength(20);
     expect(SANJIBON_QUIZZES[3]?.id).toBe("quiz-sanjibon-s03");
     expect(SANJIBON_QUIZZES[3]?.quizNumber).toBe(3);
     expect(SANJIBON_QUIZZES[3]?.questions).toHaveLength(20);
-    expect(SANJIBON_QUIZZES.some((q) => q.id === "quiz-sanjibon-s04")).toBe(false);
-    expect(SANJIBON_QUIZZES[4]?.quizNumber).toBe(5);
-    expect(SANJIBON_QUIZZES[9]?.id).toBe("quiz-sanjibon-s10-final");
-    expect(SANJIBON_QUIZZES[9]?.quizNumber).toBe(10);
-    expect(SANJIBON_QUIZZES[9]?.questions).toHaveLength(30);
+    const quiz4 = SANJIBON_QUIZZES[4];
+    expect(quiz4?.id).toBe("quiz-sanjibon-s04");
+    expect(quiz4?.quizNumber).toBe(4);
+    expect(quiz4?.questions).toHaveLength(10);
+    expect(quiz4?.questions.every((q) => q.difficulty === "hard")).toBe(true);
+    expect(SANJIBON_QUIZZES[5]?.quizNumber).toBe(5);
+    expect(SANJIBON_QUIZZES[10]?.id).toBe("quiz-sanjibon-s10-final");
+    expect(SANJIBON_QUIZZES[10]?.quizNumber).toBe(10);
+    expect(SANJIBON_QUIZZES[10]?.questions).toHaveLength(30);
 
     // Ensure one-time server store migration removes stale s03/s04 overrides while keeping custom quizzes
     const mockStore = {
@@ -955,9 +959,9 @@ describe("SQLite batch persistence & post-exam session recording performance", (
 });
 
 describe("course & quiz privacy access control helpers", () => {
-  it("marks Sanjibon course and all 10 Sanjibon quizzes private while keeping public demo course open", () => {
+  it("marks Sanjibon course and all 11 Sanjibon quizzes private while keeping public demo course open", () => {
     expect(isCoursePrivate(SANJIBON_COURSE)).toBe(true);
-    expect(SANJIBON_QUIZZES.length).toBe(10);
+    expect(SANJIBON_QUIZZES.length).toBe(11);
     expect(SANJIBON_QUIZZES.every((q) => isQuizPrivate(q, DEFAULT_COURSES))).toBe(true);
 
     const demoCourse = DEFAULT_COURSES.find((c) => c.id === "course-bcs-foundation");
