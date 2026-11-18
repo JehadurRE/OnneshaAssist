@@ -2219,7 +2219,7 @@ function DashboardPage() {
                           <input
                             type="number"
                             min={5}
-                            max={180}
+                            max={600}
                             value={q.timeLimitSec}
                             onChange={(e) => {
                               const updated = [...newQuestions];
@@ -2240,7 +2240,7 @@ function DashboardPage() {
                             type="number"
                             min={1}
                             max={5000}
-                            step={100}
+                            step={1}
                             value={q.points || 1000}
                             onChange={(e) => {
                               const updated = [...newQuestions];
