@@ -36,8 +36,10 @@ import {
 } from "./lms-content";
 import { askCourseTutorViaGemini } from "./ai-tutor-core";
 import {
+  isPortalEmailConfigured,
   isValidPortalEmail,
   normalizePortalEmail,
+  resolveBrevoApiKey,
   resolveResendApiKey,
   sendPortalOtpEmail,
 } from "./email-otp";
@@ -2430,7 +2432,11 @@ export const serverGetPortalAuthConfig = createServerFn({ method: "GET" }).handl
   return {
     success: true as const,
     channel,
-    emailConfigured: !!resolveResendApiKey(),
+    emailConfigured: isPortalEmailConfigured(),
+    emailProviders: {
+      resend: !!resolveResendApiKey(),
+      brevo: !!resolveBrevoApiKey(),
+    },
     smsConfigured: !!(
       typeof process !== "undefined" && process.env["GREENWEB_SMS_TOKEN"]?.trim()
     ),
