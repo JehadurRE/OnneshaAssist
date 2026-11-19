@@ -3,7 +3,10 @@ import {
   BrandingSettings,
   CertificateData,
   Course,
+  CourseAnnouncement,
   CourseCompletionRequirement,
+  CourseMaterial,
+  CourseRecording,
   ExamResultRecord,
   ExamSessionRecord,
   FinalExamAttempt,
@@ -26,6 +29,12 @@ import {
 import { DEFAULT_BRANDING_SETTINGS, mergeBrandingSettings } from "./branding";
 import { purgeUnderThresholdExamsInStore, type PurgeExamSummary } from "./exam-purge";
 import { generateQuizViaGeminiRest, resolveEnvGeminiApiKey } from "./ai-quiz-core";
+import {
+  buildAiTutorContext,
+  buildDefaultSanjibonLmsContent,
+  newLmsId,
+} from "./lms-content";
+import { askCourseTutorViaGemini } from "./ai-tutor-core";
 import {
   buildOriginalCompletionIndex,
   findCompletedMatchInIndex,
@@ -171,7 +180,11 @@ interface PersistentStoreData {
   practicalExams?: PracticalExam[] | undefined;
   practicalSubmissions?: PracticalSubmission[] | undefined;
   finalExamAttempts?: FinalExamAttempt[] | undefined;
+  courseMaterials?: CourseMaterial[] | undefined;
+  courseRecordings?: CourseRecording[] | undefined;
+  courseAnnouncements?: CourseAnnouncement[] | undefined;
   courseRequirements?: CourseCompletionRequirement[] | undefined;
+  seededLmsContentV1?: boolean | undefined;
   purgedSampleData?: boolean | undefined;
   purgedUnder50Initial?: boolean | undefined;
   purgedBcsDemoCourse?: boolean | undefined;
@@ -642,7 +655,11 @@ function loadInitialStore(): PersistentStoreData {
             practicalExams: parsed.practicalExams || [],
             practicalSubmissions: parsed.practicalSubmissions || [],
             finalExamAttempts: parsed.finalExamAttempts || [],
+            courseMaterials: parsed.courseMaterials || [],
+            courseRecordings: parsed.courseRecordings || [],
+            courseAnnouncements: parsed.courseAnnouncements || [],
             courseRequirements: parsed.courseRequirements || [],
+            seededLmsContentV1: !!parsed.seededLmsContentV1,
             purgedSampleData: purged,
             purgedUnder50Initial: !!parsed.purgedUnder50Initial,
             purgedBcsDemoCourse: !!parsed.purgedBcsDemoCourse,
@@ -691,7 +708,11 @@ function loadInitialStore(): PersistentStoreData {
     practicalExams: [],
     practicalSubmissions: [],
     finalExamAttempts: [],
+    courseMaterials: [],
+    courseRecordings: [],
+    courseAnnouncements: [],
     courseRequirements: [],
+    seededLmsContentV1: false,
     purgedSampleData: false,
     purgedUnder50Initial: true,
     purgedBcsDemoCourse: true,
@@ -852,8 +873,30 @@ function getStore(): PersistentStoreData {
         `[OnneshaServerStore] Staff password reset v1: admins=${reset.adminCount}, instructors=${reset.instructorCount}`,
       );
     }
+    if (!loaded.seededLmsContentV1) {
+      ensureLmsContentSeeded(loaded);
+      loaded.seededLmsContentV1 = true;
+      scheduleDiskPersist();
+      console.info("[OnneshaServerStore] LMS learning content seed applied");
+    } else {
+      ensureLmsContentSeeded(loaded);
+    }
   }
   return globalStore.__onneshaStore;
+}
+
+export function ensureLmsContentSeeded(store: PersistentStoreData): boolean {
+  if (!store.courseMaterials) store.courseMaterials = [];
+  if (!store.courseRecordings) store.courseRecordings = [];
+  if (!store.courseAnnouncements) store.courseAnnouncements = [];
+  const courseId = SANJIBON_COURSE.id;
+  const hasMat = store.courseMaterials.some((m) => m.courseId === courseId);
+  if (hasMat) return false;
+  const seed = buildDefaultSanjibonLmsContent();
+  store.courseMaterials.unshift(...seed.materials);
+  store.courseRecordings.unshift(...seed.recordings);
+  store.courseAnnouncements.unshift(...seed.announcements);
+  return true;
 }
 
 /** Default plaintext passwords applied on staff bulk reset (hashed before persist). */
@@ -1991,6 +2034,13 @@ export const serverGetBootstrapData = createServerFn({ method: "GET" }).handler(
     finalExamAttempts: isStaff
       ? (store.finalExamAttempts || []).map(({ answers: _a, ...rest }) => rest)
       : [],
+    courseMaterials: isStaff ? store.courseMaterials || [] : (store.courseMaterials || []).filter((m) => m.published),
+    courseRecordings: isStaff
+      ? store.courseRecordings || []
+      : (store.courseRecordings || []).filter((r) => r.published),
+    courseAnnouncements: isStaff
+      ? store.courseAnnouncements || []
+      : (store.courseAnnouncements || []).filter((a) => a.published),
     courseRequirements: store.courseRequirements || [],
     autoIssueQuizCertificates: store.autoIssueQuizCertificates === true,
     transactions: actor?.role === "admin" ? store.transactions : [],
@@ -5451,17 +5501,37 @@ export const serverBulkIssueCourseCertificates = createServerFn({ method: "POST"
   });
 
 export const serverGetStudentPortal = createServerFn({ method: "POST" })
-  .validator((data: { rollNumber: string; phone: string; courseId?: string }) => data)
+  .validator(
+    (data: {
+      rollNumber?: string | undefined;
+      phone?: string | undefined;
+      query?: string | undefined;
+      courseId?: string | undefined;
+    }) => data,
+  )
   .handler(async ({ data }) => {
     const store = getStore();
     ensureFinalPracticalSeeded(store);
-    const student = matchRosterIdentity({
-      rollNumber: data.rollNumber,
-      phone: data.phone,
-      roster: store.roster,
-    });
+    ensureLmsContentSeeded(store);
+    let student =
+      (data.query || "").trim().length >= 2
+        ? findRosterCandidate(store.roster, data.query!.trim())
+        : null;
+    if (!student && (data.rollNumber || "").trim() && (data.phone || "").trim()) {
+      student = matchRosterIdentity({
+        rollNumber: data.rollNumber || "",
+        phone: data.phone || "",
+        roster: store.roster,
+      });
+    }
+    if (!student && (data.phone || "").trim().length >= 6) {
+      student = findRosterCandidate(store.roster, data.phone!.trim()) || null;
+    }
     if (!student) {
-      return { success: false, error: "Roster verification failed. Check roll number and mobile." };
+      return {
+        success: false,
+        error: "Roster verification failed. Search with your registered mobile number.",
+      };
     }
 
     try {
@@ -5543,6 +5613,24 @@ export const serverGetStudentPortal = createServerFn({ method: "POST" })
       };
     });
 
+    const materials = (store.courseMaterials || [])
+      .filter((m) => m.courseId === course.id && m.published)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    const recordings = (store.courseRecordings || [])
+      .filter((r) => r.courseId === course.id && r.published)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    const announcements = (store.courseAnnouncements || [])
+      .filter((a) => a.courseId === course.id && a.published)
+      .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+
+    const finalAttempt = (store.finalExamAttempts || [])
+      .filter(
+        (a) =>
+          a.courseId === course.id &&
+          normalizeRollToken(a.rollNumber) === normalizeRollToken(student.rollNumber),
+      )
+      .sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""))[0];
+
     return {
       success: true,
       student: {
@@ -5558,12 +5646,37 @@ export const serverGetStudentPortal = createServerFn({ method: "POST" })
         code: course.code,
         titleEn: course.titleEn,
         titleBn: course.titleBn,
+        descriptionEn: course.descriptionEn,
+        descriptionBn: course.descriptionBn,
         passThresholdPct: course.passThresholdPct ?? 50,
       },
+      courses: store.courses
+        .filter((c) => c.status !== "archived")
+        .map((c) => ({
+          id: c.id,
+          code: c.code,
+          titleEn: c.titleEn,
+          titleBn: c.titleBn,
+        })),
       quizProgress,
       practicalExam,
       submission,
       completion: snap,
+      materials,
+      recordings,
+      announcements,
+      finalAttempt: finalAttempt
+        ? {
+            id: finalAttempt.id,
+            status: finalAttempt.status,
+            quizMarks: finalAttempt.quizMarks,
+            quizMaxMarks: finalAttempt.quizMaxMarks,
+            accuracyPct: finalAttempt.accuracyPct,
+            submittedAt: finalAttempt.submittedAt,
+            endsAt: finalAttempt.endsAt,
+          }
+        : null,
+      hasAiTutor: resolveServerGeminiApiKey(store).source !== "none",
       courseCertificate: courseCert
         ? {
             ...courseCert,
@@ -5615,9 +5728,12 @@ function findFinalExamByPin(store: PersistentStoreData, pinRaw: string): Practic
 }
 
 function isFinalExamJoinWindowOpen(exam: PracticalExam, nowIso = new Date().toISOString()): boolean {
-  if (exam.status === "archived" || exam.status === "draft" || exam.status === "closed") return false;
+  if (exam.status === "archived" || exam.status === "draft") return false;
+  if (exam.quizWindowOpen === false) return false;
+  if (exam.status === "closed" && exam.quizWindowOpen !== true) return false;
   if (exam.opensAt && nowIso < exam.opensAt) return false;
   if (exam.closesAt && nowIso > exam.closesAt) return false;
+  if (exam.quizWindowOpen === true) return true;
   return exam.status === "open" || exam.status === "scheduled";
 }
 
@@ -5862,14 +5978,34 @@ export const serverStartFinalQuizAttempt = createServerFn({ method: "POST" })
     );
     const durationMin = Math.max(1, Math.min(180, exam.quizDurationMinutes || 10));
     const now = Date.now();
-    if (live && new Date(live.endsAt).getTime() > now) {
+    if (live) {
+      const liveEnds = new Date(live.endsAt).getTime();
+      if (liveEnds > now) {
+        return {
+          success: true as const,
+          attempt: { id: live.id, startedAt: live.startedAt, endsAt: live.endsAt },
+          quiz: stripQuizForCandidate(quiz),
+          quizMaxMarks: exam.quizMaxMarks || FINAL_QUIZ_MARKS,
+          durationMinutes: durationMin,
+          resumed: true,
+          answers: live.answers || {},
+        };
+      }
+      // Expired in-progress: finalize as expired — do NOT mint a second attempt.
+      const liveIdx = store.finalExamAttempts.findIndex((a) => a.id === live.id);
+      if (liveIdx >= 0) {
+        store.finalExamAttempts[liveIdx] = {
+          ...live,
+          status: "expired",
+          submittedAt: new Date(now).toISOString(),
+          updatedAt: new Date(now).toISOString(),
+        };
+        scheduleDiskPersist();
+      }
       return {
-        success: true as const,
-        attempt: { id: live.id, startedAt: live.startedAt, endsAt: live.endsAt },
-        quiz: stripQuizForCandidate(quiz),
-        quizMaxMarks: exam.quizMaxMarks || FINAL_QUIZ_MARKS,
-        durationMinutes: durationMin,
-        resumed: true,
+        success: false as const,
+        error:
+          "Your previous attempt timer already ended. Ask an instructor if a retake is allowed.",
       };
     }
     const startedAt = new Date(now).toISOString();
@@ -5901,6 +6037,42 @@ export const serverStartFinalQuizAttempt = createServerFn({ method: "POST" })
       quizMaxMarks: exam.quizMaxMarks || FINAL_QUIZ_MARKS,
       durationMinutes: durationMin,
       resumed: false,
+      answers: {},
+    };
+  });
+
+/** Autosave Final Quiz answers during the overall countdown (industrial resume). */
+export const serverSaveFinalQuizAnswers = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      attemptId: string;
+      rollNumber: string;
+      answers: Record<string, string[]>;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const store = getStore();
+    if (!store.finalExamAttempts) store.finalExamAttempts = [];
+    const idx = store.finalExamAttempts.findIndex((a) => a.id === data.attemptId);
+    if (idx < 0) return { success: false as const, error: "Attempt not found." };
+    const attempt = store.finalExamAttempts[idx]!;
+    if (normalizeRollToken(attempt.rollNumber) !== normalizeRollToken(data.rollNumber)) {
+      return { success: false as const, error: "Attempt does not match roll number." };
+    }
+    if (attempt.status !== "in_progress") {
+      return { success: false as const, error: "Attempt is no longer editable." };
+    }
+    const nowIso = new Date().toISOString();
+    store.finalExamAttempts[idx] = {
+      ...attempt,
+      answers: data.answers || {},
+      updatedAt: nowIso,
+    };
+    scheduleDiskPersist();
+    return {
+      success: true as const,
+      savedAt: nowIso,
+      endsAt: attempt.endsAt,
     };
   });
 
@@ -6075,6 +6247,8 @@ export const serverOpenFinalExamWindow = createServerFn({ method: "POST" })
       status: "open",
       opensAt,
       closesAt,
+      quizWindowOpen: true,
+      practicalWindowOpen: true,
       quizDurationMinutes: quizMins,
       joinPin:
         data.regeneratePin || !upgraded.joinPin
@@ -6160,7 +6334,13 @@ export const serverGetFinalExamDesk = createServerFn({ method: "POST" })
   });
 
 export const serverCloseFinalExamWindow = createServerFn({ method: "POST" })
-  .validator((data: { examId: string }) => data)
+  .validator(
+    (data: {
+      examId: string;
+      /** Default: close quiz join only — keep practical open for Part B. */
+      alsoClosePractical?: boolean | undefined;
+    }) => data,
+  )
   .handler(async ({ data }) => {
     const actor = await getActorFromRequest();
     if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
@@ -6171,10 +6351,14 @@ export const serverCloseFinalExamWindow = createServerFn({ method: "POST" })
     if (idx < 0) return { success: false as const, error: "Exam not found." };
     const prev = store.practicalExams![idx]!;
     const now = new Date().toISOString();
+    const closePractical = data.alsoClosePractical === true;
     const exam: PracticalExam = {
       ...prev,
-      status: "closed",
-      closesAt: now,
+      quizWindowOpen: false,
+      practicalWindowOpen: closePractical ? false : prev.practicalWindowOpen !== false,
+      // Keep status open if practical still accepting work so portal Part B works.
+      status: closePractical ? "closed" : prev.status === "draft" ? "open" : prev.status,
+      closesAt: closePractical ? now : prev.closesAt,
       updatedAt: now,
     };
     store.practicalExams![idx] = exam;
@@ -6206,4 +6390,146 @@ export const serverResetAllStaffPasswords = createServerFn({ method: "POST" })
       adminPassword: DEFAULT_ADMIN_PASSWORD,
       instructorPassword: DEFAULT_INSTRUCTOR_PASSWORD,
     };
+  });
+
+// ============================================================================
+// LMS — materials, recordings, announcements, AI course tutor
+// ============================================================================
+
+export const serverSaveCourseMaterial = createServerFn({ method: "POST" })
+  .validator((data: { material: CourseMaterial }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    if (!store.courseMaterials) store.courseMaterials = [];
+    const now = new Date().toISOString();
+    const incoming = {
+      ...data.material,
+      id: data.material.id || newLmsId("mat"),
+      updatedAt: now,
+      createdAt: data.material.createdAt || now,
+    };
+    const idx = store.courseMaterials.findIndex((m) => m.id === incoming.id);
+    if (idx >= 0) store.courseMaterials[idx] = incoming;
+    else store.courseMaterials.unshift(incoming);
+    scheduleDiskPersist();
+    return { success: true as const, material: incoming };
+  });
+
+export const serverDeleteCourseMaterial = createServerFn({ method: "POST" })
+  .validator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    store.courseMaterials = (store.courseMaterials || []).filter((m) => m.id !== data.id);
+    scheduleDiskPersist();
+    return { success: true as const };
+  });
+
+export const serverSaveCourseRecording = createServerFn({ method: "POST" })
+  .validator((data: { recording: CourseRecording }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    if (!store.courseRecordings) store.courseRecordings = [];
+    const now = new Date().toISOString();
+    const incoming = {
+      ...data.recording,
+      id: data.recording.id || newLmsId("rec"),
+      updatedAt: now,
+      createdAt: data.recording.createdAt || now,
+    };
+    const idx = store.courseRecordings.findIndex((m) => m.id === incoming.id);
+    if (idx >= 0) store.courseRecordings[idx] = incoming;
+    else store.courseRecordings.unshift(incoming);
+    scheduleDiskPersist();
+    return { success: true as const, recording: incoming };
+  });
+
+export const serverDeleteCourseRecording = createServerFn({ method: "POST" })
+  .validator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    store.courseRecordings = (store.courseRecordings || []).filter((m) => m.id !== data.id);
+    scheduleDiskPersist();
+    return { success: true as const };
+  });
+
+export const serverSaveCourseAnnouncement = createServerFn({ method: "POST" })
+  .validator((data: { announcement: CourseAnnouncement }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    if (!store.courseAnnouncements) store.courseAnnouncements = [];
+    const now = new Date().toISOString();
+    const incoming = {
+      ...data.announcement,
+      id: data.announcement.id || newLmsId("ann"),
+      updatedAt: now,
+      createdAt: data.announcement.createdAt || now,
+    };
+    const idx = store.courseAnnouncements.findIndex((m) => m.id === incoming.id);
+    if (idx >= 0) store.courseAnnouncements[idx] = incoming;
+    else store.courseAnnouncements.unshift(incoming);
+    scheduleDiskPersist();
+    return { success: true as const, announcement: incoming };
+  });
+
+export const serverAskCourseTutor = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      courseId: string;
+      question: string;
+      rollNumber?: string | undefined;
+      lang?: "en" | "bn" | undefined;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const store = getStore();
+    ensureLmsContentSeeded(store);
+    const { apiKey, source } = resolveServerGeminiApiKey(store);
+    if (!apiKey || source === "none") {
+      return {
+        success: false as const,
+        error: "AI Tutor is offline. Admin must set a Gemini API key in Settings.",
+      };
+    }
+    const course = store.courses.find((c) => c.id === data.courseId);
+    const materials = (store.courseMaterials || []).filter(
+      (m) => m.courseId === data.courseId && m.published,
+    );
+    const context = buildAiTutorContext({
+      materials,
+      courseTitle: course?.titleEn,
+    });
+    try {
+      const res = await askCourseTutorViaGemini({
+        apiKey,
+        question: data.question,
+        context,
+        lang: data.lang,
+      });
+      return { success: true as const, answer: res.answer, model: res.model };
+    } catch (err) {
+      return {
+        success: false as const,
+        error: err instanceof Error ? err.message : "AI tutor failed.",
+      };
+    }
   });

@@ -17,6 +17,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardCopy,
+  ClipboardList,
   Clock,
   Eye,
   EyeOff,
@@ -623,6 +624,40 @@ function FinalExamLiveHostPage() {
 
           <div className="space-y-4">
             {projectorBoard}
+
+            <section className="staff-panel space-y-3">
+              <div className="flex items-center gap-2 font-bold">
+                <ClipboardList className="h-4 w-4 text-amber-600" /> Part B — Capstone / practical
+                <span className="ml-auto font-mono text-xs">
+                  {(exam.tasks || []).reduce((s, t) => s + (t.maxMarks || 0), 0) || 40} marks
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Screen-share this checklist with the room. Students submit on{" "}
+                <Link to="/portal" className="font-bold text-primary underline">
+                  /portal
+                </Link>{" "}
+                after the MCQ (closing quiz join does <strong>not</strong> close practical).
+              </p>
+              <ul className="grid gap-2 sm:grid-cols-2">
+                {(exam.tasks || []).map((t, i) => (
+                  <li
+                    key={t.id}
+                    className="rounded-xl border border-border bg-muted/30 px-3 py-2 text-xs"
+                  >
+                    <div className="flex justify-between gap-2 font-bold">
+                      <span>
+                        {i + 1}. {lang === "bn" ? t.titleBn : t.titleEn}
+                      </span>
+                      <span className="font-mono">{t.maxMarks}</span>
+                    </div>
+                    <p className="mt-1 text-muted-foreground line-clamp-2">
+                      {lang === "bn" ? t.promptBn : t.promptEn}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </section>
 
             <section className="staff-panel space-y-3">
               <div className="flex items-center gap-2 font-bold">

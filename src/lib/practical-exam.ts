@@ -136,13 +136,19 @@ export function computeCombinedFinalPct(params: {
 }
 
 export function isPracticalWindowOpen(
-  exam: Pick<PracticalExam, "opensAt" | "closesAt" | "status">,
+  exam: Pick<
+    PracticalExam,
+    "opensAt" | "closesAt" | "status" | "practicalWindowOpen" | "quizWindowOpen"
+  >,
   nowIso = new Date().toISOString(),
 ): boolean {
   if (exam.status === "archived" || exam.status === "draft") return false;
-  if (exam.status === "closed") return false;
+  if (exam.practicalWindowOpen === false) return false;
+  if (exam.status === "closed" && exam.practicalWindowOpen !== true) return false;
   if (exam.opensAt && nowIso < exam.opensAt) return false;
   // closesAt alone does not block — late submissions are allowed while status is open/scheduled
+  // Explicit practicalWindowOpen:true keeps Part B open even if quiz join was closed.
+  if (exam.practicalWindowOpen === true) return true;
   return exam.status === "open" || exam.status === "scheduled";
 }
 
