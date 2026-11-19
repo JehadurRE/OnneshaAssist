@@ -267,6 +267,8 @@ const globalStore = globalThis as unknown as {
   __onneshaPhoneOtps?: Record<string, PendingPhoneOtp>;
   __onneshaEmailOtps?: Record<string, PendingPhoneOtp>;
   __onneshaAnchorCooldowns?: Record<string, number>;
+  __onneshaFinalAttemptIndex?: Map<string, number>;
+  __onneshaSaveDelayMs?: number | undefined;
 };
 
 const AUTH_COOKIE_NAME = "onnesha_sid";
@@ -1096,21 +1098,59 @@ async function flushStoreToDisk() {
   }
 }
 
-// Debounced non-blocking atomic disk write (handles 500+ req/sec without I/O contention)
-function scheduleDiskPersist() {
+// Debounced non-blocking atomic disk write (handles 500+ req/sec without I/O contention).
+// Autosave may request a longer delay; a shorter request reschedules sooner.
+function scheduleDiskPersist(delayMs = 800) {
   ensureShutdownHooks();
   const store = getStore();
   store.updatedAt = Date.now();
   if (globalStore.__onneshaSaveBusy) {
     globalStore.__onneshaSaveDirty = true;
   }
-  if (globalStore.__onneshaSaveTimer) return;
-
-  // Longer debounce under concurrent exam traffic — coalesces bursts into one write.
+  const requested = Math.max(50, delayMs);
+  const existingDelay = globalStore.__onneshaSaveDelayMs;
+  if (globalStore.__onneshaSaveTimer && existingDelay != null && requested >= existingDelay) {
+    return;
+  }
+  if (globalStore.__onneshaSaveTimer) {
+    clearTimeout(globalStore.__onneshaSaveTimer);
+    globalStore.__onneshaSaveTimer = null;
+  }
+  globalStore.__onneshaSaveDelayMs = requested;
   globalStore.__onneshaSaveTimer = setTimeout(() => {
     globalStore.__onneshaSaveTimer = null;
+    globalStore.__onneshaSaveDelayMs = undefined;
     void flushStoreToDisk();
-  }, 800);
+  }, requested);
+}
+
+function rebuildFinalAttemptIndex(store: PersistentStoreData): Map<string, number> {
+  const map = new Map<string, number>();
+  (store.finalExamAttempts || []).forEach((a, i) => {
+    if (a?.id) map.set(a.id, i);
+  });
+  globalStore.__onneshaFinalAttemptIndex = map;
+  return map;
+}
+
+function findFinalAttemptIndex(store: PersistentStoreData, attemptId: string): number {
+  if (!attemptId) return -1;
+  const cached = globalStore.__onneshaFinalAttemptIndex?.get(attemptId);
+  if (
+    typeof cached === "number" &&
+    store.finalExamAttempts?.[cached]?.id === attemptId
+  ) {
+    return cached;
+  }
+  const map = rebuildFinalAttemptIndex(store);
+  return map.get(attemptId) ?? -1;
+}
+
+function rememberFinalAttemptIndex(attemptId: string, index: number): void {
+  if (!globalStore.__onneshaFinalAttemptIndex) {
+    globalStore.__onneshaFinalAttemptIndex = new Map();
+  }
+  globalStore.__onneshaFinalAttemptIndex.set(attemptId, index);
 }
 
 function toHostSessionView(session: ServerLiveSession): GameSession {
@@ -5905,6 +5945,7 @@ export const serverGetStudentPortal = createServerFn({ method: "POST" })
         name: student.name,
         rollNumber: student.rollNumber,
         phone: student.phone,
+        email: student.email,
         regionId: student.regionId,
         regionName: student.regionName,
       },
@@ -6153,6 +6194,7 @@ export const serverJoinFinalExam = createServerFn({ method: "POST" })
         name: student.name,
         rollNumber: student.rollNumber,
         phone: student.phone,
+        email: student.email,
         regionId: student.regionId,
         regionName: student.regionName,
       },
@@ -6296,6 +6338,7 @@ export const serverStartFinalQuizAttempt = createServerFn({ method: "POST" })
       updatedAt: startedAt,
     };
     store.finalExamAttempts.unshift(attempt);
+    rebuildFinalAttemptIndex(store);
     scheduleDiskPersist();
     return {
       success: true as const,
@@ -6320,7 +6363,7 @@ export const serverSaveFinalQuizAnswers = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const store = getStore();
     if (!store.finalExamAttempts) store.finalExamAttempts = [];
-    const idx = store.finalExamAttempts.findIndex((a) => a.id === data.attemptId);
+    const idx = findFinalAttemptIndex(store, data.attemptId);
     if (idx < 0) return { success: false as const, error: "Attempt not found." };
     const attempt = store.finalExamAttempts[idx]!;
     if (normalizeRollToken(attempt.rollNumber) !== normalizeRollToken(data.rollNumber)) {
@@ -6335,7 +6378,9 @@ export const serverSaveFinalQuizAnswers = createServerFn({ method: "POST" })
       answers: data.answers || {},
       updatedAt: nowIso,
     };
-    scheduleDiskPersist();
+    rememberFinalAttemptIndex(data.attemptId, idx);
+    // Defer disk rewrite — answer maps are hot under concurrent rooms.
+    scheduleDiskPersist(5000);
     return {
       success: true as const,
       savedAt: nowIso,
@@ -6355,7 +6400,7 @@ export const serverSubmitFinalQuizAttempt = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const store = getStore();
     if (!store.finalExamAttempts) store.finalExamAttempts = [];
-    const attemptIdx = store.finalExamAttempts.findIndex((a) => a.id === data.attemptId);
+    const attemptIdx = findFinalAttemptIndex(store, data.attemptId);
     if (attemptIdx < 0) return { success: false as const, error: "Attempt not found." };
     const attempt = store.finalExamAttempts[attemptIdx]!;
     if (normalizeRollToken(attempt.rollNumber) !== normalizeRollToken(data.rollNumber)) {
@@ -6469,6 +6514,7 @@ export const serverSubmitFinalQuizAttempt = createServerFn({ method: "POST" })
     if (store.finalExamAttempts[attemptIdx]!.status === "expired") {
       store.finalExamAttempts[attemptIdx]!.status = "submitted";
     }
+    rememberFinalAttemptIndex(data.attemptId, attemptIdx);
     scheduleDiskPersist();
     return {
       success: true as const,
@@ -6530,7 +6576,14 @@ export const serverOpenFinalExamWindow = createServerFn({ method: "POST" })
 
 /** Staff live desk: exam window + quiz attempts (answers stripped). */
 export const serverGetFinalExamDesk = createServerFn({ method: "POST" })
-  .validator((data: { courseId?: string | undefined; examId?: string | undefined }) => data)
+  .validator(
+    (data: {
+      courseId?: string | undefined;
+      examId?: string | undefined;
+      /** When false, skip full quiz paper (poll path). Default true. */
+      includeQuiz?: boolean | undefined;
+    }) => data,
+  )
   .handler(async ({ data }) => {
     const actor = await getActorFromRequest();
     if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
@@ -6556,8 +6609,25 @@ export const serverGetFinalExamDesk = createServerFn({ method: "POST" })
       .map(({ answers: _a, ...rest }) => rest)
       .sort((a, b) => (b.updatedAt || b.startedAt || "").localeCompare(a.updatedAt || a.startedAt || ""));
     const course = store.courses.find((c) => c.id === exam!.courseId);
-    const quiz = resolveQuizForFinalExam(store, exam.linkedQuizId);
+    const includeQuiz = data.includeQuiz !== false;
+    const quiz = includeQuiz ? resolveQuizForFinalExam(store, exam.linkedQuizId) : null;
     const nowIso = new Date().toISOString();
+    const practicalByRoll = new Map<string, { status: string; practicalScorePct?: number | undefined }>();
+    for (const sub of store.practicalSubmissions || []) {
+      if (sub.practicalExamId !== exam.id && sub.courseId !== exam.courseId) continue;
+      practicalByRoll.set(normalizeRollToken(sub.rollNumber), {
+        status: sub.status,
+        practicalScorePct: sub.practicalScorePct,
+      });
+    }
+    const attemptsWithPractical = attempts.map((a) => {
+      const p = practicalByRoll.get(normalizeRollToken(a.rollNumber));
+      return {
+        ...a,
+        practicalStatus: p?.status || "none",
+        practicalScorePct: p?.practicalScorePct,
+      };
+    });
     return {
       success: true as const,
       exam,
@@ -6565,28 +6635,29 @@ export const serverGetFinalExamDesk = createServerFn({ method: "POST" })
         ? { id: course.id, code: course.code, titleEn: course.titleEn, titleBn: course.titleBn }
         : null,
       /** Full paper for staff projector / screen-share (includes isCorrect for optional reveal). */
-      quiz: quiz
-        ? {
-            id: quiz.id,
-            titleEn: quiz.titleEn,
-            titleBn: quiz.titleBn,
-            quizNumber: quiz.quizNumber,
-            questions: (quiz.questions || []).map((q) => ({
-              id: q.id,
-              textEn: q.textEn,
-              textBn: q.textBn,
-              type: q.type,
-              timeLimitSec: q.timeLimitSec,
-              options: (q.options || []).map((o) => ({
-                id: o.id,
-                textEn: o.textEn,
-                textBn: o.textBn,
-                isCorrect: !!o.isCorrect,
+      quiz:
+        includeQuiz && quiz
+          ? {
+              id: quiz.id,
+              titleEn: quiz.titleEn,
+              titleBn: quiz.titleBn,
+              quizNumber: quiz.quizNumber,
+              questions: (quiz.questions || []).map((q) => ({
+                id: q.id,
+                textEn: q.textEn,
+                textBn: q.textBn,
+                type: q.type,
+                timeLimitSec: q.timeLimitSec,
+                options: (q.options || []).map((o) => ({
+                  id: o.id,
+                  textEn: o.textEn,
+                  textBn: o.textBn,
+                  isCorrect: !!o.isCorrect,
+                })),
               })),
-            })),
-          }
-        : null,
-      attempts,
+            }
+          : null,
+      attempts: attemptsWithPractical,
       windowOpen: isFinalExamJoinWindowOpen(exam, nowIso),
       nowIso,
       joinPath: "/final-exam",
@@ -6596,6 +6667,7 @@ export const serverGetFinalExamDesk = createServerFn({ method: "POST" })
         submitted: attempts.filter(
           (a) => a.status === "submitted" || a.status === "graded" || a.status === "expired",
         ).length,
+        practicalSubmitted: attemptsWithPractical.filter((a) => a.practicalStatus !== "none").length,
       },
     };
   });

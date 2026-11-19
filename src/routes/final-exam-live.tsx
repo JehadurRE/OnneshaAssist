@@ -88,9 +88,12 @@ function FinalExamLiveHostPage() {
       ? `${window.location.origin}/final-exam`
       : "https://arena.onnesha.courses/final-exam";
 
-  const refresh = async () => {
+  const refresh = async (opts?: { light?: boolean }) => {
     const res = await serverGetFinalExamDesk({
-      data: { courseId: "course-sanjibon-ai-dm" },
+      data: {
+        courseId: "course-sanjibon-ai-dm",
+        includeQuiz: !opts?.light,
+      },
     });
     if (!res.success || !res.exam) {
       setNotice(res.success === false ? res.error : "Final exam not found.");
@@ -101,11 +104,13 @@ function FinalExamLiveHostPage() {
     setCourse(res.course);
     setAttempts((res.attempts as FinalExamAttempt[]) || []);
     setWindowOpen(!!res.windowOpen);
-    const qs = (res.quiz?.questions || []) as Question[];
-    setQuestions(qs);
-    setQuizTitle(
-      lang === "bn" ? res.quiz?.titleBn || res.quiz?.titleEn || "" : res.quiz?.titleEn || "",
-    );
+    if (res.quiz) {
+      const qs = (res.quiz.questions || []) as Question[];
+      setQuestions(qs);
+      setQuizTitle(
+        lang === "bn" ? res.quiz.titleBn || res.quiz.titleEn || "" : res.quiz.titleEn || "",
+      );
+    }
     setLoading(false);
   };
 
@@ -117,14 +122,14 @@ function FinalExamLiveHostPage() {
   useEffect(() => {
     if (!isStaff) return undefined;
     const id = window.setInterval(() => {
-      void refresh();
+      void refresh({ light: true });
       setNowTick(Date.now());
-    }, 4000);
+    }, 10_000);
     return () => window.clearInterval(id);
   }, [isStaff]);
 
   useEffect(() => {
-    const id = window.setInterval(() => setNowTick(Date.now()), 250);
+    const id = window.setInterval(() => setNowTick(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);
 
@@ -663,30 +668,34 @@ function FinalExamLiveHostPage() {
               <div className="flex items-center gap-2 font-bold">
                 <Users className="h-4 w-4 text-primary" /> Live attempt monitor
                 <span className="ml-auto text-[10px] font-semibold text-muted-foreground">
-                  auto-refresh ~4s
+                  auto-refresh ~10s
                 </span>
               </div>
               <div className="overflow-x-auto rounded-xl border border-border">
-                <table className="w-full min-w-[560px] text-left text-xs">
+                <table className="w-full min-w-[640px] text-left text-xs">
                   <thead className="border-b border-border bg-muted/40 text-[10px] uppercase tracking-wide text-muted-foreground">
                     <tr>
                       <th className="px-3 py-2 font-bold">Roll</th>
                       <th className="px-3 py-2 font-bold">Name</th>
-                      <th className="px-3 py-2 font-bold">Status</th>
+                      <th className="px-3 py-2 font-bold">Quiz</th>
                       <th className="px-3 py-2 font-bold">Score</th>
-                      <th className="px-3 py-2 font-bold">Personal timer ends</th>
+                      <th className="px-3 py-2 font-bold">Practical</th>
+                      <th className="px-3 py-2 font-bold">Timer / submitted</th>
                     </tr>
                   </thead>
                   <tbody>
                     {attempts.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-3 py-8 text-center text-muted-foreground">
+                        <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
                           Waiting for students… Open the window, share PIN + {joinUrl}
                         </td>
                       </tr>
                     ) : (
                       attempts.map((a) => {
                         const endsMs = a.endsAt ? new Date(a.endsAt).getTime() - nowTick : 0;
+                        const practicalStatus =
+                          (a as FinalExamAttempt & { practicalStatus?: string }).practicalStatus ||
+                          "none";
                         return (
                           <tr key={a.id} className="border-b border-border/60 last:border-0">
                             <td className="px-3 py-2 font-mono font-bold">{a.rollNumber}</td>
@@ -708,6 +717,19 @@ function FinalExamLiveHostPage() {
                               {typeof a.quizMarks === "number"
                                 ? `${a.quizMarks}/${a.quizMaxMarks ?? "—"}`
                                 : "—"}
+                            </td>
+                            <td className="px-3 py-2">
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                                  practicalStatus === "graded"
+                                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                                    : practicalStatus === "none"
+                                      ? "bg-muted text-muted-foreground"
+                                      : "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+                                }`}
+                              >
+                                {practicalStatus}
+                              </span>
                             </td>
                             <td className="px-3 py-2 font-mono text-[10px] text-muted-foreground">
                               {a.status === "in_progress" && endsMs > 0

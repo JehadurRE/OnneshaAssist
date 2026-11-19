@@ -21,7 +21,11 @@ import type {
   PracticalSubmission,
   PracticalTask,
 } from "@/lib/types";
-import { isPracticalPastDeadline, isPracticalWindowOpen } from "@/lib/practical-exam";
+import {
+  DEFAULT_PRACTICAL_MAX_FILE_BYTES,
+  isPracticalPastDeadline,
+  isPracticalWindowOpen,
+} from "@/lib/practical-exam";
 import {
   Award,
   BookOpen,
@@ -147,6 +151,22 @@ function StudentPortalPage() {
 
   useEffect(() => {
     let cancelled = false;
+    try {
+      const raw = sessionStorage.getItem("onnesha_portal_handoff");
+      if (raw) {
+        const handoff = JSON.parse(raw) as {
+          email?: string;
+          phone?: string;
+          rollNumber?: string;
+          name?: string;
+        };
+        if (handoff.email) setEmail(handoff.email);
+        if (handoff.phone) setPhone(handoff.phone);
+        if (handoff.rollNumber) setRollNumber(handoff.rollNumber);
+      }
+    } catch {
+      // ignore bad handoff
+    }
     (async () => {
       try {
         const cfg = await serverGetPortalAuthConfig();
@@ -161,10 +181,16 @@ function StudentPortalPage() {
           setPortal(res);
           setPhone(res.student?.phone || "");
           setRollNumber(res.student?.rollNumber || "");
+          if (res.student?.email) setEmail(res.student.email);
           hydrateDrafts(
             res.practicalExam as PracticalExam | undefined,
             res.submission as PracticalSubmission | undefined,
           );
+          try {
+            sessionStorage.removeItem("onnesha_portal_handoff");
+          } catch {
+            // ignore
+          }
         }
       } catch {
         // not signed in yet
@@ -284,7 +310,17 @@ function StudentPortalPage() {
       }));
       return;
     }
-    const max = practicalExam?.maxFileBytes || 10 * 1024 * 1024;
+    const max = practicalExam?.maxFileBytes || DEFAULT_PRACTICAL_MAX_FILE_BYTES;
+    const allowed = practicalExam?.allowedMimeTypes;
+    if (allowed?.length && file.type && !allowed.includes(file.type)) {
+      setNoticeTone("err");
+      setNotice(
+        lang === "bn"
+          ? `এই ফাইল টাইপ অনুমোদিত নয় (${file.type || "unknown"}).`
+          : `This file type is not allowed (${file.type || "unknown"}).`,
+      );
+      return;
+    }
     if (file.size > max) {
       setNoticeTone("err");
       setNotice(
@@ -951,9 +987,18 @@ function StudentPortalPage() {
                         {lang === "bn" ? "ফাইল (ঐচ্ছিক)" : "File (optional)"}
                         <input
                           type="file"
+                          accept={(practicalExam?.allowedMimeTypes || []).join(",") || undefined}
                           className="mt-1 block w-full text-xs"
                           onChange={(e) => void onFile(task, e.target.files?.[0] || null)}
                         />
+                        <span className="mt-1 block text-[10px] font-medium text-muted-foreground">
+                          {lang === "bn"
+                            ? `সর্বোচ্চ ${Math.round((practicalExam?.maxFileBytes || DEFAULT_PRACTICAL_MAX_FILE_BYTES) / (1024 * 1024))} MB`
+                            : `Max ${Math.round((practicalExam?.maxFileBytes || DEFAULT_PRACTICAL_MAX_FILE_BYTES) / (1024 * 1024))} MB`}
+                          {(practicalExam?.allowedMimeTypes || []).length
+                            ? ` · ${(practicalExam?.allowedMimeTypes || []).join(", ")}`
+                            : ""}
+                        </span>
                         {draft.fileName && (
                           <span className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                             <Upload className="h-3 w-3" /> {draft.fileName}

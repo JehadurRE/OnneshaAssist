@@ -86,6 +86,7 @@ function FinalExamPage() {
     name: string;
     rollNumber: string;
     phone?: string | undefined;
+    email?: string | undefined;
   } | null>(null);
   const [quizDone, setQuizDone] = useState(false);
   const [prior, setPrior] = useState<{
@@ -598,6 +599,21 @@ function FinalExamPage() {
                   <Link
                     to="/portal"
                     className="staff-btn-ghost w-full justify-center py-3"
+                    onClick={() => {
+                      try {
+                        sessionStorage.setItem(
+                          "onnesha_portal_handoff",
+                          JSON.stringify({
+                            email: student?.email || "",
+                            phone: student?.phone || "",
+                            rollNumber: student?.rollNumber || "",
+                            name: student?.name || "",
+                          }),
+                        );
+                      } catch {
+                        // ignore
+                      }
+                    }}
                   >
                     {lang === "bn" ? "পোর্টালে প্রায়োগিক জমা →" : "Submit practical on Portal →"}
                   </Link>
@@ -762,7 +778,25 @@ function FinalExamPage() {
                   : `Correct ${result.correctCount}. Next: submit the capstone package (${practicalMax} marks) on the portal.`}
               </p>
               <div className="flex flex-wrap gap-2">
-                <Link to="/portal" className="staff-btn-primary">
+                <Link
+                  to="/portal"
+                  className="staff-btn-primary"
+                  onClick={() => {
+                    try {
+                      sessionStorage.setItem(
+                        "onnesha_portal_handoff",
+                        JSON.stringify({
+                          email: student?.email || "",
+                          phone: student?.phone || "",
+                          rollNumber: student?.rollNumber || "",
+                          name: student?.name || "",
+                        }),
+                      );
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                >
                   {lang === "bn" ? "প্রায়োগিক পোর্টাল" : "Open practical portal"}
                 </Link>
                 <button type="button" onClick={() => setPhase("lobby")} className="staff-btn-ghost">

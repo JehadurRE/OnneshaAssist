@@ -469,6 +469,7 @@ export function matchRosterIdentity(params: {
   roster: Array<{
     rollNumber: string;
     phone?: string | undefined;
+    email?: string | undefined;
     name: string;
     id: string;
     regionName?: string | undefined;
