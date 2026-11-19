@@ -408,11 +408,11 @@ export function AdminPracticalPanel(props: {
   const weightSum = (exam?.quizWeightPct ?? 40) + (exam?.practicalWeightPct ?? 60);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <h2 className="text-lg font-black">Final Practical & Course Certificates</h2>
-          <p className="text-xs text-muted-foreground mt-1 max-w-2xl">
+    <div className="space-y-6 staff-surface">
+      <div className="staff-panel-header !border-0 !pb-0 !mb-0">
+        <div className="min-w-0 space-y-1">
+          <h2 className="staff-panel-title">Final Practical & Course Certificates</h2>
+          <p className="staff-panel-desc">
             Configure the Final Practical window, tasks, and course-completion policy. Candidates
             submit via <span className="font-mono">/portal</span>.
           </p>
@@ -420,17 +420,17 @@ export function AdminPracticalPanel(props: {
         <button
           type="button"
           onClick={() => void refresh()}
-          className="inline-flex items-center gap-1 rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold hover:bg-accent"
+          className="staff-btn-ghost"
         >
           <RefreshCw className="h-3.5 w-3.5" /> Refresh
         </button>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-        <label className="block text-xs font-semibold">
-          Course
+        <label className="staff-field">
+          <span className="staff-label">Course</span>
           <select
-            className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+            className="staff-input"
             value={courseId}
             onChange={(e) => setCourseId(e.target.value)}
           >
@@ -455,7 +455,7 @@ export function AdminPracticalPanel(props: {
         <div className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm">{notice}</div>
       )}
 
-      <section className="rounded-2xl border border-border p-4 space-y-3">
+      <section className="staff-row-card space-y-3">
         <div className="text-sm font-bold">Quiz auto-certificates (legacy)</div>
         <p className="text-[11px] text-muted-foreground">
           Default is off. Course certificates are issued from this desk after Final Quiz + Practical.
@@ -472,7 +472,7 @@ export function AdminPracticalPanel(props: {
       </section>
 
       {!exam ? (
-        <div className="rounded-2xl border border-dashed border-border p-8 text-center space-y-3">
+        <div className="staff-empty space-y-3">
           <p className="text-sm text-muted-foreground">
             No practical exam configured for {course?.code || "this course"}.
           </p>
@@ -489,13 +489,13 @@ export function AdminPracticalPanel(props: {
         </div>
       ) : (
         <>
-          <section className="rounded-2xl border border-border p-4 space-y-4">
+          <section className="staff-row-card space-y-4">
             <div className="text-sm font-bold">Window &amp; scoring</div>
             <div className="grid sm:grid-cols-2 gap-3 text-xs">
               <label className="font-semibold">
                 Title (EN)
                 <input
-                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  className="mt-1 staff-input"
                   value={exam.titleEn}
                   onChange={(e) => patchExam({ titleEn: e.target.value })}
                 />
@@ -503,7 +503,7 @@ export function AdminPracticalPanel(props: {
               <label className="font-semibold">
                 Title (BN)
                 <input
-                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  className="mt-1 staff-input"
                   value={exam.titleBn}
                   onChange={(e) => patchExam({ titleBn: e.target.value })}
                 />
@@ -511,7 +511,7 @@ export function AdminPracticalPanel(props: {
               <label className="font-semibold sm:col-span-2">
                 Description (EN)
                 <textarea
-                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  className="mt-1 staff-input"
                   rows={2}
                   value={exam.descriptionEn || ""}
                   onChange={(e) => patchExam({ descriptionEn: e.target.value })}
@@ -520,7 +520,7 @@ export function AdminPracticalPanel(props: {
               <label className="font-semibold sm:col-span-2">
                 Description (BN)
                 <textarea
-                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  className="mt-1 staff-input"
                   rows={2}
                   value={exam.descriptionBn || ""}
                   onChange={(e) => patchExam({ descriptionBn: e.target.value })}
@@ -529,7 +529,7 @@ export function AdminPracticalPanel(props: {
               <label className="font-semibold">
                 Status
                 <select
-                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  className="mt-1 staff-input"
                   value={exam.status}
                   onChange={(e) => patchExam({ status: e.target.value as PracticalExamStatus })}
                 >
@@ -545,7 +545,7 @@ export function AdminPracticalPanel(props: {
               <label className="font-semibold">
                 Linked final quiz
                 <select
-                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  className="mt-1 staff-input"
                   value={exam.linkedQuizId || ""}
                   onChange={(e) =>
                     patchExam({ linkedQuizId: e.target.value || undefined })
@@ -563,7 +563,7 @@ export function AdminPracticalPanel(props: {
                 Opens (local time)
                 <input
                   type="datetime-local"
-                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  className="mt-1 staff-input"
                   value={toLocalInput(exam.opensAt)}
                   onChange={(e) => patchExam({ opensAt: fromLocalInput(e.target.value) })}
                 />
@@ -572,7 +572,7 @@ export function AdminPracticalPanel(props: {
                 Closes (local time)
                 <input
                   type="datetime-local"
-                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  className="mt-1 staff-input"
                   value={toLocalInput(exam.closesAt)}
                   onChange={(e) => patchExam({ closesAt: fromLocalInput(e.target.value) })}
                 />
@@ -584,7 +584,7 @@ export function AdminPracticalPanel(props: {
                 Quiz weight %
                 <input
                   type="number"
-                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  className="mt-1 staff-input"
                   value={exam.quizWeightPct ?? 40}
                   onChange={(e) => patchExam({ quizWeightPct: Number(e.target.value) })}
                 />
@@ -593,7 +593,7 @@ export function AdminPracticalPanel(props: {
                 Practical weight %
                 <input
                   type="number"
-                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  className="mt-1 staff-input"
                   value={exam.practicalWeightPct ?? 60}
                   onChange={(e) => patchExam({ practicalWeightPct: Number(e.target.value) })}
                 />
@@ -607,7 +607,7 @@ export function AdminPracticalPanel(props: {
                 Pass threshold %
                 <input
                   type="number"
-                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  className="mt-1 staff-input"
                   value={exam.passThresholdPct ?? 50}
                   onChange={(e) => patchExam({ passThresholdPct: Number(e.target.value) })}
                 />
@@ -616,7 +616,7 @@ export function AdminPracticalPanel(props: {
                 Max file size (MB)
                 <input
                   type="number"
-                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  className="mt-1 staff-input"
                   value={Math.round((exam.maxFileBytes || 10 * 1024 * 1024) / (1024 * 1024))}
                   onChange={(e) =>
                     patchExam({
@@ -628,7 +628,7 @@ export function AdminPracticalPanel(props: {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-border p-4 space-y-3">
+          <section className="staff-row-card space-y-3">
             <div className="flex items-center justify-between gap-2">
               <div className="text-sm font-bold">Tasks ({exam.tasks.length})</div>
               <button
@@ -741,7 +741,7 @@ export function AdminPracticalPanel(props: {
       )}
 
       {requirement && course && (
-        <section className="rounded-2xl border border-border p-4 space-y-3">
+        <section className="staff-row-card space-y-3">
           <div className="text-sm font-bold">Course certificate policy</div>
           <div className="flex flex-wrap gap-4 text-xs font-semibold">
             <label className="inline-flex items-center gap-1.5">
@@ -794,7 +794,7 @@ export function AdminPracticalPanel(props: {
             <label className="font-semibold">
               Certificate title (EN)
               <input
-                className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                className="mt-1 staff-input"
                 value={requirement.certificateTitleEn || ""}
                 onChange={(e) => patchRequirement({ certificateTitleEn: e.target.value })}
               />
@@ -802,7 +802,7 @@ export function AdminPracticalPanel(props: {
             <label className="font-semibold">
               Certificate title (BN)
               <input
-                className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                className="mt-1 staff-input"
                 value={requirement.certificateTitleBn || ""}
                 onChange={(e) => patchRequirement({ certificateTitleBn: e.target.value })}
               />
@@ -836,12 +836,12 @@ export function AdminPracticalPanel(props: {
           </button>
         </div>
         {courseSubs.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+          <div className="staff-empty text-sm text-muted-foreground">
             No practical submissions yet. Candidates submit via /portal after roster unlock.
           </div>
         ) : (
           courseSubs.map((sub) => (
-            <div key={sub.id} className="rounded-2xl border border-border p-4 space-y-3">
+            <div key={sub.id} className="staff-row-card space-y-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="font-bold text-sm">

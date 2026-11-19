@@ -866,7 +866,7 @@ function DashboardPage() {
       <div className="min-h-screen bg-background text-foreground bg-grid flex flex-col transition-colors">
         <Navbar />
         <main className="flex-1 flex items-center justify-center px-4 sm:px-6 py-12">
-          <div className="w-full max-w-md bento-card p-6 sm:p-8 shadow-tactical text-center space-y-4 animate-in zoom-in-95">
+          <div className="w-full max-w-md staff-panel sm:p-8 shadow-tactical text-center space-y-4 animate-in zoom-in-95">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary mx-auto">
               <Lock className="h-8 w-8" />
             </div>
@@ -995,69 +995,45 @@ function DashboardPage() {
           <div className="space-y-8 animate-in fade-in">
             {/* Quick Metrics Bento */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bento-card p-5 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-muted-foreground uppercase">
-                    Active Command Regions
-                  </span>
-                  <MapPin className="h-4 w-4 text-primary" />
+              <div className="staff-metric">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="staff-metric-label">Active regions</span>
+                  <span className="staff-metric-icon"><MapPin className="h-4 w-4" /></span>
                 </div>
-                <div className="mt-2 font-mono text-3xl font-black text-foreground">
-                  {regions.length}
-                </div>
-                <div className="mt-1 text-[11px] text-muted-foreground">
-                  Divisional Ranges &amp; Exam Centers
-                </div>
+                <div className="staff-metric-value">{regions.length}</div>
+                <div className="staff-metric-hint">Divisional ranges &amp; exam centers</div>
               </div>
 
-              <div className="bento-card p-5 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-muted-foreground uppercase">
-                    Enrolled Candidates
-                  </span>
-                  <Users className="h-4 w-4 text-emerald-600" />
+              <div className="staff-metric staff-metric-emerald">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="staff-metric-label">Candidates</span>
+                  <span className="staff-metric-icon"><Users className="h-4 w-4" /></span>
                 </div>
-                <div className="mt-2 font-mono text-3xl font-black text-foreground">
-                  {roster.length}
-                </div>
-                <div className="mt-1 text-[11px] text-muted-foreground">
-                  Phone/Roll Verified Seat Locks
-                </div>
+                <div className="staff-metric-value">{roster.length}</div>
+                <div className="staff-metric-hint">Phone / roll verified seats</div>
               </div>
 
-              <div className="bento-card p-5 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-muted-foreground uppercase">
-                    Active Quizzes
-                  </span>
-                  <BookOpen className="h-4 w-4 text-primary" />
+              <div className="staff-metric">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="staff-metric-label">Quizzes</span>
+                  <span className="staff-metric-icon"><BookOpen className="h-4 w-4" /></span>
                 </div>
-                <div className="mt-2 font-mono text-3xl font-black text-foreground">
-                  {quizzes.length}
-                </div>
-                <div className="mt-1 text-[11px] text-muted-foreground">
-                  BCS, Cadet &amp; Custom Packs
-                </div>
+                <div className="staff-metric-value">{quizzes.length}</div>
+                <div className="staff-metric-hint">Model tests &amp; custom packs</div>
               </div>
 
-              <div className="bento-card p-5 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-muted-foreground uppercase">
-                    500+ Seat Engine
-                  </span>
-                  <Sparkles className="h-4 w-4 text-amber-500" />
+              <div className="staff-metric staff-metric-amber">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="staff-metric-label">Seat engine</span>
+                  <span className="staff-metric-icon"><Sparkles className="h-4 w-4" /></span>
                 </div>
-                <div className="mt-2 font-mono text-2xl font-black text-emerald-600 dark:text-emerald-400">
-                  DELTA READY
-                </div>
-                <div className="mt-1 text-[11px] text-muted-foreground">
-                  Server-Authoritative Sync Active
-                </div>
+                <div className="staff-metric-value !text-xl text-emerald-600 dark:text-emerald-400">DELTA</div>
+                <div className="staff-metric-hint">Server-authoritative sync</div>
               </div>
             </div>
 
             {/* Active Live Exam Rooms Strip */}
-            <div className="rounded-3xl border border-border bg-card p-5 shadow-sm space-y-3">
+            <div className="staff-panel shadow-sm space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Radio
@@ -1071,11 +1047,10 @@ function DashboardPage() {
                     Live Examination Rooms ({activeRooms.length} Active)
                   </h2>
                 </div>
-                <button
-                  type="button"
+                <button type="button"
                   onClick={refreshActiveRooms}
                   disabled={loadingRooms}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-1.5 text-[11px] font-bold text-foreground hover:bg-accent transition"
+                  className="staff-row-card"
                 >
                   <RefreshCw className={`h-3 w-3 ${loadingRooms ? "animate-spin" : ""}`} />
                   <span>Refresh</span>
@@ -1142,7 +1117,7 @@ function DashboardPage() {
 
             {/* Quick Actions Matrix */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bento-card p-6 shadow-sm space-y-3">
+              <div className="staff-panel space-y-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                   <MapPin className="h-5 w-5" />
                 </div>
@@ -1161,7 +1136,7 @@ function DashboardPage() {
                 </button>
               </div>
 
-              <div className="bento-card p-6 shadow-sm space-y-3">
+              <div className="staff-panel space-y-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600">
                   <Play className="h-5 w-5" />
                 </div>
@@ -1181,7 +1156,7 @@ function DashboardPage() {
                 </Link>
               </div>
 
-              <div className="bento-card p-6 shadow-sm space-y-3">
+              <div className="staff-panel space-y-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600">
                   <Printer className="h-5 w-5" />
                 </div>
@@ -1207,7 +1182,7 @@ function DashboardPage() {
         {activeTab === "roster" && (
           <div className="space-y-6 animate-in fade-in">
             {/* Regions Command Strip */}
-            <div className="rounded-3xl border border-border bg-card p-5 sm:p-6 shadow-sm space-y-4">
+            <div className="staff-panel shadow-sm space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h2 className="font-display text-lg font-bold text-foreground flex items-center gap-2">
@@ -1230,7 +1205,7 @@ function DashboardPage() {
                     <span>Add New Region</span>
                   </button>
                 ) : (
-                  <span className="rounded-xl border border-border bg-background px-3 py-1.5 text-[11px] font-semibold text-muted-foreground">
+                  <span className="staff-row-card">
                     Regions managed by Super Admin
                   </span>
                 )}
@@ -1316,7 +1291,7 @@ function DashboardPage() {
                   value={rosterSearchQuery}
                   onChange={(e) => setRosterSearchQuery(e.target.value)}
                   placeholder="Search candidate by Name, Roll Number, or Mobile Number..."
-                  className="w-full rounded-2xl border border-border bg-card pl-10 pr-4 py-2.5 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                  className="w-full staff-row-card pl-10 pr-4 py-2.5 text-xs font-semibold text-foreground outline-none focus:border-primary"
                 />
               </div>
 
@@ -1324,13 +1299,13 @@ function DashboardPage() {
                 <button
                   type="button"
                   onClick={handleExportCsv}
-                  className="inline-flex items-center gap-1.5 rounded-2xl border border-border bg-card px-3.5 py-2 text-xs font-bold text-foreground hover:bg-accent transition"
+                  className="inline-flex items-center gap-1.5 staff-row-card px-3.5 py-2 text-xs font-bold text-foreground hover:bg-accent transition"
                 >
                   <Download className="h-4 w-4 text-primary" />
                   <span>Export CSV ({filteredRoster.length})</span>
                 </button>
 
-                <label className="inline-flex items-center gap-1.5 rounded-2xl border border-border bg-card px-3.5 py-2 text-xs font-bold text-foreground hover:bg-accent transition cursor-pointer">
+                <label className="inline-flex items-center gap-1.5 staff-row-card px-3.5 py-2 text-xs font-bold text-foreground hover:bg-accent transition cursor-pointer">
                   <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
                   <span>Bulk Import CSV (500+)</span>
                   <input type="file" accept=".csv" onChange={handleImportCsv} className="hidden" />
@@ -1352,7 +1327,7 @@ function DashboardPage() {
             </div>
 
             {/* Roster Table */}
-            <div className="overflow-x-auto rounded-3xl border border-border bg-card shadow-sm">
+            <div className="overflow-x-auto staff-panel shadow-sm">
               <table className="w-full border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-border bg-muted/40 text-left font-display">
@@ -1414,7 +1389,7 @@ function DashboardPage() {
             {/* Add Region Modal */}
             {showAddRegion && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in">
-                <div className="max-w-md w-full rounded-3xl border border-border bg-card p-6 sm:p-8 shadow-2xl space-y-4">
+                <div className="max-w-md w-full staff-panel sm:p-8 shadow-2xl space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="font-display text-lg font-bold text-foreground">
                       Add Examination Region / Range
@@ -1440,7 +1415,7 @@ function DashboardPage() {
                           value={newRegionCode}
                           onChange={(e) => setNewRegionCode(e.target.value.toUpperCase())}
                           placeholder="e.g. COM"
-                          className="w-full rounded-2xl border border-border bg-background px-3 py-2.5 font-mono text-xs font-bold text-foreground outline-none focus:border-primary"
+                          className="staff-input font-mono"
                         />
                       </div>
                       <div className="col-span-2">
@@ -1453,7 +1428,7 @@ function DashboardPage() {
                           value={newRegionNameEn}
                           onChange={(e) => setNewRegionNameEn(e.target.value)}
                           placeholder="e.g. Cumilla Range"
-                          className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                          className="staff-input"
                         />
                       </div>
                     </div>
@@ -1467,7 +1442,7 @@ function DashboardPage() {
                         value={newRegionNameBn}
                         onChange={(e) => setNewRegionNameBn(e.target.value)}
                         placeholder="যেমন: কুমিল্লা রেঞ্জ"
-                        className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                        className="staff-input"
                       />
                     </div>
 
@@ -1480,7 +1455,7 @@ function DashboardPage() {
                         value={newRegionCenter}
                         onChange={(e) => setNewRegionCenter(e.target.value)}
                         placeholder="e.g. Cumilla Regional Academy Hall"
-                        className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                        className="staff-input"
                       />
                     </div>
 
@@ -1498,7 +1473,7 @@ function DashboardPage() {
             {/* Add Candidate Modal */}
             {showAddStudent && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in">
-                <div className="max-w-md w-full rounded-3xl border border-border bg-card p-6 sm:p-8 shadow-2xl space-y-4">
+                <div className="max-w-md w-full staff-panel sm:p-8 shadow-2xl space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="font-display text-lg font-bold text-foreground">
                       Enroll Candidate to Regional Roster
@@ -1519,7 +1494,7 @@ function DashboardPage() {
                       <select
                         value={newStudentRegionId}
                         onChange={(e) => setNewStudentRegionId(e.target.value)}
-                        className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs font-bold text-foreground outline-none focus:border-primary"
+                        className="staff-input"
                       >
                         {regions.map((r) => (
                           <option key={r.id} value={r.id}>
@@ -1539,7 +1514,7 @@ function DashboardPage() {
                         value={newStudentName}
                         onChange={(e) => setNewStudentName(e.target.value)}
                         placeholder="e.g. Cadet Badhon Hossain"
-                        className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                        className="staff-input"
                       />
                     </div>
 
@@ -1554,7 +1529,7 @@ function DashboardPage() {
                           value={newStudentRoll}
                           onChange={(e) => setNewStudentRoll(e.target.value)}
                           placeholder="e.g. 2026-112"
-                          className="w-full rounded-2xl border border-border bg-background px-3.5 py-2.5 font-mono text-xs font-semibold text-foreground outline-none focus:border-primary"
+                          className="staff-input font-mono"
                         />
                       </div>
 
@@ -1568,7 +1543,7 @@ function DashboardPage() {
                           value={newStudentPhone}
                           onChange={(e) => setNewStudentPhone(e.target.value)}
                           placeholder="01711000112"
-                          className="w-full rounded-2xl border border-border bg-background px-3.5 py-2.5 font-mono text-xs font-semibold text-foreground outline-none focus:border-primary"
+                          className="staff-input font-mono"
                         />
                       </div>
                     </div>
@@ -1583,7 +1558,7 @@ function DashboardPage() {
                           value={newGuardianPhone}
                           onChange={(e) => setNewGuardianPhone(e.target.value)}
                           placeholder="01711000012"
-                          className="w-full rounded-2xl border border-border bg-background px-3.5 py-2.5 font-mono text-xs font-semibold text-foreground outline-none focus:border-primary"
+                          className="staff-input font-mono"
                         />
                       </div>
 
@@ -1596,7 +1571,7 @@ function DashboardPage() {
                           value={newStudentBatch}
                           onChange={(e) => setNewStudentBatch(e.target.value)}
                           placeholder="46th BCS Batch"
-                          className="w-full rounded-2xl border border-border bg-background px-3.5 py-2.5 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                          className="staff-input text-xs"
                         />
                       </div>
                     </div>
@@ -1748,7 +1723,7 @@ function DashboardPage() {
                   return (
                     <div
                       key={quiz.id}
-                      className="bento-card p-5 shadow-sm space-y-3 flex flex-col justify-between"
+                      className="staff-row-card flex flex-col justify-between space-y-3"
                     >
                       <div>
                         <div className="flex items-center justify-between gap-2">
@@ -1818,7 +1793,7 @@ function DashboardPage() {
                           <button
                             type="button"
                             onClick={() => handleLoadQuizIntoEditor(quiz, !canDeleteQuiz)}
-                            className="rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-bold text-foreground hover:bg-accent transition"
+                            className="staff-input"
                             title={
                               canDeleteQuiz
                                 ? "Edit Questions"
@@ -1830,7 +1805,7 @@ function DashboardPage() {
                           <button
                             type="button"
                             onClick={() => setSelectedQuizForOmr(quiz)}
-                            className="rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-bold text-foreground hover:bg-accent transition"
+                            className="staff-input"
                           >
                             OMR
                           </button>
@@ -1891,7 +1866,7 @@ function DashboardPage() {
               )}
             </div>
 
-            <form onSubmit={handleSaveQuiz} className="bento-card p-6 shadow-sm space-y-5">
+            <form onSubmit={handleSaveQuiz} className="staff-panel space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-bold text-muted-foreground mb-1">
@@ -1907,7 +1882,7 @@ function DashboardPage() {
                       const matched = courses.find((c) => c.id === cid);
                       if (matched) setNewQuizCategory(matched.categoryEn || "BCS / Job");
                     }}
-                    className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs sm:text-sm font-bold text-foreground outline-none focus:border-primary"
+                    className="staff-input sm:text-sm"
                   >
                     {(() => {
                       const opts = [...assignedCourses];
@@ -1939,7 +1914,7 @@ function DashboardPage() {
                       required
                       value={newQuizNumber}
                       onChange={(e) => setNewQuizNumber(Number(e.target.value) || 1)}
-                      className="w-full rounded-2xl border border-border bg-background px-3.5 py-2.5 font-mono text-xs sm:text-sm font-bold text-foreground outline-none focus:border-primary"
+                      className="staff-input font-mono sm:text-sm"
                     />
                   </div>
                 </div>
@@ -1953,7 +1928,7 @@ function DashboardPage() {
                     value={newQuizCategory}
                     onChange={(e) => setNewQuizCategory(e.target.value)}
                     placeholder="e.g. BCS Preliminary / Bank Job"
-                    className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs sm:text-sm font-semibold text-foreground outline-none focus:border-primary"
+                    className="staff-input sm:text-sm"
                   />
                 </div>
               </div>
@@ -1968,7 +1943,7 @@ function DashboardPage() {
                   value={newQuizTitle}
                   onChange={(e) => setNewQuizTitle(e.target.value)}
                   placeholder={`e.g. Quiz ${newQuizNumber}: Bangladesh Affairs & Constitutional Law`}
-                  className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs sm:text-sm font-semibold text-foreground outline-none focus:border-primary"
+                  className="staff-input sm:text-sm"
                 />
               </div>
 
@@ -2076,7 +2051,7 @@ function DashboardPage() {
                       value={studioPasteText}
                       onChange={(e) => setStudioPasteText(e.target.value)}
                       placeholder={`1. Question text?\nA. Option 1\nB. Option 2\nC. Option 3\nD. Option 4\nAnswer: B\nExplanation: Short explanation...`}
-                      className="w-full rounded-2xl border border-border bg-card p-3.5 text-xs sm:text-sm text-foreground outline-none focus:border-primary"
+                      className="w-full staff-row-card text-xs sm:text-sm text-foreground outline-none focus:border-primary"
                     />
                     <div className="flex flex-wrap items-center justify-end gap-2">
                       <button
@@ -2402,7 +2377,7 @@ function DashboardPage() {
                 <select
                   value={selectedSessionId}
                   onChange={(e) => setSelectedSessionId(e.target.value)}
-                  className="rounded-2xl border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                  className="staff-row-card px-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
                 >
                   <option value="all">
                     All Completed Assessments ({examResults.length} records)
@@ -2419,7 +2394,7 @@ function DashboardPage() {
                 <select
                   value={selectedResultsRegionId}
                   onChange={(e) => setSelectedResultsRegionId(e.target.value)}
-                  className="rounded-2xl border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                  className="staff-row-card px-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
                 >
                   <option value="all">All Regions</option>
                   {regions.map((r) => (
@@ -2431,7 +2406,7 @@ function DashboardPage() {
 
                 <button
                   onClick={() => setShowGazette(true)}
-                  className="inline-flex items-center gap-1.5 rounded-2xl border border-border bg-card px-4 py-2 text-xs font-bold text-foreground shadow-sm hover:bg-accent transition"
+                  className="inline-flex items-center gap-1.5 staff-row-card px-4 py-2 text-xs font-bold text-foreground shadow-sm hover:bg-accent transition"
                 >
                   <Printer className="h-3.5 w-3.5 text-primary" />
                   <span>Print Gazette</span>
@@ -2726,7 +2701,7 @@ function DashboardPage() {
 
             {/* Results Table */}
             {activeResults.length > 0 ? (
-              <div className="overflow-x-auto rounded-3xl border border-border bg-card shadow-sm">
+              <div className="overflow-x-auto staff-panel shadow-sm">
                 <table className="w-full border-collapse text-xs">
                   <thead>
                     <tr className="border-b border-border bg-muted/40 text-left font-display">
@@ -2855,7 +2830,7 @@ function DashboardPage() {
                 </table>
               </div>
             ) : (
-              <div className="rounded-3xl border border-border bg-card p-12 text-center shadow-sm space-y-4">
+              <div className="staff-panel p-12 text-center shadow-sm space-y-4">
                 <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary mx-auto">
                   <Trophy className="h-8 w-8" />
                 </div>
@@ -2893,7 +2868,7 @@ function DashboardPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {certificates.length > 0 ? (
                 certificates.map((cert) => (
-                  <div key={cert.id} className="bento-card p-6 shadow-sm space-y-3">
+                  <div key={cert.id} className="staff-panel space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="font-mono text-xs font-bold text-primary">
                         #{cert.certificateNumber}
@@ -2920,7 +2895,7 @@ function DashboardPage() {
                   </div>
                 ))
               ) : (
-                <div className="col-span-full rounded-3xl border border-border bg-card p-12 text-center shadow-sm space-y-3">
+                <div className="col-span-full staff-panel p-12 text-center shadow-sm space-y-3">
                   <Award className="h-12 w-12 text-muted-foreground mx-auto" />
                   <h3 className="font-display text-base font-bold text-foreground">
                     No Official Certificates Issued Yet
@@ -2945,7 +2920,7 @@ function DashboardPage() {
               Full audit trail of automated scorecard SMS messages transmitted via SMS gateway.
             </p>
 
-            <div className="overflow-x-auto rounded-3xl border border-border bg-card shadow-sm">
+            <div className="overflow-x-auto staff-panel shadow-sm">
               <table className="w-full border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-border bg-muted/40 text-left font-display">
@@ -3003,7 +2978,7 @@ function DashboardPage() {
               Manage your concurrent candidate capacity and view transaction receipts.
             </p>
 
-            <div className="bento-card p-6 shadow-sm flex flex-wrap items-center justify-between gap-4">
+            <div className="staff-panel flex flex-wrap items-center justify-between gap-4">
               <div>
                 <div className="text-xs font-bold text-primary font-mono uppercase">
                   CURRENT PLAN
@@ -3024,7 +2999,7 @@ function DashboardPage() {
               </Link>
             </div>
 
-            <div className="overflow-x-auto rounded-3xl border border-border bg-card shadow-sm">
+            <div className="overflow-x-auto staff-panel shadow-sm">
               <table className="w-full border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-border bg-muted/40 text-left font-display">
@@ -3104,7 +3079,7 @@ function DashboardPage() {
               </div>
             )}
 
-            <form onSubmit={handleSaveSettings} className="bento-card p-6 shadow-sm space-y-6">
+            <form onSubmit={handleSaveSettings} className="staff-panel space-y-6">
               <div className="space-y-4">
                 <h3 className="font-display text-base font-bold text-foreground flex items-center gap-2">
                   <KeyRound className="h-4 w-4 text-primary" />
@@ -3120,7 +3095,7 @@ function DashboardPage() {
                     value={geminiApiKey}
                     onChange={(e) => setGeminiApiKey(e.target.value)}
                     placeholder="AIzaSy..."
-                    className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 font-mono text-xs font-semibold text-foreground outline-none focus:border-primary"
+                    className="staff-input font-mono"
                   />
                 </div>
 
@@ -3133,7 +3108,7 @@ function DashboardPage() {
                     value={smsToken}
                     onChange={(e) => setSmsToken(e.target.value)}
                     placeholder="greenweb_token_..."
-                    className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 font-mono text-xs font-semibold text-foreground outline-none focus:border-primary"
+                    className="staff-input font-mono"
                   />
                 </div>
               </div>
@@ -3152,7 +3127,7 @@ function DashboardPage() {
                       </p>
                     </div>
 
-                    <label className="inline-flex items-center gap-2.5 cursor-pointer rounded-xl border border-border bg-background px-3.5 py-2 text-xs font-bold text-foreground">
+                    <label className="staff-input">
                       <input
                         type="checkbox"
                         checked={showPartnerLogo}
@@ -3173,7 +3148,7 @@ function DashboardPage() {
                         value={partnerName}
                         onChange={(e) => setPartnerName(e.target.value)}
                         placeholder="e.g. Dhaka University / Partner Academy"
-                        className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                        className="staff-input"
                       />
                     </div>
 
@@ -3190,7 +3165,7 @@ function DashboardPage() {
                             if (e.target.value.trim()) setShowPartnerLogo(true);
                           }}
                           placeholder="https://example.org/logo.png or upload image"
-                          className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 font-mono text-xs font-semibold text-foreground outline-none focus:border-primary"
+                          className="staff-input font-mono"
                         />
                         <label className="shrink-0 cursor-pointer inline-flex items-center gap-1.5 rounded-2xl border border-primary/40 bg-primary/10 px-3.5 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition">
                           <Upload className="h-3.5 w-3.5" />
@@ -3207,7 +3182,7 @@ function DashboardPage() {
                   </div>
 
                   {partnerLogoUrl && (
-                    <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-background/70 p-3.5">
+                    <div className="staff-row-card flex flex-wrap">
                       <div className="flex items-center gap-3">
                         <span className="text-[11px] font-mono font-bold uppercase text-muted-foreground">
                           Live Co-Brand Preview:
@@ -3260,7 +3235,7 @@ function DashboardPage() {
                       value={institutionNameInput}
                       onChange={(e) => setInstitutionNameInput(e.target.value)}
                       placeholder="Onnesha Assessment Arena"
-                      className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                      className="staff-input"
                     />
                   </div>
 
@@ -3273,7 +3248,7 @@ function DashboardPage() {
                       value={instructorNameInput}
                       onChange={(e) => setInstructorNameInput(e.target.value)}
                       placeholder="Chief Assessment Officer"
-                      className="w-full rounded-2xl border border-border bg-background px-4 py-2.5 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                      className="staff-input"
                     />
                   </div>
                 </div>
@@ -3289,7 +3264,7 @@ function DashboardPage() {
             </form>
 
             {/* Password Change Form */}
-            <form onSubmit={handleChangePassword} className="bento-card p-6 shadow-sm space-y-4">
+            <form onSubmit={handleChangePassword} className="staff-panel space-y-4">
               <h3 className="font-display text-base font-bold text-foreground flex items-center gap-2">
                 <Lock className="h-4 w-4 text-primary" />
                 <span>Security &amp; Password Update</span>
@@ -3318,7 +3293,7 @@ function DashboardPage() {
                     value={oldPassword}
                     onChange={(e) => setOldPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full rounded-2xl border border-border bg-background px-4 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                    className="staff-input"
                   />
                 </div>
 
@@ -3333,7 +3308,7 @@ function DashboardPage() {
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="Min. 6 chars"
-                    className="w-full rounded-2xl border border-border bg-background px-4 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                    className="staff-input"
                   />
                 </div>
 
@@ -3348,7 +3323,7 @@ function DashboardPage() {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Min. 6 chars"
-                    className="w-full rounded-2xl border border-border bg-background px-4 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                    className="staff-input"
                   />
                 </div>
               </div>

@@ -164,6 +164,317 @@
   }
 }
 
+/* Staff console surfaces (admin + instructor panels inside StaffShell) */
+@layer components {
+  .staff-surface {
+    --staff-radius: 1.35rem;
+    --staff-field-radius: 0.95rem;
+  }
+
+  .staff-panel {
+    border-radius: var(--staff-radius);
+    border: 1px solid color-mix(in oklch, var(--color-border) 88%, transparent);
+    background:
+      linear-gradient(180deg, color-mix(in oklch, var(--color-card) 92%, white) 0%, var(--color-card) 100%);
+    box-shadow: 0 1px 0 color-mix(in oklch, white 55%, transparent) inset, var(--shadow-tactical);
+    padding: 1.25rem;
+  }
+
+  @media (min-width: 640px) {
+    .staff-panel {
+      padding: 1.5rem;
+    }
+  }
+
+  .dark .staff-panel {
+    background: linear-gradient(180deg, color-mix(in oklch, var(--color-card) 88%, white) 0%, var(--color-card) 100%);
+    box-shadow: 0 1px 0 color-mix(in oklch, white 6%, transparent) inset, 0 18px 40px -28px rgb(0 0 0 / 0.55);
+  }
+
+  .staff-panel-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem 1rem;
+    margin-bottom: 1.15rem;
+    padding-bottom: 0.95rem;
+    border-bottom: 1px solid color-mix(in oklch, var(--color-border) 80%, transparent);
+  }
+
+  .staff-panel-title {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--color-foreground);
+    line-height: 1.25;
+  }
+
+  .staff-panel-desc {
+    font-size: 0.75rem;
+    color: var(--color-muted-foreground);
+    line-height: 1.45;
+    max-width: 42rem;
+  }
+
+  .staff-metric {
+    border-radius: 1.15rem;
+    border: 1px solid var(--color-border);
+    background: var(--color-card);
+    padding: 1rem 1.05rem;
+    text-align: left;
+    transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+  }
+
+  .staff-metric-clickable {
+    cursor: pointer;
+  }
+
+  .staff-metric-clickable:hover {
+    border-color: color-mix(in oklch, var(--color-primary) 45%, var(--color-border));
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-tactical);
+  }
+
+  .staff-metric-label {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-muted-foreground);
+  }
+
+  .staff-metric-icon {
+    color: var(--color-primary);
+  }
+
+  .staff-metric-amber .staff-metric-icon { color: oklch(0.7 0.15 75); }
+  .staff-metric-sky .staff-metric-icon { color: oklch(0.65 0.12 230); }
+  .staff-metric-emerald .staff-metric-icon { color: oklch(0.62 0.15 160); }
+  .staff-metric-rose .staff-metric-icon { color: oklch(0.62 0.18 25); }
+
+  .staff-metric-value {
+    margin-top: 0.4rem;
+    font-family: var(--font-mono);
+    font-size: 1.65rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    color: var(--color-foreground);
+  }
+
+  .staff-metric-hint {
+    margin-top: 0.35rem;
+    font-size: 0.6875rem;
+    color: var(--color-muted-foreground);
+  }
+
+  .staff-field {
+    display: block;
+  }
+
+  .staff-field > * + * {
+    margin-top: 0.4rem;
+  }
+
+  .staff-label {
+    display: block;
+    font-size: 0.6875rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-muted-foreground);
+  }
+
+  .staff-hint {
+    display: block;
+    font-size: 0.6875rem;
+    color: var(--color-muted-foreground);
+    line-height: 1.4;
+  }
+
+  .staff-input,
+  .staff-surface input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),
+  .staff-surface select,
+  .staff-surface textarea {
+    width: 100%;
+    border-radius: var(--staff-field-radius, 0.95rem);
+    border: 1px solid var(--color-border);
+    background: color-mix(in oklch, var(--color-background) 88%, var(--color-card));
+    padding: 0.7rem 0.9rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--color-foreground);
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  }
+
+  .staff-surface textarea {
+    min-height: 6rem;
+    resize: vertical;
+    line-height: 1.45;
+  }
+
+  .staff-surface input:not([type="checkbox"]):not([type="radio"]):focus,
+  .staff-surface select:focus,
+  .staff-surface textarea:focus,
+  .staff-input:focus {
+    border-color: color-mix(in oklch, var(--color-primary) 55%, var(--color-border));
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-primary) 18%, transparent);
+    background: var(--color-card);
+  }
+
+  .staff-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.65rem;
+    margin-bottom: 1rem;
+  }
+
+  .staff-table-wrap {
+    border-radius: 1.1rem;
+    border: 1px solid var(--color-border);
+    background: color-mix(in oklch, var(--color-background) 70%, var(--color-card));
+    overflow: hidden;
+  }
+
+  .staff-surface table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+  }
+
+  .staff-surface thead th {
+    background: color-mix(in oklch, var(--color-muted) 70%, transparent);
+    color: var(--color-muted-foreground);
+    font-size: 0.625rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-align: left;
+    padding: 0.75rem 0.9rem;
+    border-bottom: 1px solid var(--color-border);
+    white-space: nowrap;
+  }
+
+  .staff-surface tbody td {
+    padding: 0.85rem 0.9rem;
+    border-bottom: 1px solid color-mix(in oklch, var(--color-border) 75%, transparent);
+    vertical-align: middle;
+  }
+
+  .staff-surface tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .staff-surface tbody tr {
+    transition: background 0.15s ease;
+  }
+
+  .staff-surface tbody tr:hover {
+    background: color-mix(in oklch, var(--color-accent) 55%, transparent);
+  }
+
+  .staff-empty {
+    border-radius: 1.15rem;
+    border: 1px dashed color-mix(in oklch, var(--color-border) 90%, var(--color-primary));
+    background: color-mix(in oklch, var(--color-muted) 45%, transparent);
+    padding: 2rem 1.25rem;
+    text-align: center;
+  }
+
+  .staff-empty-title {
+    font-family: var(--font-display);
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: var(--color-foreground);
+  }
+
+  .staff-empty-desc {
+    margin-top: 0.35rem;
+    font-size: 0.75rem;
+    color: var(--color-muted-foreground);
+  }
+
+  .staff-row-card {
+    border-radius: 1.1rem;
+    border: 1px solid var(--color-border);
+    background: var(--color-card);
+    padding: 1rem 1.1rem;
+    transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+  }
+
+  .staff-row-card:hover {
+    border-color: color-mix(in oklch, var(--color-primary) 35%, var(--color-border));
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-tactical);
+  }
+
+  .staff-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 999px;
+    border: 1px solid var(--color-border);
+    background: color-mix(in oklch, var(--color-muted) 55%, transparent);
+    padding: 0.2rem 0.65rem;
+    font-size: 0.625rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-muted-foreground);
+  }
+
+  .staff-btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    border-radius: 0.9rem;
+    background: var(--color-primary);
+    color: var(--color-primary-foreground);
+    padding: 0.65rem 1rem;
+    font-size: 0.75rem;
+    font-weight: 800;
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+
+  .staff-btn-primary:hover {
+    background: color-mix(in oklch, var(--color-primary) 90%, black);
+  }
+
+  .staff-btn-primary:active {
+    transform: scale(0.98);
+  }
+
+  .staff-btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    border-radius: 0.9rem;
+    border: 1px solid var(--color-border);
+    background: var(--color-card);
+    color: var(--color-foreground);
+    padding: 0.65rem 0.9rem;
+    font-size: 0.75rem;
+    font-weight: 800;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+
+  .staff-btn-ghost:hover {
+    background: var(--color-accent);
+  }
+
+  .staff-section-gap {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+}
+
 @page {
   size: A4;
   margin: 12mm;
