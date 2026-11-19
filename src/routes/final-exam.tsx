@@ -113,7 +113,7 @@ function FinalExamPage() {
 
   useEffect(() => {
     if (phase !== "quiz" || !endsAt) return undefined;
-    const id = window.setInterval(() => setNowTick(Date.now()), 250);
+    const id = window.setInterval(() => setNowTick(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [phase, endsAt]);
 
@@ -126,22 +126,26 @@ function FinalExamPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timedOut, submitting, attemptId, phase]);
 
-  // Autosave answers every 8s while in quiz
+  const answersRef = React.useRef(answers);
+  answersRef.current = answers;
+
+  // Autosave answers every 12s while in quiz (ref avoids restarting on every answer change)
   useEffect(() => {
     if (phase !== "quiz" || !attemptId || !student?.rollNumber) return undefined;
+    const roll = student.rollNumber;
     const id = window.setInterval(() => {
       void serverSaveFinalQuizAnswers({
         data: {
           attemptId,
-          rollNumber: student.rollNumber,
-          answers,
+          rollNumber: roll,
+          answers: answersRef.current,
         },
       }).then((res) => {
         if (res.success) setSaveHint(lang === "bn" ? "সেভ হয়েছে" : "Saved");
       });
-    }, 8000);
+    }, 12_000);
     return () => window.clearInterval(id);
-  }, [phase, attemptId, student?.rollNumber, answers, lang]);
+  }, [phase, attemptId, student?.rollNumber, lang]);
 
   const questions: Question[] = quiz?.questions || [];
   const answeredCount = useMemo(

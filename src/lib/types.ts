@@ -660,5 +660,11 @@ export interface BrandingSettings {
   enforceFullscreenDefault?: boolean | undefined;
   blockCopyPasteDefault?: boolean | undefined;
   maxProctorViolationsDefault?: number | undefined;
+  /**
+   * Student Portal OTP channel.
+   * - email (default): students sign in with email + OTP only
+   * - mobile: students sign in with mobile + SMS OTP
+   */
+  portalAuthChannel?: "email" | "mobile" | undefined;
   updatedAt?: number | undefined;
 }

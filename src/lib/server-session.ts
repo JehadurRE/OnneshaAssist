@@ -36,6 +36,12 @@ import {
 } from "./lms-content";
 import { askCourseTutorViaGemini } from "./ai-tutor-core";
 import {
+  isValidPortalEmail,
+  normalizePortalEmail,
+  resolveResendApiKey,
+  sendPortalOtpEmail,
+} from "./email-otp";
+import {
   buildOriginalCompletionIndex,
   findCompletedMatchInIndex,
   getResultSubmittedAnswersCount,
@@ -259,13 +265,33 @@ const globalStore = globalThis as unknown as {
   __onneshaTmpSeq?: number;
   __onneshaShutdownHooked?: boolean;
   __onneshaPhoneOtps?: Record<string, PendingPhoneOtp>;
+  __onneshaEmailOtps?: Record<string, PendingPhoneOtp>;
   __onneshaAnchorCooldowns?: Record<string, number>;
 };
 
 const AUTH_COOKIE_NAME = "onnesha_sid";
+const STUDENT_PORTAL_COOKIE = "onnesha_student";
 
 async function getServerHelpers() {
   return await import("@tanstack/react-start/server");
+}
+
+async function getRosterStudentFromPortalCookie(
+  store: PersistentStoreData,
+): Promise<RosterStudent | null> {
+  try {
+    const { getCookie } = await getServerHelpers();
+    const token = getCookie(STUDENT_PORTAL_COOKIE);
+    if (!token) return null;
+    const { dataDir } = getStorePaths();
+    const secret = getServerSessionSecret(dataDir);
+    const verified = verifySessionToken(token, secret);
+    if (!verified?.uid || !String(verified.uid).startsWith("student:")) return null;
+    const studentId = String(verified.uid).slice("student:".length);
+    return store.roster.find((s) => s.id === studentId) || null;
+  } catch {
+    return null;
+  }
 }
 
 async function getActorFromRequest(): Promise<ManagedUser | null> {
@@ -413,6 +439,15 @@ export function mergeSeededStoreData<
   const seenRolls = new Set(roster.map((s) => normalizeRollToken(s.rollNumber)));
   for (const defStudent of SAMPLE_ROSTER) {
     const rollTok = normalizeRollToken(defStudent.rollNumber);
+    // Backfill missing portal email onto existing roster rows matched by roll.
+    if (rollTok && defStudent.email) {
+      const existingIdx = roster.findIndex(
+        (s) => normalizeRollToken(s.rollNumber) === rollTok && !(s.email || "").trim(),
+      );
+      if (existingIdx >= 0) {
+        roster[existingIdx] = { ...roster[existingIdx]!, email: defStudent.email };
+      }
+    }
     if (!seenIds.has(defStudent.id) && (!rollTok || !seenRolls.has(rollTok))) {
       roster.push(defStudent);
       seenIds.add(defStudent.id);
@@ -1071,10 +1106,11 @@ function scheduleDiskPersist() {
   }
   if (globalStore.__onneshaSaveTimer) return;
 
+  // Longer debounce under concurrent exam traffic — coalesces bursts into one write.
   globalStore.__onneshaSaveTimer = setTimeout(() => {
     globalStore.__onneshaSaveTimer = null;
     void flushStoreToDisk();
-  }, 350);
+  }, 800);
 }
 
 function toHostSessionView(session: ServerLiveSession): GameSession {
@@ -2315,6 +2351,274 @@ export const serverVerifyPhoneOtp = createServerFn({ method: "POST" })
     return {
       success: true,
       user: sanitizeUserForClient(found),
+    };
+  });
+
+function getPortalAuthChannel(store: PersistentStoreData): "email" | "mobile" {
+  return store.branding?.portalAuthChannel === "mobile" ? "mobile" : "email";
+}
+
+async function setStudentPortalCookieForRoster(student: RosterStudent): Promise<void> {
+  try {
+    const { setCookie } = await getServerHelpers();
+    const { dataDir } = getStorePaths();
+    const secret = getServerSessionSecret(dataDir);
+    const token = signSessionToken(
+      {
+        uid: `student:${student.id}`,
+        role: "candidate",
+        exp: Date.now() + 12 * 3600 * 1000,
+      },
+      secret,
+    );
+    setCookie(STUDENT_PORTAL_COOKIE, token, {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 12 * 3600,
+      secure: typeof process !== "undefined" && process.env?.["NODE_ENV"] === "production",
+    });
+  } catch {
+    // cookie optional outside HTTP
+  }
+}
+
+/** Public: which OTP channel the Student Portal uses (admin-configurable). */
+export const serverGetPortalAuthConfig = createServerFn({ method: "GET" }).handler(async () => {
+  const store = getStore();
+  const channel = getPortalAuthChannel(store);
+  return {
+    success: true as const,
+    channel,
+    emailConfigured: !!resolveResendApiKey(),
+    smsConfigured: !!(
+      typeof process !== "undefined" && process.env["GREENWEB_SMS_TOKEN"]?.trim()
+    ),
+  };
+});
+
+export const serverSetPortalAuthChannel = createServerFn({ method: "POST" })
+  .validator((data: { channel: "email" | "mobile" }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || actor.role !== "admin") {
+      return { success: false as const, error: "Super Admin authentication required." };
+    }
+    const store = getStore();
+    const channel = data.channel === "mobile" ? "mobile" : "email";
+    store.branding = mergeBrandingSettings(
+      { portalAuthChannel: channel, updatedAt: Date.now() },
+      store.branding,
+    );
+    scheduleDiskPersist();
+    return { success: true as const, channel };
+  });
+
+/** Student Portal OTP — email (default) or mobile when admin enables it. */
+export const serverRequestPortalOtp = createServerFn({ method: "POST" })
+  .validator((data: { email?: string | undefined; phone?: string | undefined }) => data)
+  .handler(async ({ data }) => {
+    const store = getStore();
+    const channel = getPortalAuthChannel(store);
+    const crypto = getNodeCrypto();
+    const otpCode = crypto
+      ? crypto.randomInt(100000, 1000000).toString()
+      : Math.floor(100000 + Math.random() * 900000).toString();
+    const now = Date.now();
+    const isProd = typeof process !== "undefined" && process.env["NODE_ENV"] === "production";
+
+    if (channel === "email") {
+      const email = normalizePortalEmail(data.email || "");
+      if (!isValidPortalEmail(email)) {
+        return { success: false as const, error: "Enter a valid email address." };
+      }
+      const onRoster = store.roster.find(
+        (s) => (s.email || "").trim().toLowerCase() === email,
+      );
+      if (!onRoster) {
+        return {
+          success: false as const,
+          error: "This email is not on the course roster. Ask your admin to add it.",
+        };
+      }
+      if (!globalStore.__onneshaEmailOtps) globalStore.__onneshaEmailOtps = {};
+      for (const [key, entry] of Object.entries(globalStore.__onneshaEmailOtps)) {
+        if (!entry || entry.expiresAt <= now) delete globalStore.__onneshaEmailOtps[key];
+      }
+      const existing = globalStore.__onneshaEmailOtps[email];
+      if (existing && now - existing.lastSentAt < 20_000) {
+        return {
+          success: false as const,
+          error: "Please wait a few seconds before requesting another OTP.",
+        };
+      }
+
+      const sent = await sendPortalOtpEmail({ to: email, code: otpCode });
+      if (!sent.ok) {
+        if (!isProd) {
+          globalStore.__onneshaEmailOtps[email] = {
+            code: otpCode,
+            expiresAt: now + 5 * 60 * 1000,
+            attempts: 0,
+            lastSentAt: now,
+          };
+          return { success: true as const, channel: "email" as const, devOtp: otpCode };
+        }
+        return { success: false as const, error: sent.error };
+      }
+      globalStore.__onneshaEmailOtps[email] = {
+        code: otpCode,
+        expiresAt: now + 5 * 60 * 1000,
+        attempts: 0,
+        lastSentAt: now,
+      };
+      return { success: true as const, channel: "email" as const };
+    }
+
+    // mobile channel
+    const cleanPhone = normalizeBdPhone(data.phone || "");
+    if (!/^01[3-9]\d{8}$/.test(cleanPhone)) {
+      return {
+        success: false as const,
+        error: "Enter a valid 11-digit Bangladeshi mobile (01XXXXXXXXX).",
+      };
+    }
+    const onRoster = store.roster.find(
+      (s) =>
+        normalizeBdPhone(s.phone || "") === cleanPhone ||
+        normalizeBdPhone(s.guardianPhone || "") === cleanPhone,
+    );
+    if (!onRoster) {
+      return {
+        success: false as const,
+        error: "This mobile is not on the course roster. Ask your admin to add it.",
+      };
+    }
+    if (!globalStore.__onneshaPhoneOtps) globalStore.__onneshaPhoneOtps = {};
+    const existingOtp = globalStore.__onneshaPhoneOtps[cleanPhone];
+    if (existingOtp && now - existingOtp.lastSentAt < 20_000) {
+      return {
+        success: false as const,
+        error: "Please wait a few seconds before requesting another OTP.",
+      };
+    }
+    const smsToken =
+      typeof process !== "undefined" ? process.env["GREENWEB_SMS_TOKEN"]?.trim() : undefined;
+    if (smsToken && smsToken.length > 5) {
+      try {
+        const message = `[Onnesha Arena] Portal code ${otpCode}. Valid 5 min.`;
+        const body = new URLSearchParams({ token: smsToken, to: cleanPhone, message });
+        const res = await fetch("https://api.greenweb.com.bd/api.php", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: body.toString(),
+        });
+        const text = await res.text().catch(() => "");
+        if (!res.ok || /^error/i.test(text.trim())) {
+          return { success: false as const, error: "SMS provider error while sending OTP." };
+        }
+        globalStore.__onneshaPhoneOtps[cleanPhone] = {
+          code: otpCode,
+          expiresAt: now + 5 * 60 * 1000,
+          attempts: 0,
+          lastSentAt: now,
+        };
+        return { success: true as const, channel: "mobile" as const };
+      } catch {
+        return { success: false as const, error: "Failed to reach SMS OTP gateway." };
+      }
+    }
+    if (isProd) {
+      return {
+        success: false as const,
+        error: "SMS OTP gateway (GREENWEB_SMS_TOKEN) is not configured.",
+      };
+    }
+    globalStore.__onneshaPhoneOtps[cleanPhone] = {
+      code: otpCode,
+      expiresAt: now + 5 * 60 * 1000,
+      attempts: 0,
+      lastSentAt: now,
+    };
+    return { success: true as const, channel: "mobile" as const, devOtp: otpCode };
+  });
+
+export const serverVerifyPortalOtp = createServerFn({ method: "POST" })
+  .validator(
+    (data: { email?: string | undefined; phone?: string | undefined; otp: string }) => data,
+  )
+  .handler(async ({ data }) => {
+    const store = getStore();
+    const channel = getPortalAuthChannel(store);
+    const otp = (data.otp || "").trim();
+    if (!/^\d{4,8}$/.test(otp)) {
+      return { success: false as const, error: "Enter the OTP code from your message." };
+    }
+
+    let student: RosterStudent | undefined;
+
+    if (channel === "email") {
+      const email = normalizePortalEmail(data.email || "");
+      const pending = globalStore.__onneshaEmailOtps?.[email];
+      if (!pending) {
+        return { success: false as const, error: "OTP not requested or expired." };
+      }
+      if (Date.now() > pending.expiresAt) {
+        delete globalStore.__onneshaEmailOtps?.[email];
+        return { success: false as const, error: "OTP expired. Request a new code." };
+      }
+      pending.attempts += 1;
+      if (pending.attempts > 5) {
+        delete globalStore.__onneshaEmailOtps?.[email];
+        return { success: false as const, error: "Too many invalid attempts. Request a new code." };
+      }
+      if (pending.code !== otp) {
+        return { success: false as const, error: "Invalid OTP verification code." };
+      }
+      delete globalStore.__onneshaEmailOtps?.[email];
+      student = store.roster.find((s) => (s.email || "").trim().toLowerCase() === email);
+    } else {
+      const cleanPhone = normalizeBdPhone(data.phone || "");
+      const pending = globalStore.__onneshaPhoneOtps?.[cleanPhone];
+      if (!pending) {
+        return { success: false as const, error: "OTP not requested or expired." };
+      }
+      if (Date.now() > pending.expiresAt) {
+        delete globalStore.__onneshaPhoneOtps?.[cleanPhone];
+        return { success: false as const, error: "OTP expired. Request a new code." };
+      }
+      pending.attempts += 1;
+      if (pending.attempts > 5) {
+        delete globalStore.__onneshaPhoneOtps?.[cleanPhone];
+        return { success: false as const, error: "Too many invalid attempts. Request a new code." };
+      }
+      if (pending.code !== otp) {
+        return { success: false as const, error: "Invalid OTP verification code." };
+      }
+      delete globalStore.__onneshaPhoneOtps?.[cleanPhone];
+      student = store.roster.find(
+        (s) =>
+          normalizeBdPhone(s.phone || "") === cleanPhone ||
+          normalizeBdPhone(s.guardianPhone || "") === cleanPhone,
+      );
+    }
+
+    if (!student) {
+      return { success: false as const, error: "Roster match failed after OTP." };
+    }
+    await setStudentPortalCookieForRoster(student);
+    return {
+      success: true as const,
+      channel,
+      student: {
+        id: student.id,
+        name: student.name,
+        rollNumber: student.rollNumber,
+        phone: student.phone,
+        email: student.email,
+        regionId: student.regionId,
+        regionName: student.regionName,
+      },
     };
   });
 
@@ -4917,8 +5221,6 @@ export const serverHostControl = createServerFn({ method: "POST" })
 // PRACTICAL EXAM + COURSE COMPLETION CERTIFICATE + STUDENT PORTAL
 // ============================================================================
 
-const STUDENT_PORTAL_COOKIE = "onnesha_student";
-
 function writePracticalFileToDisk(params: {
   examId: string;
   rollNumber: string;
@@ -5513,48 +5815,13 @@ export const serverGetStudentPortal = createServerFn({ method: "POST" })
     const store = getStore();
     ensureFinalPracticalSeeded(store);
     ensureLmsContentSeeded(store);
-    let student =
-      (data.query || "").trim().length >= 2
-        ? findRosterCandidate(store.roster, data.query!.trim())
-        : null;
-    if (!student && (data.rollNumber || "").trim() && (data.phone || "").trim()) {
-      student = matchRosterIdentity({
-        rollNumber: data.rollNumber || "",
-        phone: data.phone || "",
-        roster: store.roster,
-      });
-    }
-    if (!student && (data.phone || "").trim().length >= 6) {
-      student = findRosterCandidate(store.roster, data.phone!.trim()) || null;
-    }
+    // Portal requires OTP login cookie — no open phone/roll unlock.
+    const student = await getRosterStudentFromPortalCookie(store);
     if (!student) {
       return {
         success: false,
-        error: "Roster verification failed. Search with your registered mobile number.",
+        error: "Sign in with OTP first (email or mobile, per admin settings).",
       };
-    }
-
-    try {
-      const { setCookie } = await getServerHelpers();
-      const { dataDir } = getStorePaths();
-      const secret = getServerSessionSecret(dataDir);
-      const token = signSessionToken(
-        {
-          uid: `student:${student.id}`,
-          role: "candidate",
-          exp: Date.now() + 12 * 3600 * 1000,
-        },
-        secret,
-      );
-      setCookie(STUDENT_PORTAL_COOKIE, token, {
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        maxAge: 12 * 3600,
-        secure: typeof process !== "undefined" && process.env?.["NODE_ENV"] === "production",
-      });
-    } catch {
-      // cookie optional for portal payload
     }
 
     const course =

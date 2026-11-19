@@ -193,6 +193,7 @@ export const DEFAULT_BRANDING_SETTINGS: BrandingSettings = {
   defaultBlockCopyPaste: true,
   defaultMaxProctorViolations: 3,
   defaultPassThresholdPct: 50,
+  portalAuthChannel: "email",
 };
 
 function sanitizePartnerLogos(raw: CertificatePartnerLogo[] | undefined): CertificatePartnerLogo[] {
@@ -335,6 +336,8 @@ export function mergeBrandingSettings(
       100,
       50,
     ),
+    portalAuthChannel:
+      (next.portalAuthChannel ?? base.portalAuthChannel) === "mobile" ? "mobile" : "email",
     updatedAt: next.updatedAt ?? base.updatedAt,
   };
 }

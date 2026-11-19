@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { CertificateView } from "@/components/common/CertificateView";
@@ -7,8 +7,11 @@ import { useLanguage } from "@/lib/i18n";
 import {
   serverAskCourseTutor,
   serverClearStudentPortal,
+  serverGetPortalAuthConfig,
   serverGetStudentPortal,
+  serverRequestPortalOtp,
   serverSubmitPracticalWork,
+  serverVerifyPortalOtp,
 } from "@/lib/server-session";
 import type {
   CertificateData,
@@ -29,9 +32,9 @@ import {
   Loader2,
   Lock,
   LogOut,
+  Mail,
   MessageCircle,
   Phone,
-  Search,
   ShieldCheck,
   Sparkles,
   Upload,
@@ -100,9 +103,13 @@ type TaskDraft = {
 
 function StudentPortalPage() {
   const { lang } = useLanguage();
-  const [rollNumber, setRollNumber] = useState("");
+  const [authChannel, setAuthChannel] = useState<"email" | "mobile">("email");
+  const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [devOtpHint, setDevOtpHint] = useState<string | null>(null);
+  const [rollNumber, setRollNumber] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [portal, setPortal] = useState<PortalPayload | null>(null);
@@ -138,32 +145,105 @@ function StudentPortalPage() {
     setDrafts(next);
   };
 
-  const unlock = async (e: React.FormEvent) => {
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const cfg = await serverGetPortalAuthConfig();
+        if (!cancelled && cfg.success) setAuthChannel(cfg.channel);
+      } catch {
+        // default email
+      }
+      if (cancelled) return;
+      try {
+        const res = await serverGetStudentPortal({ data: {} });
+        if (!cancelled && res.success) {
+          setPortal(res);
+          setPhone(res.student?.phone || "");
+          setRollNumber(res.student?.rollNumber || "");
+          hydrateDrafts(
+            res.practicalExam as PracticalExam | undefined,
+            res.submission as PracticalSubmission | undefined,
+          );
+        }
+      } catch {
+        // not signed in yet
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const loadPortalAfterAuth = async () => {
+    const res = await serverGetStudentPortal({ data: {} });
+    if (!res.success) {
+      setPortal(null);
+      setError(res.error || "Could not open portal.");
+      return false;
+    }
+    setPortal(res);
+    setPhone(res.student?.phone || phone);
+    setRollNumber(res.student?.rollNumber || rollNumber);
+    hydrateDrafts(
+      res.practicalExam as PracticalExam | undefined,
+      res.submission as PracticalSubmission | undefined,
+    );
+    setPortalTab("overview");
+    return true;
+  };
+
+  const requestOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setNotice(null);
+    setDevOtpHint(null);
+    try {
+      const res = await serverRequestPortalOtp({
+        data:
+          authChannel === "email"
+            ? { email: email.trim() }
+            : { phone: phone.trim() },
+      });
+      if (!res.success) {
+        setError(res.error || "Could not send OTP.");
+        setOtpSent(false);
+        return;
+      }
+      setOtpSent(true);
+      setOtp("");
+      if ("devOtp" in res && res.devOtp) setDevOtpHint(String(res.devOtp));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "OTP request failed.");
+      setOtpSent(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     setNotice(null);
     try {
-      const q = searchQuery.trim() || phone.trim();
-      const res = await serverGetStudentPortal({
-        data: {
-          query: q || undefined,
-          rollNumber: rollNumber.trim() || undefined,
-          phone: phone.trim() || q || undefined,
-        },
+      const res = await serverVerifyPortalOtp({
+        data:
+          authChannel === "email"
+            ? { email: email.trim(), otp: otp.trim() }
+            : { phone: phone.trim(), otp: otp.trim() },
       });
       if (!res.success) {
-        setPortal(null);
-        setError(res.error || "Could not open portal.");
+        setError(res.error || "Invalid OTP.");
         return;
       }
-      setPortal(res);
-      setPhone(res.student?.phone || phone);
-      setRollNumber(res.student?.rollNumber || rollNumber);
-      hydrateDrafts(res.practicalExam as PracticalExam | undefined, res.submission as PracticalSubmission | undefined);
-      setPortalTab("overview");
+      if (res.student?.phone) setPhone(res.student.phone);
+      if (res.student?.rollNumber) setRollNumber(res.student.rollNumber);
+      if (res.student?.email) setEmail(res.student.email);
+      await loadPortalAfterAuth();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Portal unlock failed.");
+      setError(err instanceof Error ? err.message : "OTP verification failed.");
     } finally {
       setLoading(false);
     }
@@ -331,7 +411,7 @@ function StudentPortalPage() {
               <h1 className="font-display text-4xl font-black tracking-tight sm:text-5xl lg:text-[3.25rem] leading-[1.08]">
                 {lang === "bn" ? (
                   <>
-                    মোবাইল দিয়ে
+                    OTP দিয়ে
                     <span className="block text-emerald-600 dark:text-emerald-400">লার্নিং পোর্টাল</span>
                   </>
                 ) : (
@@ -343,8 +423,8 @@ function StudentPortalPage() {
               </h1>
               <p className="text-base text-muted-foreground leading-relaxed max-w-md">
                 {lang === "bn"
-                  ? "ম্যাটেরিয়াল, রেকর্ডিং, AI টিউটর, ফাইনাল পরীক্ষা ও প্রায়োগিক — এক জায়গায়।"
-                  : "Materials, recordings, AI tutor, final exam, and practical — in one place."}
+                  ? "ইমেইল OTP দিয়ে সাইন ইন করুন (অ্যাডমিন মোবাইল চালু করতে পারে)। ম্যাটেরিয়াল, AI টিউটর ও পরীক্ষা এক জায়গায়।"
+                  : "Sign in with email OTP (admin can switch to mobile). Materials, AI tutor, and exams in one place."}
               </p>
               <ul className="grid gap-3 sm:grid-cols-3 text-xs font-semibold text-muted-foreground">
                 {[
@@ -364,7 +444,7 @@ function StudentPortalPage() {
             </div>
 
             <form
-              onSubmit={unlock}
+              onSubmit={otpSent ? verifyOtp : requestOtp}
               className="w-full max-w-md shrink-0 rounded-[1.75rem] border border-emerald-500/25 bg-card/95 p-6 sm:p-8 shadow-[0_24px_80px_-32px_rgba(16,185,129,0.55)] backdrop-blur space-y-5"
             >
               <div className="space-y-1">
@@ -372,36 +452,90 @@ function StudentPortalPage() {
                   <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
                     <Lock className="h-4 w-4" />
                   </span>
-                  {lang === "bn" ? "রোস্টার যাচাই" : "Roster verification"}
+                  {lang === "bn" ? "OTP লগইন" : "OTP sign-in"}
                 </div>
                 <p className="text-xs text-muted-foreground pl-11">
-                  {lang === "bn"
-                    ? "কুইজের মতো — নিবন্ধিত মোবাইল দিয়ে সার্চ করুন, নাম অটো আসবে।"
-                    : "Same as quiz — search your registered mobile; name auto-fills."}
+                  {authChannel === "email"
+                    ? lang === "bn"
+                      ? "রোস্টারে থাকা ইমেইলে OTP যাবে — কোড দিয়ে পোর্টাল খুলুন।"
+                      : "OTP goes to your roster email — enter the code to open the portal."
+                    : lang === "bn"
+                      ? "রোস্টারে থাকা মোবাইলে SMS OTP যাবে।"
+                      : "SMS OTP goes to your roster mobile number."}
                 </p>
               </div>
 
-              <label className="block space-y-1.5">
-                <span className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
-                  {lang === "bn" ? "মোবাইল / রোল সার্চ" : "Mobile / roll search"}
-                </span>
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              {authChannel === "email" ? (
+                <label className="block space-y-1.5">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                    {lang === "bn" ? "ইমেইল" : "Email"}
+                  </span>
+                  <div className="relative">
+                    <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      value={email}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setOtpSent(false);
+                        setDevOtpHint(null);
+                      }}
+                      className="w-full rounded-2xl border border-border bg-background py-3.5 pl-10 pr-4 text-sm font-semibold outline-none ring-emerald-500/30 focus:border-emerald-500 focus:ring-4"
+                      placeholder="you@example.com"
+                      type="email"
+                      autoComplete="email"
+                      autoFocus
+                      required
+                      disabled={otpSent && loading}
+                    />
+                  </div>
+                </label>
+              ) : (
+                <label className="block space-y-1.5">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                    {lang === "bn" ? "মোবাইল" : "Mobile"}
+                  </span>
+                  <div className="relative">
+                    <Phone className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      value={phone}
+                      onChange={(e) => {
+                        setPhone(e.target.value);
+                        setOtpSent(false);
+                        setDevOtpHint(null);
+                      }}
+                      className="w-full rounded-2xl border border-border bg-background py-3.5 pl-10 pr-4 text-sm font-semibold outline-none ring-emerald-500/30 focus:border-emerald-500 focus:ring-4 font-mono"
+                      placeholder="01XXXXXXXXX"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      autoFocus
+                      required
+                    />
+                  </div>
+                </label>
+              )}
+
+              {otpSent && (
+                <label className="block space-y-1.5">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                    OTP
+                  </span>
                   <input
-                    value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value);
-                      setPhone(e.target.value);
-                    }}
-                    className="w-full rounded-2xl border border-border bg-background py-3.5 pl-10 pr-4 text-sm font-semibold outline-none ring-emerald-500/30 focus:border-emerald-500 focus:ring-4 font-mono"
-                    placeholder="01XXXXXXXXX"
-                    inputMode="tel"
-                    autoComplete="tel"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                    className="w-full rounded-2xl border border-border bg-background py-3.5 px-4 text-center text-lg font-mono font-black tracking-[0.35em] outline-none ring-emerald-500/30 focus:border-emerald-500 focus:ring-4"
+                    placeholder="••••••"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
                     autoFocus
                     required
                   />
-                </div>
-              </label>
+                  {devOtpHint && (
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300 font-semibold">
+                      Dev OTP: {devOtpHint}
+                    </p>
+                  )}
+                </label>
+              )}
 
               {error && (
                 <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive">
@@ -415,11 +549,35 @@ function StudentPortalPage() {
                 className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3.5 text-sm font-black text-white shadow-lg shadow-emerald-600/25 hover:bg-emerald-500 disabled:opacity-60 transition"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                {lang === "bn" ? "পোর্টাল খুলুন" : "Open my portal"}
+                {otpSent
+                  ? lang === "bn"
+                    ? "OTP দিয়ে লগইন"
+                    : "Verify & open portal"
+                  : lang === "bn"
+                    ? "OTP পাঠান"
+                    : "Send OTP"}
               </button>
 
+              {otpSent && (
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => {
+                    setOtpSent(false);
+                    setOtp("");
+                    setDevOtpHint(null);
+                    setError(null);
+                  }}
+                  className="w-full text-center text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+                >
+                  {lang === "bn" ? "ইমেইল / নম্বর বদলান" : "Change email / number"}
+                </button>
+              )}
+
               <p className="text-center text-[11px] text-muted-foreground">
-                {lang === "bn" ? "সমস্যা হলে প্রশিক্ষক বা অ্যাডমিনের সাথে যোগাযোগ করুন।" : "Need help? Ask your instructor or admin."}
+                {lang === "bn"
+                  ? "ইমেইল রোস্টারে না থাকলে অ্যাডমিনকে বলুন যোগ করতে।"
+                  : "If your email is not on the roster, ask admin to add it."}
               </p>
             </form>
           </div>

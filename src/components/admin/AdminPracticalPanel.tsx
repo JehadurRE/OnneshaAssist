@@ -184,7 +184,7 @@ export function AdminPracticalPanel(props: {
     if (!exam || (exam.status !== "open" && exam.status !== "scheduled")) return undefined;
     const id = window.setInterval(() => {
       void refreshDesk();
-    }, 5000);
+    }, 12_000);
     return () => window.clearInterval(id);
   }, [exam?.id, exam?.status]);
 
@@ -749,7 +749,7 @@ export function AdminPracticalPanel(props: {
                   <tr>
                     <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
                       No quiz attempts yet. After you open the window, students joining with PIN +
-                      roll + mobile appear here (auto-refresh every 5s).
+                      roll + mobile appear here (auto-refresh every 12s).
                     </td>
                   </tr>
                 ) : (

@@ -216,6 +216,7 @@ function SuperAdminPage() {
   const [stdRoll, setStdRoll] = useState("");
   const [stdName, setStdName] = useState("");
   const [stdPhone, setStdPhone] = useState("");
+  const [stdEmail, setStdEmail] = useState("");
   const [stdRegionId, setStdRegionId] = useState("reg-dhaka");
   const [stdBatch, setStdBatch] = useState("46th BCS & Cadet Batch");
   const [rosterRegionFilter, setRosterRegionFilter] = useState("all");
@@ -694,11 +695,17 @@ function SuperAdminPage() {
   const handleAddStudent = (e: React.FormEvent) => {
     e.preventDefault();
     if (!stdRoll.trim() || !stdName.trim()) return;
+    const email = stdEmail.trim().toLowerCase();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showNotice("Enter a valid student email for portal OTP login.");
+      return;
+    }
     const reg = regions.find((r) => r.id === stdRegionId);
     db.addStudentToRoster({
       rollNumber: stdRoll.trim(),
       name: stdName.trim(),
       phone: stdPhone.trim(),
+      email: email || undefined,
       regionId: stdRegionId,
       regionName: reg?.nameEn || "Dhaka Range",
       batch: stdBatch.trim(),
@@ -706,6 +713,7 @@ function SuperAdminPage() {
     setStdRoll("");
     setStdName("");
     setStdPhone("");
+    setStdEmail("");
     refreshAll();
     showNotice(`Enrolled candidate ${stdName} (${stdRoll}) into ${reg?.nameEn || "Dhaka Range"}.`);
   };
@@ -884,7 +892,8 @@ function SuperAdminPage() {
       !q ||
       s.name.toLowerCase().includes(q) ||
       s.rollNumber.toLowerCase().includes(q) ||
-      (s.phone || "").includes(q);
+      (s.phone || "").includes(q) ||
+      (s.email || "").toLowerCase().includes(q);
     return regionOk && searchOk;
   });
 
@@ -1930,6 +1939,13 @@ function SuperAdminPage() {
                     />
                   </div>
                   <input
+                    type="email"
+                    placeholder="Email (portal OTP login)"
+                    value={stdEmail}
+                    onChange={(e) => setStdEmail(e.target.value)}
+                    className="staff-input text-xs font-semibold"
+                  />
+                  <input
                     type="text"
                     required
                     placeholder="Candidate Full Name"
@@ -1993,7 +2009,7 @@ function SuperAdminPage() {
                     <tr>
                       <th className="p-3">Roll ID</th>
                       <th className="p-3">Candidate Name</th>
-                      <th className="p-3">Mobile Number</th>
+                      <th className="p-3">Email / Mobile</th>
                       <th className="p-3">Region Range</th>
                       <th className="p-3 text-right">Action</th>
                     </tr>
@@ -2003,8 +2019,11 @@ function SuperAdminPage() {
                       <tr key={s.id} className="hover:bg-muted/30">
                         <td className="p-3 font-mono font-bold text-primary">{s.rollNumber}</td>
                         <td className="p-3 font-bold text-foreground">{s.name}</td>
-                        <td className="p-3 font-mono text-muted-foreground">
-                          {s.phone || s.guardianPhone || "—"}
+                        <td className="p-3 text-muted-foreground">
+                          <div className="font-mono text-[11px]">{s.email || "—"}</div>
+                          <div className="font-mono text-[10px] opacity-80">
+                            {s.phone || s.guardianPhone || "—"}
+                          </div>
                         </td>
                         <td className="p-3">
                           <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold text-primary">
@@ -2057,6 +2076,44 @@ function SuperAdminPage() {
                   <ShieldAlert className="h-5 w-5 text-primary" />
                   <span>Global Anti-Cheat Screen Lock Policy</span>
                 </h3>
+
+                <div className="staff-row-card">
+                  <div className="text-xs font-black uppercase tracking-wider text-primary">
+                    Student Portal Login (OTP)
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Default is email OTP. Turn on mobile only when SMS (GREENWEB) is ready. Students
+                    have no password login — roster email/mobile + OTP only.
+                  </p>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setBranding({ ...branding, portalAuthChannel: "email" })
+                      }
+                      className={`rounded-xl px-3 py-2 text-xs font-bold border ${
+                        (branding.portalAuthChannel || "email") === "email"
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground hover:bg-muted/40"
+                      }`}
+                    >
+                      Email OTP (default)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setBranding({ ...branding, portalAuthChannel: "mobile" })
+                      }
+                      className={`rounded-xl px-3 py-2 text-xs font-bold border ${
+                        branding.portalAuthChannel === "mobile"
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground hover:bg-muted/40"
+                      }`}
+                    >
+                      Mobile SMS OTP
+                    </button>
+                  </div>
+                </div>
 
                 {/* Anti-Cheat Controls */}
                 <div className="staff-row-card">
