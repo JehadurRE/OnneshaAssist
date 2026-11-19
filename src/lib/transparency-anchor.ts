@@ -1,5 +1,10 @@
+import { Buffer as NodeBuffer } from "buffer";
 import { CertificateData, LedgerOtsCheckpoint } from "./types";
 import { CertificateSigningKeys, getNodeCrypto, getNodeFsSafe } from "./server-security";
+
+// Browser bundles that pull this module need a Buffer polyfill before module-level constants run.
+const Buffer = (globalThis as typeof globalThis & { Buffer?: typeof NodeBuffer }).Buffer ?? NodeBuffer;
+(globalThis as typeof globalThis & { Buffer: typeof NodeBuffer }).Buffer = Buffer;
 
 // ============================================================================
 // 1. W3C DID:WEB & VERIFIABLE CREDENTIALS (Ed25519 / Multikey)
