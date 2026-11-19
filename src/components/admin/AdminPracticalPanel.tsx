@@ -5,6 +5,7 @@ import {
   serverGetBootstrapData,
   serverGradePracticalSubmission,
   serverIssueCourseCertificate,
+  serverOpenFinalExamWindow,
   serverReturnPracticalForResubmit,
   serverSaveCourseRequirement,
   serverSavePracticalExam,
@@ -21,15 +22,21 @@ import type {
   PracticalTask,
   Quiz,
 } from "@/lib/types";
-import { buildDefaultCourseRequirement, buildDefaultFinalPracticalExam } from "@/lib/practical-exam";
+import {
+  buildDefaultCourseRequirement,
+  buildDefaultFinalPracticalExam,
+  generateFinalExamJoinPin,
+} from "@/lib/practical-exam";
 import {
   Award,
   ClipboardCheck,
+  KeyRound,
   Loader2,
   Plus,
   RefreshCw,
   RotateCcw,
   Save,
+  Timer,
   Trash2,
 } from "lucide-react";
 
@@ -411,19 +418,66 @@ export function AdminPracticalPanel(props: {
     <div className="space-y-6 staff-surface">
       <div className="staff-panel-header !border-0 !pb-0 !mb-0">
         <div className="min-w-0 space-y-1">
-          <h2 className="staff-panel-title">Final Practical & Course Certificates</h2>
+          <h2 className="staff-panel-title">Final Exam — Timed Quiz + Capstone</h2>
           <p className="staff-panel-desc">
-            Configure the Final Practical window, tasks, and course-completion policy. Candidates
-            submit via <span className="font-mono">/portal</span>.
+            Open a scheduled PIN window. Candidates join <span className="font-mono">/final-exam</span>{" "}
+            for a single overall MCQ countdown (not per-question), then submit the 40-mark package on
+            portal. Total 70 marks.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void refresh()}
-          className="staff-btn-ghost"
-        >
-          <RefreshCw className="h-3.5 w-3.5" /> Refresh
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {exam && (
+            <button
+              type="button"
+              disabled={busyId === "open-final"}
+              onClick={async () => {
+                setBusyId("open-final");
+                try {
+                  const mins = Number(
+                    window.prompt("Quiz duration in minutes (overall timer)?", String(exam.quizDurationMinutes || 10)),
+                  );
+                  const hours = Number(
+                    window.prompt("Keep Final Exam window open for how many hours?", "3"),
+                  );
+                  const res = await serverOpenFinalExamWindow({
+                    data: {
+                      examId: exam.id,
+                      quizDurationMinutes: Number.isFinite(mins) ? mins : 10,
+                      durationHours: Number.isFinite(hours) ? hours : 3,
+                      regeneratePin: !exam.joinPin,
+                    },
+                  });
+                  setNotice(
+                    res.success
+                      ? `Final open · PIN ${res.exam?.joinPin} · quiz ${res.exam?.quizDurationMinutes}m · closes ${res.exam?.closesAt ? new Date(res.exam.closesAt).toLocaleString() : "—"}`
+                      : res.error || "Open failed",
+                  );
+                  if (res.success && res.exam) {
+                    setExams((prev) => prev.map((e) => (e.id === res.exam!.id ? res.exam! : e)));
+                  }
+                  await refresh();
+                } finally {
+                  setBusyId(null);
+                }
+              }}
+              className="staff-btn-primary"
+            >
+              {busyId === "open-final" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Timer className="h-3.5 w-3.5" />
+              )}
+              Open Final Exam
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            className="staff-btn-ghost"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Refresh
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
@@ -558,6 +612,47 @@ export function AdminPracticalPanel(props: {
                     </option>
                   ))}
                 </select>
+              </label>
+              <label className="font-semibold">
+                Shared Final Exam PIN
+                <div className="mt-1 flex gap-2">
+                  <input
+                    className="staff-input font-mono tracking-widest"
+                    value={exam.joinPin || ""}
+                    onChange={(e) =>
+                      patchExam({ joinPin: e.target.value.replace(/\D/g, "").slice(0, 8) })
+                    }
+                    placeholder="482910"
+                  />
+                  <button
+                    type="button"
+                    className="staff-btn-ghost shrink-0"
+                    onClick={() => patchExam({ joinPin: generateFinalExamJoinPin() })}
+                  >
+                    <KeyRound className="h-3.5 w-3.5" /> New
+                  </button>
+                </div>
+                <span className="mt-1 block font-normal text-[10px] text-muted-foreground">
+                  Candidates join at /final-exam with this PIN (same for everyone).
+                </span>
+              </label>
+              <label className="font-semibold">
+                Quiz duration (minutes, overall)
+                <input
+                  type="number"
+                  min={1}
+                  max={180}
+                  className="mt-1 staff-input"
+                  value={exam.quizDurationMinutes ?? 10}
+                  onChange={(e) =>
+                    patchExam({
+                      quizDurationMinutes: Math.max(1, Number(e.target.value) || 10),
+                    })
+                  }
+                />
+                <span className="mt-1 block font-normal text-[10px] text-muted-foreground">
+                  One countdown for the whole MCQ paper — not per-question timers.
+                </span>
               </label>
               <label className="font-semibold">
                 Opens (local time)

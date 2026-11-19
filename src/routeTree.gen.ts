@@ -14,6 +14,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as ContactSalesRouteImport } from './routes/contact-sales'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as DevelopersRouteImport } from './routes/developers'
+import { Route as FinalExamRouteImport } from './routes/final-exam'
 import { Route as PlayRouteImport } from './routes/play'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as PricingRouteImport } from './routes/pricing'
@@ -53,6 +54,11 @@ const DashboardRoute = DashboardRouteImport.update({
 const DevelopersRoute = DevelopersRouteImport.update({
   id: '/developers',
   path: '/developers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FinalExamRoute = FinalExamRouteImport.update({
+  id: '/final-exam',
+  path: '/final-exam',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PlayRoute = PlayRouteImport.update({
@@ -137,6 +143,7 @@ export interface FileRoutesByFullPath {
   '/contact-sales': typeof ContactSalesRoute
   '/dashboard': typeof DashboardRoute
   '/developers': typeof DevelopersRoute
+  '/final-exam': typeof FinalExamRoute
   '/play': typeof PlayRoute
   '/portal': typeof PortalRoute
   '/pricing': typeof PricingRoute
@@ -159,6 +166,7 @@ export interface FileRoutesByTo {
   '/contact-sales': typeof ContactSalesRoute
   '/dashboard': typeof DashboardRoute
   '/developers': typeof DevelopersRoute
+  '/final-exam': typeof FinalExamRoute
   '/play': typeof PlayRoute
   '/portal': typeof PortalRoute
   '/pricing': typeof PricingRoute
@@ -182,6 +190,7 @@ export interface FileRoutesById {
   '/contact-sales': typeof ContactSalesRoute
   '/dashboard': typeof DashboardRoute
   '/developers': typeof DevelopersRoute
+  '/final-exam': typeof FinalExamRoute
   '/play': typeof PlayRoute
   '/portal': typeof PortalRoute
   '/pricing': typeof PricingRoute
@@ -206,6 +215,7 @@ export interface FileRouteTypes {
     | '/contact-sales'
     | '/dashboard'
     | '/developers'
+    | '/final-exam'
     | '/play'
     | '/portal'
     | '/pricing'
@@ -228,6 +238,7 @@ export interface FileRouteTypes {
     | '/contact-sales'
     | '/dashboard'
     | '/developers'
+    | '/final-exam'
     | '/play'
     | '/portal'
     | '/pricing'
@@ -250,6 +261,7 @@ export interface FileRouteTypes {
     | '/contact-sales'
     | '/dashboard'
     | '/developers'
+    | '/final-exam'
     | '/play'
     | '/portal'
     | '/pricing'
@@ -273,6 +285,7 @@ export interface RootRouteChildren {
   ContactSalesRoute: typeof ContactSalesRoute
   DashboardRoute: typeof DashboardRoute
   DevelopersRoute: typeof DevelopersRoute
+  FinalExamRoute: typeof FinalExamRoute
   PlayRoute: typeof PlayRoute
   PortalRoute: typeof PortalRoute
   PricingRoute: typeof PricingRoute
@@ -325,6 +338,13 @@ declare module '@tanstack/react-router' {
       path: '/developers'
       fullPath: '/developers'
       preLoaderRoute: typeof DevelopersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/final-exam': {
+      id: '/final-exam'
+      path: '/final-exam'
+      fullPath: '/final-exam'
+      preLoaderRoute: typeof FinalExamRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/play': {
@@ -441,6 +461,7 @@ const rootRouteChildren: RootRouteChildren = {
   ContactSalesRoute: ContactSalesRoute,
   DashboardRoute: DashboardRoute,
   DevelopersRoute: DevelopersRoute,
+  FinalExamRoute: FinalExamRoute,
   PlayRoute: PlayRoute,
   PortalRoute: PortalRoute,
   PricingRoute: PricingRoute,
@@ -460,3 +481,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

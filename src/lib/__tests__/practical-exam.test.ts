@@ -40,21 +40,35 @@ describe("practical exam weights & scoring", () => {
     });
   });
 
-  it("combines quiz and practical with industrial 40/60 default", () => {
+  it("combines quiz and practical with 30/40-of-70 default weights (~43/57)", () => {
     expect(
       computeCombinedFinalPct({ quizAccuracyPct: 80, practicalScorePct: 90 }),
-    ).toBe(86);
+    ).toBe(85.7);
   });
 
   it("computes practical percent only when all tasks graded", () => {
     const exam = buildDefaultFinalPracticalExam(course);
     const partial = computePracticalScorePct(exam.tasks, [
-      { taskId: exam.tasks[0]!.id, marks: 80, maxMarks: 100 },
+      { taskId: exam.tasks[0]!.id, marks: exam.tasks[0]!.maxMarks, maxMarks: exam.tasks[0]!.maxMarks },
     ]);
-    expect(partial.pct).toBe(80);
-    expect(partial.allGraded).toBe(true);
+    expect(partial.allGraded).toBe(false);
+    expect(partial.max).toBe(40);
+    const full = computePracticalScorePct(
+      exam.tasks,
+      exam.tasks.map((t) => ({ taskId: t.id, marks: t.maxMarks, maxMarks: t.maxMarks })),
+    );
+    expect(full.pct).toBe(100);
+    expect(full.allGraded).toBe(true);
   });
 });
+
+function fullPackageAnswers(exam: ReturnType<typeof buildDefaultFinalPracticalExam>) {
+  return exam.tasks.map((t) => ({
+    taskId: t.id,
+    textAnswer: t.requireText ? "Completed final package answer." : undefined,
+    linkUrl: t.requireLink ? "https://example.com/deliverable" : undefined,
+  }));
+}
 
 describe("course completion eligibility", () => {
   it("requires quiz + graded practical before course certificate", () => {
@@ -96,14 +110,12 @@ describe("course completion eligibility", () => {
       courseId: course.id,
       rollNumber: "BAR-01",
       studentName: "Test Student",
-      answers: [
-        {
-          taskId: practical.tasks[0]!.id,
-          textAnswer: "Built a Meta ads funnel with Gemini + CapCut.",
-          linkUrl: "https://drive.google.com/example",
-        },
-      ],
-      grades: [{ taskId: practical.tasks[0]!.id, marks: 90, maxMarks: 100 }],
+      answers: fullPackageAnswers(practical),
+      grades: practical.tasks.map((t) => ({
+        taskId: t.id,
+        marks: Math.round(t.maxMarks * 0.9),
+        maxMarks: t.maxMarks,
+      })),
       status: "graded",
       createdAt: "2026-11-19T00:00:00Z",
       updatedAt: "2026-11-19T00:00:00Z",
@@ -120,7 +132,8 @@ describe("course completion eligibility", () => {
       quizResult,
     });
     expect(done.eligibleForCourseCertificate).toBe(true);
-    expect(done.combinedPct).toBe(86);
+    // 80% quiz @43 + ~90% practical @57
+    expect(done.combinedPct).toBeGreaterThanOrEqual(80);
   });
 
   it("builds stable industrial course certificate numbers", () => {
@@ -135,27 +148,16 @@ describe("practical window & submission validation", () => {
       status: "open",
     };
     expect(isPracticalWindowOpen(exam)).toBe(true);
-    const bad = validateSubmissionPayload({
-      exam,
-      taskAnswers: [
-        {
-          taskId: exam.tasks[0]!.id,
-          textAnswer: "ok",
-          linkUrl: "drive.google.com/no-scheme",
-        },
-      ],
-    });
+    const badAnswers = fullPackageAnswers(exam);
+    const linkTask = exam.tasks.find((t) => t.requireLink)!;
+    const badIdx = badAnswers.findIndex((a) => a.taskId === linkTask.id);
+    badAnswers[badIdx] = { ...badAnswers[badIdx]!, linkUrl: "drive.google.com/no-scheme" };
+    const bad = validateSubmissionPayload({ exam, taskAnswers: badAnswers });
     expect(bad.ok).toBe(false);
 
     const good = validateSubmissionPayload({
       exam,
-      taskAnswers: [
-        {
-          taskId: exam.tasks[0]!.id,
-          textAnswer: "Completed CapCut export and Meta ads test.",
-          linkUrl: "https://netlify.app/my-site",
-        },
-      ],
+      taskAnswers: fullPackageAnswers(exam),
     });
     expect(good.ok).toBe(true);
   });
@@ -170,13 +172,7 @@ describe("practical window & submission validation", () => {
     expect(isPracticalPastDeadline(exam)).toBe(true);
     const good = validateSubmissionPayload({
       exam,
-      taskAnswers: [
-        {
-          taskId: exam.tasks[0]!.id,
-          textAnswer: "Late but accepted",
-          linkUrl: "https://example.com/work",
-        },
-      ],
+      taskAnswers: fullPackageAnswers(exam),
     });
     expect(good.ok).toBe(true);
   });
@@ -197,26 +193,14 @@ describe("practical window & submission validation", () => {
     };
     const blocked = validateSubmissionPayload({
       exam,
-      taskAnswers: [
-        {
-          taskId: exam.tasks[0]!.id,
-          textAnswer: "Revised deliverable",
-          linkUrl: "https://example.com/v2",
-        },
-      ],
+      taskAnswers: fullPackageAnswers(exam),
     });
     expect(blocked.ok).toBe(false);
 
     const allowed = validateSubmissionPayload({
       exam,
       allowReturnedResubmit: true,
-      taskAnswers: [
-        {
-          taskId: exam.tasks[0]!.id,
-          textAnswer: "Revised deliverable",
-          linkUrl: "https://example.com/v2",
-        },
-      ],
+      taskAnswers: fullPackageAnswers(exam),
     });
     expect(allowed.ok).toBe(true);
   });

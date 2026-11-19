@@ -6,6 +6,7 @@ import {
   CourseCompletionRequirement,
   ExamResultRecord,
   ExamSessionRecord,
+  FinalExamAttempt,
   GameSession,
   GameSettings,
   LedgerOtsCheckpoint,
@@ -45,6 +46,12 @@ import {
 import {
   buildDefaultCourseRequirement,
   buildDefaultFinalPracticalExam,
+  FINAL_QUIZ_MARKS,
+  FINAL_TOTAL_MARKS,
+  generateFinalExamJoinPin,
+  marksFromPct,
+  shouldUpgradeFinalExamPackage,
+  upgradeFinalExamPackage,
   computeCombinedFinalPct,
   computePracticalScorePct,
   evaluateCourseCompletion,
@@ -61,6 +68,7 @@ import {
   normalizeBdPhone,
   normalizeRollToken,
   SANJIBON_COURSE,
+  SANJIBON_QUIZZES,
 } from "./sanjibon-seed-data";
 import {
   canActorMutateStoreAction,
@@ -162,12 +170,14 @@ interface PersistentStoreData {
   revokedCertificateArchive?: Record<string, CertificateData> | undefined;
   practicalExams?: PracticalExam[] | undefined;
   practicalSubmissions?: PracticalSubmission[] | undefined;
+  finalExamAttempts?: FinalExamAttempt[] | undefined;
   courseRequirements?: CourseCompletionRequirement[] | undefined;
   purgedSampleData?: boolean | undefined;
   purgedUnder50Initial?: boolean | undefined;
   purgedBcsDemoCourse?: boolean | undefined;
   purgedBcsDemoCourseV2?: boolean | undefined;
   seededFinalPractical?: boolean | undefined;
+  migratedFinalExamPackageV1?: boolean | undefined;
   migratedSanjibonS03V2?: boolean | undefined;
   migratedSanjibonS05V4?: boolean | undefined;
   autoIssueQuizCertificates?: boolean | undefined;
@@ -629,6 +639,7 @@ function loadInitialStore(): PersistentStoreData {
             revokedCertificateArchive: parsed.revokedCertificateArchive || {},
             practicalExams: parsed.practicalExams || [],
             practicalSubmissions: parsed.practicalSubmissions || [],
+            finalExamAttempts: parsed.finalExamAttempts || [],
             courseRequirements: parsed.courseRequirements || [],
             purgedSampleData: purged,
             purgedUnder50Initial: !!parsed.purgedUnder50Initial,
@@ -676,6 +687,7 @@ function loadInitialStore(): PersistentStoreData {
     revokedCertificateArchive: {},
     practicalExams: [],
     practicalSubmissions: [],
+    finalExamAttempts: [],
     courseRequirements: [],
     purgedSampleData: false,
     purgedUnder50Initial: true,
@@ -750,6 +762,7 @@ export function migratePurgeBcsDemoCourseInStore(store: PersistentStoreData): {
 export function ensureFinalPracticalSeeded(store: PersistentStoreData): boolean {
   if (!store.practicalExams) store.practicalExams = [];
   if (!store.practicalSubmissions) store.practicalSubmissions = [];
+  if (!store.finalExamAttempts) store.finalExamAttempts = [];
   if (!store.courseRequirements) store.courseRequirements = [];
 
   const mainCourse =
@@ -763,6 +776,14 @@ export function ensureFinalPracticalSeeded(store: PersistentStoreData): boolean 
   if (!store.courseRequirements.some((r) => r.courseId === mainCourse.id)) {
     store.courseRequirements.push(buildDefaultCourseRequirement(mainCourse.id));
     changed = true;
+  }
+  // Upgrade legacy single-task finals to timed PIN package (70 marks).
+  for (let i = 0; i < store.practicalExams.length; i++) {
+    const exam = store.practicalExams[i]!;
+    if (shouldUpgradeFinalExamPackage(exam)) {
+      store.practicalExams[i] = upgradeFinalExamPackage(exam);
+      changed = true;
+    }
   }
   return changed;
 }
@@ -5512,4 +5533,452 @@ export const serverGetStudentPortal = createServerFn({ method: "POST" })
       requirement,
       autoIssueQuizCertificates: store.autoIssueQuizCertificates === true,
     };
+  });
+
+// ============================================================================
+// TIMED FINAL EXAM (PIN join + overall countdown MCQ — not per-question)
+// ============================================================================
+
+function resolveQuizForFinalExam(store: PersistentStoreData, quizId: string | undefined): Quiz | undefined {
+  if (!quizId) return undefined;
+  const fromCustom = (store.customQuizzes || []).find((q) => q.id === quizId || q.slug === quizId);
+  if (fromCustom) return fromCustom;
+  return SANJIBON_QUIZZES.find((q) => q.id === quizId || q.slug === quizId);
+}
+
+function stripQuizForCandidate(quiz: Quiz): Quiz {
+  return {
+    ...quiz,
+    questions: (quiz.questions || []).map((q) => ({
+      ...q,
+      correctOptionIds: [],
+      acceptedAnswers: undefined,
+      explanationEn: undefined,
+      explanationBn: undefined,
+      options: (q.options || []).map((o) => ({
+        id: o.id,
+        textEn: o.textEn,
+        textBn: o.textBn,
+        // never leak isCorrect to candidates
+      })),
+    })),
+  };
+}
+
+function findFinalExamByPin(store: PersistentStoreData, pinRaw: string): PracticalExam | undefined {
+  const pin = String(pinRaw || "").replace(/\D/g, "").trim();
+  if (pin.length < 4) return undefined;
+  return (store.practicalExams || []).find((e) => (e.joinPin || "").replace(/\D/g, "") === pin);
+}
+
+function isFinalExamJoinWindowOpen(exam: PracticalExam, nowIso = new Date().toISOString()): boolean {
+  if (exam.status === "archived" || exam.status === "draft" || exam.status === "closed") return false;
+  if (exam.opensAt && nowIso < exam.opensAt) return false;
+  if (exam.closesAt && nowIso > exam.closesAt) return false;
+  return exam.status === "open" || exam.status === "scheduled";
+}
+
+export const serverLookupFinalExamByPin = createServerFn({ method: "POST" })
+  .validator((data: { pin: string }) => data)
+  .handler(async ({ data }) => {
+    const store = getStore();
+    ensureFinalPracticalSeeded(store);
+    const exam = findFinalExamByPin(store, data.pin);
+    if (!exam) return { success: false as const, error: "Invalid Final Exam PIN." };
+    const course = store.courses.find((c) => c.id === exam.courseId);
+    const quiz = resolveQuizForFinalExam(store, exam.linkedQuizId);
+    const nowIso = new Date().toISOString();
+    const windowOpen = isFinalExamJoinWindowOpen(exam, nowIso);
+    return {
+      success: true as const,
+      exam: {
+        id: exam.id,
+        courseId: exam.courseId,
+        titleEn: exam.titleEn,
+        titleBn: exam.titleBn,
+        descriptionEn: exam.descriptionEn,
+        descriptionBn: exam.descriptionBn,
+        joinPin: exam.joinPin,
+        linkedQuizId: exam.linkedQuizId,
+        quizDurationMinutes: exam.quizDurationMinutes || 10,
+        quizMaxMarks: exam.quizMaxMarks || FINAL_QUIZ_MARKS,
+        practicalMaxMarks: exam.practicalMaxMarks || 40,
+        totalMaxMarks: exam.totalMaxMarks || FINAL_TOTAL_MARKS,
+        status: exam.status,
+        opensAt: exam.opensAt,
+        closesAt: exam.closesAt,
+        tasks: exam.tasks,
+        passThresholdPct: exam.passThresholdPct,
+      },
+      course: course
+        ? { id: course.id, code: course.code, titleEn: course.titleEn, titleBn: course.titleBn }
+        : null,
+      quizMeta: quiz
+        ? {
+            id: quiz.id,
+            titleEn: quiz.titleEn,
+            titleBn: quiz.titleBn,
+            questionCount: quiz.questions?.length || 0,
+          }
+        : null,
+      windowOpen,
+      nowIso,
+    };
+  });
+
+export const serverJoinFinalExam = createServerFn({ method: "POST" })
+  .validator((data: { pin: string; rollNumber: string; phone: string }) => data)
+  .handler(async ({ data }) => {
+    const store = getStore();
+    ensureFinalPracticalSeeded(store);
+    const exam = findFinalExamByPin(store, data.pin);
+    if (!exam) return { success: false as const, error: "Invalid Final Exam PIN." };
+    if (!isFinalExamJoinWindowOpen(exam)) {
+      return { success: false as const, error: "Final Exam is outside the scheduled window." };
+    }
+    const student = matchRosterIdentity({
+      rollNumber: data.rollNumber,
+      phone: data.phone,
+      roster: store.roster,
+    });
+    if (!student) {
+      return { success: false as const, error: "Roll + mobile not found on roster." };
+    }
+    const quiz = resolveQuizForFinalExam(store, exam.linkedQuizId);
+    if (!quiz || !(quiz.questions || []).length) {
+      return { success: false as const, error: "Final quiz is not configured." };
+    }
+    if (!store.finalExamAttempts) store.finalExamAttempts = [];
+    const rollTok = normalizeRollToken(student.rollNumber);
+    const existing = store.finalExamAttempts.find(
+      (a) =>
+        a.practicalExamId === exam.id &&
+        normalizeRollToken(a.rollNumber) === rollTok &&
+        (a.status === "submitted" || a.status === "graded"),
+    );
+    const inProgress = store.finalExamAttempts.find(
+      (a) =>
+        a.practicalExamId === exam.id &&
+        normalizeRollToken(a.rollNumber) === rollTok &&
+        a.status === "in_progress" &&
+        a.endsAt > new Date().toISOString(),
+    );
+    const submission = (store.practicalSubmissions || []).find(
+      (s) =>
+        s.practicalExamId === exam.id && normalizeRollToken(s.rollNumber) === rollTok,
+    );
+    return {
+      success: true as const,
+      student: {
+        id: student.id,
+        name: student.name,
+        rollNumber: student.rollNumber,
+        phone: student.phone,
+        regionId: student.regionId,
+        regionName: student.regionName,
+      },
+      exam: {
+        id: exam.id,
+        courseId: exam.courseId,
+        titleEn: exam.titleEn,
+        titleBn: exam.titleBn,
+        descriptionEn: exam.descriptionEn,
+        descriptionBn: exam.descriptionBn,
+        joinPin: exam.joinPin,
+        quizDurationMinutes: exam.quizDurationMinutes || 10,
+        quizMaxMarks: exam.quizMaxMarks || FINAL_QUIZ_MARKS,
+        practicalMaxMarks: exam.practicalMaxMarks || 40,
+        totalMaxMarks: exam.totalMaxMarks || FINAL_TOTAL_MARKS,
+        opensAt: exam.opensAt,
+        closesAt: exam.closesAt,
+        status: exam.status,
+        tasks: exam.tasks,
+        maxFileBytes: exam.maxFileBytes,
+        allowedMimeTypes: exam.allowedMimeTypes,
+        passThresholdPct: exam.passThresholdPct,
+      },
+      quizMeta: {
+        id: quiz.id,
+        titleEn: quiz.titleEn,
+        titleBn: quiz.titleBn,
+        questionCount: quiz.questions.length,
+      },
+      quizAlreadySubmitted: !!existing,
+      priorAttempt: existing
+        ? {
+            accuracyPct: existing.accuracyPct,
+            quizMarks: existing.quizMarks,
+            quizMaxMarks: existing.quizMaxMarks,
+            submittedAt: existing.submittedAt,
+          }
+        : null,
+      inProgressAttempt: inProgress
+        ? { id: inProgress.id, endsAt: inProgress.endsAt, startedAt: inProgress.startedAt }
+        : null,
+      practicalSubmission: submission || null,
+    };
+  });
+
+export const serverStartFinalQuizAttempt = createServerFn({ method: "POST" })
+  .validator((data: { pin: string; rollNumber: string; phone: string }) => data)
+  .handler(async ({ data }) => {
+    const store = getStore();
+    ensureFinalPracticalSeeded(store);
+    const exam = findFinalExamByPin(store, data.pin);
+    if (!exam) return { success: false as const, error: "Invalid Final Exam PIN." };
+    if (!isFinalExamJoinWindowOpen(exam)) {
+      return { success: false as const, error: "Final Exam window is closed." };
+    }
+    const student = matchRosterIdentity({
+      rollNumber: data.rollNumber,
+      phone: data.phone,
+      roster: store.roster,
+    });
+    if (!student) return { success: false as const, error: "Roll + mobile not found on roster." };
+    const quiz = resolveQuizForFinalExam(store, exam.linkedQuizId);
+    if (!quiz?.questions?.length) {
+      return { success: false as const, error: "Final quiz is not configured." };
+    }
+    if (!store.finalExamAttempts) store.finalExamAttempts = [];
+    const rollTok = normalizeRollToken(student.rollNumber);
+    const already = store.finalExamAttempts.find(
+      (a) =>
+        a.practicalExamId === exam.id &&
+        normalizeRollToken(a.rollNumber) === rollTok &&
+        (a.status === "submitted" || a.status === "graded"),
+    );
+    if (already) {
+      return { success: false as const, error: "You already submitted the Final Quiz for this PIN." };
+    }
+    const live = store.finalExamAttempts.find(
+      (a) =>
+        a.practicalExamId === exam.id &&
+        normalizeRollToken(a.rollNumber) === rollTok &&
+        a.status === "in_progress",
+    );
+    const durationMin = Math.max(1, Math.min(180, exam.quizDurationMinutes || 10));
+    const now = Date.now();
+    if (live && new Date(live.endsAt).getTime() > now) {
+      return {
+        success: true as const,
+        attempt: { id: live.id, startedAt: live.startedAt, endsAt: live.endsAt },
+        quiz: stripQuizForCandidate(quiz),
+        quizMaxMarks: exam.quizMaxMarks || FINAL_QUIZ_MARKS,
+        durationMinutes: durationMin,
+        resumed: true,
+      };
+    }
+    const startedAt = new Date(now).toISOString();
+    const endsAt = new Date(now + durationMin * 60 * 1000).toISOString();
+    const attempt: FinalExamAttempt = {
+      id: `fea-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      practicalExamId: exam.id,
+      courseId: exam.courseId,
+      quizId: quiz.id,
+      pin: exam.joinPin || data.pin,
+      rollNumber: student.rollNumber,
+      studentName: student.name,
+      phone: student.phone,
+      regionId: student.regionId,
+      regionName: student.regionName,
+      startedAt,
+      endsAt,
+      status: "in_progress",
+      answers: {},
+      createdAt: startedAt,
+      updatedAt: startedAt,
+    };
+    store.finalExamAttempts.unshift(attempt);
+    scheduleDiskPersist();
+    return {
+      success: true as const,
+      attempt: { id: attempt.id, startedAt, endsAt },
+      quiz: stripQuizForCandidate(quiz),
+      quizMaxMarks: exam.quizMaxMarks || FINAL_QUIZ_MARKS,
+      durationMinutes: durationMin,
+      resumed: false,
+    };
+  });
+
+export const serverSubmitFinalQuizAttempt = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      attemptId: string;
+      pin: string;
+      rollNumber: string;
+      answers: Record<string, string[]>;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const store = getStore();
+    if (!store.finalExamAttempts) store.finalExamAttempts = [];
+    const attemptIdx = store.finalExamAttempts.findIndex((a) => a.id === data.attemptId);
+    if (attemptIdx < 0) return { success: false as const, error: "Attempt not found." };
+    const attempt = store.finalExamAttempts[attemptIdx]!;
+    if (normalizeRollToken(attempt.rollNumber) !== normalizeRollToken(data.rollNumber)) {
+      return { success: false as const, error: "Attempt does not match roll number." };
+    }
+    if (attempt.status === "submitted" || attempt.status === "graded") {
+      return {
+        success: true as const,
+        alreadySubmitted: true,
+        accuracyPct: attempt.accuracyPct ?? 0,
+        quizMarks: attempt.quizMarks ?? 0,
+        quizMaxMarks: attempt.quizMaxMarks || FINAL_QUIZ_MARKS,
+        correctCount: attempt.correctCount ?? 0,
+        incorrectCount: attempt.incorrectCount ?? 0,
+        unansweredCount: attempt.unansweredCount ?? 0,
+      };
+    }
+    const exam = (store.practicalExams || []).find((e) => e.id === attempt.practicalExamId);
+    const quiz = resolveQuizForFinalExam(store, attempt.quizId || exam?.linkedQuizId);
+    if (!quiz?.questions?.length) {
+      return { success: false as const, error: "Quiz missing for grading." };
+    }
+    const now = Date.now();
+    const ended = new Date(attempt.endsAt).getTime() < now - 5000; // 5s grace
+    let correct = 0;
+    let incorrect = 0;
+    let unanswered = 0;
+    for (const q of quiz.questions) {
+      const selected = data.answers[q.id] || [];
+      if (!selected.length) {
+        unanswered += 1;
+        continue;
+      }
+      const graded = evaluateQuestionAnswer({
+        question: q,
+        selectedOptionIds: selected,
+        writtenAnswer: "",
+        currentStreak: 0,
+        timeTakenSec: 0,
+        speedBonus: false,
+        negativeMarking: 0,
+      });
+      if (graded.isCorrect) correct += 1;
+      else incorrect += 1;
+    }
+    const totalQ = quiz.questions.length;
+    const accuracyPct = totalQ > 0 ? Math.round((correct / totalQ) * 1000) / 10 : 0;
+    const quizMax = exam?.quizMaxMarks || FINAL_QUIZ_MARKS;
+    const quizMarks = marksFromPct(accuracyPct, quizMax);
+    const threshold = resolvePassThresholdPct({
+      sessionThreshold: exam?.passThresholdPct,
+      courseThreshold: store.courses.find((c) => c.id === attempt.courseId)?.passThresholdPct,
+      brandingDefaultThreshold: store.branding?.defaultPassThresholdPct,
+    });
+    const passed = isPassingScore(accuracyPct, threshold);
+    const submittedAt = new Date().toISOString();
+    const sessionId = `fes-${attempt.id}`;
+    const resultId = `fer-${attempt.id}`;
+    const session: ExamSessionRecord = {
+      id: sessionId,
+      pin: attempt.pin,
+      quizId: quiz.id,
+      quizTitleEn: quiz.titleEn,
+      quizTitleBn: quiz.titleBn,
+      hostId: "final-exam-desk",
+      totalQuestions: totalQ,
+      participantCount: 1,
+      averageScore: quizMarks,
+      highestScore: quizMarks,
+      passThresholdPct: threshold,
+      createdAt: attempt.startedAt,
+    };
+    const result: ExamResultRecord = {
+      id: resultId,
+      sessionId,
+      pin: attempt.pin,
+      participantId: `fp-${normalizeRollToken(attempt.rollNumber)}`,
+      rollNumber: attempt.rollNumber,
+      name: attempt.studentName,
+      phone: attempt.phone,
+      regionId: attempt.regionId,
+      regionName: attempt.regionName,
+      score: quizMarks,
+      rank: 1,
+      correctCount: correct,
+      incorrectCount: incorrect,
+      unattemptedCount: unanswered,
+      accuracyPct,
+      passed,
+      answersJson: JSON.stringify(data.answers),
+      createdAt: submittedAt,
+    };
+    store.examSessions.unshift(session);
+    store.examResults.unshift(result);
+    store.finalExamAttempts[attemptIdx] = {
+      ...attempt,
+      status: ended ? "expired" : "submitted",
+      submittedAt,
+      answers: data.answers,
+      correctCount: correct,
+      incorrectCount: incorrect,
+      unansweredCount: unanswered,
+      accuracyPct,
+      quizMarks,
+      quizMaxMarks: quizMax,
+      resultId,
+      sessionId,
+      updatedAt: submittedAt,
+    };
+    // Normalize expired-but-auto-submitted to submitted for certificate eligibility.
+    if (store.finalExamAttempts[attemptIdx]!.status === "expired") {
+      store.finalExamAttempts[attemptIdx]!.status = "submitted";
+    }
+    scheduleDiskPersist();
+    return {
+      success: true as const,
+      alreadySubmitted: false,
+      accuracyPct,
+      quizMarks,
+      quizMaxMarks: quizMax,
+      correctCount: correct,
+      incorrectCount: incorrect,
+      unansweredCount: unanswered,
+      passed,
+      timedOut: ended,
+    };
+  });
+
+export const serverOpenFinalExamWindow = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      examId: string;
+      durationHours?: number | undefined;
+      quizDurationMinutes?: number | undefined;
+      regeneratePin?: boolean | undefined;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    if (!store.practicalExams) store.practicalExams = [];
+    const idx = store.practicalExams.findIndex((e) => e.id === data.examId);
+    if (idx < 0) return { success: false as const, error: "Exam not found." };
+    const prev = store.practicalExams[idx]!;
+    const hours = Math.max(0.5, Math.min(72, data.durationHours || 3));
+    const quizMins = Math.max(1, Math.min(180, data.quizDurationMinutes || prev.quizDurationMinutes || 10));
+    const now = new Date();
+    const opensAt = now.toISOString();
+    const closesAt = new Date(now.getTime() + hours * 60 * 60 * 1000).toISOString();
+    const upgraded = upgradeFinalExamPackage(prev);
+    const exam: PracticalExam = {
+      ...upgraded,
+      status: "open",
+      opensAt,
+      closesAt,
+      quizDurationMinutes: quizMins,
+      joinPin:
+        data.regeneratePin || !upgraded.joinPin
+          ? generateFinalExamJoinPin()
+          : upgraded.joinPin,
+      updatedAt: opensAt,
+    };
+    store.practicalExams[idx] = exam;
+    scheduleDiskPersist();
+    return { success: true as const, exam };
   });
