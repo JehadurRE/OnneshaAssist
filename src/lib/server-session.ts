@@ -4884,6 +4884,16 @@ export const serverSavePracticalExam = createServerFn({ method: "POST" })
     const idx = store.practicalExams.findIndex((p) => p.id === exam.id);
     if (idx >= 0) store.practicalExams[idx] = exam;
     else store.practicalExams.unshift(exam);
+    // Keep course certificate policy weights in sync with the practical exam.
+    if (!store.courseRequirements) store.courseRequirements = [];
+    const reqIdx = store.courseRequirements.findIndex((r) => r.courseId === exam.courseId);
+    if (reqIdx >= 0) {
+      store.courseRequirements[reqIdx] = {
+        ...store.courseRequirements[reqIdx]!,
+        quizWeightPct: weights.quizWeightPct,
+        practicalWeightPct: weights.practicalWeightPct,
+      };
+    }
     scheduleDiskPersist();
     return { success: true, exam };
   });
@@ -4910,8 +4920,71 @@ export const serverSaveCourseRequirement = createServerFn({ method: "POST" })
     const idx = store.courseRequirements.findIndex((r) => r.courseId === requirement.courseId);
     if (idx >= 0) store.courseRequirements[idx] = requirement;
     else store.courseRequirements.push(requirement);
+    // Mirror weights onto the practical exam for this course when present.
+    const examIdx = (store.practicalExams || []).findIndex((p) => p.courseId === requirement.courseId);
+    if (examIdx >= 0 && store.practicalExams) {
+      store.practicalExams[examIdx] = {
+        ...store.practicalExams[examIdx]!,
+        quizWeightPct: weights.quizWeightPct,
+        practicalWeightPct: weights.practicalWeightPct,
+        updatedAt: new Date().toISOString(),
+      };
+    }
     scheduleDiskPersist();
     return { success: true, requirement };
+  });
+
+export const serverClearStudentPortal = createServerFn({ method: "POST" }).handler(async () => {
+  try {
+    const { setCookie } = await getServerHelpers();
+    setCookie(STUDENT_PORTAL_COOKIE, "", {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 0,
+      secure: typeof process !== "undefined" && process.env?.["NODE_ENV"] === "production",
+    });
+  } catch {
+    // cookie clear best-effort
+  }
+  return { success: true };
+});
+
+export const serverDownloadPracticalFile = createServerFn({ method: "POST" })
+  .validator((data: { submissionId: string; taskId: string }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    const submission = (store.practicalSubmissions || []).find((s) => s.id === data.submissionId);
+    if (!submission) return { success: false, error: "Submission not found." };
+    const answer = submission.answers.find((a) => a.taskId === data.taskId);
+    if (!answer?.fileRelPath) return { success: false, error: "No file attached to this task." };
+    if (answer.fileRelPath.includes("..") || answer.fileRelPath.startsWith("/")) {
+      return { success: false, error: "Invalid file path." };
+    }
+    try {
+      const fs = getNodeFs();
+      if (!fs) return { success: false, error: "File storage unavailable." };
+      const { dataDir } = getStorePaths();
+      const abs = `${dataDir}/${answer.fileRelPath}`;
+      if (!fs.existsSync(abs)) return { success: false, error: "File missing on disk." };
+      const buf = fs.readFileSync(abs);
+      return {
+        success: true,
+        fileName: answer.fileName || "submission.bin",
+        fileMime: answer.fileMime || "application/octet-stream",
+        fileBase64: buf.toString("base64"),
+        size: buf.length,
+      };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : "Could not read file.",
+      };
+    }
   });
 
 export const serverSetAutoIssueQuizCertificates = createServerFn({ method: "POST" })
@@ -5015,7 +5088,11 @@ export const serverSubmitPracticalWork = createServerFn({ method: "POST" })
         ...(size !== undefined ? { fileSizeBytes: size } : {}),
       };
     });
-    const validation = validateSubmissionPayload({ exam, taskAnswers: answersMeta });
+    const validation = validateSubmissionPayload({
+      exam,
+      taskAnswers: answersMeta,
+      allowReturnedResubmit: existing?.status === "returned",
+    });
     if (!validation.ok) return { success: false, error: validation.error };
 
     const now = new Date().toISOString();

@@ -385,12 +385,16 @@ function SuperAdminPage() {
   const handleExportCertificatesCsv = (rows: CertificateData[]) => {
     const headers = [
       "Certificate Number",
+      "Kind",
+      "Course Code",
       "Student Name",
       "Roll Number",
       "Assessment",
       "Region",
       "Score",
-      "Accuracy %",
+      "Accuracy / Combined %",
+      "Quiz %",
+      "Practical %",
       "Rank",
       "Total Participants",
       "Issue Date",
@@ -399,23 +403,31 @@ function SuperAdminPage() {
     const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const csvLines = [
       headers.map(esc).join(","),
-      ...rows.map((c) =>
-        [
+      ...rows.map((c) => {
+        const kind = c.kind || (c.courseId ? "course_completion" : "quiz_session");
+        const isCourse = kind === "course_completion";
+        return [
           c.certificateNumber,
+          kind,
+          c.courseCode || "",
           c.studentName,
           c.studentRoll,
           c.quizTitle,
           c.regionName || "Dhaka Range",
-          c.marksObtained ?? c.score,
-          c.accuracyPercent ?? c.scorePct ?? 0,
-          c.rank,
-          c.totalParticipants,
+          isCourse ? c.combinedScorePct ?? c.score ?? "" : c.marksObtained ?? c.score,
+          isCourse
+            ? c.combinedScorePct ?? c.accuracyPercent ?? c.scorePct ?? 0
+            : c.accuracyPercent ?? c.scorePct ?? 0,
+          c.quizAccuracyPct ?? "",
+          c.practicalScorePct ?? "",
+          isCourse ? "" : c.rank,
+          isCourse ? "" : c.totalParticipants,
           c.issueDate,
           c.verified ? "VERIFIED" : "UNVERIFIED",
         ]
           .map(esc)
-          .join(","),
-      ),
+          .join(",");
+      }),
     ];
     const blob = new Blob([`\uFEFF${csvLines.join("\n")}`], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);

@@ -56,6 +56,10 @@ function VerifyCertPage() {
     let cancelled = false;
     setIsLoadingServer(true);
     setRevokedNotice(false);
+    setCert(undefined);
+    setVerification(null);
+    setDidWeb(null);
+    setPublicKeyMultibase(null);
 
     const origin = typeof window !== "undefined" ? window.location.origin : undefined;
 

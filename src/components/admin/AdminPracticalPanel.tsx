@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   serverBulkIssueCourseCertificates,
+  serverDownloadPracticalFile,
   serverGetBootstrapData,
   serverGradePracticalSubmission,
   serverIssueCourseCertificate,
@@ -9,6 +10,7 @@ import {
   serverSavePracticalExam,
   serverSetAutoIssueQuizCertificates,
 } from "@/lib/server-session";
+import { db } from "@/lib/db";
 import type {
   Course,
   CourseCompletionRequirement,
@@ -154,12 +156,17 @@ export function AdminPracticalPanel(props: {
   const markKey = (subId: string, taskId: string) => `${subId}::${taskId}`;
 
   const canGrade = (status: PracticalSubmissionStatus) =>
-    status === "submitted" || status === "late" || status === "graded";
+    status === "submitted" || status === "late" || status === "graded" || status === "returned";
 
-  const likelyEligible = (sub: PracticalSubmission) =>
-    sub.status === "graded" &&
-    typeof sub.combinedPct === "number" &&
-    sub.combinedPct >= (exam?.passThresholdPct ?? course?.passThresholdPct ?? 50);
+  const canIssueCert = (sub: PracticalSubmission) => sub.status === "graded";
+
+  const syncCertsIntoAdmin = async () => {
+    try {
+      await db.syncFromServerStore();
+    } catch {
+      // best-effort; Issued Certificates tab refreshes via db.subscribe
+    }
+  };
 
   const gradeOne = async (sub: PracticalSubmission) => {
     if (!exam?.tasks.length) return;
@@ -167,25 +174,31 @@ export function AdminPracticalPanel(props: {
       const raw =
         marksBySubTask[markKey(sub.id, task.id)] ??
         String(sub.grades?.find((g) => g.taskId === task.id)?.marks ?? "");
+      if (raw.trim() === "") {
+        return null;
+      }
       const marks = Number(raw);
       return {
         taskId: task.id,
-        marks: Number.isFinite(marks) ? marks : 0,
+        marks,
         maxMarks: task.maxMarks,
         comment: feedbackBySub[sub.id] || "",
       };
     });
-    if (grades.some((g) => !Number.isFinite(g.marks) || g.marks < 0)) {
-      setNotice("Enter valid marks for every task.");
+    if (grades.some((g) => !g || !Number.isFinite(g.marks) || g.marks < 0)) {
+      setNotice("Enter valid marks for every task (blank is not allowed).");
       return;
     }
+    const validGrades = grades.filter(
+      (g): g is { taskId: string; marks: number; maxMarks: number; comment: string } => !!g,
+    );
     setBusyId(sub.id);
     setNotice(null);
     try {
       const res = await serverGradePracticalSubmission({
         data: {
           submissionId: sub.id,
-          grades,
+          grades: validGrades,
           instructorFeedback: feedbackBySub[sub.id] || "",
         },
       });
@@ -224,6 +237,7 @@ export function AdminPracticalPanel(props: {
           ? `Issued ${res.certificate?.certificateNumber}`
           : res.error || "Issue failed.",
       );
+      await syncCertsIntoAdmin();
       await refresh();
     } finally {
       setBusyId(null);
@@ -247,6 +261,33 @@ export function AdminPracticalPanel(props: {
           ? `Bulk issued ${res.issuedCount} course certificate(s). Skipped ${res.skipped?.length || 0}.`
           : res.error || "Bulk issue failed.",
       );
+      await syncCertsIntoAdmin();
+      await refresh();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const downloadFile = async (sub: PracticalSubmission, taskId: string) => {
+    setBusyId(`dl-${sub.id}-${taskId}`);
+    try {
+      const res = await serverDownloadPracticalFile({
+        data: { submissionId: sub.id, taskId },
+      });
+      if (!res.success || !res.fileBase64) {
+        setNotice(res.error || "Download failed.");
+        return;
+      }
+      const bin = atob(res.fileBase64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+      const blob = new Blob([bytes], { type: res.fileMime || "application/octet-stream" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = res.fileName || "submission.bin";
+      a.click();
+      URL.revokeObjectURL(url);
     } finally {
       setBusyId(null);
     }
@@ -832,11 +873,11 @@ export function AdminPracticalPanel(props: {
                   <button
                     type="button"
                     onClick={() => void issueOne(sub.rollNumber)}
-                    disabled={busyId === `issue-${sub.rollNumber}` || !likelyEligible(sub)}
+                    disabled={busyId === `issue-${sub.rollNumber}` || !canIssueCert(sub)}
                     title={
-                      likelyEligible(sub)
-                        ? "Issue course completion certificate"
-                        : "Needs graded practical at/above pass threshold (server also checks final quiz)"
+                      canIssueCert(sub)
+                        ? "Issue course completion certificate (server checks quiz + practical eligibility)"
+                        : "Grade the practical first"
                     }
                     className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-bold text-emerald-700 disabled:opacity-40"
                   >
@@ -863,8 +904,20 @@ export function AdminPracticalPanel(props: {
                         </a>
                       )}
                       {a.fileName && (
-                        <div className="font-mono text-[10px] text-muted-foreground">
-                          file: {a.fileName} ({a.fileSizeBytes || 0} bytes)
+                        <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] text-muted-foreground">
+                          <span>
+                            file: {a.fileName} ({a.fileSizeBytes || 0} bytes)
+                          </span>
+                          {a.fileRelPath && (
+                            <button
+                              type="button"
+                              onClick={() => void downloadFile(sub, a.taskId)}
+                              disabled={busyId === `dl-${sub.id}-${a.taskId}`}
+                              className="rounded-lg border border-border bg-background px-2 py-0.5 text-[10px] font-bold text-foreground hover:bg-accent"
+                            >
+                              Download
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>

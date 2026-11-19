@@ -5,6 +5,7 @@ import { Footer } from "@/components/layout/Footer";
 import { CertificateView } from "@/components/common/CertificateView";
 import { useLanguage } from "@/lib/i18n";
 import {
+  serverClearStudentPortal,
   serverGetStudentPortal,
   serverSubmitPracticalWork,
 } from "@/lib/server-session";
@@ -23,9 +24,30 @@ import {
   ExternalLink,
   Loader2,
   Lock,
+  LogOut,
   Upload,
   User,
 } from "lucide-react";
+
+function localizeMissing(code: string, lang: string): string {
+  const mapBn: Record<string, string> = {
+    final_quiz_result: "চূড়ান্ত কুইজ ফলাফল নেই",
+    final_quiz_pass: "চূড়ান্ত কুইজ পাস হয়নি",
+    practical_submission: "প্রায়োগিক জমা নেই",
+    practical_grading: "প্রায়োগিক মার্কিং বাকি",
+    practical_pass: "প্রায়োগিক পাস হয়নি",
+    combined_pass: "সম্মিলিত স্কোর পাস থ্রেশহোল্ডের নিচে",
+  };
+  const mapEn: Record<string, string> = {
+    final_quiz_result: "Final quiz result missing",
+    final_quiz_pass: "Final quiz not passed",
+    practical_submission: "Practical not submitted",
+    practical_grading: "Practical not graded yet",
+    practical_pass: "Practical not passed",
+    combined_pass: "Combined score below pass threshold",
+  };
+  return (lang === "bn" ? mapBn : mapEn)[code] || code;
+}
 
 function StatusPill({ status }: { status: string }) {
   const tone =
@@ -78,6 +100,7 @@ function StudentPortalPage() {
   const [drafts, setDrafts] = useState<Record<string, TaskDraft>>({});
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeTone, setNoticeTone] = useState<"ok" | "err">("ok");
 
   const practicalExam = portal?.practicalExam as PracticalExam | undefined | null;
 
@@ -137,6 +160,7 @@ function StudentPortalPage() {
     }
     const max = practicalExam?.maxFileBytes || 10 * 1024 * 1024;
     if (file.size > max) {
+      setNoticeTone("err");
       setNotice(
         lang === "bn"
           ? `ফাইল খুব বড়। সর্বোচ্চ ${Math.round(max / (1024 * 1024))} MB।`
@@ -183,9 +207,11 @@ function StudentPortalPage() {
         },
       });
       if (!res.success) {
+        setNoticeTone("err");
         setNotice(res.error || "Submission failed.");
         return;
       }
+      setNoticeTone("ok");
       setNotice(lang === "bn" ? "প্রায়োগিক জমা সফল হয়েছে।" : "Practical submission saved.");
       const refreshed = await serverGetStudentPortal({
         data: { rollNumber: portal.student!.rollNumber, phone: portal.student!.phone || phone },
@@ -198,15 +224,35 @@ function StudentPortalPage() {
         );
       }
     } catch (err) {
+      setNoticeTone("err");
       setNotice(err instanceof Error ? err.message : "Submission failed.");
     } finally {
       setSubmitting(false);
     }
   };
 
+  const signOutPortal = async () => {
+    try {
+      await serverClearStudentPortal();
+    } catch {
+      // ignore
+    }
+    setPortal(null);
+    setDrafts({});
+    setNotice(null);
+    setError(null);
+  };
+
   const completion = portal?.success ? portal.completion : null;
   const gradedLocked = portal?.submission?.status === "graded";
+  const returnedForResubmit = portal?.submission?.status === "returned";
   const windowOpen = practicalExam ? isPracticalWindowOpen(practicalExam) : false;
+  const notOpenYet =
+    !!practicalExam?.opensAt && new Date().toISOString() < practicalExam.opensAt;
+  const canSubmit =
+    !!practicalExam &&
+    !gradedLocked &&
+    (windowOpen || returnedForResubmit);
   const pastDeadline = practicalExam ? isPracticalPastDeadline(practicalExam) : false;
 
   const progressSummary = useMemo(() => {
@@ -285,6 +331,14 @@ function StudentPortalPage() {
                   <p className="mt-2 text-sm font-semibold">
                     {portal.course?.code} — {lang === "bn" ? portal.course?.titleBn : portal.course?.titleEn}
                   </p>
+                  <button
+                    type="button"
+                    onClick={() => void signOutPortal()}
+                    className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    {lang === "bn" ? "সাইন আউট / অন্য শিক্ষার্থী" : "Sign out / switch student"}
+                  </button>
                 </div>
                 <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm">
                   <div className="font-bold text-emerald-700 dark:text-emerald-300">
@@ -371,20 +425,34 @@ function StudentPortalPage() {
               <div className="rounded-2xl border border-border/80 bg-muted/30 px-3 py-2 text-xs text-muted-foreground space-y-1">
                 <div className="font-mono">
                   {practicalExam.opensAt
-                    ? `Opens ${new Date(practicalExam.opensAt).toLocaleString()}`
-                    : "Open window not set"}
+                    ? `${lang === "bn" ? "খোলে" : "Opens"} ${new Date(practicalExam.opensAt).toLocaleString()}`
+                    : lang === "bn"
+                      ? "খোলার সময় নির্ধারিত নয়"
+                      : "Open window not set"}
                   {practicalExam.closesAt
-                    ? ` · Deadline ${new Date(practicalExam.closesAt).toLocaleString()}`
-                    : " · No deadline"}
+                    ? ` · ${lang === "bn" ? "ডেডলাইন" : "Deadline"} ${new Date(practicalExam.closesAt).toLocaleString()}`
+                    : ` · ${lang === "bn" ? "ডেডলাইন নেই" : "No deadline"}`}
                 </div>
-                {pastDeadline && windowOpen && (
+                {notOpenYet && (
+                  <div className="font-semibold text-amber-700 dark:text-amber-300">
+                    {lang === "bn" ? "এখনো খোলেনি — নির্ধারিত সময়ের পর জমা দিন।" : "Not open yet — submit after the opens time."}
+                  </div>
+                )}
+                {pastDeadline && (windowOpen || returnedForResubmit) && (
                   <div className="text-amber-700 dark:text-amber-300 font-semibold">
                     {lang === "bn" ? "ডেডলাইন পার — বিলম্বে জমা গ্রহণযোগ্য।" : "Past deadline — late submissions accepted."}
                   </div>
                 )}
-                {!windowOpen && (
+                {!windowOpen && !notOpenYet && !returnedForResubmit && (
                   <div className="font-semibold">
                     {lang === "bn" ? "জমা উইন্ডো বন্ধ।" : "Submission window closed."}
+                  </div>
+                )}
+                {returnedForResubmit && (
+                  <div className="font-semibold text-amber-700 dark:text-amber-300">
+                    {lang === "bn"
+                      ? "ইন্সট্রাক্টর রিটার্ন করেছেন — পুনরায় জমা দিন।"
+                      : "Instructor returned your work — please resubmit."}
                   </div>
                 )}
               </div>
@@ -415,7 +483,7 @@ function StudentPortalPage() {
                             [task.id]: { ...draft, textAnswer: e.target.value },
                           }))
                         }
-                        disabled={gradedLocked || !windowOpen}
+                        disabled={!canSubmit}
                         rows={4}
                         className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
                       />
@@ -431,12 +499,12 @@ function StudentPortalPage() {
                             [task.id]: { ...draft, linkUrl: e.target.value },
                           }))
                         }
-                        disabled={gradedLocked || !windowOpen}
+                        disabled={!canSubmit}
                         className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
                         placeholder="https://"
                       />
                     </label>
-                    {task.allowFile && !gradedLocked && windowOpen && (
+                    {task.allowFile && canSubmit && (
                       <label className="block text-xs font-semibold">
                         {lang === "bn" ? "ফাইল (ঐচ্ছিক)" : "File (optional)"}
                         <input
@@ -465,7 +533,7 @@ function StudentPortalPage() {
                   )}
                 </div>
               )}
-              {!gradedLocked && windowOpen && (
+              {canSubmit && (
                 <button
                   type="button"
                   onClick={() => void submitPractical()}
@@ -478,12 +546,16 @@ function StudentPortalPage() {
                     <Upload className="h-4 w-4" />
                   )}
                   {lang === "bn"
-                    ? pastDeadline
-                      ? "বিলম্বে জমা দিন"
-                      : "প্রায়োগিক জমা দিন"
-                    : pastDeadline
-                      ? "Submit late"
-                      : "Submit practical"}
+                    ? returnedForResubmit
+                      ? "পুনরায় জমা দিন"
+                      : pastDeadline
+                        ? "বিলম্বে জমা দিন"
+                        : "প্রায়োগিক জমা দিন"
+                    : returnedForResubmit
+                      ? "Resubmit practical"
+                      : pastDeadline
+                        ? "Submit late"
+                        : "Submit practical"}
                 </button>
               )}
               {gradedLocked && (
@@ -493,7 +565,17 @@ function StudentPortalPage() {
                     : "Graded — ask an instructor to return the work before resubmitting."}
                 </p>
               )}
-              {notice && <p className="text-sm text-emerald-700 dark:text-emerald-300">{notice}</p>}
+              {notice && (
+                <p
+                  className={`text-sm ${
+                    noticeTone === "err"
+                      ? "text-destructive"
+                      : "text-emerald-700 dark:text-emerald-300"
+                  }`}
+                >
+                  {notice}
+                </p>
+              )}
                 </>
               )}
             </section>
@@ -542,7 +624,9 @@ function StudentPortalPage() {
                   ) : (
                     <span className="text-muted-foreground">
                       {lang === "bn" ? "অসম্পূর্ণ:" : "Missing:"}{" "}
-                      {(completion?.missing || []).join(", ") || "—"}
+                      {(completion?.missing || [])
+                        .map((m) => localizeMissing(m, lang))
+                        .join(lang === "bn" ? " · " : "; ") || "—"}
                     </span>
                   )}
                 </div>

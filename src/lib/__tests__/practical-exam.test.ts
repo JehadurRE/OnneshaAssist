@@ -190,6 +190,37 @@ describe("practical window & submission validation", () => {
     expect(isPracticalWindowOpen(exam)).toBe(false);
   });
 
+  it("allows returned resubmit when window is closed", () => {
+    const exam: PracticalExam = {
+      ...buildDefaultFinalPracticalExam(course),
+      status: "closed",
+    };
+    const blocked = validateSubmissionPayload({
+      exam,
+      taskAnswers: [
+        {
+          taskId: exam.tasks[0]!.id,
+          textAnswer: "Revised deliverable",
+          linkUrl: "https://example.com/v2",
+        },
+      ],
+    });
+    expect(blocked.ok).toBe(false);
+
+    const allowed = validateSubmissionPayload({
+      exam,
+      allowReturnedResubmit: true,
+      taskAnswers: [
+        {
+          taskId: exam.tasks[0]!.id,
+          textAnswer: "Revised deliverable",
+          linkUrl: "https://example.com/v2",
+        },
+      ],
+    });
+    expect(allowed.ok).toBe(true);
+  });
+
   it("matches quiz results only for allowed quiz ids (no any-quiz fallback)", () => {
     const sessions = [
       { id: "exam-q1", pin: "111111", quizId: "quiz-sanjibon-s01" },

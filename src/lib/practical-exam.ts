@@ -329,9 +329,14 @@ export function validateSubmissionPayload(params: {
     fileMime?: string | undefined;
     fileSizeBytes?: number | undefined;
   }>;
+  /** When true (instructor returned work), allow submit even if window is closed. */
+  allowReturnedResubmit?: boolean | undefined;
 }): { ok: true } | { ok: false; error: string } {
-  if (!isPracticalWindowOpen(params.exam)) {
+  if (!params.allowReturnedResubmit && !isPracticalWindowOpen(params.exam)) {
     return { ok: false, error: "Practical exam window is closed." };
+  }
+  if (params.allowReturnedResubmit && (params.exam.status === "archived" || params.exam.status === "draft")) {
+    return { ok: false, error: "Practical exam is not accepting resubmissions." };
   }
   for (const task of params.exam.tasks) {
     const ans = params.taskAnswers.find((a) => a.taskId === task.id);
