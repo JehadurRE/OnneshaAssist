@@ -123,7 +123,7 @@ class OnneshaDatabase {
       sqliteEngine.run(sql, params),
   ): void {
     runFn(
-      "INSERT OR REPLACE INTO certificates (id, certificateNumber, studentName, studentRoll, regionName, quizTitle, score, totalPoints, rank, totalParticipants, accuracyPercent, issueDate, organizationName, institutionName, instructorName, verificationUrl, signatureUrl, verified, payloadHash, prevBlockHash, ledgerIndex, chainHash, cryptoSignature, signerKeyId, signedAt, rekorEntryUuid, rekorLogIndex, rekorIntegratedTime, rekorLogId, rekorStatus, rekorReceiptDigest, rekorPublicKeyId, rekorExplorerUrl, otsStatus, otsProofBase64, otsChainHash, otsLedgerIndex, otsCalendarUrl, otsSubmittedAt, otsBitcoinBlockHeight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT OR REPLACE INTO certificates (id, certificateNumber, studentName, studentRoll, regionName, quizTitle, score, totalPoints, rank, totalParticipants, accuracyPercent, issueDate, organizationName, institutionName, instructorName, verificationUrl, signatureUrl, verified, payloadHash, prevBlockHash, ledgerIndex, chainHash, cryptoSignature, signerKeyId, signedAt, rekorEntryUuid, rekorLogIndex, rekorIntegratedTime, rekorLogId, rekorStatus, rekorReceiptDigest, rekorPublicKeyId, rekorExplorerUrl, otsStatus, otsProofBase64, otsChainHash, otsLedgerIndex, otsCalendarUrl, otsSubmittedAt, otsBitcoinBlockHeight, kind, courseId, courseCode, courseTitle, quizAccuracyPct, practicalScorePct, combinedScorePct, credentialStatementEn, credentialStatementBn) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         cert.id,
         cert.certificateNumber,
@@ -165,6 +165,15 @@ class OnneshaDatabase {
         cert.otsCalendarUrl || "",
         cert.otsSubmittedAt || "",
         cert.otsBitcoinBlockHeight ?? null,
+        cert.kind || "quiz_session",
+        cert.courseId || "",
+        cert.courseCode || "",
+        cert.courseTitle || "",
+        cert.quizAccuracyPct ?? null,
+        cert.practicalScorePct ?? null,
+        cert.combinedScorePct ?? null,
+        cert.credentialStatementEn || "",
+        cert.credentialStatementBn || "",
       ],
     );
   }
@@ -1608,9 +1617,14 @@ class OnneshaDatabase {
       finalResults = builtResults;
     }
 
-    const existingCertsUpper = new Set(
-      this.getCertificates().map((c) => c.certificateNumber.toUpperCase()),
-    );
+    // Industrial policy: quiz session completion records results only.
+    // Course-completion certificates are issued explicitly by staff after
+    // Final Quiz + Practical grading (see serverIssueCourseCertificate).
+    void orgName;
+    void instTitle;
+    void verifyOrigin;
+    void shouldSyncCerts;
+    void computedTotalPoints;
 
     sqliteEngine.runBatch((run) => {
       run(
@@ -1664,38 +1678,9 @@ class OnneshaDatabase {
             r.createdAt,
           ],
         );
-
-        if (r.passed) {
-          const certNo = formatDeterministicCertNumber(targetPin, r.rollNumber, r.rank);
-          if (retakeOrigSession && existingCertsUpper.has(certNo.toUpperCase())) {
-            return;
-          }
-          this.issueCertificate(
-            {
-              certificateNumber: certNo,
-              studentName: r.name,
-              studentRoll: r.rollNumber,
-              regionName: r.regionName || "Dhaka Range",
-              quizTitle: session.quizTitleBn || session.quizTitleEn || "Institutional Assessment",
-              score: r.score,
-              totalPoints: computedTotalPoints,
-              rank: r.rank,
-              totalParticipants: finalResults.length,
-              accuracyPercent: r.accuracyPct,
-              issueDate: createdAt.slice(0, 10),
-              organizationName: orgName,
-              institutionName: instTitle,
-              instructorName: "Chief Assessment Officer",
-              verificationUrl: `${verifyOrigin}/verify/${certNo}`,
-              verified: true,
-            },
-            { syncToServer: shouldSyncCerts, skipStorageRefresh: true },
-          );
-        }
       });
     });
 
-    this.setStorage("certificates", this.getCertificates());
     this.setStorage("exam_sessions", this.getExamSessions());
     this.setStorage("exam_results", this.getAllExamResults());
     this.notifyListeners();
@@ -1761,6 +1746,15 @@ class OnneshaDatabase {
       return rows.map((r) => ({
         ...r,
         verified: !!r.verified,
+        kind: r.kind || (r.courseId ? "course_completion" : "quiz_session"),
+        quizAccuracyPct: r.quizAccuracyPct ?? undefined,
+        practicalScorePct: r.practicalScorePct ?? undefined,
+        combinedScorePct: r.combinedScorePct ?? undefined,
+        courseId: r.courseId || undefined,
+        courseCode: r.courseCode || undefined,
+        courseTitle: r.courseTitle || undefined,
+        credentialStatementEn: r.credentialStatementEn || undefined,
+        credentialStatementBn: r.credentialStatementBn || undefined,
       }));
     }
     return this.getStorage<CertificateData[]>("certificates", []);
@@ -1786,96 +1780,20 @@ class OnneshaDatabase {
       return {
         ...row,
         verified: !!row.verified,
+        kind: row.kind || (row.courseId ? "course_completion" : "quiz_session"),
+        quizAccuracyPct: row.quizAccuracyPct ?? undefined,
+        practicalScorePct: row.practicalScorePct ?? undefined,
+        combinedScorePct: row.combinedScorePct ?? undefined,
+        courseId: row.courseId || undefined,
+        courseCode: row.courseCode || undefined,
+        courseTitle: row.courseTitle || undefined,
+        credentialStatementEn: row.credentialStatementEn || undefined,
+        credentialStatementBn: row.credentialStatementBn || undefined,
       };
     }
 
     const certs = this.getCertificates();
-    const matched = certs.find(
-      (c) => c.certificateNumber.toLowerCase() === cleanCertNo.toLowerCase(),
-    );
-    if (matched) return matched;
-
-    // Deterministic resolution ONLY when backed by a passing examResult record and not revoked
-    const match = certNoUpper.match(/^ONN-([A-Z0-9]{4})-([A-Z0-9]{4,6})$/);
-    if (match && match[1] && match[2]) {
-      const pinPrefix = match[1];
-      const rollSuffix = match[2];
-      const results = this.getAllExamResults();
-      const matchingResults = results.filter((r) => {
-        const cleanRoll = (r.rollNumber || "")
-          .replace(/[^a-zA-Z0-9]/g, "")
-          .toUpperCase()
-          .slice(-6)
-          .padStart(4, "0");
-        return r.pin.startsWith(pinPrefix) && cleanRoll === rollSuffix;
-      });
-      matchingResults.sort((a, b) => {
-        const aPass = a.passed ? 1 : 0;
-        const bPass = b.passed ? 1 : 0;
-        if (bPass !== aPass) return bPass - aPass;
-        return b.createdAt.localeCompare(a.createdAt);
-      });
-      const matchedResult = matchingResults[0];
-
-      if (matchedResult) {
-        const matchedSession = this.getExamSessions().find(
-          (s) => s.id === matchedResult.sessionId || s.pin === matchedResult.pin,
-        );
-        const matchedQuiz = matchedSession ? this.getQuizBySlug(matchedSession.quizId) : undefined;
-        const matchedCourse = matchedQuiz?.courseId
-          ? this.getCourses().find((c) => c.id === matchedQuiz.courseId)
-          : undefined;
-        const branding = this.getBranding();
-        const threshold = resolvePassThresholdPct({
-          sessionThreshold: matchedSession?.passThresholdPct,
-          courseThreshold: matchedCourse?.passThresholdPct,
-          brandingDefaultThreshold: branding.defaultPassThresholdPct,
-        });
-        const didPass =
-          typeof matchedResult.passed === "boolean"
-            ? matchedResult.passed
-            : isPassingScore(matchedResult.accuracyPct, threshold);
-
-        if (!didPass) {
-          return undefined;
-        }
-
-        const totalMarks = computeTotalQuizMarks(
-          matchedQuiz?.questions,
-          matchedSession?.totalQuestions || 5,
-        );
-        return {
-          id: `cert-${certNoUpper.toLowerCase()}`,
-          certificateNumber: certNoUpper,
-          studentName: matchedResult.name,
-          studentRoll: matchedResult.rollNumber,
-          regionName: matchedResult.regionName || "Dhaka Range",
-          quizTitle:
-            matchedSession?.quizTitleBn ||
-            matchedSession?.quizTitleEn ||
-            "Onnesha Assessment Evaluation",
-          score: matchedResult.score,
-          marksObtained: matchedResult.score,
-          totalPoints: totalMarks,
-          totalMarks,
-          rank: matchedResult.rank,
-          totalParticipants: matchedSession?.participantCount || 1,
-          accuracyPercent: matchedResult.accuracyPct,
-          scorePct: matchedResult.accuracyPct,
-          issueDate: (matchedResult.createdAt || new Date().toISOString()).slice(0, 10),
-          organizationName:
-            branding.showPartnerLogo && branding.partnerName
-              ? `Onnesha × ${branding.partnerName}`
-              : "Onnesha Assessment & Examination Arena",
-          institutionName: branding.institutionTitle || "Onnesha Assessment Arena",
-          instructorName: "Chief Assessment Officer",
-          verificationUrl: `/verify/${certNoUpper}`,
-          verified: true,
-        };
-      }
-    }
-
-    return undefined;
+    return certs.find((c) => c.certificateNumber.toLowerCase() === cleanCertNo.toLowerCase());
   }
 
   private prepareCertificateLocal(

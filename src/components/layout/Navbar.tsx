@@ -94,6 +94,18 @@ export const Navbar: React.FC = () => {
             </Link>
 
             <Link
+              to="/portal"
+              className={`flex items-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 transition-colors ${
+                isActive("/portal")
+                  ? "bg-primary/15 text-primary font-bold"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
+              }`}
+            >
+              <GraduationCap className="h-3.5 w-3.5" />
+              {lang === "bn" ? "পোর্টাল" : "Portal"}
+            </Link>
+
+            <Link
               to="/play"
               className={`flex items-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 transition-colors ${
                 isActive("/play")
@@ -378,6 +390,19 @@ export const Navbar: React.FC = () => {
               </Link>
 
               <Link
+                to="/portal"
+                onClick={() => setMobileDrawerOpen(false)}
+                className={`flex items-center gap-2 rounded-xl p-3 text-xs font-bold ${
+                  isActive("/portal")
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background border border-border text-foreground"
+                }`}
+              >
+                <GraduationCap className="h-4 w-4" />
+                <span>{lang === "bn" ? "পোর্টাল" : "Portal"}</span>
+              </Link>
+
+              <Link
                 to="/play"
                 onClick={() => setMobileDrawerOpen(false)}
                 className={`flex items-center gap-2 rounded-xl p-3 text-xs font-bold ${
@@ -547,16 +572,16 @@ export const Navbar: React.FC = () => {
           </Link>
 
           <Link
-            to="/timer"
+            to="/portal"
             className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl ${
-              isActive("/timer")
+              isActive("/portal")
                 ? "text-primary font-bold"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            <Clock className="h-4 w-4 mb-0.5" />
+            <GraduationCap className="h-4 w-4 mb-0.5" />
             <span className="text-[10px] font-medium leading-none">
-              {lang === "bn" ? "টাইমার" : "Timer"}
+              {lang === "bn" ? "পোর্টাল" : "Portal"}
             </span>
           </Link>
 

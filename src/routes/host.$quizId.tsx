@@ -106,7 +106,7 @@ function HostPage() {
     ) {
       justCreatedPinRef.current = null;
       suppressStopPinRef.current = null;
-      attachSession(sessionRef.current);
+      if (sessionRef.current) attachSession(sessionRef.current);
       return () => {
         active = false;
         if (unsubscribe) unsubscribe();

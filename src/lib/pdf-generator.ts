@@ -1024,16 +1024,23 @@ export function drawCertificateOnCanvas(
   }
 
   // 8. Achievement Citation & Assessment Title
+  const isCourseCert = certificate.kind === "course_completion";
   ctx.fillStyle = theme.textSecondary;
   ctx.font = "500 26px sans-serif";
   ctx.fillText(
-    "for successfully completing and demonstrating outstanding proficiency in the assessment:",
+    isCourseCert
+      ? "for successfully completing the full course programme, including Final Quiz and Practical:"
+      : "for successfully completing and demonstrating outstanding proficiency in the assessment:",
     W / 2,
     658 + yShift,
   );
 
   ctx.fillStyle = theme.accentColor;
-  const quizTitle = certificate.quizTitle || "Institutional Merit Assessment";
+  const quizTitle =
+    certificate.quizTitle ||
+    (isCourseCert
+      ? `${certificate.courseCode || ""} — Certificate of Course Completion`.trim()
+      : "Institutional Merit Assessment");
   fillTextAutoFit(ctx, quizTitle, W / 2, 718 + yShift, 1950, 42, 24, "bold", "sans-serif");
 
   // 9. Three Metric Stat Cards
@@ -1049,26 +1056,47 @@ export function drawCertificateOnCanvas(
   const rawMarks =
     rawScoreVal > 0 ? rawScoreVal : accuracy > 0 ? Math.round((accuracy / 100) * totalMarks) : 0;
 
-  const cards = [
-    {
-      label: "MERIT STANDING",
-      value: `#${certificate.rank || 1}`,
-      sub: `Out of ${certificate.totalParticipants || 1} Candidates`,
-      accent: theme.borderOuter,
-    },
-    {
-      label: "RAW MARKS OBTAINED",
-      value: `${rawMarks}`,
-      sub: `Out of ${totalMarks} Total Points`,
-      accent: theme.accentColor,
-    },
-    {
-      label: "ACCURACY VELOCITY",
-      value: `${accuracy}%`,
-      sub: "Verified Precision Index",
-      accent: theme.borderInner,
-    },
-  ];
+  const cards = isCourseCert
+    ? [
+        {
+          label: "COMBINED SCORE",
+          value: `${certificate.combinedScorePct ?? accuracy}%`,
+          sub: "Quiz + Practical Weighted",
+          accent: theme.borderOuter,
+        },
+        {
+          label: "FINAL QUIZ",
+          value: `${certificate.quizAccuracyPct ?? 0}%`,
+          sub: "Part A Accuracy",
+          accent: theme.accentColor,
+        },
+        {
+          label: "PRACTICAL",
+          value: `${certificate.practicalScorePct ?? 0}%`,
+          sub: "Part B Instructor Mark",
+          accent: theme.borderInner,
+        },
+      ]
+    : [
+        {
+          label: "MERIT STANDING",
+          value: `#${certificate.rank || 1}`,
+          sub: `Out of ${certificate.totalParticipants || 1} Candidates`,
+          accent: theme.borderOuter,
+        },
+        {
+          label: "RAW MARKS OBTAINED",
+          value: `${rawMarks}`,
+          sub: `Out of ${totalMarks} Total Points`,
+          accent: theme.accentColor,
+        },
+        {
+          label: "ACCURACY VELOCITY",
+          value: `${accuracy}%`,
+          sub: "Verified Precision Index",
+          accent: theme.borderInner,
+        },
+      ];
 
   cards.forEach((c, idx) => {
     const x = startX + idx * (cardW + gap);

@@ -30,13 +30,12 @@ export const SANJIBON_QUIZZES: Quiz[] = seedPayload.quizzes.map((q) => ({
 
 /**
  * Determines whether a course is private (instructor-hosted live exams only; no public self-practice).
- * Sanjibon and admin-created courses default to private (`true`), while the open demo course
- * `course-bcs-foundation` defaults to public (`false`) unless explicitly toggled by Super Admin.
+ * All institutional courses default to private (`true`) unless Super Admin explicitly sets isPrivate=false.
  */
 export function isCoursePrivate(course?: Course | null): boolean {
   if (!course) return false;
   if (typeof course.isPrivate === "boolean") return course.isPrivate;
-  return course.id !== "course-bcs-foundation";
+  return true;
 }
 
 /**
@@ -59,9 +58,8 @@ export function isQuizPrivate(quiz: Quiz, courses?: Course[]): boolean {
   ) {
     return true;
   }
-  if (quiz.courseId && quiz.courseId !== "course-bcs-foundation") {
-    return true;
-  }
+  // Any course-linked quiz is private by default (no public demo pack).
+  if (quiz.courseId) return true;
   return false;
 }
 
