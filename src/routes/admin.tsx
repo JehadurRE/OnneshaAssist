@@ -786,7 +786,7 @@ function SuperAdminPage() {
                   required
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
-                  className="w-full rounded-2xl border border-border bg-background px-3.5 py-2.5 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                  className="staff-input text-xs"
                 />
               </div>
               <div>
@@ -798,7 +798,7 @@ function SuperAdminPage() {
                   required
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
-                  className="w-full rounded-2xl border border-border bg-background px-3.5 py-2.5 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                  className="staff-input text-xs"
                 />
               </div>
 
@@ -919,40 +919,40 @@ function SuperAdminPage() {
         {activeTab === "courses" && (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-              <button type="button" onClick={() => setActiveTab("courses")} className="rounded-2xl border border-border bg-card p-4 text-left hover:border-primary/40 transition">
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
-                  <span>Courses</span>
-                  <Layers className="h-3.5 w-3.5 text-primary" />
+              <button type="button" onClick={() => setActiveTab("courses")} className="staff-metric staff-metric-clickable">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="staff-metric-label">Courses</span>
+                  <span className="staff-metric-icon"><Layers className="h-3.5 w-3.5" /></span>
                 </div>
-                <div className="mt-1.5 font-mono text-2xl font-black">{courses.length}</div>
+                <div className="staff-metric-value">{courses.length}</div>
               </button>
-              <button type="button" onClick={() => setActiveTab("instructors")} className="rounded-2xl border border-border bg-card p-4 text-left hover:border-primary/40 transition">
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
-                  <span>Faculty</span>
-                  <GraduationCap className="h-3.5 w-3.5 text-amber-500" />
+              <button type="button" onClick={() => setActiveTab("instructors")} className="staff-metric staff-metric-clickable staff-metric-amber">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="staff-metric-label">Faculty</span>
+                  <span className="staff-metric-icon"><GraduationCap className="h-3.5 w-3.5" /></span>
                 </div>
-                <div className="mt-1.5 font-mono text-2xl font-black">{users.length}</div>
+                <div className="staff-metric-value">{users.length}</div>
               </button>
-              <button type="button" onClick={() => setActiveTab("roster")} className="rounded-2xl border border-border bg-card p-4 text-left hover:border-primary/40 transition">
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
-                  <span>Trainees</span>
-                  <Users className="h-3.5 w-3.5 text-sky-500" />
+              <button type="button" onClick={() => setActiveTab("roster")} className="staff-metric staff-metric-clickable staff-metric-sky">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="staff-metric-label">Trainees</span>
+                  <span className="staff-metric-icon"><Users className="h-3.5 w-3.5" /></span>
                 </div>
-                <div className="mt-1.5 font-mono text-2xl font-black">{roster.length}</div>
+                <div className="staff-metric-value">{roster.length}</div>
               </button>
-              <button type="button" onClick={() => setActiveTab("certificates")} className="rounded-2xl border border-border bg-card p-4 text-left hover:border-primary/40 transition">
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
-                  <span>Certificates</span>
-                  <Award className="h-3.5 w-3.5 text-emerald-500" />
+              <button type="button" onClick={() => setActiveTab("certificates")} className="staff-metric staff-metric-clickable staff-metric-emerald">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="staff-metric-label">Certificates</span>
+                  <span className="staff-metric-icon"><Award className="h-3.5 w-3.5" /></span>
                 </div>
-                <div className="mt-1.5 font-mono text-2xl font-black">{certificates.length}</div>
+                <div className="staff-metric-value">{certificates.length}</div>
               </button>
-              <button type="button" onClick={refreshActiveRooms} className="rounded-2xl border border-border bg-card p-4 text-left hover:border-primary/40 transition">
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
-                  <span>Live rooms</span>
-                  <Radio className={`h-3.5 w-3.5 ${activeRooms.length ? "text-emerald-500 animate-pulse" : ""}`} />
+              <button type="button" onClick={refreshActiveRooms} className="staff-metric staff-metric-clickable staff-metric-emerald">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="staff-metric-label">Live rooms</span>
+                  <span className="staff-metric-icon"><Radio className={`h-3.5 w-3.5 ${activeRooms.length ? "animate-pulse" : ""}`} /></span>
                 </div>
-                <div className="mt-1.5 font-mono text-2xl font-black">{activeRooms.length}</div>
+                <div className="staff-metric-value">{activeRooms.length}</div>
               </button>
             </div>
 
@@ -987,7 +987,7 @@ function SuperAdminPage() {
         )}
 
         {activeTab === "practical" && (
-          <div className="rounded-3xl border border-border bg-card p-5 sm:p-6">
+          <div className="staff-panel">
             <AdminPracticalPanel
               courses={courses}
               quizzes={quizzes}
@@ -1001,11 +1001,14 @@ function SuperAdminPage() {
         {activeTab === "courses" && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Left Column: Create / Edit Course with Multiple Instructors */}
-            <div className="lg:col-span-4 rounded-3xl border border-border bg-card p-6 space-y-4 h-fit">
-              <div className="flex items-center justify-between">
-                <h2 className="font-display text-lg font-black text-foreground">
+            <div className="lg:col-span-4 staff-panel space-y-4 h-fit">
+              <div className="staff-panel-header !mb-0 !pb-0 !border-0">
+                <div className="min-w-0 space-y-1">
+                <h2 className="staff-panel-title">
                   {editingCourseId ? "Update Course & Instructors" : "Create New Course"}
                 </h2>
+                <p className="staff-panel-desc">Code, titles, faculty assignment, and pass threshold.</p>
+                </div>
                 {editingCourseId && (
                   <button
                     type="button"
@@ -1028,7 +1031,7 @@ function SuperAdminPage() {
               <form onSubmit={handleSaveCourse} className="space-y-3.5">
                 <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                    <label className="staff-label mb-1">
                       Course Code
                     </label>
                     <input
@@ -1037,11 +1040,11 @@ function SuperAdminPage() {
                       placeholder="AI-DM-04"
                       value={courseCode}
                       onChange={(e) => setCourseCode(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs font-bold uppercase text-foreground outline-none focus:border-primary"
+                      className="staff-input font-mono text-xs font-bold uppercase"
                     />
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                    <label className="staff-label mb-1">
                       Category / Wing
                     </label>
                     <input
@@ -1049,13 +1052,13 @@ function SuperAdminPage() {
                       value={courseCategory}
                       onChange={(e) => setCourseCategory(e.target.value)}
                       placeholder="Civil Service & Training"
-                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                      className="staff-input text-xs font-semibold"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                  <label className="staff-label mb-1">
                     Course Title (English)
                   </label>
                   <input
@@ -1064,12 +1067,12 @@ function SuperAdminPage() {
                     placeholder="e.g. Tactical Field Operations & Cyber Security"
                     value={courseTitleEn}
                     onChange={(e) => setCourseTitleEn(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                    className="staff-input text-xs font-semibold"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                  <label className="staff-label mb-1">
                     Course Title (Bangla - Optional)
                   </label>
                   <input
@@ -1077,15 +1080,15 @@ function SuperAdminPage() {
                     placeholder="ট্যাকটিক্যাল ফিল্ড অপারেশন ও সাইবার নিরাপত্তা কোর্স"
                     value={courseTitleBn}
                     onChange={(e) => setCourseTitleBn(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                    className="staff-input text-xs font-semibold"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                  <label className="staff-label mb-1">
                     Assign Multiple Instructors to This Course
                   </label>
-                  <div className="max-h-44 overflow-y-auto rounded-2xl border border-border bg-background p-2.5 space-y-1.5">
+                  <div className="staff-row-card">
                     {users
                       .filter((u) => u.role === "instructor" || u.role === "admin")
                       .map((inst) => {
@@ -1128,7 +1131,7 @@ function SuperAdminPage() {
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                  <label className="staff-label mb-1">
                     Min Passing Threshold (% · Optional Course Override)
                   </label>
                   <div className="flex items-center gap-2">
@@ -1139,7 +1142,7 @@ function SuperAdminPage() {
                       value={coursePassThreshold}
                       onChange={(e) => setCoursePassThreshold(e.target.value)}
                       placeholder={`Inherit Global (${resolvePassThresholdPct({ brandingDefaultThreshold: branding.defaultPassThresholdPct })}%)`}
-                      className="w-full rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs font-bold text-foreground outline-none focus:border-primary"
+                      className="staff-input font-mono text-xs font-bold"
                     />
                     {coursePassThreshold !== "" && (
                       <button
@@ -1194,7 +1197,7 @@ function SuperAdminPage() {
                 return (
                   <div
                     key={course.id}
-                    className="rounded-3xl border border-border bg-card p-6 shadow-sm space-y-4"
+                    className="staff-panel shadow-sm space-y-4"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border/80 pb-4">
                       <div className="space-y-1">
@@ -1287,7 +1290,7 @@ function SuperAdminPage() {
                         <button
                           type="button"
                           onClick={() => handleEditCourse(course)}
-                          className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold text-foreground hover:bg-accent"
+                          className="staff-input"
                         >
                           Edit Course
                         </button>
@@ -1337,9 +1340,8 @@ function SuperAdminPage() {
                       ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           {courseQuizzes.map((q, idx) => (
-                            <div
-                              key={q.id}
-                              className="flex flex-col justify-between rounded-2xl border border-border bg-background p-4 hover:border-primary/40 transition"
+                            <div key={q.id}
+                              className="staff-row-card flex flex-col"
                             >
                               <div>
                                 <div className="flex items-center justify-between gap-2">
@@ -1414,13 +1416,13 @@ function SuperAdminPage() {
         {/* Modal for Adding Sequential Quiz (Quiz 1, Quiz 2, Quiz 3...) under a Course */}
         {addingQuizForCourse && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in">
-            <div className="w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-2xl space-y-4">
+            <div className="w-full max-w-md staff-panel shadow-2xl space-y-4">
               <div className="flex items-center justify-between border-b border-border pb-3">
                 <div>
                   <span className="font-mono text-[10px] font-bold uppercase text-primary">
                     {addingQuizForCourse.code} · Sequential Assessment
                   </span>
-                  <h3 className="font-display text-lg font-black text-foreground">
+                  <h3 className="staff-panel-title">
                     Add Quiz #{newQuizNumber} to Course
                   </h3>
                 </div>
@@ -1436,7 +1438,7 @@ function SuperAdminPage() {
               <form onSubmit={handleCreateSequentialQuiz} className="space-y-3.5">
                 <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                    <label className="staff-label mb-1">
                       Quiz Number
                     </label>
                     <input
@@ -1444,17 +1446,17 @@ function SuperAdminPage() {
                       min={1}
                       value={newQuizNumber}
                       onChange={(e) => setNewQuizNumber(parseInt(e.target.value, 10) || 1)}
-                      className="w-full rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs font-bold text-foreground"
+                      className="staff-input font-mono text-xs font-bold"
                     />
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                    <label className="staff-label mb-1">
                       Lead Instructor
                     </label>
                     <select
                       value={newQuizInstructorId}
                       onChange={(e) => setNewQuizInstructorId(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground"
+                      className="staff-input text-xs font-semibold"
                     >
                       {users
                         .filter((u) => u.role === "instructor" || u.role === "admin")
@@ -1468,7 +1470,7 @@ function SuperAdminPage() {
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                  <label className="staff-label mb-1">
                     Quiz Title (English)
                   </label>
                   <input
@@ -1476,19 +1478,19 @@ function SuperAdminPage() {
                     required
                     value={newQuizTitleEn}
                     onChange={(e) => setNewQuizTitleEn(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground"
+                    className="staff-input text-xs font-semibold"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                  <label className="staff-label mb-1">
                     Quiz Title (Bangla)
                   </label>
                   <input
                     type="text"
                     value={newQuizTitleBn}
                     onChange={(e) => setNewQuizTitleBn(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground"
+                    className="staff-input text-xs font-semibold"
                   />
                 </div>
 
@@ -1518,17 +1520,17 @@ function SuperAdminPage() {
         {activeTab === "instructors" && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Left: Add New Instructor / Admin Account */}
-            <div className="lg:col-span-4 rounded-3xl border border-border bg-card p-6 space-y-4 h-fit">
+            <div className="lg:col-span-4 staff-panel space-y-4 h-fit">
               <div className="flex items-center gap-2">
                 <UserPlus className="h-5 w-5 text-primary" />
-                <h2 className="font-display text-lg font-black text-foreground">
+                <h2 className="staff-panel-title">
                   Add Instructor or Co-Admin
                 </h2>
               </div>
 
               <form onSubmit={handleCreateUser} className="space-y-3.5">
                 <div>
-                  <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                  <label className="staff-label mb-1">
                     Full Name &amp; Rank/Title
                   </label>
                   <input
@@ -1537,13 +1539,13 @@ function SuperAdminPage() {
                     placeholder="e.g. Capt. Mahmudul Hasan"
                     value={newUserName}
                     onChange={(e) => setNewUserName(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground"
+                    className="staff-input text-xs font-semibold"
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                    <label className="staff-label mb-1">
                       Login Email
                     </label>
                     <input
@@ -1552,11 +1554,11 @@ function SuperAdminPage() {
                       placeholder="mahmud@onnesha.app"
                       value={newUserEmail}
                       onChange={(e) => setNewUserEmail(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground"
+                      className="staff-input text-xs font-semibold"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                    <label className="staff-label mb-1">
                       Initial Password
                     </label>
                     <input
@@ -1564,43 +1566,43 @@ function SuperAdminPage() {
                       required
                       value={newUserPassword}
                       onChange={(e) => setNewUserPassword(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs font-bold text-foreground"
+                      className="staff-input font-mono text-xs font-bold"
                     />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                    <label className="staff-label mb-1">
                       Portal Role
                     </label>
                     <select
                       value={newUserRole}
                       onChange={(e) => setNewUserRole(e.target.value as "instructor" | "admin")}
-                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold text-foreground"
+                      className="staff-input text-xs font-bold"
                     >
                       <option value="instructor">Instructor (/dashboard)</option>
                       <option value="admin">Super Admin (/admin)</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                    <label className="staff-label mb-1">
                       Designation
                     </label>
                     <input
                       type="text"
                       value={newUserDesignation}
                       onChange={(e) => setNewUserDesignation(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground"
+                      className="staff-input text-xs font-semibold"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                  <label className="staff-label mb-1">
                     Assign to Courses (Multi-Select)
                   </label>
-                  <div className="max-h-36 overflow-y-auto rounded-2xl border border-border bg-background p-2 space-y-1">
+                  <div className="staff-row-card">
                     {courses.map((c) => {
                       const checked = newUserCourses.includes(c.id);
                       return (
@@ -1638,10 +1640,10 @@ function SuperAdminPage() {
             </div>
 
             {/* Right: Directory of All Instructors & Super Admins */}
-            <div className="lg:col-span-8 rounded-3xl border border-border bg-card p-6 space-y-4">
+            <div className="lg:col-span-8 staff-panel space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-display text-lg font-black text-foreground">
+                  <h3 className="staff-panel-title">
                     Registered Faculty Instructors &amp; Administrators ({users.length})
                   </h3>
                   <p className="text-xs text-muted-foreground">
@@ -1658,9 +1660,8 @@ function SuperAdminPage() {
                       (c.instructorIds || []).includes(u.id),
                   );
                   return (
-                    <div
-                      key={u.id}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-border bg-background p-4"
+                    <div key={u.id}
+                      className="staff-row-card flex flex-col sm:flex-row sm:items-center"
                     >
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -1763,8 +1764,8 @@ function SuperAdminPage() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Left: Add Region & Add Trainee */}
             <div className="lg:col-span-4 space-y-6">
-              <div className="rounded-3xl border border-border bg-card p-6 space-y-4">
-                <h3 className="font-display text-base font-black text-foreground flex items-center gap-2">
+              <div className="staff-panel space-y-4">
+                <h3 className="staff-panel-title flex items-center gap-2">
                   <MapPin className="h-4 w-4 text-primary" />
                   <span>Add Regional Command Range</span>
                 </h3>
@@ -1776,7 +1777,7 @@ function SuperAdminPage() {
                       placeholder="Code (DHK)"
                       value={newRegCode}
                       onChange={(e) => setNewRegCode(e.target.value)}
-                      className="rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs font-bold uppercase"
+                      className="staff-input font-mono uppercase"
                     />
                     <input
                       type="text"
@@ -1784,7 +1785,7 @@ function SuperAdminPage() {
                       placeholder="Range Name (EN)"
                       value={newRegNameEn}
                       onChange={(e) => setNewRegNameEn(e.target.value)}
-                      className="col-span-2 rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold"
+                      className="staff-input"
                     />
                   </div>
                   <input
@@ -1792,7 +1793,7 @@ function SuperAdminPage() {
                     placeholder="HQ / Center Name (Optional)"
                     value={newRegCenter}
                     onChange={(e) => setNewRegCenter(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold"
+                    className="staff-input text-xs font-semibold"
                   />
                   <button
                     type="submit"
@@ -1829,8 +1830,8 @@ function SuperAdminPage() {
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-border bg-card p-6 space-y-4">
-                <h3 className="font-display text-base font-black text-foreground flex items-center gap-2">
+              <div className="staff-panel space-y-4">
+                <h3 className="staff-panel-title flex items-center gap-2">
                   <UserPlus className="h-4 w-4 text-primary" />
                   <span>Enroll Trainee to Roster</span>
                 </h3>
@@ -1842,7 +1843,7 @@ function SuperAdminPage() {
                       placeholder="Roll / ID (2026-115)"
                       value={stdRoll}
                       onChange={(e) => setStdRoll(e.target.value)}
-                      className="rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs font-bold"
+                      className="staff-input font-mono"
                     />
                     <input
                       type="tel"
@@ -1850,7 +1851,7 @@ function SuperAdminPage() {
                       placeholder="Mobile (017XXXXXXXX)"
                       value={stdPhone}
                       onChange={(e) => setStdPhone(e.target.value)}
-                      className="rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs font-bold"
+                      className="staff-input font-mono"
                     />
                   </div>
                   <input
@@ -1859,12 +1860,12 @@ function SuperAdminPage() {
                     placeholder="Candidate Full Name"
                     value={stdName}
                     onChange={(e) => setStdName(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold"
+                    className="staff-input text-xs font-semibold"
                   />
                   <select
                     value={stdRegionId}
                     onChange={(e) => setStdRegionId(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold"
+                    className="staff-input text-xs font-semibold"
                   >
                     {regions.map((r) => (
                       <option key={r.id} value={r.id}>
@@ -1883,16 +1884,16 @@ function SuperAdminPage() {
             </div>
 
             {/* Right: Master Candidate Roster Table */}
-            <div className="lg:col-span-8 rounded-3xl border border-border bg-card p-6 space-y-4">
+            <div className="lg:col-span-8 staff-panel space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h3 className="font-display text-lg font-black text-foreground">
+                <h3 className="staff-panel-title">
                   Master Candidate Roster ({filteredRoster.length})
                 </h3>
                 <div className="flex flex-wrap items-center gap-2">
                   <select
                     value={rosterRegionFilter}
                     onChange={(e) => setRosterRegionFilter(e.target.value)}
-                    className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-bold"
+                    className="staff-input"
                   >
                     <option value="all">All Regions ({roster.length})</option>
                     {regions.map((r) => (
@@ -1906,14 +1907,14 @@ function SuperAdminPage() {
                     placeholder="Search Roll, Name or Phone..."
                     value={rosterSearch}
                     onChange={(e) => setRosterSearch(e.target.value)}
-                    className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-semibold"
+                    className="staff-input"
                   />
                 </div>
               </div>
 
               <div className="max-h-[520px] overflow-y-auto rounded-2xl border border-border">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-muted/60 text-[11px] font-bold uppercase text-muted-foreground sticky top-0">
+                  <thead className="bg-muted/60 staff-label sticky top-0">
                     <tr>
                       <th className="p-3">Roll ID</th>
                       <th className="p-3">Candidate Name</th>
@@ -1975,15 +1976,15 @@ function SuperAdminPage() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               <form
                 onSubmit={handleSaveBrandingAndSecurity}
-                className="lg:col-span-7 rounded-3xl border border-border bg-card p-6 space-y-5"
+                className="lg:col-span-7 staff-panel space-y-5"
               >
-                <h3 className="font-display text-lg font-black text-foreground flex items-center gap-2">
+                <h3 className="staff-panel-title flex items-center gap-2">
                   <ShieldAlert className="h-5 w-5 text-primary" />
                   <span>Global Anti-Cheat Screen Lock Policy</span>
                 </h3>
 
                 {/* Anti-Cheat Controls */}
-                <div className="rounded-2xl border border-border bg-background p-4 space-y-4">
+                <div className="staff-row-card">
                   <div className="text-xs font-black uppercase tracking-wider text-primary">
                     Proctoring &amp; Screen-Switch Prevention
                   </div>
@@ -2104,15 +2105,15 @@ function SuperAdminPage() {
 
                 <button
                   type="submit"
-                  className="w-full rounded-2xl bg-primary py-3 text-xs font-extrabold text-primary-foreground shadow-sm hover:bg-primary/90 transition"
+                  className="staff-btn-primary w-full py-3"
                 >
                   Save Global Security &amp; Branding Settings
                 </button>
               </form>
 
               {/* Right: Database Backup & Restore */}
-              <div className="lg:col-span-5 rounded-3xl border border-border bg-card p-6 space-y-5 h-fit">
-                <h3 className="font-display text-lg font-black text-foreground">
+              <div className="lg:col-span-5 staff-panel space-y-5 h-fit">
+                <h3 className="staff-panel-title">
                   Database Persistence &amp; JSON Snapshot
                 </h3>
                 <p className="text-xs text-muted-foreground leading-relaxed">
@@ -2132,7 +2133,7 @@ function SuperAdminPage() {
                     <span>Export Full Database Snapshot (.json)</span>
                   </button>
 
-                  <label className="flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-background py-3 text-xs font-bold text-foreground hover:bg-accent transition cursor-pointer">
+                  <label className="staff-input flex">
                     <Upload className="h-4 w-4 text-primary" />
                     <span>Import / Restore Database Snapshot (.json)</span>
                     <input
@@ -2202,7 +2203,7 @@ function SuperAdminPage() {
                           type="button"
                           disabled={isPurgingUnder50}
                           onClick={() => setConfirmPurgeUnder50(false)}
-                          className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold text-foreground hover:bg-accent transition cursor-pointer"
+                          className="staff-input"
                         >
                           Cancel
                         </button>
@@ -2219,10 +2220,10 @@ function SuperAdminPage() {
         {/* =================================================================== */}
         {activeTab === "sales_billing" && (
           <div className="space-y-6">
-            <div className="rounded-3xl border border-border bg-card p-6 space-y-4">
+            <div className="staff-panel space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h3 className="font-display text-lg font-black text-foreground">
+                  <h3 className="staff-panel-title">
                     Enterprise &amp; Institutional Inquiries ({salesLeads.length})
                   </h3>
                   <p className="text-xs text-muted-foreground">
@@ -2232,7 +2233,7 @@ function SuperAdminPage() {
                 <button
                   type="button"
                   onClick={() => db.syncFromServerStore().then(refreshAll)}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-bold hover:bg-accent transition"
+                  className="staff-input"
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
                   <span>Sync Server</span>
@@ -2287,7 +2288,7 @@ function SuperAdminPage() {
                                   `Lead "${lead.organization}" updated to ${e.target.value}.`,
                                 );
                               }}
-                              className="rounded-xl border border-border bg-background px-2.5 py-1 font-mono text-[11px] font-bold uppercase text-foreground"
+                              className="staff-input font-mono uppercase"
                             >
                               <option value="new">New</option>
                               <option value="contacted">Contacted</option>
@@ -2303,9 +2304,9 @@ function SuperAdminPage() {
               </div>
             </div>
 
-            <div className="rounded-3xl border border-border bg-card p-6 space-y-4">
+            <div className="staff-panel space-y-4">
               <div>
-                <h3 className="font-display text-lg font-black text-foreground">
+                <h3 className="staff-panel-title">
                   Subscription &amp; bKash Payment Ledger ({transactions.length})
                 </h3>
                 <p className="text-xs text-muted-foreground">
@@ -2360,7 +2361,7 @@ function SuperAdminPage() {
                                   `Transaction ${trx.trxId || trx.id} marked ${nextStatus}${nextStatus === "completed" ? " · Account plan synced" : ""}.`,
                                 );
                               }}
-                              className="rounded-xl border border-border bg-background px-2.5 py-1 font-mono text-[11px] font-bold uppercase text-foreground"
+                              className="staff-input font-mono uppercase"
                             >
                               <option value="completed">Completed</option>
                               <option value="pending">Pending</option>
@@ -2428,14 +2429,14 @@ function SuperAdminPage() {
                   {/* Global Threshold Card */}
                   <form
                     onSubmit={handleSaveGlobalPassThreshold}
-                    className="lg:col-span-5 rounded-3xl border border-border bg-card p-6 space-y-4 shadow-sm"
+                    className="lg:col-span-5 staff-panel space-y-4 shadow-sm"
                   >
                     <div className="flex items-center gap-2">
                       <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
                         <Percent className="h-4 w-4" />
                       </div>
                       <div>
-                        <h3 className="font-display text-base font-black text-foreground">
+                        <h3 className="staff-panel-title">
                           Global Passing Threshold (%)
                         </h3>
                         <p className="text-[11px] text-muted-foreground">
@@ -2444,8 +2445,8 @@ function SuperAdminPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-border bg-background p-4 space-y-3">
-                      <label className="block text-[11px] font-bold uppercase text-muted-foreground">
+                    <div className="staff-row-card">
+                      <label className="staff-label">
                         Minimum Accuracy Required for Certificate (0–100%)
                       </label>
                       <div className="flex items-center gap-3">
@@ -2492,10 +2493,10 @@ function SuperAdminPage() {
                   </form>
 
                   {/* Per-Course Passing Threshold Overrides */}
-                  <div className="lg:col-span-7 rounded-3xl border border-border bg-card p-6 space-y-4 shadow-sm">
+                  <div className="lg:col-span-7 staff-panel space-y-4 shadow-sm">
                     <div className="flex items-center justify-between gap-2">
                       <div>
-                        <h3 className="font-display text-base font-black text-foreground">
+                        <h3 className="staff-panel-title">
                           Per-Course Passing Threshold Overrides
                         </h3>
                         <p className="text-[11px] text-muted-foreground">
@@ -2585,10 +2586,10 @@ function SuperAdminPage() {
                 </div>
 
                 {/* Issued Certificates Registry */}
-                <div className="rounded-3xl border border-border bg-card p-6 space-y-4 shadow-sm">
+                <div className="staff-panel space-y-4 shadow-sm">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <h3 className="font-display text-lg font-black text-foreground flex items-center gap-2">
+                      <h3 className="staff-panel-title flex items-center gap-2">
                         <Award className="h-5 w-5 text-emerald-500" />
                         <span>All Issued Verifiable Certificates ({filteredCerts.length})</span>
                       </h3>
@@ -2602,7 +2603,7 @@ function SuperAdminPage() {
                       type="button"
                       onClick={() => handleExportCertificatesCsv(filteredCerts)}
                       disabled={filteredCerts.length === 0}
-                      className="inline-flex items-center gap-1.5 rounded-2xl border border-border bg-background px-4 py-2 text-xs font-bold text-foreground hover:bg-accent transition disabled:opacity-50"
+                      className="staff-input disabled:opacity-50"
                     >
                       <FileSpreadsheet className="h-4 w-4 text-emerald-500" />
                       <span>Export CSV</span>
@@ -2618,7 +2619,7 @@ function SuperAdminPage() {
                         value={certSearch}
                         onChange={(e) => setCertSearch(e.target.value)}
                         placeholder="Search by Certificate ID, student name, roll, or assessment..."
-                        className="w-full rounded-xl border border-border bg-background pl-9 pr-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                        className="staff-input pl-9 pr-3"
                       />
                     </div>
 
@@ -2629,7 +2630,7 @@ function SuperAdminPage() {
                           e.target.value as "all" | "course_completion" | "quiz_session",
                         )
                       }
-                      className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                      className="staff-input"
                     >
                       <option value="all">All kinds</option>
                       <option value="course_completion">Course completion</option>
@@ -2639,7 +2640,7 @@ function SuperAdminPage() {
                     <select
                       value={certRegionFilter}
                       onChange={(e) => setCertRegionFilter(e.target.value)}
-                      className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                      className="staff-input"
                     >
                       <option value="all">All Regions ({certificates.length})</option>
                       {uniqueCertRegions.map((reg) => (
@@ -2652,7 +2653,7 @@ function SuperAdminPage() {
                     <select
                       value={certQuizFilter}
                       onChange={(e) => setCertQuizFilter(e.target.value)}
-                      className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                      className="staff-input"
                     >
                       <option value="all">All Assessments</option>
                       {uniqueCertQuizzes.map((qt) => (
@@ -2873,10 +2874,10 @@ function SuperAdminPage() {
                 )}
 
                 {/* Recent Exam Candidate Pass / Fail Eligibility Log */}
-                <div className="rounded-3xl border border-border bg-card p-6 space-y-4 shadow-sm">
+                <div className="staff-panel space-y-4 shadow-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <h3 className="font-display text-base font-black text-foreground flex items-center gap-2">
+                      <h3 className="staff-panel-title flex items-center gap-2">
                         <ShieldCheck className="h-4 w-4 text-primary" />
                         <span>
                           Candidate Pass / Fail &amp; Certificate Eligibility Log (Latest{" "}
@@ -3001,13 +3002,13 @@ function SuperAdminPage() {
         {/* Certificate Preview Modal */}
         {previewCert && (
           <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm p-4 sm:p-8 flex flex-col items-center justify-start">
-            <div className="w-full max-w-5xl rounded-3xl border border-border bg-card p-4 sm:p-6 shadow-2xl space-y-4 my-4">
+            <div className="w-full max-w-5xl staff-panel p-4 sm:p-6 shadow-2xl space-y-4 my-4">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
                 <div>
                   <span className="font-mono text-[10px] font-bold uppercase text-primary">
                     {previewCert.certificateNumber}
                   </span>
-                  <h3 className="font-display text-base sm:text-lg font-black text-foreground">
+                  <h3 className="staff-panel-title">
                     {previewCert.studentName} · {previewCert.quizTitle}
                   </h3>
                 </div>
@@ -3025,10 +3026,9 @@ function SuperAdminPage() {
                         : "Download PDF"}
                     </span>
                   </button>
-                  <Link
-                    to="/verify/$certId"
+                  <Link to="/verify/$certId"
                     params={{ certId: previewCert.certificateNumber }}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3.5 py-2 text-xs font-bold text-foreground hover:bg-accent"
+                    className="staff-row-card"
                   >
                     <ExternalLink className="h-3.5 w-3.5 text-emerald-500" />
                     <span>Open Verification</span>
@@ -3050,13 +3050,13 @@ function SuperAdminPage() {
         {/* Edit Instructor / Reset Password Modal */}
         {editingUser && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in">
-            <div className="w-full max-w-lg rounded-3xl border border-border bg-card p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="w-full max-w-lg staff-panel shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between border-b border-border pb-3">
                 <div>
                   <span className="font-mono text-[10px] font-bold uppercase text-primary">
                     {editingUser.email}
                   </span>
-                  <h3 className="font-display text-lg font-black text-foreground">
+                  <h3 className="staff-panel-title">
                     Edit Account &amp; Course Assignments
                   </h3>
                 </div>
@@ -3072,7 +3072,7 @@ function SuperAdminPage() {
               <form onSubmit={handleSaveEditedUser} className="space-y-3.5">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                    <label className="staff-label mb-1">
                       Full Name *
                     </label>
                     <input
@@ -3080,18 +3080,18 @@ function SuperAdminPage() {
                       required
                       value={editUserName}
                       onChange={(e) => setEditUserName(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground"
+                      className="staff-input text-xs font-semibold"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                    <label className="staff-label mb-1">
                       Role
                     </label>
                     <select
                       value={editUserRole}
                       disabled={editingUser.email === "admin@onnesha.app"}
                       onChange={(e) => setEditUserRole(e.target.value as "instructor" | "admin")}
-                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold text-foreground disabled:opacity-60"
+                      className="staff-input text-xs font-bold disabled:opacity-60"
                     >
                       <option value="instructor">Faculty Instructor</option>
                       <option value="admin">Super Admin</option>
@@ -3101,43 +3101,43 @@ function SuperAdminPage() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                    <label className="staff-label mb-1">
                       Designation
                     </label>
                     <input
                       type="text"
                       value={editUserDesignation}
                       onChange={(e) => setEditUserDesignation(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground"
+                      className="staff-input text-xs font-semibold"
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                    <label className="staff-label mb-1">
                       Phone Number
                     </label>
                     <input
                       type="tel"
                       value={editUserPhone}
                       onChange={(e) => setEditUserPhone(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs font-semibold text-foreground"
+                      className="staff-input font-mono text-xs font-semibold"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                  <label className="staff-label mb-1">
                     Institution / Wing
                   </label>
                   <input
                     type="text"
                     value={editUserInstitution}
                     onChange={(e) => setEditUserInstitution(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground"
+                    className="staff-input text-xs font-semibold"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                  <label className="staff-label mb-1">
                     Reset Password (Optional — leave blank to keep current)
                   </label>
                   <input
@@ -3146,15 +3146,15 @@ function SuperAdminPage() {
                     value={editUserPassword}
                     onChange={(e) => setEditUserPassword(e.target.value)}
                     placeholder="Enter new password (min 6 chars)"
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground"
+                    className="staff-input text-xs font-semibold"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
+                  <label className="staff-label mb-1">
                     Assigned Courses ({editUserCourses.length})
                   </label>
-                  <div className="max-h-36 overflow-y-auto rounded-2xl border border-border bg-background p-2 space-y-1">
+                  <div className="staff-row-card">
                     {courses.map((c) => {
                       const checked = editUserCourses.includes(c.id);
                       return (
@@ -3191,7 +3191,7 @@ function SuperAdminPage() {
                   </button>
                   <button
                     type="submit"
-                    className="rounded-xl bg-primary px-5 py-2 text-xs font-extrabold text-primary-foreground hover:bg-primary/90"
+                    className="staff-btn-primary"
                   >
                     Save Changes
                   </button>

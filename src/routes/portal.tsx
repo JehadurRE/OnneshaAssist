@@ -418,7 +418,7 @@ function StudentPortalPage() {
         </div>
 
           <div className="space-y-8">
-            <section className="rounded-3xl border border-border bg-card p-6">
+            <section className="staff-panel">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-black">{portal.student?.name}</h2>
@@ -452,7 +452,7 @@ function StudentPortalPage() {
               </div>
             </section>
 
-            <section className="rounded-3xl border border-border bg-card p-6">
+            <section className="staff-panel">
               <div className="mb-4 flex items-center gap-2 font-bold">
                 <BookOpen className="h-4 w-4" />
                 {lang === "bn" ? "কুইজ অগ্রগতি" : "Quiz progress"}
@@ -500,7 +500,7 @@ function StudentPortalPage() {
               </Link>
             </section>
 
-            <section className="rounded-3xl border border-border bg-card p-6 space-y-4">
+            <section className="staff-panel space-y-4">
               <div className="flex flex-wrap items-center gap-2 font-bold">
                 <ClipboardList className="h-4 w-4" />
                 {lang === "bn"
@@ -509,7 +509,7 @@ function StudentPortalPage() {
                 {practicalExam && <StatusPill status={practicalExam.status} />}
               </div>
               {!practicalExam ? (
-                <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                <div className="staff-empty text-sm text-muted-foreground">
                   {lang === "bn"
                     ? "প্রায়োগিক পরীক্ষা এখনো খোলা হয়নি অথবা কনফিগার করা হয়নি। প্রশাসকের অপেক্ষা করুন।"
                     : "Final Practical is not open or not configured yet. Please wait for admin setup."}
@@ -582,7 +582,7 @@ function StudentPortalPage() {
                         }
                         disabled={!canSubmit}
                         rows={4}
-                        className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                        className="mt-1 staff-input"
                       />
                     </label>
                     <label className="block text-xs font-semibold">
@@ -597,7 +597,7 @@ function StudentPortalPage() {
                           }))
                         }
                         disabled={!canSubmit}
-                        className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                        className="mt-1 staff-input"
                         placeholder="https://"
                       />
                     </label>
@@ -677,7 +677,7 @@ function StudentPortalPage() {
               )}
             </section>
 
-            <section className="rounded-3xl border border-border bg-card p-6">
+            <section className="staff-panel">
               <div className="flex items-center gap-2 font-bold">
                 <Award className="h-4 w-4" />
                 {lang === "bn" ? "কোর্স সমাপনী সনদপত্র" : "Course completion certificate"}
