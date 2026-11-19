@@ -5669,8 +5669,62 @@ export const serverLookupFinalExamByPin = createServerFn({ method: "POST" })
     };
   });
 
+function resolveFinalExamStudent(
+  store: PersistentStoreData,
+  data: { query?: string | undefined; rollNumber?: string | undefined; phone?: string | undefined },
+) {
+  const query = (data.query || "").trim();
+  if (query.length >= 2) {
+    const byQuery = findRosterCandidate(store.roster, query);
+    if (byQuery) return byQuery;
+  }
+  if ((data.rollNumber || "").trim() && (data.phone || "").trim()) {
+    return matchRosterIdentity({
+      rollNumber: data.rollNumber || "",
+      phone: data.phone || "",
+      roster: store.roster,
+    });
+  }
+  return null;
+}
+
+/** Quiz-style mobile/roll search for Final Exam (no live arena session required). */
+export const serverLookupFinalExamCandidate = createServerFn({ method: "POST" })
+  .validator((data: { pin: string; query: string }) => data)
+  .handler(async ({ data }) => {
+    const store = getStore();
+    ensureFinalPracticalSeeded(store);
+    const exam = findFinalExamByPin(store, data.pin);
+    if (!exam) return { success: false as const, error: "Invalid Final Exam PIN." };
+    const rawQuery = (data.query || "").trim();
+    if (!rawQuery || rawQuery.length < 2) {
+      return {
+        success: false as const,
+        error: "Enter your mobile number (or roll) to search the roster.",
+      };
+    }
+    const matched = findRosterCandidate(store.roster, rawQuery);
+    if (!matched) {
+      return {
+        success: false as const,
+        error: "No enrolled candidate matched this Mobile / Roll Number.",
+      };
+    }
+    return {
+      success: true as const,
+      candidate: sanitizeLookupCandidate(matched, false),
+    };
+  });
+
 export const serverJoinFinalExam = createServerFn({ method: "POST" })
-  .validator((data: { pin: string; rollNumber: string; phone: string }) => data)
+  .validator(
+    (data: {
+      pin: string;
+      query?: string | undefined;
+      rollNumber?: string | undefined;
+      phone?: string | undefined;
+    }) => data,
+  )
   .handler(async ({ data }) => {
     const store = getStore();
     ensureFinalPracticalSeeded(store);
@@ -5679,13 +5733,12 @@ export const serverJoinFinalExam = createServerFn({ method: "POST" })
     if (!isFinalExamJoinWindowOpen(exam)) {
       return { success: false as const, error: "Final Exam is outside the scheduled window." };
     }
-    const student = matchRosterIdentity({
-      rollNumber: data.rollNumber,
-      phone: data.phone,
-      roster: store.roster,
-    });
+    const student = resolveFinalExamStudent(store, data);
     if (!student) {
-      return { success: false as const, error: "Roll + mobile not found on roster." };
+      return {
+        success: false as const,
+        error: "Mobile / roll not found on roster. Search your registered mobile number.",
+      };
     }
     const quiz = resolveQuizForFinalExam(store, exam.linkedQuizId);
     if (!quiz || !(quiz.questions || []).length) {
@@ -5763,7 +5816,14 @@ export const serverJoinFinalExam = createServerFn({ method: "POST" })
   });
 
 export const serverStartFinalQuizAttempt = createServerFn({ method: "POST" })
-  .validator((data: { pin: string; rollNumber: string; phone: string }) => data)
+  .validator(
+    (data: {
+      pin: string;
+      query?: string | undefined;
+      rollNumber?: string | undefined;
+      phone?: string | undefined;
+    }) => data,
+  )
   .handler(async ({ data }) => {
     const store = getStore();
     ensureFinalPracticalSeeded(store);
@@ -5772,12 +5832,13 @@ export const serverStartFinalQuizAttempt = createServerFn({ method: "POST" })
     if (!isFinalExamJoinWindowOpen(exam)) {
       return { success: false as const, error: "Final Exam window is closed." };
     }
-    const student = matchRosterIdentity({
-      rollNumber: data.rollNumber,
-      phone: data.phone,
-      roster: store.roster,
-    });
-    if (!student) return { success: false as const, error: "Roll + mobile not found on roster." };
+    const student = resolveFinalExamStudent(store, data);
+    if (!student) {
+      return {
+        success: false as const,
+        error: "Mobile / roll not found on roster. Search your registered mobile number.",
+      };
+    }
     const quiz = resolveQuizForFinalExam(store, exam.linkedQuizId);
     if (!quiz?.questions?.length) {
       return { success: false as const, error: "Final quiz is not configured." };
