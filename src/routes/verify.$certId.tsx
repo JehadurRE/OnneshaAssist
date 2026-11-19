@@ -183,11 +183,13 @@ function VerifyCertPage() {
         {/* Top Bar & Lookup Form */}
         <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 print:hidden">
           <Link
-            to="/play"
+            to={cert?.kind === "course_completion" ? "/portal" : "/play"}
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition self-start"
           >
             <ArrowLeft className="h-4 w-4 shrink-0" />
-            <span>Back to Exam Center</span>
+            <span>
+              {cert?.kind === "course_completion" ? "Back to Student Portal" : "Back to Exam Center"}
+            </span>
           </Link>
 
           <form onSubmit={handleLookup} className="flex items-center gap-2 w-full sm:w-auto">

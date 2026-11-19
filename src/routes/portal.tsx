@@ -2,12 +2,18 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import React, { useMemo, useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
+import { CertificateView } from "@/components/common/CertificateView";
 import { useLanguage } from "@/lib/i18n";
 import {
   serverGetStudentPortal,
   serverSubmitPracticalWork,
 } from "@/lib/server-session";
-import type { PracticalExam, PracticalSubmission, PracticalTask } from "@/lib/types";
+import type {
+  CertificateData,
+  PracticalExam,
+  PracticalSubmission,
+  PracticalTask,
+} from "@/lib/types";
 import { isPracticalPastDeadline, isPracticalWindowOpen } from "@/lib/practical-exam";
 import {
   Award,
@@ -20,6 +26,22 @@ import {
   Upload,
   User,
 } from "lucide-react";
+
+function StatusPill({ status }: { status: string }) {
+  const tone =
+    status === "open" || status === "graded"
+      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+      : status === "late" || status === "returned" || status === "scheduled"
+        ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+        : "bg-muted text-muted-foreground";
+  return (
+    <span
+      className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${tone}`}
+    >
+      {status}
+    </span>
+  );
+}
 
 export const Route = createFileRoute("/portal")({
   head: () => ({
@@ -197,7 +219,7 @@ function StudentPortalPage() {
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <Navbar />
-      <main className="flex-1 mx-auto w-full max-w-5xl px-5 py-10 sm:px-8">
+      <main className="flex-1 mx-auto w-full max-w-5xl px-5 py-10 sm:px-8 pb-28 md:pb-14">
         <div className="mb-8">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-600">
             {lang === "bn" ? "শিক্ষার্থী পোর্টাল" : "Student Portal"}
@@ -328,27 +350,45 @@ function StudentPortalPage() {
             </section>
 
             <section className="rounded-3xl border border-border bg-card p-6 space-y-4">
-              <div className="flex items-center gap-2 font-bold">
+              <div className="flex flex-wrap items-center gap-2 font-bold">
                 <ClipboardList className="h-4 w-4" />
                 {lang === "bn"
                   ? practicalExam?.titleBn || "চূড়ান্ত প্রায়োগিক"
                   : practicalExam?.titleEn || "Final Practical"}
+                {practicalExam && <StatusPill status={practicalExam.status} />}
               </div>
-              <p className="text-sm text-muted-foreground">
-                {lang === "bn" ? practicalExam?.descriptionBn : practicalExam?.descriptionEn}
-              </p>
-              {practicalExam && (
-                <div className="rounded-2xl border border-border/80 bg-muted/30 px-3 py-2 text-xs font-mono text-muted-foreground">
-                  Status: {practicalExam.status}
-                  {practicalExam.opensAt ? ` · opens ${new Date(practicalExam.opensAt).toLocaleString()}` : ""}
-                  {practicalExam.closesAt
-                    ? ` · deadline ${new Date(practicalExam.closesAt).toLocaleString()}`
-                    : " · no deadline"}
-                  {pastDeadline && windowOpen ? " · late submissions accepted" : ""}
-                  {!windowOpen ? " · window closed" : ""}
+              {!practicalExam ? (
+                <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                  {lang === "bn"
+                    ? "প্রায়োগিক পরীক্ষা এখনো খোলা হয়নি অথবা কনফিগার করা হয়নি। প্রশাসকের অপেক্ষা করুন।"
+                    : "Final Practical is not open or not configured yet. Please wait for admin setup."}
                 </div>
-              )}
-              {(practicalExam?.tasks || []).map((task) => {
+              ) : (
+                <>
+              <p className="text-sm text-muted-foreground">
+                {lang === "bn" ? practicalExam.descriptionBn : practicalExam.descriptionEn}
+              </p>
+              <div className="rounded-2xl border border-border/80 bg-muted/30 px-3 py-2 text-xs text-muted-foreground space-y-1">
+                <div className="font-mono">
+                  {practicalExam.opensAt
+                    ? `Opens ${new Date(practicalExam.opensAt).toLocaleString()}`
+                    : "Open window not set"}
+                  {practicalExam.closesAt
+                    ? ` · Deadline ${new Date(practicalExam.closesAt).toLocaleString()}`
+                    : " · No deadline"}
+                </div>
+                {pastDeadline && windowOpen && (
+                  <div className="text-amber-700 dark:text-amber-300 font-semibold">
+                    {lang === "bn" ? "ডেডলাইন পার — বিলম্বে জমা গ্রহণযোগ্য।" : "Past deadline — late submissions accepted."}
+                  </div>
+                )}
+                {!windowOpen && (
+                  <div className="font-semibold">
+                    {lang === "bn" ? "জমা উইন্ডো বন্ধ।" : "Submission window closed."}
+                  </div>
+                )}
+              </div>
+              {(practicalExam.tasks || []).map((task) => {
                 const draft = drafts[task.id] || { textAnswer: "", linkUrl: "" };
                 return (
                   <div
@@ -415,22 +455,22 @@ function StudentPortalPage() {
                 );
               })}
               {portal.submission && (
-                <p className="text-xs font-mono text-muted-foreground">
-                  Status: {portal.submission.status}
-                  {typeof portal.submission.practicalScorePct === "number"
-                    ? ` · practical ${portal.submission.practicalScorePct}%`
-                    : ""}
-                  {portal.submission.instructorFeedback
-                    ? ` · feedback: ${portal.submission.instructorFeedback}`
-                    : ""}
-                </p>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <StatusPill status={portal.submission.status} />
+                  {typeof portal.submission.practicalScorePct === "number" && (
+                    <span className="font-mono">practical {portal.submission.practicalScorePct}%</span>
+                  )}
+                  {portal.submission.instructorFeedback && (
+                    <span>feedback: {portal.submission.instructorFeedback}</span>
+                  )}
+                </div>
               )}
               {!gradedLocked && windowOpen && (
                 <button
                   type="button"
                   onClick={() => void submitPractical()}
                   disabled={submitting}
-                  className="inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-sm font-bold text-background disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground disabled:opacity-60"
                 >
                   {submitting ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -454,6 +494,8 @@ function StudentPortalPage() {
                 </p>
               )}
               {notice && <p className="text-sm text-emerald-700 dark:text-emerald-300">{notice}</p>}
+                </>
+              )}
             </section>
 
             <section className="rounded-3xl border border-border bg-card p-6">
@@ -467,21 +509,27 @@ function StudentPortalPage() {
                   : "Certificates are course-level (not per quiz). Admins issue after Final Quiz + Practical marking."}
               </p>
               {portal.courseCertificate ? (
-                <div className="mt-4 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4">
-                  <div className="font-mono text-sm font-bold">
-                    {portal.courseCertificate.certificateNumber}
+                <div className="mt-4 space-y-4">
+                  <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4">
+                    <div className="font-mono text-sm font-bold">
+                      {portal.courseCertificate.certificateNumber}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Issued {portal.courseCertificate.issueDate} · Combined{" "}
+                      {portal.courseCertificate.combinedScorePct ?? "—"}%
+                    </div>
+                    <Link
+                      to="/verify/$certId"
+                      params={{ certId: portal.courseCertificate.certificateNumber }}
+                      className="mt-2 inline-flex items-center gap-1 text-sm font-bold text-emerald-700 hover:underline"
+                    >
+                      {lang === "bn" ? "যাচাই করুন" : "Verify"} <ExternalLink className="h-3.5 w-3.5" />
+                    </Link>
                   </div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Issued {portal.courseCertificate.issueDate} · Combined{" "}
-                    {portal.courseCertificate.combinedScorePct ?? "—"}%
-                  </div>
-                  <Link
-                    to="/verify/$certId"
-                    params={{ certId: portal.courseCertificate.certificateNumber }}
-                    className="mt-2 inline-flex items-center gap-1 text-sm font-bold text-emerald-700 hover:underline"
-                  >
-                    {lang === "bn" ? "যাচাই করুন" : "Verify"} <ExternalLink className="h-3.5 w-3.5" />
-                  </Link>
+                  {"studentName" in portal.courseCertificate &&
+                    (portal.courseCertificate as CertificateData).studentName && (
+                      <CertificateView certificate={portal.courseCertificate as CertificateData} />
+                    )}
                 </div>
               ) : (
                 <div className="mt-4 text-sm">

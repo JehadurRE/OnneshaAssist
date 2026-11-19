@@ -390,6 +390,19 @@ export const Navbar: React.FC = () => {
               </Link>
 
               <Link
+                to="/portal"
+                onClick={() => setMobileDrawerOpen(false)}
+                className={`flex items-center gap-2 rounded-xl p-3 text-xs font-bold ${
+                  isActive("/portal")
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background border border-border text-foreground"
+                }`}
+              >
+                <GraduationCap className="h-4 w-4" />
+                <span>{lang === "bn" ? "পোর্টাল" : "Portal"}</span>
+              </Link>
+
+              <Link
                 to="/play"
                 onClick={() => setMobileDrawerOpen(false)}
                 className={`flex items-center gap-2 rounded-xl p-3 text-xs font-bold ${
@@ -559,16 +572,16 @@ export const Navbar: React.FC = () => {
           </Link>
 
           <Link
-            to="/timer"
+            to="/portal"
             className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl ${
-              isActive("/timer")
+              isActive("/portal")
                 ? "text-primary font-bold"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            <Clock className="h-4 w-4 mb-0.5" />
+            <GraduationCap className="h-4 w-4 mb-0.5" />
             <span className="text-[10px] font-medium leading-none">
-              {lang === "bn" ? "টাইমার" : "Timer"}
+              {lang === "bn" ? "পোর্টাল" : "Portal"}
             </span>
           </Link>
 

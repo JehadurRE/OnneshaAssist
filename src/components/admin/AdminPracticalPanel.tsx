@@ -15,6 +15,7 @@ import type {
   PracticalExam,
   PracticalExamStatus,
   PracticalSubmission,
+  PracticalSubmissionStatus,
   PracticalTask,
   Quiz,
 } from "@/lib/types";
@@ -29,6 +30,28 @@ import {
   Save,
   Trash2,
 } from "lucide-react";
+
+function StatusPill({
+  status,
+}: {
+  status: PracticalSubmissionStatus | PracticalExamStatus | string;
+}) {
+  const tone =
+    status === "open" || status === "graded"
+      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+      : status === "late" || status === "returned" || status === "scheduled"
+        ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+        : status === "closed" || status === "archived" || status === "draft"
+          ? "bg-muted text-muted-foreground"
+          : "bg-sky-500/15 text-sky-800 dark:text-sky-300";
+  return (
+    <span
+      className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${tone}`}
+    >
+      {status}
+    </span>
+  );
+}
 
 export function AdminPracticalPanel(props: {
   courses: Course[];
@@ -66,7 +89,10 @@ export function AdminPracticalPanel(props: {
   }, [requirements, course]);
 
   const courseQuizzes = useMemo(
-    () => props.quizzes.filter((q) => q.courseId === courseId),
+    () =>
+      props.quizzes
+        .filter((q) => q.courseId === courseId)
+        .sort((a, b) => (a.quizNumber || 0) - (b.quizNumber || 0)),
     [props.quizzes, courseId],
   );
 
@@ -126,6 +152,14 @@ export function AdminPracticalPanel(props: {
     .sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
 
   const markKey = (subId: string, taskId: string) => `${subId}::${taskId}`;
+
+  const canGrade = (status: PracticalSubmissionStatus) =>
+    status === "submitted" || status === "late" || status === "graded";
+
+  const likelyEligible = (sub: PracticalSubmission) =>
+    sub.status === "graded" &&
+    typeof sub.combinedPct === "number" &&
+    sub.combinedPct >= (exam?.passThresholdPct ?? course?.passThresholdPct ?? 50);
 
   const gradeOne = async (sub: PracticalSubmission) => {
     if (!exam?.tasks.length) return;
@@ -198,6 +232,13 @@ export function AdminPracticalPanel(props: {
 
   const bulkIssue = async () => {
     if (!course) return;
+    if (
+      !window.confirm(
+        `Issue course certificates for all eligible graded candidates in ${course.code}?`,
+      )
+    ) {
+      return;
+    }
     setBusyId("bulk");
     try {
       const res = await serverBulkIssueCourseCertificates({ data: { courseId: course.id } });
@@ -307,6 +348,14 @@ export function AdminPracticalPanel(props: {
     patchExam({ tasks: exam.tasks.filter((t) => t.id !== taskId) });
   };
 
+  const toggleRequiredQuiz = (quizId: string) => {
+    if (!requirement) return;
+    const current = new Set(requirement.requiredQuizIds || []);
+    if (current.has(quizId)) current.delete(quizId);
+    else current.add(quizId);
+    patchRequirement({ requiredQuizIds: Array.from(current) });
+  };
+
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground p-6">
@@ -315,56 +364,61 @@ export function AdminPracticalPanel(props: {
     );
   }
 
+  const weightSum = (exam?.quizWeightPct ?? 40) + (exam?.practicalWeightPct ?? 60);
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <h2 className="text-lg font-black">Final Practical & Course Certificates</h2>
-          <p className="text-xs text-muted-foreground mt-1">
-            Configure status, deadlines, tasks, and course-completion policy. Quiz-wise auto
-            certificates stay off unless you explicitly enable them.
+          <p className="text-xs text-muted-foreground mt-1 max-w-2xl">
+            Configure the Final Practical window, tasks, and course-completion policy. Candidates
+            submit via <span className="font-mono">/portal</span>.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            className="inline-flex items-center gap-1 rounded-xl border border-border px-3 py-2 text-xs font-bold"
-          >
-            <RefreshCw className="h-3.5 w-3.5" /> Refresh
-          </button>
-          <button
-            type="button"
-            onClick={() => void bulkIssue()}
-            disabled={busyId === "bulk" || !course}
-            className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white"
-          >
-            <Award className="h-3.5 w-3.5" /> Bulk issue eligible
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          className="inline-flex items-center gap-1 rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold hover:bg-accent"
+        >
+          <RefreshCw className="h-3.5 w-3.5" /> Refresh
+        </button>
       </div>
 
-      <label className="block text-xs font-semibold max-w-md">
-        Course
-        <select
-          className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-2 text-sm"
-          value={courseId}
-          onChange={(e) => setCourseId(e.target.value)}
-        >
-          {props.courses.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.code} — {c.titleEn}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+        <label className="block text-xs font-semibold">
+          Course
+          <select
+            className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+            value={courseId}
+            onChange={(e) => setCourseId(e.target.value)}
+          >
+            {props.courses.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.code} — {c.titleEn}
+              </option>
+            ))}
+          </select>
+        </label>
+        {exam && (
+          <div className="flex items-center gap-2 pb-1">
+            <StatusPill status={exam.status} />
+            <span className="text-[11px] text-muted-foreground font-mono">
+              {exam.tasks.length} task{exam.tasks.length === 1 ? "" : "s"}
+            </span>
+          </div>
+        )}
+      </div>
 
       {notice && (
         <div className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm">{notice}</div>
       )}
 
-      <div className="rounded-2xl border border-border p-4 space-y-3">
+      <section className="rounded-2xl border border-border p-4 space-y-3">
         <div className="text-sm font-bold">Quiz auto-certificates (legacy)</div>
+        <p className="text-[11px] text-muted-foreground">
+          Default is off. Course certificates are issued from this desk after Final Quiz + Practical.
+        </p>
         <label className="flex items-center gap-2 text-xs font-semibold">
           <input
             type="checkbox"
@@ -372,14 +426,14 @@ export function AdminPracticalPanel(props: {
             disabled={busyId === "auto"}
             onChange={(e) => void toggleAutoIssue(e.target.checked)}
           />
-          Enable automatic quiz-session certificates (default: off — use course certificates)
+          Enable automatic quiz-session certificates
         </label>
-      </div>
+      </section>
 
       {!exam ? (
-        <div className="rounded-2xl border border-dashed border-border p-6 space-y-3">
+        <div className="rounded-2xl border border-dashed border-border p-8 text-center space-y-3">
           <p className="text-sm text-muted-foreground">
-            No practical exam for this course yet.
+            No practical exam configured for {course?.code || "this course"}.
           </p>
           <button
             type="button"
@@ -387,151 +441,183 @@ export function AdminPracticalPanel(props: {
               const created = ensureExamLocal();
               if (created) void saveExamMeta(created);
             }}
-            className="inline-flex items-center gap-1 rounded-xl bg-foreground px-3 py-2 text-xs font-bold text-background"
+            className="inline-flex items-center gap-1 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground"
           >
             <Plus className="h-3.5 w-3.5" /> Create default Final Practical
           </button>
         </div>
       ) : (
-        <div className="rounded-2xl border border-border p-4 space-y-4">
-          <div className="text-sm font-bold">{exam.titleEn}</div>
-          <div className="grid sm:grid-cols-2 gap-3 text-xs">
-            <label className="font-semibold">
-              Title (EN)
-              <input
-                className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5"
-                value={exam.titleEn}
-                onChange={(e) => patchExam({ titleEn: e.target.value })}
-              />
-            </label>
-            <label className="font-semibold">
-              Title (BN)
-              <input
-                className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5"
-                value={exam.titleBn}
-                onChange={(e) => patchExam({ titleBn: e.target.value })}
-              />
-            </label>
-            <label className="font-semibold sm:col-span-2">
-              Description (EN)
-              <textarea
-                className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5"
-                rows={2}
-                value={exam.descriptionEn || ""}
-                onChange={(e) => patchExam({ descriptionEn: e.target.value })}
-              />
-            </label>
-            <label className="font-semibold">
-              Status
-              <select
-                className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5"
-                value={exam.status}
-                onChange={(e) => patchExam({ status: e.target.value as PracticalExamStatus })}
-              >
-                {(["draft", "scheduled", "open", "closed", "archived"] as PracticalExamStatus[]).map(
-                  (s) => (
-                    <option key={s} value={s}>
-                      {s}
+        <>
+          <section className="rounded-2xl border border-border p-4 space-y-4">
+            <div className="text-sm font-bold">Window &amp; scoring</div>
+            <div className="grid sm:grid-cols-2 gap-3 text-xs">
+              <label className="font-semibold">
+                Title (EN)
+                <input
+                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  value={exam.titleEn}
+                  onChange={(e) => patchExam({ titleEn: e.target.value })}
+                />
+              </label>
+              <label className="font-semibold">
+                Title (BN)
+                <input
+                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  value={exam.titleBn}
+                  onChange={(e) => patchExam({ titleBn: e.target.value })}
+                />
+              </label>
+              <label className="font-semibold sm:col-span-2">
+                Description (EN)
+                <textarea
+                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  rows={2}
+                  value={exam.descriptionEn || ""}
+                  onChange={(e) => patchExam({ descriptionEn: e.target.value })}
+                />
+              </label>
+              <label className="font-semibold sm:col-span-2">
+                Description (BN)
+                <textarea
+                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  rows={2}
+                  value={exam.descriptionBn || ""}
+                  onChange={(e) => patchExam({ descriptionBn: e.target.value })}
+                />
+              </label>
+              <label className="font-semibold">
+                Status
+                <select
+                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  value={exam.status}
+                  onChange={(e) => patchExam({ status: e.target.value as PracticalExamStatus })}
+                >
+                  {(["draft", "scheduled", "open", "closed", "archived"] as PracticalExamStatus[]).map(
+                    (s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </label>
+              <label className="font-semibold">
+                Linked final quiz
+                <select
+                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  value={exam.linkedQuizId || ""}
+                  onChange={(e) =>
+                    patchExam({ linkedQuizId: e.target.value || undefined })
+                  }
+                >
+                  <option value="">— none —</option>
+                  {courseQuizzes.map((q) => (
+                    <option key={q.id} value={q.id}>
+                      #{q.quizNumber ?? "?"} {q.titleEn}
                     </option>
-                  ),
+                  ))}
+                </select>
+              </label>
+              <label className="font-semibold">
+                Opens (local time)
+                <input
+                  type="datetime-local"
+                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  value={toLocalInput(exam.opensAt)}
+                  onChange={(e) => patchExam({ opensAt: fromLocalInput(e.target.value) })}
+                />
+              </label>
+              <label className="font-semibold">
+                Closes (local time)
+                <input
+                  type="datetime-local"
+                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  value={toLocalInput(exam.closesAt)}
+                  onChange={(e) => patchExam({ closesAt: fromLocalInput(e.target.value) })}
+                />
+                <span className="mt-1 block font-normal text-[10px] text-muted-foreground">
+                  After close, late submissions stay allowed while status is open/scheduled.
+                </span>
+              </label>
+              <label className="font-semibold">
+                Quiz weight %
+                <input
+                  type="number"
+                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  value={exam.quizWeightPct ?? 40}
+                  onChange={(e) => patchExam({ quizWeightPct: Number(e.target.value) })}
+                />
+              </label>
+              <label className="font-semibold">
+                Practical weight %
+                <input
+                  type="number"
+                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  value={exam.practicalWeightPct ?? 60}
+                  onChange={(e) => patchExam({ practicalWeightPct: Number(e.target.value) })}
+                />
+                {weightSum !== 100 && (
+                  <span className="mt-1 block font-normal text-[10px] text-amber-700 dark:text-amber-300">
+                    Sum is {weightSum} — will normalize to 100 on save.
+                  </span>
                 )}
-              </select>
-            </label>
-            <label className="font-semibold">
-              Linked final quiz
-              <select
-                className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5"
-                value={exam.linkedQuizId || ""}
-                onChange={(e) =>
-                  patchExam({ linkedQuizId: e.target.value || undefined })
-                }
-              >
-                <option value="">— none —</option>
-                {courseQuizzes.map((q) => (
-                  <option key={q.id} value={q.id}>
-                    #{q.quizNumber ?? "?"} {q.titleEn}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="font-semibold">
-              Opens at (ISO / local datetime)
-              <input
-                type="datetime-local"
-                className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5"
-                value={toLocalInput(exam.opensAt)}
-                onChange={(e) => patchExam({ opensAt: fromLocalInput(e.target.value) })}
-              />
-            </label>
-            <label className="font-semibold">
-              Closes at (late after this; status still open)
-              <input
-                type="datetime-local"
-                className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5"
-                value={toLocalInput(exam.closesAt)}
-                onChange={(e) => patchExam({ closesAt: fromLocalInput(e.target.value) })}
-              />
-            </label>
-            <label className="font-semibold">
-              Quiz weight %
-              <input
-                type="number"
-                className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5"
-                value={exam.quizWeightPct ?? 40}
-                onChange={(e) => patchExam({ quizWeightPct: Number(e.target.value) })}
-              />
-            </label>
-            <label className="font-semibold">
-              Practical weight %
-              <input
-                type="number"
-                className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5"
-                value={exam.practicalWeightPct ?? 60}
-                onChange={(e) => patchExam({ practicalWeightPct: Number(e.target.value) })}
-              />
-            </label>
-            <label className="font-semibold">
-              Pass threshold %
-              <input
-                type="number"
-                className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5"
-                value={exam.passThresholdPct ?? 50}
-                onChange={(e) => patchExam({ passThresholdPct: Number(e.target.value) })}
-              />
-            </label>
-            <label className="font-semibold">
-              Max file MB
-              <input
-                type="number"
-                className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5"
-                value={Math.round((exam.maxFileBytes || 10 * 1024 * 1024) / (1024 * 1024))}
-                onChange={(e) =>
-                  patchExam({ maxFileBytes: Math.max(1, Number(e.target.value) || 10) * 1024 * 1024 })
-                }
-              />
-            </label>
-          </div>
+              </label>
+              <label className="font-semibold">
+                Pass threshold %
+                <input
+                  type="number"
+                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  value={exam.passThresholdPct ?? 50}
+                  onChange={(e) => patchExam({ passThresholdPct: Number(e.target.value) })}
+                />
+              </label>
+              <label className="font-semibold">
+                Max file size (MB)
+                <input
+                  type="number"
+                  className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
+                  value={Math.round((exam.maxFileBytes || 10 * 1024 * 1024) / (1024 * 1024))}
+                  onChange={(e) =>
+                    patchExam({
+                      maxFileBytes: Math.max(1, Number(e.target.value) || 10) * 1024 * 1024,
+                    })
+                  }
+                />
+              </label>
+            </div>
+          </section>
 
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                Tasks ({exam.tasks.length})
-              </div>
+          <section className="rounded-2xl border border-border p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm font-bold">Tasks ({exam.tasks.length})</div>
               <button
                 type="button"
                 onClick={addTask}
-                className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] font-bold"
+                className="inline-flex items-center gap-1 rounded-xl border border-border bg-background px-2.5 py-1.5 text-[11px] font-bold hover:bg-accent"
               >
                 <Plus className="h-3 w-3" /> Add task
               </button>
             </div>
-            {exam.tasks.map((task) => (
+            {exam.tasks.map((task, idx) => (
               <div key={task.id} className="rounded-xl border border-border/80 bg-muted/20 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                    Task {idx + 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeTask(task.id)}
+                    className="rounded-lg border border-destructive/40 px-2 py-1 text-destructive"
+                    title="Remove task"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
                 <div className="flex flex-wrap gap-2 items-start">
                   <label className="text-[11px] font-semibold flex-1 min-w-[140px]">
                     Title EN
                     <input
-                      className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1"
+                      className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5"
                       value={task.titleEn}
                       onChange={(e) => updateTask(task.id, { titleEn: e.target.value })}
                     />
@@ -539,7 +625,7 @@ export function AdminPracticalPanel(props: {
                   <label className="text-[11px] font-semibold flex-1 min-w-[140px]">
                     Title BN
                     <input
-                      className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1"
+                      className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5"
                       value={task.titleBn}
                       onChange={(e) => updateTask(task.id, { titleBn: e.target.value })}
                     />
@@ -548,27 +634,28 @@ export function AdminPracticalPanel(props: {
                     Max marks
                     <input
                       type="number"
-                      className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1"
+                      className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5"
                       value={task.maxMarks}
                       onChange={(e) => updateTask(task.id, { maxMarks: Number(e.target.value) })}
                     />
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => removeTask(task.id)}
-                    className="mt-5 rounded-lg border border-destructive/40 px-2 py-1 text-destructive"
-                    title="Remove task"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
                 </div>
                 <label className="block text-[11px] font-semibold">
                   Prompt EN
                   <textarea
-                    className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1"
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5"
                     rows={2}
                     value={task.promptEn}
                     onChange={(e) => updateTask(task.id, { promptEn: e.target.value })}
+                  />
+                </label>
+                <label className="block text-[11px] font-semibold">
+                  Prompt BN
+                  <textarea
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5"
+                    rows={2}
+                    value={task.promptBn}
+                    onChange={(e) => updateTask(task.id, { promptBn: e.target.value })}
                   />
                 </label>
                 <div className="flex flex-wrap gap-4 text-[11px] font-semibold">
@@ -599,21 +686,21 @@ export function AdminPracticalPanel(props: {
                 </div>
               </div>
             ))}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => void saveExamMeta()}
-            disabled={busyId === "exam"}
-            className="inline-flex items-center gap-1 rounded-xl border border-border px-3 py-2 text-xs font-bold"
-          >
-            <Save className="h-3.5 w-3.5" /> Save exam settings
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => void saveExamMeta()}
+              disabled={busyId === "exam"}
+              className="inline-flex items-center gap-1 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground disabled:opacity-60"
+            >
+              <Save className="h-3.5 w-3.5" />
+              {busyId === "exam" ? "Saving…" : "Save exam settings"}
+            </button>
+          </section>
+        </>
       )}
 
       {requirement && course && (
-        <div className="rounded-2xl border border-border p-4 space-y-3">
+        <section className="rounded-2xl border border-border p-4 space-y-3">
           <div className="text-sm font-bold">Course certificate policy</div>
           <div className="flex flex-wrap gap-4 text-xs font-semibold">
             <label className="inline-flex items-center gap-1.5">
@@ -633,26 +720,40 @@ export function AdminPracticalPanel(props: {
               Require graded practical
             </label>
           </div>
-          <label className="block text-xs font-semibold">
-            Required quiz IDs (comma-separated)
-            <input
-              className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-[11px]"
-              value={(requirement.requiredQuizIds || []).join(", ")}
-              onChange={(e) =>
-                patchRequirement({
-                  requiredQuizIds: e.target.value
-                    .split(",")
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-                })
-              }
-            />
-          </label>
+          <div className="space-y-2">
+            <div className="text-xs font-semibold">Required quizzes</div>
+            {courseQuizzes.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground">No quizzes linked to this course yet.</p>
+            ) : (
+              <div className="grid sm:grid-cols-2 gap-2">
+                {courseQuizzes.map((q) => {
+                  const checked = (requirement.requiredQuizIds || []).includes(q.id);
+                  return (
+                    <label
+                      key={q.id}
+                      className="inline-flex items-start gap-2 rounded-xl border border-border bg-background px-3 py-2 text-[11px] font-semibold"
+                    >
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={checked}
+                        onChange={() => toggleRequiredQuiz(q.id)}
+                      />
+                      <span>
+                        #{q.quizNumber ?? "?"} {q.titleEn}
+                        <span className="block font-mono font-normal text-muted-foreground">{q.id}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           <div className="grid sm:grid-cols-2 gap-3 text-xs">
             <label className="font-semibold">
               Certificate title (EN)
               <input
-                className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5"
+                className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
                 value={requirement.certificateTitleEn || ""}
                 onChange={(e) => patchRequirement({ certificateTitleEn: e.target.value })}
               />
@@ -660,7 +761,7 @@ export function AdminPracticalPanel(props: {
             <label className="font-semibold">
               Certificate title (BN)
               <input
-                className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-1.5"
+                className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2"
                 value={requirement.certificateTitleBn || ""}
                 onChange={(e) => patchRequirement({ certificateTitleBn: e.target.value })}
               />
@@ -670,39 +771,51 @@ export function AdminPracticalPanel(props: {
             type="button"
             onClick={() => void saveRequirement()}
             disabled={busyId === "req"}
-            className="inline-flex items-center gap-1 rounded-xl border border-border px-3 py-2 text-xs font-bold"
+            className="inline-flex items-center gap-1 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground disabled:opacity-60"
           >
-            <Save className="h-3.5 w-3.5" /> Save certificate policy
+            <Save className="h-3.5 w-3.5" />
+            {busyId === "req" ? "Saving…" : "Save certificate policy"}
           </button>
-        </div>
+        </section>
       )}
 
-      <div className="space-y-3">
-        <div className="flex items-center gap-2 text-sm font-bold">
-          <ClipboardCheck className="h-4 w-4" />
-          Submissions ({courseSubs.length})
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-sm font-bold">
+            <ClipboardCheck className="h-4 w-4" />
+            Submissions ({courseSubs.length})
+          </div>
+          <button
+            type="button"
+            onClick={() => void bulkIssue()}
+            disabled={busyId === "bulk" || !course || courseSubs.length === 0}
+            className="inline-flex items-center gap-1 rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold hover:bg-accent disabled:opacity-50"
+          >
+            <Award className="h-3.5 w-3.5" /> Bulk issue eligible
+          </button>
         </div>
         {courseSubs.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-muted-foreground">
-            No practical submissions yet. Candidates submit via /portal.
+          <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+            No practical submissions yet. Candidates submit via /portal after roster unlock.
           </div>
         ) : (
           courseSubs.map((sub) => (
-            <div key={sub.id} className="rounded-2xl border border-border p-4 space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
+            <div key={sub.id} className="rounded-2xl border border-border p-4 space-y-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
                   <div className="font-bold text-sm">
                     {sub.studentName}{" "}
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {sub.rollNumber}
-                    </span>
+                    <span className="font-mono text-xs text-muted-foreground">{sub.rollNumber}</span>
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    {sub.regionName || "—"} · {sub.status}
-                    {typeof sub.combinedPct === "number" ? ` · combined ${sub.combinedPct}%` : ""}
-                    {typeof sub.quizAccuracyPct === "number"
-                      ? ` · quiz ${sub.quizAccuracyPct}%`
-                      : ""}
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <StatusPill status={sub.status} />
+                    <span>{sub.regionName || "—"}</span>
+                    {typeof sub.combinedPct === "number" && (
+                      <span className="font-mono">combined {sub.combinedPct}%</span>
+                    )}
+                    {typeof sub.quizAccuracyPct === "number" && (
+                      <span className="font-mono">quiz {sub.quizAccuracyPct}%</span>
+                    )}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -711,28 +824,34 @@ export function AdminPracticalPanel(props: {
                       type="button"
                       onClick={() => void returnOne(sub)}
                       disabled={busyId === `return-${sub.id}`}
-                      className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-bold"
+                      className="inline-flex items-center gap-1 rounded-xl border border-border bg-background px-2.5 py-1.5 text-[11px] font-bold hover:bg-accent"
                     >
-                      <RotateCcw className="h-3 w-3" /> Return for resubmit
+                      <RotateCcw className="h-3 w-3" /> Return
                     </button>
                   )}
                   <button
                     type="button"
                     onClick={() => void issueOne(sub.rollNumber)}
-                    disabled={busyId === `issue-${sub.rollNumber}`}
-                    className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-bold text-emerald-700"
+                    disabled={busyId === `issue-${sub.rollNumber}` || !likelyEligible(sub)}
+                    title={
+                      likelyEligible(sub)
+                        ? "Issue course completion certificate"
+                        : "Needs graded practical at/above pass threshold (server also checks final quiz)"
+                    }
+                    className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-bold text-emerald-700 disabled:opacity-40"
                   >
                     Issue course cert
                   </button>
                 </div>
               </div>
-              <div className="text-xs space-y-1">
+
+              <div className="space-y-2 text-xs">
                 {sub.answers.map((a) => {
                   const task = exam?.tasks.find((t) => t.id === a.taskId);
                   return (
                     <div key={a.taskId} className="rounded-xl bg-muted/40 px-3 py-2 space-y-1">
                       <div className="font-semibold">{task?.titleEn || a.taskId}</div>
-                      <div>{a.textAnswer || "—"}</div>
+                      <div className="whitespace-pre-wrap">{a.textAnswer || "—"}</div>
                       {a.linkUrl && (
                         <a
                           href={a.linkUrl}
@@ -746,20 +865,20 @@ export function AdminPracticalPanel(props: {
                       {a.fileName && (
                         <div className="font-mono text-[10px] text-muted-foreground">
                           file: {a.fileName} ({a.fileSizeBytes || 0} bytes)
-                          {a.fileRelPath ? ` · ${a.fileRelPath}` : ""}
                         </div>
                       )}
                     </div>
                   );
                 })}
               </div>
-              {exam && (
-                <div className="space-y-2">
+
+              {exam && canGrade(sub.status) && (
+                <div className="space-y-2 border-t border-border/60 pt-3">
                   {exam.tasks.map((task) => (
                     <label key={task.id} className="text-xs font-semibold block">
                       Marks / {task.maxMarks} — {task.titleEn}
                       <input
-                        className="mt-1 block w-28 rounded-lg border border-border bg-background px-2 py-1.5"
+                        className="mt-1 block w-28 rounded-xl border border-border bg-background px-2 py-1.5"
                         value={
                           marksBySubTask[markKey(sub.id, task.id)] ??
                           String(sub.grades?.find((g) => g.taskId === task.id)?.marks ?? "")
@@ -773,10 +892,10 @@ export function AdminPracticalPanel(props: {
                       />
                     </label>
                   ))}
-                  <label className="text-xs font-semibold flex-1 min-w-[180px] block">
+                  <label className="text-xs font-semibold block">
                     Feedback
                     <input
-                      className="mt-1 block w-full rounded-lg border border-border bg-background px-2 py-1.5"
+                      className="mt-1 block w-full rounded-xl border border-border bg-background px-2 py-1.5"
                       value={feedbackBySub[sub.id] ?? sub.instructorFeedback ?? ""}
                       onChange={(e) =>
                         setFeedbackBySub((m) => ({ ...m, [sub.id]: e.target.value }))
@@ -787,16 +906,20 @@ export function AdminPracticalPanel(props: {
                     type="button"
                     onClick={() => void gradeOne(sub)}
                     disabled={busyId === sub.id}
-                    className="rounded-xl bg-foreground px-3 py-2 text-xs font-bold text-background"
+                    className="rounded-xl bg-primary px-3 py-2 text-xs font-bold text-primary-foreground disabled:opacity-60"
                   >
-                    {busyId === sub.id ? "Saving…" : sub.status === "graded" ? "Update grade" : "Save grade"}
+                    {busyId === sub.id
+                      ? "Saving…"
+                      : sub.status === "graded"
+                        ? "Update grade"
+                        : "Save grade"}
                   </button>
                 </div>
               )}
             </div>
           ))
         )}
-      </div>
+      </section>
     </div>
   );
 }

@@ -5425,6 +5425,7 @@ export const serverGetStudentPortal = createServerFn({ method: "POST" })
       completion: snap,
       courseCertificate: courseCert
         ? {
+            ...courseCert,
             certificateNumber: courseCert.certificateNumber,
             issueDate: courseCert.issueDate,
             combinedScorePct: courseCert.combinedScorePct ?? courseCert.accuracyPercent,

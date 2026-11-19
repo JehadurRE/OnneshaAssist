@@ -167,6 +167,9 @@ function SuperAdminPage() {
   const [certSearch, setCertSearch] = useState("");
   const [certRegionFilter, setCertRegionFilter] = useState("all");
   const [certQuizFilter, setCertQuizFilter] = useState("all");
+  const [certKindFilter, setCertKindFilter] = useState<"all" | "course_completion" | "quiz_session">(
+    "all",
+  );
   const [previewCert, setPreviewCert] = useState<CertificateData | null>(null);
   const [downloadingCertNo, setDownloadingCertNo] = useState<string | null>(null);
   const [confirmRevokeCertNo, setConfirmRevokeCertNo] = useState<string | null>(null);
@@ -2554,6 +2557,10 @@ function SuperAdminPage() {
               new Set(certificates.map((c) => c.regionName || "Dhaka Range").filter(Boolean)),
             );
             const filteredCerts = certificates.filter((c) => {
+              const kind = c.kind || (c.courseId ? "course_completion" : "quiz_session");
+              if (certKindFilter !== "all" && kind !== certKindFilter) {
+                return false;
+              }
               if (
                 certRegionFilter !== "all" &&
                 (c.regionName || "Dhaka Range") !== certRegionFilter
@@ -2569,7 +2576,8 @@ function SuperAdminPage() {
                 c.studentName.toLowerCase().includes(normalizedSearch) ||
                 (c.studentRoll || "").toLowerCase().includes(normalizedSearch) ||
                 c.quizTitle.toLowerCase().includes(normalizedSearch) ||
-                (c.regionName || "").toLowerCase().includes(normalizedSearch)
+                (c.regionName || "").toLowerCase().includes(normalizedSearch) ||
+                (c.courseCode || "").toLowerCase().includes(normalizedSearch)
               );
             });
 
@@ -2766,7 +2774,7 @@ function SuperAdminPage() {
                   </div>
 
                   {/* Search & Filter Bar */}
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                     <div className="sm:col-span-2 relative">
                       <Search className="h-4 w-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
                       <input
@@ -2777,6 +2785,20 @@ function SuperAdminPage() {
                         className="w-full rounded-xl border border-border bg-background pl-9 pr-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
                       />
                     </div>
+
+                    <select
+                      value={certKindFilter}
+                      onChange={(e) =>
+                        setCertKindFilter(
+                          e.target.value as "all" | "course_completion" | "quiz_session",
+                        )
+                      }
+                      className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
+                    >
+                      <option value="all">All kinds</option>
+                      <option value="course_completion">Course completion</option>
+                      <option value="quiz_session">Quiz session</option>
+                    </select>
 
                     <select
                       value={certRegionFilter}
@@ -2812,9 +2834,9 @@ function SuperAdminPage() {
                         <tr className="border-b border-border bg-muted/40 text-left font-display">
                           <th className="p-3 font-bold">Cert Number</th>
                           <th className="p-3 font-bold">Student &amp; Roll</th>
-                          <th className="p-3 font-bold">Assessment</th>
+                          <th className="p-3 font-bold">Kind / Assessment</th>
                           <th className="p-3 font-bold">Region</th>
-                          <th className="p-3 font-bold text-center">Score &amp; Accuracy</th>
+                          <th className="p-3 font-bold text-center">Score</th>
                           <th className="p-3 font-bold text-center">Issued</th>
                           <th className="p-3 font-bold text-right">Actions</th>
                         </tr>
@@ -2828,7 +2850,14 @@ function SuperAdminPage() {
                           </tr>
                         ) : (
                           filteredCerts.map((cert) => {
-                            const acc = cert.accuracyPercent ?? cert.scorePct ?? 0;
+                            const kind =
+                              cert.kind || (cert.courseId ? "course_completion" : "quiz_session");
+                            const isCourse = kind === "course_completion";
+                            const acc =
+                              cert.combinedScorePct ??
+                              cert.accuracyPercent ??
+                              cert.scorePct ??
+                              0;
                             const isConfirmingRevoke =
                               confirmRevokeCertNo === cert.certificateNumber;
                             return (
@@ -2841,12 +2870,28 @@ function SuperAdminPage() {
                                     {cert.studentName}
                                   </div>
                                   <div className="font-mono text-[10px] text-muted-foreground">
-                                    Roll: {cert.studentRoll} · Rank #{cert.rank}/
-                                    {cert.totalParticipants}
+                                    Roll: {cert.studentRoll}
+                                    {!isCourse && (
+                                      <>
+                                        {" "}
+                                        · Rank #{cert.rank}/{cert.totalParticipants}
+                                      </>
+                                    )}
                                   </div>
                                 </td>
-                                <td className="p-3 font-semibold text-foreground max-w-[220px] truncate">
-                                  {cert.quizTitle}
+                                <td className="p-3 max-w-[240px]">
+                                  <span
+                                    className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                      isCourse
+                                        ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                                        : "bg-sky-500/15 text-sky-800 dark:text-sky-300"
+                                    }`}
+                                  >
+                                    {isCourse ? "Course" : "Quiz"}
+                                  </span>
+                                  <div className="mt-1 font-semibold text-foreground truncate">
+                                    {cert.quizTitle}
+                                  </div>
                                 </td>
                                 <td className="p-3">
                                   <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold text-primary whitespace-nowrap">
@@ -2854,12 +2899,20 @@ function SuperAdminPage() {
                                   </span>
                                 </td>
                                 <td className="p-3 text-center whitespace-nowrap">
-                                  <span className="font-mono font-black text-foreground">
-                                    {(cert.marksObtained ?? cert.score ?? 0).toLocaleString()}
-                                  </span>{" "}
-                                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                                    {acc}%
-                                  </span>
+                                  {isCourse ? (
+                                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                                      Combined {acc}%
+                                    </span>
+                                  ) : (
+                                    <>
+                                      <span className="font-mono font-black text-foreground">
+                                        {(cert.marksObtained ?? cert.score ?? 0).toLocaleString()}
+                                      </span>{" "}
+                                      <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                                        {acc}%
+                                      </span>
+                                    </>
+                                  )}
                                 </td>
                                 <td className="p-3 text-center font-mono text-muted-foreground whitespace-nowrap">
                                   {cert.issueDate}
