@@ -432,6 +432,20 @@ export interface PracticalExam {
   descriptionBn?: string | undefined;
   /** Usually the Final Quiz id used for Part A weighting. */
   linkedQuizId?: string | undefined;
+  /**
+   * Shared classroom PIN for the timed Final Exam dashboard (/final-exam).
+   * Everyone joins with the same PIN during the scheduled window.
+   */
+  joinPin?: string | undefined;
+  /**
+   * Overall quiz attempt duration in minutes (NOT per-question).
+   * Candidate must submit the full MCQ paper before this countdown ends.
+   */
+  quizDurationMinutes?: number | undefined;
+  /** Absolute mark model (default Final = 30 quiz + 40 practical = 70). */
+  quizMaxMarks?: number | undefined;
+  practicalMaxMarks?: number | undefined;
+  totalMaxMarks?: number | undefined;
   quizWeightPct?: number | undefined;
   practicalWeightPct?: number | undefined;
   passThresholdPct?: number | undefined;
@@ -463,6 +477,37 @@ export interface PracticalGrade {
   comment?: string | undefined;
   gradedBy?: string | undefined;
   gradedAt?: string | undefined;
+}
+
+/** Timed batch Final Quiz attempt (single overall countdown, not per-question). */
+export interface FinalExamAttempt {
+  id: string;
+  practicalExamId: string;
+  courseId: string;
+  quizId: string;
+  pin: string;
+  rollNumber: string;
+  studentName: string;
+  phone?: string | undefined;
+  regionId?: string | undefined;
+  regionName?: string | undefined;
+  startedAt: string;
+  /** Absolute ISO deadline for this personal attempt (startedAt + quizDurationMinutes). */
+  endsAt: string;
+  submittedAt?: string | undefined;
+  status: "in_progress" | "submitted" | "expired" | "graded";
+  /** Selected option ids / text answers keyed by question id. */
+  answers?: Record<string, string[]> | undefined;
+  correctCount?: number | undefined;
+  incorrectCount?: number | undefined;
+  unansweredCount?: number | undefined;
+  accuracyPct?: number | undefined;
+  quizMarks?: number | undefined;
+  quizMaxMarks?: number | undefined;
+  resultId?: string | undefined;
+  sessionId?: string | undefined;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type PracticalSubmissionStatus =

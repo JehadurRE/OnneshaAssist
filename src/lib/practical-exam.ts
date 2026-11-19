@@ -15,9 +15,17 @@ import type {
 import { clampPassThresholdPct, isPassingScore } from "./scoring";
 import { normalizeBdPhone, normalizeRollToken } from "./sanjibon-seed-data";
 
-export const DEFAULT_QUIZ_WEIGHT = 40;
-export const DEFAULT_PRACTICAL_WEIGHT = 60;
-export const DEFAULT_PRACTICAL_MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+/** Final Exam absolute marks (AI-DM-04 / Sanjibon package). */
+export const FINAL_QUIZ_MARKS = 30;
+export const FINAL_PRACTICAL_MARKS = 40;
+export const FINAL_TOTAL_MARKS = FINAL_QUIZ_MARKS + FINAL_PRACTICAL_MARKS; // 70
+
+/** Weights mirror 30/40 of 70 so combined % maps cleanly to /70. */
+export const DEFAULT_QUIZ_WEIGHT = Math.round((FINAL_QUIZ_MARKS / FINAL_TOTAL_MARKS) * 100); // 43
+export const DEFAULT_PRACTICAL_WEIGHT = 100 - DEFAULT_QUIZ_WEIGHT; // 57
+
+export const DEFAULT_PRACTICAL_MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB (video-friendly)
+export const DEFAULT_FINAL_DURATION_HOURS = 3;
 export const ALLOWED_PRACTICAL_MIME = [
   "application/pdf",
   "application/zip",
@@ -28,7 +36,42 @@ export const ALLOWED_PRACTICAL_MIME = [
   "text/plain",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
 ] as const;
+
+export function generateFinalExamJoinPin(): string {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+export function marksFromPct(pct: number, maxMarks: number): number {
+  const safePct = Math.max(0, Math.min(100, pct));
+  return Math.round((safePct / 100) * maxMarks * 10) / 10;
+}
+
+export function formatFinalMarksBreakdown(params: {
+  quizAccuracyPct: number;
+  practicalScorePct: number;
+  quizMaxMarks?: number | undefined;
+  practicalMaxMarks?: number | undefined;
+}): {
+  quizMarks: number;
+  practicalMarks: number;
+  totalMarks: number;
+  maxTotal: number;
+} {
+  const quizMax = params.quizMaxMarks ?? FINAL_QUIZ_MARKS;
+  const practicalMax = params.practicalMaxMarks ?? FINAL_PRACTICAL_MARKS;
+  const quizMarks = marksFromPct(params.quizAccuracyPct, quizMax);
+  const practicalMarks = marksFromPct(params.practicalScorePct, practicalMax);
+  return {
+    quizMarks,
+    practicalMarks,
+    totalMarks: Math.round((quizMarks + practicalMarks) * 10) / 10,
+    maxTotal: quizMax + practicalMax,
+  };
+}
 
 export function clampWeightPct(value: number | undefined, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
@@ -241,43 +284,162 @@ export function makeCourseCertificateNumber(courseCode: string, rollNumber: stri
   return `ONN-CRS-${code}-${roll}`;
 }
 
+/** Capstone practical tasks for AI-DM final — sum = FINAL_PRACTICAL_MARKS (40). */
+export function buildFinalPracticalPackageTasks(): PracticalTask[] {
+  return [
+    {
+      id: "task-brand-name",
+      titleEn: "1. Brand name",
+      titleBn: "১. ব্র্যান্ড নাম",
+      promptEn:
+        "Write the brand / company name you will use for this final project. Keep it clear and memorable.",
+      promptBn:
+        "এই ফাইনাল প্রজেক্টের জন্য আপনার ব্র্যান্ড/কোম্পানির নাম লিখুন। স্পষ্ট ও মনে রাখার মতো রাখুন।",
+      maxMarks: 3,
+      requireText: true,
+      requireLink: false,
+      allowFile: false,
+      sortOrder: 1,
+    },
+    {
+      id: "task-market-research",
+      titleEn: "2. Market research",
+      titleBn: "২. মার্কেট রিসার্চ",
+      promptEn:
+        "Submit a short market research for your brand (audience, competitors, offer, pain points). Paste notes and optionally attach a PDF/Doc.",
+      promptBn:
+        "আপনার ব্র্যান্ডের সংক্ষিপ্ত মার্কেট রিসার্চ জমা দিন (টার্গেট অডিয়েন্স, প্রতিযোগী, অফার, পেইন পয়েন্ট)। নোট লিখুন এবং ইচ্ছামতো PDF/Doc সংযুক্ত করুন।",
+      maxMarks: 8,
+      requireText: true,
+      requireLink: false,
+      allowFile: true,
+      sortOrder: 2,
+    },
+    {
+      id: "task-fb-creatives",
+      titleEn: "3. Creative generation — 2 Facebook posts",
+      titleBn: "৩. ক্রিয়েটিভ জেনারেশন — ২টি ফেসবুক পোস্ট",
+      promptEn:
+        "Using your brand name, create 2 Facebook post creatives (caption + visual). Paste both captions here and upload images or share Drive/Canva links.",
+      promptBn:
+        "আপনার ব্র্যান্ড নাম ব্যবহার করে ২টি ফেসবুক পোস্ট ক্রিয়েটিভ তৈরি করুন (ক্যাপশন + ভিজ্যুয়াল)। দুটি ক্যাপশন এখানে লিখুন এবং ছবি আপলোড করুন অথবা Drive/Canva লিংক দিন।",
+      maxMarks: 8,
+      requireText: true,
+      requireLink: true,
+      allowFile: true,
+      sortOrder: 3,
+    },
+    {
+      id: "task-ad-script",
+      titleEn: "4. Ad script writing",
+      titleBn: "৪. বিজ্ঞাপন স্ক্রিপ্ট লেখা",
+      promptEn:
+        "Write a short company ad script (hook, problem, solution, CTA) suitable for a ~10 second video.",
+      promptBn:
+        "প্রায় ১০ সেকেন্ডের ভিডিওর উপযোগী কোম্পানি অ্যাড স্ক্রিপ্ট লিখুন (হুক, সমস্যা, সমাধান, CTA)।",
+      maxMarks: 6,
+      requireText: true,
+      requireLink: false,
+      allowFile: false,
+      sortOrder: 4,
+    },
+    {
+      id: "task-ad-video",
+      titleEn: "5. 10-second ad video",
+      titleBn: "৫. ১০ সেকেন্ডের অ্যাড ভিডিও",
+      promptEn:
+        "Generate/produce a ~10 second ad video for your brand. Upload MP4/WebM (max 50 MB) or paste a Drive/YouTube/Canva link.",
+      promptBn:
+        "আপনার ব্র্যান্ডের জন্য প্রায় ১০ সেকেন্ডের অ্যাড ভিডিও তৈরি করুন। MP4/WebM আপলোড করুন (সর্বোচ্চ ৫০ MB) অথবা Drive/YouTube/Canva লিংক দিন।",
+      maxMarks: 8,
+      requireText: false,
+      requireLink: true,
+      allowFile: true,
+      sortOrder: 5,
+    },
+    {
+      id: "task-landing-page",
+      titleEn: "6. Landing page + live URL",
+      titleBn: "৬. ল্যান্ডিং পেজ + লাইভ URL",
+      promptEn:
+        "Design a landing page for your brand and submit the full live https URL. Bonus: mention if you added an AI assistant/chatbot on the page for full marks.",
+      promptBn:
+        "আপনার ব্র্যান্ডের ল্যান্ডিং পেজ ডিজাইন করে পূর্ণ লাইভ https URL জমা দিন। বোনাস: পেজে AI অ্যাসিস্ট্যান্ট/চ্যাটবট যোগ থাকলে পূর্ণ নম্বরের জন্য উল্লেখ করুন।",
+      maxMarks: 7,
+      requireText: true,
+      requireLink: true,
+      allowFile: false,
+      sortOrder: 6,
+    },
+  ];
+}
+
 export function buildDefaultFinalPracticalExam(course: Course): PracticalExam {
   const now = new Date().toISOString();
+  const closes = new Date(Date.now() + DEFAULT_FINAL_DURATION_HOURS * 60 * 60 * 1000).toISOString();
   return {
     id: `practical-${course.id}-final`,
     courseId: course.id,
-    titleEn: "Final Practical Examination",
-    titleBn: "চূড়ান্ত প্রায়োগিক পরীক্ষা",
+    titleEn: "Final Examination — Timed Quiz + Capstone Package",
+    titleBn: "চূড়ান্ত পরীক্ষা — টাইমড কুইজ + ক্যাপস্টোন প্যাকেজ",
     descriptionEn:
-      "Submit applied project deliverables for instructor marking. Combined with the Final Quiz toward the course completion certificate.",
+      `Join with the shared PIN on /final-exam. Part A: ${FINAL_QUIZ_MARKS}-mark MCQ (single overall timer, not per-question). Part B: ${FINAL_PRACTICAL_MARKS}-mark applied package. Total ${FINAL_TOTAL_MARKS} marks.`,
     descriptionBn:
-      "প্রায়োগিক প্রজেক্ট জমা দিন। চূড়ান্ত কুইজের সাথে মিলিয়ে কোর্স সমাপনী সার্টিফিকেট নির্ধারিত হবে।",
+      `/final-exam এ শেয়ার করা PIN দিয়ে যোগ দিন। অংশ ক: ${FINAL_QUIZ_MARKS} নম্বরের MCQ (একটি মোট টাইমার — প্রশ্নপ্রতি নয়)। অংশ খ: ${FINAL_PRACTICAL_MARKS} নম্বরের প্রায়োগিক প্যাকেজ। মোট ${FINAL_TOTAL_MARKS} নম্বর।`,
     linkedQuizId: "quiz-sanjibon-s10-final",
+    joinPin: generateFinalExamJoinPin(),
+    quizDurationMinutes: 10,
+    quizMaxMarks: FINAL_QUIZ_MARKS,
+    practicalMaxMarks: FINAL_PRACTICAL_MARKS,
+    totalMaxMarks: FINAL_TOTAL_MARKS,
     quizWeightPct: DEFAULT_QUIZ_WEIGHT,
     practicalWeightPct: DEFAULT_PRACTICAL_WEIGHT,
     passThresholdPct: course.passThresholdPct ?? 50,
-    status: "open",
+    status: "scheduled",
     opensAt: now,
-    closesAt: undefined,
+    closesAt: closes,
     maxFileBytes: DEFAULT_PRACTICAL_MAX_FILE_BYTES,
     allowedMimeTypes: [...ALLOWED_PRACTICAL_MIME],
-    tasks: [
-      {
-        id: "task-portfolio",
-        titleEn: "Applied AI Portfolio / Campaign Deliverable",
-        titleBn: "প্রায়োগিক AI পোর্টফোলিও / ক্যাম্পেইন ডেলিভারেবল",
-        promptEn:
-          "Submit a link (Drive/GitHub/Netlify) and a short reflection describing your end-to-end AI marketing workflow. Optionally attach a PDF/ZIP (max 10 MB).",
-        promptBn:
-          "আপনার সম্পূর্ণ AI মার্কেটিং ওয়ার্কফ্লোর লিংক (Drive/GitHub/Netlify) ও সংক্ষিপ্ত রিফ্লেকশন জমা দিন। ইচ্ছামতো PDF/ZIP (সর্বোচ্চ ১০ MB) সংযুক্ত করুন।",
-        maxMarks: 100,
-        requireLink: true,
-        requireText: true,
-        allowFile: true,
-        sortOrder: 1,
-      },
-    ],
+    tasks: buildFinalPracticalPackageTasks(),
     createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/** Upgrade legacy single-portfolio finals to the 70-mark timed package when safe. */
+export function shouldUpgradeFinalExamPackage(exam: PracticalExam): boolean {
+  if (exam.courseId !== "course-sanjibon-ai-dm") return false;
+  if ((exam.tasks || []).some((t) => t.id === "task-brand-name")) return false;
+  if ((exam.tasks || []).length === 1 && exam.tasks[0]?.id === "task-portfolio") return true;
+  if (!exam.joinPin || !exam.quizDurationMinutes) return true;
+  return false;
+}
+
+export function upgradeFinalExamPackage(exam: PracticalExam): PracticalExam {
+  const now = new Date().toISOString();
+  const nextTasks =
+    (exam.tasks || []).some((t) => t.id === "task-brand-name")
+      ? exam.tasks
+      : buildFinalPracticalPackageTasks();
+  return {
+    ...exam,
+    titleEn: exam.titleEn?.includes("Timed")
+      ? exam.titleEn
+      : "Final Examination — Timed Quiz + Capstone Package",
+    titleBn: exam.titleBn?.includes("টাইমড")
+      ? exam.titleBn
+      : "চূড়ান্ত পরীক্ষা — টাইমড কুইজ + ক্যাপস্টোন প্যাকেজ",
+    linkedQuizId: exam.linkedQuizId || "quiz-sanjibon-s10-final",
+    joinPin: exam.joinPin || generateFinalExamJoinPin(),
+    quizDurationMinutes: exam.quizDurationMinutes || 10,
+    quizMaxMarks: FINAL_QUIZ_MARKS,
+    practicalMaxMarks: FINAL_PRACTICAL_MARKS,
+    totalMaxMarks: FINAL_TOTAL_MARKS,
+    quizWeightPct: DEFAULT_QUIZ_WEIGHT,
+    practicalWeightPct: DEFAULT_PRACTICAL_WEIGHT,
+    maxFileBytes: Math.max(exam.maxFileBytes || 0, DEFAULT_PRACTICAL_MAX_FILE_BYTES),
+    allowedMimeTypes: [...new Set([...(exam.allowedMimeTypes || []), ...ALLOWED_PRACTICAL_MIME])],
+    tasks: nextTasks,
     updatedAt: now,
   };
 }

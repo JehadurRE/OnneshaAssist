@@ -495,9 +495,14 @@ function StudentPortalPage() {
                   ? "লাইভ রুম PIN দিয়ে কুইজ দিতে /play এ যান। কুইজ শেষে আর স্বয়ংক্রিয় সার্টিফিকেট ইস্যু হয় না।"
                   : "Take live quizzes via /play with your Host PIN. Quiz completion no longer auto-issues certificates."}
               </p>
-              <Link to="/play" className="mt-2 inline-flex text-sm font-bold text-emerald-700 hover:underline">
-                {lang === "bn" ? "লাইভ পরীক্ষায় যোগ দিন →" : "Join live exam →"}
-              </Link>
+              <div className="mt-3 flex flex-wrap gap-3">
+                <Link to="/final-exam" className="inline-flex text-sm font-bold text-amber-700 hover:underline">
+                  {lang === "bn" ? "ফাইনাল পরীক্ষা (PIN + মোট টাইমার) →" : "Final Exam desk (PIN + overall timer) →"}
+                </Link>
+                <Link to="/play" className="inline-flex text-sm font-bold text-emerald-700 hover:underline">
+                  {lang === "bn" ? "লাইভ অ্যারেনা যোগ দিন →" : "Join live arena →"}
+                </Link>
+              </div>
             </section>
 
             <section className="staff-panel space-y-4">

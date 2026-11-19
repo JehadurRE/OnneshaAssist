@@ -106,6 +106,18 @@ export const Navbar: React.FC = () => {
             </Link>
 
             <Link
+              to="/final-exam"
+              className={`flex items-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 transition-colors ${
+                isActive("/final-exam")
+                  ? "bg-amber-500/15 text-amber-800 dark:text-amber-300 font-bold"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
+              }`}
+            >
+              <GraduationCap className="h-3.5 w-3.5 text-amber-600" />
+              <span>{lang === "bn" ? "ফাইনাল পরীক্ষা" : "Final Exam"}</span>
+            </Link>
+
+            <Link
               to="/play"
               className={`flex items-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 transition-colors ${
                 isActive("/play")
@@ -400,6 +412,19 @@ export const Navbar: React.FC = () => {
               >
                 <GraduationCap className="h-4 w-4" />
                 <span>{lang === "bn" ? "পোর্টাল" : "Portal"}</span>
+              </Link>
+
+              <Link
+                to="/final-exam"
+                onClick={() => setMobileDrawerOpen(false)}
+                className={`flex items-center gap-2 rounded-xl p-3 text-xs font-bold ${
+                  isActive("/final-exam")
+                    ? "bg-amber-500 text-black"
+                    : "bg-background border border-border text-foreground"
+                }`}
+              >
+                <GraduationCap className="h-4 w-4" />
+                <span>{lang === "bn" ? "ফাইনাল পরীক্ষা" : "Final Exam"}</span>
               </Link>
 
               <Link
