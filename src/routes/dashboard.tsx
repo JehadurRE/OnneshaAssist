@@ -4,6 +4,7 @@ import { useLanguage } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
+import { StaffShell } from "@/components/layout/StaffShell";
 import { READY_MADE_PACKS, DEFAULT_REGIONS } from "@/lib/mock-data";
 import { AiQuizModal } from "@/components/dashboard/AiQuizModal";
 import { OmrSheetView } from "@/components/common/OmrSheetView";
@@ -905,119 +906,90 @@ function DashboardPage() {
     );
   }
 
+  const instructorNav = [
+    { id: "overview", label: "Overview", shortLabel: "Overview", icon: LayoutDashboard, group: "Home" },
+    { id: "roster", label: "Regions & Candidates", shortLabel: "Roster", icon: MapPin, badge: roster.length, group: "People" },
+    { id: "quizzes", label: "Model Tests & Packs", shortLabel: "Quizzes", icon: BookOpen, badge: quizzes.length, group: "Curriculum" },
+    { id: "ai_creator", label: "Manual Question Studio", shortLabel: "Studio", icon: PenTool, group: "Curriculum" },
+    { id: "results", label: "Regional Merit & Analysis", shortLabel: "Results", icon: Trophy, group: "Outcomes" },
+    { id: "certificates", label: "Verifiable Certificates", shortLabel: "Certificates", icon: Award, badge: certificates.length, group: "Outcomes" },
+    { id: "sms_logs", label: "Guardian SMS Logs", shortLabel: "SMS", icon: MessageSquare, badge: smsLogs.length, group: "Ops" },
+    { id: "billing", label: "Subscription & bKash", shortLabel: "Billing", icon: Receipt, group: "Ops" },
+    { id: "settings", label: "API & Settings", shortLabel: "Settings", icon: Settings, group: "Ops" },
+  ] as const;
+
   return (
-    <div className="min-h-screen bg-background text-foreground bg-grid flex flex-col transition-colors">
-      <Navbar />
-
-      <div className="flex-1 mx-auto max-w-7xl w-full px-4 sm:px-6 py-8">
-        {/* Top Header Banner */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/80 pb-6 mb-8">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3.5 py-1 text-xs font-bold text-primary mb-2">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              <span>
-                {showPartnerLogo && partnerName
-                  ? `Onnesha × ${partnerName}`
-                  : institutionNameInput || "Onnesha Assessment Arena"}
-              </span>
-            </div>
-            <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-foreground">
-              Instructor Studio &amp; Regional Command Center
-            </h1>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Welcome back,{" "}
-              <strong className="text-foreground">{user?.name || "Instructor"}</strong> ·{" "}
-              <span className="font-mono text-primary font-bold">
-                {isSuperAdmin ? "Super Admin" : `${assignedCourses.length} Assigned Course(s)`}
-              </span>{" "}
-              ·{" "}
-              <span className="font-mono text-foreground font-bold">
-                {roster.length} Candidates
-              </span>
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2.5">
-            {isSuperAdmin && (
-              <Link
-                to="/admin"
-                className="inline-flex items-center gap-1.5 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-2.5 text-xs font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition"
-              >
-                <ShieldCheck className="h-4 w-4" />
-                <span>Super Admin Panel</span>
-              </Link>
-            )}
-
-            {isSuperAdmin && (
-              <button
-                onClick={() => {
-                  setActiveTab("roster");
-                  setShowAddRegion(true);
-                }}
-                className="inline-flex items-center gap-1.5 rounded-2xl border border-border bg-card px-3.5 py-2.5 text-xs font-bold text-foreground hover:bg-accent transition"
-              >
-                <MapPin className="h-4 w-4 text-primary" />
-                <span>+ Add Region</span>
-              </button>
-            )}
-
-            <button
-              onClick={() => setShowAiModal(true)}
-              className="inline-flex items-center gap-1.5 rounded-2xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90 transition"
-            >
-              <Wand2 className="h-4 w-4" />
-              <span>AI Exam Generator</span>
-            </button>
-
-            <Link
-              to="/host/$quizId"
-              params={{ quizId: primaryHostQuizSlug }}
-              className="inline-flex items-center gap-1.5 rounded-2xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-emerald-700 transition"
-            >
-              <Play className="h-3.5 w-3.5 fill-current" />
-              <span>Launch Live Arena</span>
-            </Link>
-          </div>
-        </div>
-
-        {smsSuccessMsg && (
-          <div className="mb-6 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-xs font-semibold text-emerald-700 dark:text-emerald-300 animate-in fade-in">
+    <StaffShell
+      variant="instructor"
+      title="Instructor Studio"
+      subtitle="Regional rosters, model tests, live arena, SMS, and certificates."
+      eyebrow={
+        showPartnerLogo && partnerName
+          ? `Onnesha × ${partnerName}`
+          : institutionNameInput || "Onnesha Assessment Arena"
+      }
+      userName={user?.name}
+      userEmail={user?.email}
+      activeId={activeTab}
+      items={[...instructorNav]}
+      onNavigate={(id) => setActiveTab(id as TabType)}
+      toast={
+        smsSuccessMsg ? (
+          <div className="fixed bottom-6 right-6 z-50 max-w-sm rounded-2xl border border-emerald-500/40 bg-emerald-600 px-4 py-3 text-xs font-bold text-white shadow-2xl animate-in fade-in">
             {smsSuccessMsg}
           </div>
-        )}
-
-        {/* Dashboard Navigation Tabs */}
-        <div className="flex items-center gap-1 border-b border-border/60 overflow-x-auto pb-2 no-scrollbar mb-8">
-          {[
-            { id: "overview", label: "Overview", icon: LayoutDashboard },
-            { id: "roster", label: `Regions & Candidates (${roster.length})`, icon: MapPin },
-            { id: "quizzes", label: "Model Tests & Packs", icon: BookOpen },
-            { id: "ai_creator", label: "Manual Question Studio", icon: PenTool },
-            { id: "results", label: "Regional Merit & Analysis", icon: Trophy },
-            { id: "certificates", label: "Verifiable Certificates", icon: Award },
-            { id: "sms_logs", label: "Guardian SMS Logs", icon: MessageSquare },
-            { id: "billing", label: "Subscription & bKash", icon: Receipt },
-            { id: "settings", label: "API & Settings", icon: Settings },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as TabType)}
-                className={`flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-bold whitespace-nowrap transition-all ${
-                  isActive
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
+        ) : null
+      }
+      headerActions={
+        <>
+          <Link
+            to="/portal"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20"
+          >
+            Student Portal
+          </Link>
+          {isSuperAdmin && (
+            <Link
+              to="/admin"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20"
+            >
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Admin
+            </Link>
+          )}
+          {isSuperAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("roster");
+                setShowAddRegion(true);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-[11px] font-bold text-foreground hover:bg-accent"
+            >
+              <MapPin className="h-3.5 w-3.5 text-primary" />
+              Region
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowAiModal(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-[11px] font-bold text-primary-foreground hover:bg-primary/90"
+          >
+            <Wand2 className="h-3.5 w-3.5" />
+            AI Gen
+          </button>
+          <Link
+            to="/host/$quizId"
+            params={{ quizId: primaryHostQuizSlug }}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-emerald-700"
+          >
+            <Play className="h-3.5 w-3.5 fill-current" />
+            Live
+          </Link>
+        </>
+      }
+    >
+      <div className="space-y-6">
         {/* TAB 1: OVERVIEW */}
         {activeTab === "overview" && (
           <div className="space-y-8 animate-in fade-in">
@@ -3392,6 +3364,7 @@ function DashboardPage() {
             </form>
           </div>
         )}
+
       </div>
 
       {/* AI Quiz Modal */}
@@ -3529,7 +3502,7 @@ function DashboardPage() {
           );
         })()}
 
-      <Footer />
-    </div>
+    </StaffShell>
   );
 }
+

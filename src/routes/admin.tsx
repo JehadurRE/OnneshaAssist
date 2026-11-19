@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import React, { useEffect, useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
+import { StaffShell } from "@/components/layout/StaffShell";
 import { AdminPracticalPanel } from "@/components/admin/AdminPracticalPanel";
 import { CertificateDesignerStudio } from "@/components/admin/CertificateDesignerStudio";
 import { CertificateView } from "@/components/common/CertificateView";
@@ -858,310 +859,133 @@ function SuperAdminPage() {
     return regionOk && searchOk;
   });
 
+  const adminNav = [
+    { id: "courses", label: "Courses & Quizzes", shortLabel: "Courses", icon: Layers, badge: courses.length, group: "Curriculum" },
+    { id: "practical", label: "Practical & Course Certs", shortLabel: "Practical", icon: ClipboardList, group: "Curriculum" },
+    { id: "instructors", label: "Instructors & Accounts", shortLabel: "Faculty", icon: GraduationCap, badge: users.length, group: "People" },
+    { id: "roster", label: "Regions & Roster", shortLabel: "Roster", icon: MapPin, badge: roster.length, group: "People" },
+    { id: "certificates", label: "Issued Certificates", shortLabel: "Certificates", icon: Award, badge: certificates.length, group: "Credentials" },
+    { id: "settings", label: "Anti-Cheat, Branding & Backup", shortLabel: "Settings", icon: Settings, group: "System" },
+    { id: "sales_billing", label: "Sales Leads & Billing", shortLabel: "Billing", icon: Receipt, badge: salesLeads.length + transactions.length, group: "System" },
+  ] as const;
+
   return (
-    <div className="min-h-screen bg-background text-foreground bg-grid flex flex-col">
-      <Navbar />
-
-      {statusToast && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-2xl border border-emerald-500/40 bg-emerald-600 px-4 py-3 text-xs font-bold text-white shadow-2xl animate-in fade-in">
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
-          <span>{statusToast}</span>
-        </div>
-      )}
-
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 sm:px-6 py-8 space-y-6">
-        {/* Super Admin Top Command Bar */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 rounded-3xl border border-amber-500/30 bg-card p-6 shadow-tactical">
-          <div className="flex items-start sm:items-center gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-500 border border-amber-500/30">
-              <Shield className="h-6 w-6" />
-            </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 font-mono text-[10px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">
-                  SUPER ADMIN PORTAL (/admin)
-                </span>
-                <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 font-mono text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                  ● Server DB + SQLite Synced
-                </span>
-              </div>
-              <h1 className="mt-1 font-display text-2xl sm:text-3xl font-black text-foreground">
-                Institutional Command &amp; Multi-Course Governance
-              </h1>
-              <p className="text-xs text-muted-foreground">
-                Signed in as <strong>{user.name}</strong> ({user.email}) · Separate from Instructor
-                Studio
-              </p>
-            </div>
+    <StaffShell
+      variant="admin"
+      title="Command Center"
+      subtitle="Courses, faculty, practical exams, certificates, and platform controls."
+      eyebrow="Super Admin"
+      userName={user.name}
+      userEmail={user.email}
+      activeId={activeTab}
+      items={[...adminNav]}
+      onNavigate={(id) => setActiveTab(id as AdminTab)}
+      toast={
+        statusToast ? (
+          <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-2xl border border-emerald-500/40 bg-emerald-600 px-4 py-3 text-xs font-bold text-white shadow-2xl animate-in fade-in">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <span>{statusToast}</span>
           </div>
-
-          <div className="flex flex-wrap items-center gap-2.5">
-            <Link
-              to="/dashboard"
-              className="inline-flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-2.5 text-xs font-bold text-foreground hover:bg-accent transition"
-            >
-              <LayoutDashboard className="h-4 w-4 text-primary" />
-              <span>Open Instructor Studio (/dashboard)</span>
-            </Link>
-            <button
-              type="button"
-              onClick={handleExportDatabase}
-              className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90 transition"
-            >
-              <Download className="h-4 w-4" />
-              <span>Backup DB</span>
-            </button>
-          </div>
-        </div>
-
-        {/* KPI Summary Strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
-          <div className="rounded-2xl border border-border bg-card p-4">
-            <div className="flex items-center justify-between text-xs text-muted-foreground font-semibold">
-              <span>Active Courses</span>
-              <Layers className="h-4 w-4 text-primary" />
-            </div>
-            <div className="mt-2 font-mono text-2xl font-black text-foreground">
-              {courses.length}
-            </div>
-            <div className="text-[11px] text-muted-foreground">With multi-instructor teams</div>
-          </div>
-
-          <div className="rounded-2xl border border-border bg-card p-4">
-            <div className="flex items-center justify-between text-xs text-muted-foreground font-semibold">
-              <span>Faculty &amp; Admins</span>
-              <GraduationCap className="h-4 w-4 text-amber-500" />
-            </div>
-            <div className="mt-2 font-mono text-2xl font-black text-foreground">{users.length}</div>
-            <div className="text-[11px] text-muted-foreground">
-              {users.filter((u) => u.role === "instructor").length} Instructors ·{" "}
-              {users.filter((u) => u.role === "admin").length} Admins
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-border bg-card p-4">
-            <div className="flex items-center justify-between text-xs text-muted-foreground font-semibold">
-              <span>Sequential Quizzes</span>
-              <BookOpen className="h-4 w-4 text-emerald-500" />
-            </div>
-            <div className="mt-2 font-mono text-2xl font-black text-foreground">
-              {quizzes.length}
-            </div>
-            <div className="text-[11px] text-muted-foreground">4 question styles supported</div>
-          </div>
-
-          <div className="rounded-2xl border border-border bg-card p-4">
-            <div className="flex items-center justify-between text-xs text-muted-foreground font-semibold">
-              <span>Enrolled Trainees</span>
-              <Users className="h-4 w-4 text-sky-500" />
-            </div>
-            <div className="mt-2 font-mono text-2xl font-black text-foreground">
-              {roster.length}
-            </div>
-            <div className="text-[11px] text-muted-foreground">
-              Across {regions.length} Regional Ranges
-            </div>
-          </div>
-
+        ) : null
+      }
+      headerActions={
+        <>
+          <Link
+            to="/portal"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20"
+          >
+            Student Portal
+          </Link>
+          <Link
+            to="/dashboard"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-[11px] font-bold text-foreground hover:bg-accent"
+          >
+            <LayoutDashboard className="h-3.5 w-3.5 text-primary" />
+            Studio
+          </Link>
           <button
             type="button"
-            onClick={() => setActiveTab("certificates")}
-            className="text-left rounded-2xl border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 p-4 transition"
+            onClick={handleExportDatabase}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-[11px] font-bold text-primary-foreground hover:bg-primary/90"
           >
-            <div className="flex items-center justify-between text-xs text-muted-foreground font-semibold">
-              <span>Issued Certificates</span>
-              <Award className="h-4 w-4 text-emerald-500" />
-            </div>
-            <div className="mt-2 font-mono text-2xl font-black text-foreground">
-              {certificates.length}
-            </div>
-            <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
-              Min Pass:{" "}
-              {resolvePassThresholdPct({
-                brandingDefaultThreshold: branding.defaultPassThresholdPct,
-              })}
-              % · View All &rarr;
-            </div>
+            <Download className="h-3.5 w-3.5" />
+            Backup
           </button>
-        </div>
+        </>
+      }
+    >
+      <div className="space-y-6">
 
-        {/* Live Examination Rooms Monitor */}
-        <div className="rounded-3xl border border-border bg-card p-4 sm:p-5 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Radio
-                className={`h-4 w-4 ${activeRooms.length > 0 ? "text-emerald-500 animate-pulse" : "text-muted-foreground"}`}
-              />
-              <h2 className="font-display text-sm font-black text-foreground">
-                Live Examination Rooms Oversight ({activeRooms.length} Active)
-              </h2>
-            </div>
-            <button
-              type="button"
-              onClick={refreshActiveRooms}
-              disabled={loadingRooms}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-1.5 text-[11px] font-bold text-foreground hover:bg-accent transition"
-            >
-              <RefreshCw className={`h-3 w-3 ${loadingRooms ? "animate-spin" : ""}`} />
-              <span>Refresh Rooms</span>
-            </button>
-          </div>
-
-          {activeRooms.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              No live examination rooms are currently open. Launch any quiz below or monitor
-              instructor sessions here.
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {activeRooms.map((room) => (
-                <div
-                  key={room.pin}
-                  className="flex flex-col justify-between gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-3.5"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-sm font-black tracking-wider text-emerald-600 dark:text-emerald-400">
-                        PIN {room.pin}
-                      </span>
-                      <span className="rounded-full bg-background px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-foreground border border-border">
-                        {room.phase} · {room.participantCount} joined
-                      </span>
-                    </div>
-                    <div className="mt-1 font-display text-xs font-bold text-foreground truncate">
-                      {room.quizTitleEn || room.quizTitleBn}
-                    </div>
-                    <div className="text-[11px] text-muted-foreground truncate">
-                      Scope: {room.allowedRegionName}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Link
-                      to="/host/$quizId"
-                      params={{ quizId: room.quizId }}
-                      search={{ pin: room.pin }}
-                      className="flex-1 inline-flex items-center justify-center gap-1 rounded-xl bg-primary px-3 py-1.5 text-[11px] font-bold text-primary-foreground hover:bg-primary/90 transition"
-                    >
-                      <Play className="h-3 w-3 fill-current" />
-                      <span>Open Controller</span>
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const ok = await gameEngine.closeRoomAsync(room.pin);
-                        if (ok) {
-                          showNotice(`Closed live room PIN ${room.pin}.`);
-                          refreshActiveRooms();
-                        }
-                      }}
-                      className="rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-[11px] font-bold text-destructive hover:bg-destructive/20 transition"
-                    >
-                      Close
-                    </button>
-                  </div>
+        {activeTab === "courses" && (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              <button type="button" onClick={() => setActiveTab("courses")} className="rounded-2xl border border-border bg-card p-4 text-left hover:border-primary/40 transition">
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
+                  <span>Courses</span>
+                  <Layers className="h-3.5 w-3.5 text-primary" />
                 </div>
-              ))}
+                <div className="mt-1.5 font-mono text-2xl font-black">{courses.length}</div>
+              </button>
+              <button type="button" onClick={() => setActiveTab("instructors")} className="rounded-2xl border border-border bg-card p-4 text-left hover:border-primary/40 transition">
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
+                  <span>Faculty</span>
+                  <GraduationCap className="h-3.5 w-3.5 text-amber-500" />
+                </div>
+                <div className="mt-1.5 font-mono text-2xl font-black">{users.length}</div>
+              </button>
+              <button type="button" onClick={() => setActiveTab("roster")} className="rounded-2xl border border-border bg-card p-4 text-left hover:border-primary/40 transition">
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
+                  <span>Trainees</span>
+                  <Users className="h-3.5 w-3.5 text-sky-500" />
+                </div>
+                <div className="mt-1.5 font-mono text-2xl font-black">{roster.length}</div>
+              </button>
+              <button type="button" onClick={() => setActiveTab("certificates")} className="rounded-2xl border border-border bg-card p-4 text-left hover:border-primary/40 transition">
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
+                  <span>Certificates</span>
+                  <Award className="h-3.5 w-3.5 text-emerald-500" />
+                </div>
+                <div className="mt-1.5 font-mono text-2xl font-black">{certificates.length}</div>
+              </button>
+              <button type="button" onClick={refreshActiveRooms} className="rounded-2xl border border-border bg-card p-4 text-left hover:border-primary/40 transition">
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
+                  <span>Live rooms</span>
+                  <Radio className={`h-3.5 w-3.5 ${activeRooms.length ? "text-emerald-500 animate-pulse" : ""}`} />
+                </div>
+                <div className="mt-1.5 font-mono text-2xl font-black">{activeRooms.length}</div>
+              </button>
             </div>
-          )}
-        </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex flex-wrap gap-2 border-b border-border pb-3">
-          <button
-            type="button"
-            onClick={() => setActiveTab("courses")}
-            className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-extrabold transition ${
-              activeTab === "courses"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "bg-card border border-border text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Layers className="h-4 w-4" />
-            <span>1. Courses &amp; Sequential Quizzes ({courses.length})</span>
-          </button>
+            {activeRooms.length > 0 && (
+              <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="text-sm font-black">Live rooms ({activeRooms.length})</h2>
+                  <button type="button" onClick={refreshActiveRooms} className="text-[11px] font-bold text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+                    <RefreshCw className={`h-3 w-3 ${loadingRooms ? "animate-spin" : ""}`} /> Refresh
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {activeRooms.map((room) => (
+                    <div key={room.pin} className="rounded-xl border border-emerald-500/25 bg-card p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-sm font-black text-emerald-600 dark:text-emerald-400">PIN {room.pin}</span>
+                        <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[10px] font-bold uppercase">{room.phase} · {room.participantCount}</span>
+                      </div>
+                      <div className="text-xs font-bold truncate">{room.quizTitleEn || room.quizTitleBn}</div>
+                      <div className="flex gap-2">
+                        <Link to="/host/$quizId" params={{ quizId: room.quizId }} search={{ pin: room.pin }} className="flex-1 inline-flex items-center justify-center gap-1 rounded-xl bg-primary px-3 py-1.5 text-[11px] font-bold text-primary-foreground">
+                          <Play className="h-3 w-3 fill-current" /> Open
+                        </Link>
+                        <button type="button" onClick={async () => { const ok = await gameEngine.closeRoomAsync(room.pin); if (ok) { showNotice(`Closed live room PIN ${room.pin}.`); refreshActiveRooms(); } }} className="rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-[11px] font-bold text-destructive">Close</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("practical")}
-            className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-extrabold transition ${
-              activeTab === "practical"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "bg-card border border-border text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <ClipboardList className="h-4 w-4" />
-            <span>2. Practical &amp; Course Certs</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("instructors")}
-            className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-extrabold transition ${
-              activeTab === "instructors"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "bg-card border border-border text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <GraduationCap className="h-4 w-4" />
-            <span>3. Multiple Instructors &amp; Accounts ({users.length})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("roster")}
-            className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-extrabold transition ${
-              activeTab === "roster"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "bg-card border border-border text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <MapPin className="h-4 w-4" />
-            <span>4. Regions &amp; Trainee Roster ({roster.length})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("certificates")}
-            className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-extrabold transition ${
-              activeTab === "certificates"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "bg-card border border-border text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Award className="h-4 w-4" />
-            <span>5. Issued Certificates &amp; Pass Policy ({certificates.length})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("settings")}
-            className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-extrabold transition ${
-              activeTab === "settings"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "bg-card border border-border text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Settings className="h-4 w-4" />
-            <span>6. Anti-Cheat Lock, Co-Branding &amp; DB Backup</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("sales_billing")}
-            className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-extrabold transition ${
-              activeTab === "sales_billing"
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "bg-card border border-border text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Receipt className="h-4 w-4" />
-            <span>7. Sales Leads &amp; Billing ({salesLeads.length + transactions.length})</span>
-          </button>
-        </div>
-
-        {/* =================================================================== */}
-        {/* TAB 1: COURSES, MULTI-INSTRUCTOR TEAMS & SEQUENTIAL QUIZZES         */}
-        {/* =================================================================== */}
         {activeTab === "practical" && (
           <div className="rounded-3xl border border-border bg-card p-5 sm:p-6">
             <AdminPracticalPanel
@@ -3376,9 +3200,9 @@ function SuperAdminPage() {
             </div>
           </div>
         )}
-      </main>
 
-      <Footer />
-    </div>
+      </div>
+
+    </StaffShell>
   );
 }
