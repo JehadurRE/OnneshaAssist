@@ -180,6 +180,8 @@ interface PersistentStoreData {
   migratedFinalExamPackageV1?: boolean | undefined;
   migratedSanjibonS03V2?: boolean | undefined;
   migratedSanjibonS05V4?: boolean | undefined;
+  /** One-shot: reset every admin/instructor password to role defaults. */
+  staffPasswordsResetV1?: boolean | undefined;
   autoIssueQuizCertificates?: boolean | undefined;
   serverGeminiApiKey?: string | undefined;
   ledgerCheckpoints: LedgerOtsCheckpoint[];
@@ -647,6 +649,7 @@ function loadInitialStore(): PersistentStoreData {
             seededFinalPractical: !!parsed.seededFinalPractical,
             migratedSanjibonS03V2: !!parsed.migratedSanjibonS03V2,
             migratedSanjibonS05V4: !!parsed.migratedSanjibonS05V4,
+            staffPasswordsResetV1: !!parsed.staffPasswordsResetV1,
             autoIssueQuizCertificates: false,
             serverGeminiApiKey: parsed.serverGeminiApiKey,
             ledgerCheckpoints: parsed.ledgerCheckpoints || [],
@@ -695,6 +698,7 @@ function loadInitialStore(): PersistentStoreData {
     seededFinalPractical: false,
     migratedSanjibonS03V2: true,
     migratedSanjibonS05V4: true,
+    staffPasswordsResetV1: false,
     autoIssueQuizCertificates: false,
     ledgerCheckpoints: [],
     transactions: [],
@@ -840,8 +844,44 @@ function getStore(): PersistentStoreData {
     } else {
       ensureFinalPracticalSeeded(loaded);
     }
+    if (!loaded.staffPasswordsResetV1) {
+      const reset = resetAllStaffPasswordsInStore(loaded);
+      loaded.staffPasswordsResetV1 = true;
+      scheduleDiskPersist();
+      console.info(
+        `[OnneshaServerStore] Staff password reset v1: admins=${reset.adminCount}, instructors=${reset.instructorCount}`,
+      );
+    }
   }
   return globalStore.__onneshaStore;
+}
+
+/** Default plaintext passwords applied on staff bulk reset (hashed before persist). */
+export const DEFAULT_ADMIN_PASSWORD = "admin123";
+export const DEFAULT_INSTRUCTOR_PASSWORD = "instructor123";
+
+export function resetAllStaffPasswordsInStore(store: PersistentStoreData): {
+  adminCount: number;
+  instructorCount: number;
+  resetEmails: string[];
+} {
+  let adminCount = 0;
+  let instructorCount = 0;
+  const resetEmails: string[] = [];
+  store.users = (store.users || []).map((u) => {
+    if (u.role !== "admin" && u.role !== "instructor") return u;
+    const plain =
+      u.role === "admin" ? DEFAULT_ADMIN_PASSWORD : DEFAULT_INSTRUCTOR_PASSWORD;
+    if (u.role === "admin") adminCount += 1;
+    else instructorCount += 1;
+    resetEmails.push(u.email);
+    return {
+      ...u,
+      passwordHash: hashPasswordScrypt(plain),
+      status: u.status === "suspended" ? u.status : "active",
+    };
+  });
+  return { adminCount, instructorCount, resetEmails };
 }
 
 function getLiveSessions(): Record<string, ServerLiveSession> {
@@ -1948,6 +1988,9 @@ export const serverGetBootstrapData = createServerFn({ method: "GET" }).handler(
     revokedCertificates: isStaff ? store.revokedCertificates || [] : [],
     practicalExams: isStaff ? store.practicalExams || [] : (store.practicalExams || []).filter((p) => p.status === "open" || p.status === "scheduled"),
     practicalSubmissions: isStaff ? store.practicalSubmissions || [] : [],
+    finalExamAttempts: isStaff
+      ? (store.finalExamAttempts || []).map(({ answers: _a, ...rest }) => rest)
+      : [],
     courseRequirements: store.courseRequirements || [],
     autoIssueQuizCertificates: store.autoIssueQuizCertificates === true,
     transactions: actor?.role === "admin" ? store.transactions : [],
@@ -5981,4 +6024,125 @@ export const serverOpenFinalExamWindow = createServerFn({ method: "POST" })
     store.practicalExams[idx] = exam;
     scheduleDiskPersist();
     return { success: true as const, exam };
+  });
+
+/** Staff live desk: exam window + quiz attempts (answers stripped). */
+export const serverGetFinalExamDesk = createServerFn({ method: "POST" })
+  .validator((data: { courseId?: string | undefined; examId?: string | undefined }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    ensureFinalPracticalSeeded(store);
+    let exam = (store.practicalExams || []).find((e) =>
+      data.examId ? e.id === data.examId : data.courseId ? e.courseId === data.courseId : false,
+    );
+    if (!exam && data.courseId) {
+      const course = store.courses.find((c) => c.id === data.courseId);
+      if (course) {
+        exam = buildDefaultFinalPracticalExam(course);
+        store.practicalExams = store.practicalExams || [];
+        store.practicalExams.unshift(exam);
+        scheduleDiskPersist();
+      }
+    }
+    if (!exam) return { success: false as const, error: "Final exam not found for this course." };
+    const attempts = (store.finalExamAttempts || [])
+      .filter((a) => a.practicalExamId === exam!.id)
+      .map(({ answers: _a, ...rest }) => rest)
+      .sort((a, b) => (b.updatedAt || b.startedAt || "").localeCompare(a.updatedAt || a.startedAt || ""));
+    const course = store.courses.find((c) => c.id === exam!.courseId);
+    const quiz = resolveQuizForFinalExam(store, exam.linkedQuizId);
+    const nowIso = new Date().toISOString();
+    return {
+      success: true as const,
+      exam,
+      course: course
+        ? { id: course.id, code: course.code, titleEn: course.titleEn, titleBn: course.titleBn }
+        : null,
+      /** Full paper for staff projector / screen-share (includes isCorrect for optional reveal). */
+      quiz: quiz
+        ? {
+            id: quiz.id,
+            titleEn: quiz.titleEn,
+            titleBn: quiz.titleBn,
+            quizNumber: quiz.quizNumber,
+            questions: (quiz.questions || []).map((q) => ({
+              id: q.id,
+              textEn: q.textEn,
+              textBn: q.textBn,
+              type: q.type,
+              timeLimitSec: q.timeLimitSec,
+              options: (q.options || []).map((o) => ({
+                id: o.id,
+                textEn: o.textEn,
+                textBn: o.textBn,
+                isCorrect: !!o.isCorrect,
+              })),
+            })),
+          }
+        : null,
+      attempts,
+      windowOpen: isFinalExamJoinWindowOpen(exam, nowIso),
+      nowIso,
+      joinPath: "/final-exam",
+      counts: {
+        total: attempts.length,
+        inProgress: attempts.filter((a) => a.status === "in_progress").length,
+        submitted: attempts.filter(
+          (a) => a.status === "submitted" || a.status === "graded" || a.status === "expired",
+        ).length,
+      },
+    };
+  });
+
+export const serverCloseFinalExamWindow = createServerFn({ method: "POST" })
+  .validator((data: { examId: string }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    const idx = (store.practicalExams || []).findIndex((e) => e.id === data.examId);
+    if (idx < 0) return { success: false as const, error: "Exam not found." };
+    const prev = store.practicalExams![idx]!;
+    const now = new Date().toISOString();
+    const exam: PracticalExam = {
+      ...prev,
+      status: "closed",
+      closesAt: now,
+      updatedAt: now,
+    };
+    store.practicalExams![idx] = exam;
+    scheduleDiskPersist();
+    return { success: true as const, exam };
+  });
+
+/** Admin-only: reset every admin → admin123, every instructor → instructor123. */
+export const serverResetAllStaffPasswords = createServerFn({ method: "POST" })
+  .validator((data: { confirm?: string | undefined } = {}) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || actor.role !== "admin") {
+      return { success: false as const, error: "Super Admin authentication required." };
+    }
+    if ((data.confirm || "").trim().toUpperCase() !== "RESET") {
+      return {
+        success: false as const,
+        error: 'Type RESET to confirm bulk staff password reset.',
+      };
+    }
+    const store = getStore();
+    const summary = resetAllStaffPasswordsInStore(store);
+    store.staffPasswordsResetV1 = true;
+    scheduleDiskPersist();
+    return {
+      success: true as const,
+      ...summary,
+      adminPassword: DEFAULT_ADMIN_PASSWORD,
+      instructorPassword: DEFAULT_INSTRUCTOR_PASSWORD,
+    };
   });

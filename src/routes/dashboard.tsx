@@ -943,6 +943,12 @@ function DashboardPage() {
       headerActions={
         <>
           <Link
+            to="/final-exam-live"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-800 dark:text-amber-200 hover:bg-amber-500/20"
+          >
+            Final Exam Live
+          </Link>
+          <Link
             to="/portal"
             className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20"
           >

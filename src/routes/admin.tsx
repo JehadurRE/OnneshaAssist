@@ -18,7 +18,7 @@ import {
 import { downloadCertificatePdf } from "@/lib/pdf-generator";
 import { clampPassThresholdPct, isPassingScore, resolvePassThresholdPct } from "@/lib/scoring";
 import { gameEngine } from "@/lib/game-engine";
-import { serverGetActiveRooms } from "@/lib/server-session";
+import { serverGetActiveRooms, serverResetAllStaffPasswords } from "@/lib/server-session";
 import {
   BrandingSettings,
   CertificateData,
@@ -203,6 +203,7 @@ function SuperAdminPage() {
   const [editUserRole, setEditUserRole] = useState<"instructor" | "admin">("instructor");
   const [editUserPassword, setEditUserPassword] = useState("");
   const [editUserCourses, setEditUserCourses] = useState<string[]>([]);
+  const [resettingAllStaffPasswords, setResettingAllStaffPasswords] = useState(false);
 
   // Region & Candidate Form State
   const [newRegCode, setNewRegCode] = useState("");
@@ -645,6 +646,32 @@ function SuperAdminPage() {
     );
   };
 
+  const handleResetAllStaffPasswords = async () => {
+    const ok = window.confirm(
+      "Reset ALL admin passwords to admin123 and ALL instructor passwords to instructor123?\n\nType RESET in the next prompt to confirm.",
+    );
+    if (!ok) return;
+    const confirm = window.prompt('Type RESET to confirm bulk staff password reset:');
+    if ((confirm || "").trim().toUpperCase() !== "RESET") {
+      showNotice("Bulk password reset cancelled.");
+      return;
+    }
+    setResettingAllStaffPasswords(true);
+    try {
+      const res = await serverResetAllStaffPasswords({ data: { confirm: "RESET" } });
+      if (!res.success) {
+        showNotice(res.error || "Password reset failed.");
+        return;
+      }
+      refreshAll();
+      showNotice(
+        `Reset ${res.adminCount} admin(s) → ${res.adminPassword} · ${res.instructorCount} instructor(s) → ${res.instructorPassword}`,
+      );
+    } finally {
+      setResettingAllStaffPasswords(false);
+    }
+  };
+
   const handleAddRegion = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRegCode.trim() || !newRegNameEn.trim()) return;
@@ -861,7 +888,7 @@ function SuperAdminPage() {
 
   const adminNav = [
     { id: "courses", label: "Courses & Quizzes", shortLabel: "Courses", icon: Layers, badge: courses.length, group: "Curriculum" },
-    { id: "practical", label: "Practical & Course Certs", shortLabel: "Practical", icon: ClipboardList, group: "Curriculum" },
+    { id: "practical", label: "Final Exam Desk", shortLabel: "Final Exam", icon: ClipboardList, group: "Curriculum" },
     { id: "instructors", label: "Instructors & Accounts", shortLabel: "Faculty", icon: GraduationCap, badge: users.length, group: "People" },
     { id: "roster", label: "Regions & Roster", shortLabel: "Roster", icon: MapPin, badge: roster.length, group: "People" },
     { id: "certificates", label: "Issued Certificates", shortLabel: "Certificates", icon: Award, badge: certificates.length, group: "Credentials" },
@@ -890,6 +917,13 @@ function SuperAdminPage() {
       }
       headerActions={
         <>
+          <Link
+            to="/final-exam-live"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-800 dark:text-amber-200 hover:bg-amber-500/20"
+          >
+            <ClipboardList className="h-3.5 w-3.5" />
+            Final Exam Live
+          </Link>
           <Link
             to="/portal"
             className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20"
@@ -1519,6 +1553,33 @@ function SuperAdminPage() {
         {/* =================================================================== */}
         {activeTab === "instructors" && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-12 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0 space-y-1">
+                <div className="flex items-center gap-2 text-sm font-black">
+                  <KeyRound className="h-4 w-4 text-amber-700 dark:text-amber-300" />
+                  Reset all staff passwords
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Sets every <strong>admin</strong> to <code className="font-mono">admin123</code> and
+                  every <strong>instructor</strong> to <code className="font-mono">instructor123</code>.
+                  Candidates are not changed.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={resettingAllStaffPasswords}
+                onClick={() => void handleResetAllStaffPasswords()}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-amber-500/15 px-4 py-2.5 text-xs font-bold text-amber-900 dark:text-amber-200 hover:bg-amber-500/25 disabled:opacity-60"
+              >
+                {resettingAllStaffPasswords ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ShieldAlert className="h-3.5 w-3.5" />
+                )}
+                Reset all admin + instructor passwords
+              </button>
+            </div>
+
             {/* Left: Add New Instructor / Admin Account */}
             <div className="lg:col-span-4 staff-panel space-y-4 h-fit">
               <div className="flex items-center gap-2">

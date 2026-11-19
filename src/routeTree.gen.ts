@@ -15,6 +15,7 @@ import { Route as ContactSalesRouteImport } from './routes/contact-sales'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as DevelopersRouteImport } from './routes/developers'
 import { Route as FinalExamRouteImport } from './routes/final-exam'
+import { Route as FinalExamLiveRouteImport } from './routes/final-exam-live'
 import { Route as PlayRouteImport } from './routes/play'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as PricingRouteImport } from './routes/pricing'
@@ -59,6 +60,11 @@ const DevelopersRoute = DevelopersRouteImport.update({
 const FinalExamRoute = FinalExamRouteImport.update({
   id: '/final-exam',
   path: '/final-exam',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FinalExamLiveRoute = FinalExamLiveRouteImport.update({
+  id: '/final-exam-live',
+  path: '/final-exam-live',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PlayRoute = PlayRouteImport.update({
@@ -144,6 +150,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/developers': typeof DevelopersRoute
   '/final-exam': typeof FinalExamRoute
+  '/final-exam-live': typeof FinalExamLiveRoute
   '/play': typeof PlayRoute
   '/portal': typeof PortalRoute
   '/pricing': typeof PricingRoute
@@ -167,6 +174,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/developers': typeof DevelopersRoute
   '/final-exam': typeof FinalExamRoute
+  '/final-exam-live': typeof FinalExamLiveRoute
   '/play': typeof PlayRoute
   '/portal': typeof PortalRoute
   '/pricing': typeof PricingRoute
@@ -191,6 +199,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/developers': typeof DevelopersRoute
   '/final-exam': typeof FinalExamRoute
+  '/final-exam-live': typeof FinalExamLiveRoute
   '/play': typeof PlayRoute
   '/portal': typeof PortalRoute
   '/pricing': typeof PricingRoute
@@ -216,6 +225,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/developers'
     | '/final-exam'
+    | '/final-exam-live'
     | '/play'
     | '/portal'
     | '/pricing'
@@ -239,6 +249,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/developers'
     | '/final-exam'
+    | '/final-exam-live'
     | '/play'
     | '/portal'
     | '/pricing'
@@ -262,6 +273,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/developers'
     | '/final-exam'
+    | '/final-exam-live'
     | '/play'
     | '/portal'
     | '/pricing'
@@ -286,6 +298,7 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   DevelopersRoute: typeof DevelopersRoute
   FinalExamRoute: typeof FinalExamRoute
+  FinalExamLiveRoute: typeof FinalExamLiveRoute
   PlayRoute: typeof PlayRoute
   PortalRoute: typeof PortalRoute
   PricingRoute: typeof PricingRoute
@@ -345,6 +358,13 @@ declare module '@tanstack/react-router' {
       path: '/final-exam'
       fullPath: '/final-exam'
       preLoaderRoute: typeof FinalExamRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/final-exam-live': {
+      id: '/final-exam-live'
+      path: '/final-exam-live'
+      fullPath: '/final-exam-live'
+      preLoaderRoute: typeof FinalExamLiveRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/play': {
@@ -462,6 +482,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   DevelopersRoute: DevelopersRoute,
   FinalExamRoute: FinalExamRoute,
+  FinalExamLiveRoute: FinalExamLiveRoute,
   PlayRoute: PlayRoute,
   PortalRoute: PortalRoute,
   PricingRoute: PricingRoute,

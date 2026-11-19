@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import {
   serverBulkIssueCourseCertificates,
+  serverCloseFinalExamWindow,
   serverDownloadPracticalFile,
   serverGetBootstrapData,
+  serverGetFinalExamDesk,
   serverGradePracticalSubmission,
   serverIssueCourseCertificate,
   serverOpenFinalExamWindow,
@@ -15,6 +18,7 @@ import { db } from "@/lib/db";
 import type {
   Course,
   CourseCompletionRequirement,
+  FinalExamAttempt,
   PracticalExam,
   PracticalExamStatus,
   PracticalSubmission,
@@ -30,14 +34,17 @@ import {
 import {
   Award,
   ClipboardCheck,
+  ExternalLink,
   KeyRound,
   Loader2,
   Plus,
   RefreshCw,
   RotateCcw,
   Save,
+  Square,
   Timer,
   Trash2,
+  Users,
 } from "lucide-react";
 
 function StatusPill({
@@ -72,13 +79,17 @@ export function AdminPracticalPanel(props: {
   );
   const [exams, setExams] = useState<PracticalExam[]>([]);
   const [subs, setSubs] = useState<PracticalSubmission[]>([]);
+  const [attempts, setAttempts] = useState<FinalExamAttempt[]>([]);
   const [requirements, setRequirements] = useState<CourseCompletionRequirement[]>([]);
   const [autoIssue, setAutoIssue] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [deskRefreshing, setDeskRefreshing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [marksBySubTask, setMarksBySubTask] = useState<Record<string, string>>({});
   const [feedbackBySub, setFeedbackBySub] = useState<Record<string, string>>({});
+  const [windowHours, setWindowHours] = useState(3);
+  const [windowOpen, setWindowOpen] = useState(false);
 
   const course = useMemo(
     () => props.courses.find((c) => c.id === courseId) || props.courses[0],
@@ -105,8 +116,16 @@ export function AdminPracticalPanel(props: {
     [props.quizzes, courseId],
   );
 
-  const refresh = async () => {
-    setLoading(true);
+  const attemptCounts = useMemo(() => {
+    const inProgress = attempts.filter((a) => a.status === "in_progress").length;
+    const submitted = attempts.filter(
+      (a) => a.status === "submitted" || a.status === "graded" || a.status === "expired",
+    ).length;
+    return { total: attempts.length, inProgress, submitted };
+  }, [attempts]);
+
+  const refresh = async (opts?: { soft?: boolean }) => {
+    if (!opts?.soft) setLoading(true);
     try {
       const res = await serverGetBootstrapData();
       if (res.success) {
@@ -114,9 +133,38 @@ export function AdminPracticalPanel(props: {
         setSubs((res.practicalSubmissions as PracticalSubmission[]) || []);
         setRequirements((res.courseRequirements as CourseCompletionRequirement[]) || []);
         setAutoIssue(!!res.autoIssueQuizCertificates);
+        const allAttempts = (res.finalExamAttempts as FinalExamAttempt[] | undefined) || [];
+        if (courseId) {
+          const examForCourse = ((res.practicalExams as PracticalExam[]) || []).find(
+            (e) => e.courseId === courseId,
+          );
+          setAttempts(
+            examForCourse
+              ? allAttempts.filter((a) => a.practicalExamId === examForCourse.id)
+              : [],
+          );
+        }
       }
     } finally {
-      setLoading(false);
+      if (!opts?.soft) setLoading(false);
+    }
+  };
+
+  const refreshDesk = async () => {
+    if (!courseId) return;
+    setDeskRefreshing(true);
+    try {
+      const res = await serverGetFinalExamDesk({ data: { courseId } });
+      if (res.success && res.exam) {
+        setExams((prev) => {
+          const others = prev.filter((e) => e.id !== res.exam!.id && e.courseId !== res.exam!.courseId);
+          return [res.exam as PracticalExam, ...others];
+        });
+        setAttempts((res.attempts as FinalExamAttempt[]) || []);
+        setWindowOpen(!!res.windowOpen);
+      }
+    } finally {
+      setDeskRefreshing(false);
     }
   };
 
@@ -127,6 +175,18 @@ export function AdminPracticalPanel(props: {
   useEffect(() => {
     if (props.initialCourseId) setCourseId(props.initialCourseId);
   }, [props.initialCourseId]);
+
+  useEffect(() => {
+    void refreshDesk();
+  }, [courseId]);
+
+  useEffect(() => {
+    if (!exam || (exam.status !== "open" && exam.status !== "scheduled")) return undefined;
+    const id = window.setInterval(() => {
+      void refreshDesk();
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, [exam?.id, exam?.status]);
 
   const patchExam = (patch: Partial<PracticalExam>) => {
     if (!exam) return;
@@ -414,68 +474,78 @@ export function AdminPracticalPanel(props: {
 
   const weightSum = (exam?.quizWeightPct ?? 40) + (exam?.practicalWeightPct ?? 60);
 
+  const openFinalExam = async () => {
+    if (!exam) return;
+    setBusyId("open-final");
+    setNotice(null);
+    try {
+      const res = await serverOpenFinalExamWindow({
+        data: {
+          examId: exam.id,
+          quizDurationMinutes: exam.quizDurationMinutes || 10,
+          durationHours: windowHours || 3,
+          regeneratePin: !exam.joinPin,
+        },
+      });
+      setNotice(
+        res.success
+          ? `Final open · PIN ${res.exam?.joinPin} · quiz ${res.exam?.quizDurationMinutes}m · closes ${res.exam?.closesAt ? new Date(res.exam.closesAt).toLocaleString() : "—"}`
+          : res.error || "Open failed",
+      );
+      if (res.success && res.exam) {
+        setExams((prev) => prev.map((e) => (e.id === res.exam!.id ? res.exam! : e)));
+        setWindowOpen(true);
+      }
+      await refresh({ soft: true });
+      await refreshDesk();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const closeFinalExam = async () => {
+    if (!exam) return;
+    if (!window.confirm("Close the Final Exam window now? Students will no longer be able to join.")) {
+      return;
+    }
+    setBusyId("close-final");
+    try {
+      const res = await serverCloseFinalExamWindow({ data: { examId: exam.id } });
+      setNotice(res.success ? "Final Exam window closed." : res.error || "Close failed");
+      if (res.success && res.exam) {
+        setExams((prev) => prev.map((e) => (e.id === res.exam!.id ? res.exam! : e)));
+        setWindowOpen(false);
+      }
+      await refreshDesk();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   return (
     <div className="space-y-6 staff-surface">
       <div className="staff-panel-header !border-0 !pb-0 !mb-0">
         <div className="min-w-0 space-y-1">
-          <h2 className="staff-panel-title">Final Exam — Timed Quiz + Capstone</h2>
+          <h2 className="staff-panel-title">Final Exam Live Desk</h2>
           <p className="staff-panel-desc">
-            Open a scheduled PIN window. Candidates join <span className="font-mono">/final-exam</span>{" "}
-            for a single overall MCQ countdown (not per-question), then submit the 40-mark package on
-            portal. Total 70 marks.
+            Open the PIN window, share it with candidates on{" "}
+            <span className="font-mono">/final-exam</span>, and monitor live MCQ attempts here.
+            One overall quiz timer — not per-question.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {exam && (
-            <button
-              type="button"
-              disabled={busyId === "open-final"}
-              onClick={async () => {
-                setBusyId("open-final");
-                try {
-                  const mins = Number(
-                    window.prompt("Quiz duration in minutes (overall timer)?", String(exam.quizDurationMinutes || 10)),
-                  );
-                  const hours = Number(
-                    window.prompt("Keep Final Exam window open for how many hours?", "3"),
-                  );
-                  const res = await serverOpenFinalExamWindow({
-                    data: {
-                      examId: exam.id,
-                      quizDurationMinutes: Number.isFinite(mins) ? mins : 10,
-                      durationHours: Number.isFinite(hours) ? hours : 3,
-                      regeneratePin: !exam.joinPin,
-                    },
-                  });
-                  setNotice(
-                    res.success
-                      ? `Final open · PIN ${res.exam?.joinPin} · quiz ${res.exam?.quizDurationMinutes}m · closes ${res.exam?.closesAt ? new Date(res.exam.closesAt).toLocaleString() : "—"}`
-                      : res.error || "Open failed",
-                  );
-                  if (res.success && res.exam) {
-                    setExams((prev) => prev.map((e) => (e.id === res.exam!.id ? res.exam! : e)));
-                  }
-                  await refresh();
-                } finally {
-                  setBusyId(null);
-                }
-              }}
-              className="staff-btn-primary"
-            >
-              {busyId === "open-final" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Timer className="h-3.5 w-3.5" />
-              )}
-              Open Final Exam
-            </button>
-          )}
+          <Link to="/final-exam-live" className="staff-btn-primary">
+            <ExternalLink className="h-3.5 w-3.5" /> Open Live Host Dashboard
+          </Link>
           <button
             type="button"
-            onClick={() => void refresh()}
+            onClick={() => {
+              void refresh({ soft: true });
+              void refreshDesk();
+            }}
             className="staff-btn-ghost"
           >
-            <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            <RefreshCw className={`h-3.5 w-3.5 ${deskRefreshing ? "animate-spin" : ""}`} /> Refresh
           </button>
         </div>
       </div>
@@ -498,6 +568,11 @@ export function AdminPracticalPanel(props: {
         {exam && (
           <div className="flex items-center gap-2 pb-1">
             <StatusPill status={exam.status} />
+            {windowOpen && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                window live
+              </span>
+            )}
             <span className="text-[11px] text-muted-foreground font-mono">
               {exam.tasks.length} task{exam.tasks.length === 1 ? "" : "s"}
             </span>
@@ -507,6 +582,203 @@ export function AdminPracticalPanel(props: {
 
       {notice && (
         <div className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm">{notice}</div>
+      )}
+
+      {exam && (
+        <section className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                Live Final Exam dashboard
+              </div>
+              <h3 className="mt-1 text-lg font-black">{exam.titleEn}</h3>
+              <p className="text-xs text-muted-foreground">
+                Candidates: verify PIN → roll + mobile → timed quiz → practical on /portal
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                to="/final-exam-live"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-[11px] font-bold text-primary-foreground"
+              >
+                <ExternalLink className="h-3.5 w-3.5" /> Live host (projector + monitor)
+              </Link>
+              <Link
+                to="/final-exam"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-card px-3 py-2 text-[11px] font-bold hover:bg-accent"
+              >
+                <ExternalLink className="h-3.5 w-3.5" /> Student join page
+              </Link>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl border border-border bg-card p-3 text-center">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Shared PIN</div>
+              <div className="mt-1 font-mono text-3xl font-black tracking-[0.2em]">
+                {exam.joinPin || "————"}
+              </div>
+              <button
+                type="button"
+                className="mt-2 staff-btn-ghost !py-1 !px-2 text-[10px]"
+                onClick={() => patchExam({ joinPin: generateFinalExamJoinPin() })}
+              >
+                <KeyRound className="h-3 w-3" /> New PIN
+              </button>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-3">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Quiz timer</div>
+              <div className="mt-1 flex items-end gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={180}
+                  className="staff-input w-24 font-mono text-xl font-black"
+                  value={exam.quizDurationMinutes ?? 10}
+                  onChange={(e) =>
+                    patchExam({
+                      quizDurationMinutes: Math.max(1, Number(e.target.value) || 10),
+                    })
+                  }
+                />
+                <span className="pb-2 text-xs font-semibold text-muted-foreground">minutes overall</span>
+              </div>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-3">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Keep open</div>
+              <div className="mt-1 flex items-end gap-2">
+                <input
+                  type="number"
+                  min={0.5}
+                  max={72}
+                  step={0.5}
+                  className="staff-input w-24 font-mono text-xl font-black"
+                  value={windowHours}
+                  onChange={(e) => setWindowHours(Math.max(0.5, Number(e.target.value) || 3))}
+                />
+                <span className="pb-2 text-xs font-semibold text-muted-foreground">hours</span>
+              </div>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-3 space-y-1 text-xs">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Window</div>
+              <div>
+                Opens:{" "}
+                <span className="font-mono font-semibold">
+                  {exam.opensAt ? new Date(exam.opensAt).toLocaleString() : "—"}
+                </span>
+              </div>
+              <div>
+                Closes:{" "}
+                <span className="font-mono font-semibold">
+                  {exam.closesAt ? new Date(exam.closesAt).toLocaleString() : "—"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={busyId === "open-final"}
+              onClick={() => void openFinalExam()}
+              className="staff-btn-primary"
+            >
+              {busyId === "open-final" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Timer className="h-3.5 w-3.5" />
+              )}
+              {exam.status === "open" ? "Re-open / extend window" : "Open Final Exam"}
+            </button>
+            {(exam.status === "open" || exam.status === "scheduled") && (
+              <button
+                type="button"
+                disabled={busyId === "close-final"}
+                onClick={() => void closeFinalExam()}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs font-bold text-destructive"
+              >
+                {busyId === "close-final" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Square className="h-3.5 w-3.5" />
+                )}
+                Close window
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => void saveExamMeta()}
+              disabled={busyId === "exam"}
+              className="staff-btn-ghost"
+            >
+              <Save className="h-3.5 w-3.5" />
+              {busyId === "exam" ? "Saving…" : "Save PIN & duration"}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            <div className="staff-metric">
+              <div className="staff-metric-label flex items-center gap-1">
+                <Users className="h-3 w-3" /> Attempts
+              </div>
+              <div className="staff-metric-value">{attemptCounts.total}</div>
+            </div>
+            <div className="staff-metric staff-metric-amber">
+              <div className="staff-metric-label">In progress</div>
+              <div className="staff-metric-value">{attemptCounts.inProgress}</div>
+            </div>
+            <div className="staff-metric staff-metric-emerald">
+              <div className="staff-metric-label">Submitted</div>
+              <div className="staff-metric-value">{attemptCounts.submitted}</div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-border bg-card">
+            <table className="w-full min-w-[520px] text-left text-xs">
+              <thead className="border-b border-border bg-muted/40 text-[10px] uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 font-bold">Roll</th>
+                  <th className="px-3 py-2 font-bold">Name</th>
+                  <th className="px-3 py-2 font-bold">Status</th>
+                  <th className="px-3 py-2 font-bold">Score</th>
+                  <th className="px-3 py-2 font-bold">Ends / submitted</th>
+                </tr>
+              </thead>
+              <tbody>
+                {attempts.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
+                      No quiz attempts yet. After you open the window, students joining with PIN +
+                      roll + mobile appear here (auto-refresh every 5s).
+                    </td>
+                  </tr>
+                ) : (
+                  attempts.map((a) => (
+                    <tr key={a.id} className="border-b border-border/60 last:border-0">
+                      <td className="px-3 py-2 font-mono font-bold">{a.rollNumber}</td>
+                      <td className="px-3 py-2 font-semibold">{a.studentName}</td>
+                      <td className="px-3 py-2">
+                        <StatusPill status={a.status} />
+                      </td>
+                      <td className="px-3 py-2 font-mono">
+                        {typeof a.quizMarks === "number"
+                          ? `${a.quizMarks}/${a.quizMaxMarks ?? "—"} (${a.accuracyPct ?? "—"}%)`
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-[10px] text-muted-foreground">
+                        {a.submittedAt
+                          ? new Date(a.submittedAt).toLocaleString()
+                          : a.endsAt
+                            ? `until ${new Date(a.endsAt).toLocaleTimeString()}`
+                            : "—"}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
 
       <section className="staff-row-card space-y-3">
