@@ -1150,11 +1150,10 @@ function SuperAdminPage() {
         {activeTab === "practical" && (
           <div className="rounded-3xl border border-border bg-card p-5 sm:p-6">
             <AdminPracticalPanel
-              courseId={courses.find((c) => c.id === "course-sanjibon-ai-dm")?.id || courses[0]?.id || "course-sanjibon-ai-dm"}
-              courseCode={
-                courses.find((c) => c.id === "course-sanjibon-ai-dm")?.code ||
-                courses[0]?.code ||
-                "AI-DM-04"
+              courses={courses}
+              quizzes={quizzes}
+              initialCourseId={
+                courses.find((c) => c.id === "course-sanjibon-ai-dm")?.id || courses[0]?.id
               }
             />
           </div>
@@ -1453,8 +1452,7 @@ function SuperAdminPage() {
                         >
                           Edit Course
                         </button>
-                        {!course.id.startsWith("course-bcs-") &&
-                          !course.id.startsWith("course-bank-") &&
+                        {!course.id.startsWith("course-bank-") &&
                           !course.id.startsWith("course-varsity-") &&
                           !course.id.startsWith("course-cyber-") && (
                             <button

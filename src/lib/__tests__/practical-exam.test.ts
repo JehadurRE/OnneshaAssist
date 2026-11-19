@@ -4,6 +4,8 @@ import {
   computeCombinedFinalPct,
   computePracticalScorePct,
   evaluateCourseCompletion,
+  findBestQuizResultForCourse,
+  isPracticalPastDeadline,
   isPracticalWindowOpen,
   makeCourseCertificateNumber,
   matchRosterIdentity,
@@ -156,6 +158,93 @@ describe("practical window & submission validation", () => {
       ],
     });
     expect(good.ok).toBe(true);
+  });
+
+  it("allows late submit while status open past closesAt", () => {
+    const exam: PracticalExam = {
+      ...buildDefaultFinalPracticalExam(course),
+      status: "open",
+      closesAt: "2020-01-01T00:00:00.000Z",
+    };
+    expect(isPracticalWindowOpen(exam)).toBe(true);
+    expect(isPracticalPastDeadline(exam)).toBe(true);
+    const good = validateSubmissionPayload({
+      exam,
+      taskAnswers: [
+        {
+          taskId: exam.tasks[0]!.id,
+          textAnswer: "Late but accepted",
+          linkUrl: "https://example.com/work",
+        },
+      ],
+    });
+    expect(good.ok).toBe(true);
+  });
+
+  it("rejects draft/closed status even before deadline", () => {
+    const exam: PracticalExam = {
+      ...buildDefaultFinalPracticalExam(course),
+      status: "closed",
+      closesAt: "2099-01-01T00:00:00.000Z",
+    };
+    expect(isPracticalWindowOpen(exam)).toBe(false);
+  });
+
+  it("matches quiz results only for allowed quiz ids (no any-quiz fallback)", () => {
+    const sessions = [
+      { id: "exam-q1", pin: "111111", quizId: "quiz-sanjibon-s01" },
+      { id: "exam-final", pin: "222222", quizId: "quiz-sanjibon-s10-final" },
+    ];
+    const results: ExamResultRecord[] = [
+      {
+        id: "r1",
+        sessionId: "exam-q1",
+        pin: "111111",
+        participantId: "p1",
+        rollNumber: "BAR-01",
+        name: "Test",
+        score: 100,
+        rank: 1,
+        correctCount: 10,
+        incorrectCount: 0,
+        unattemptedCount: 0,
+        accuracyPct: 100,
+        passed: true,
+        createdAt: "2026-11-19T00:00:00Z",
+      },
+      {
+        id: "r2",
+        sessionId: "exam-final",
+        pin: "222222",
+        participantId: "p1",
+        rollNumber: "BAR-01",
+        name: "Test",
+        score: 80,
+        rank: 1,
+        correctCount: 24,
+        incorrectCount: 6,
+        unattemptedCount: 0,
+        accuracyPct: 80,
+        passed: true,
+        createdAt: "2026-11-19T00:00:00Z",
+      },
+    ];
+    const onlyFinal = findBestQuizResultForCourse({
+      results,
+      sessions,
+      allowedQuizIds: ["quiz-sanjibon-s10-final"],
+      rollNumber: "BAR-01",
+    });
+    expect(onlyFinal?.id).toBe("r2");
+    expect(onlyFinal?.accuracyPct).toBe(80);
+
+    const none = findBestQuizResultForCourse({
+      results,
+      sessions,
+      allowedQuizIds: [],
+      rollNumber: "BAR-01",
+    });
+    expect(none).toBeUndefined();
   });
 
   it("matches roster by normalized roll + BD phone", () => {

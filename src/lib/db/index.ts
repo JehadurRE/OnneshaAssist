@@ -123,7 +123,7 @@ class OnneshaDatabase {
       sqliteEngine.run(sql, params),
   ): void {
     runFn(
-      "INSERT OR REPLACE INTO certificates (id, certificateNumber, studentName, studentRoll, regionName, quizTitle, score, totalPoints, rank, totalParticipants, accuracyPercent, issueDate, organizationName, institutionName, instructorName, verificationUrl, signatureUrl, verified, payloadHash, prevBlockHash, ledgerIndex, chainHash, cryptoSignature, signerKeyId, signedAt, rekorEntryUuid, rekorLogIndex, rekorIntegratedTime, rekorLogId, rekorStatus, rekorReceiptDigest, rekorPublicKeyId, rekorExplorerUrl, otsStatus, otsProofBase64, otsChainHash, otsLedgerIndex, otsCalendarUrl, otsSubmittedAt, otsBitcoinBlockHeight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT OR REPLACE INTO certificates (id, certificateNumber, studentName, studentRoll, regionName, quizTitle, score, totalPoints, rank, totalParticipants, accuracyPercent, issueDate, organizationName, institutionName, instructorName, verificationUrl, signatureUrl, verified, payloadHash, prevBlockHash, ledgerIndex, chainHash, cryptoSignature, signerKeyId, signedAt, rekorEntryUuid, rekorLogIndex, rekorIntegratedTime, rekorLogId, rekorStatus, rekorReceiptDigest, rekorPublicKeyId, rekorExplorerUrl, otsStatus, otsProofBase64, otsChainHash, otsLedgerIndex, otsCalendarUrl, otsSubmittedAt, otsBitcoinBlockHeight, kind, courseId, courseCode, courseTitle, quizAccuracyPct, practicalScorePct, combinedScorePct, credentialStatementEn, credentialStatementBn) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         cert.id,
         cert.certificateNumber,
@@ -165,6 +165,15 @@ class OnneshaDatabase {
         cert.otsCalendarUrl || "",
         cert.otsSubmittedAt || "",
         cert.otsBitcoinBlockHeight ?? null,
+        cert.kind || "quiz_session",
+        cert.courseId || "",
+        cert.courseCode || "",
+        cert.courseTitle || "",
+        cert.quizAccuracyPct ?? null,
+        cert.practicalScorePct ?? null,
+        cert.combinedScorePct ?? null,
+        cert.credentialStatementEn || "",
+        cert.credentialStatementBn || "",
       ],
     );
   }
@@ -1737,6 +1746,15 @@ class OnneshaDatabase {
       return rows.map((r) => ({
         ...r,
         verified: !!r.verified,
+        kind: r.kind || (r.courseId ? "course_completion" : "quiz_session"),
+        quizAccuracyPct: r.quizAccuracyPct ?? undefined,
+        practicalScorePct: r.practicalScorePct ?? undefined,
+        combinedScorePct: r.combinedScorePct ?? undefined,
+        courseId: r.courseId || undefined,
+        courseCode: r.courseCode || undefined,
+        courseTitle: r.courseTitle || undefined,
+        credentialStatementEn: r.credentialStatementEn || undefined,
+        credentialStatementBn: r.credentialStatementBn || undefined,
       }));
     }
     return this.getStorage<CertificateData[]>("certificates", []);
@@ -1762,6 +1780,15 @@ class OnneshaDatabase {
       return {
         ...row,
         verified: !!row.verified,
+        kind: row.kind || (row.courseId ? "course_completion" : "quiz_session"),
+        quizAccuracyPct: row.quizAccuracyPct ?? undefined,
+        practicalScorePct: row.practicalScorePct ?? undefined,
+        combinedScorePct: row.combinedScorePct ?? undefined,
+        courseId: row.courseId || undefined,
+        courseCode: row.courseCode || undefined,
+        courseTitle: row.courseTitle || undefined,
+        credentialStatementEn: row.credentialStatementEn || undefined,
+        credentialStatementBn: row.credentialStatementBn || undefined,
       };
     }
 

@@ -48,8 +48,11 @@ import {
   computeCombinedFinalPct,
   computePracticalScorePct,
   evaluateCourseCompletion,
+  findBestQuizResultForCourse,
+  isPracticalPastDeadline,
   makeCourseCertificateNumber,
   matchRosterIdentity,
+  normalizeExamWeights,
   validateSubmissionPayload,
 } from "./practical-exam";
 import {
@@ -163,6 +166,7 @@ interface PersistentStoreData {
   purgedSampleData?: boolean | undefined;
   purgedUnder50Initial?: boolean | undefined;
   purgedBcsDemoCourse?: boolean | undefined;
+  purgedBcsDemoCourseV2?: boolean | undefined;
   seededFinalPractical?: boolean | undefined;
   migratedSanjibonS03V2?: boolean | undefined;
   migratedSanjibonS05V4?: boolean | undefined;
@@ -693,6 +697,9 @@ function loadInitialStore(): PersistentStoreData {
 export function migratePurgeBcsDemoCourseInStore(store: PersistentStoreData): {
   removedCourse: boolean;
   removedQuiz: boolean;
+  removedSessions: number;
+  removedResults: number;
+  removedCerts: number;
 } {
   const beforeCourses = store.courses.length;
   store.courses = store.courses.filter((c) => c.id !== LEGACY_BCS_COURSE_ID);
@@ -714,7 +721,30 @@ export function migratePurgeBcsDemoCourseInStore(store: PersistentStoreData): {
     ...u,
     assignedCourseIds: (u.assignedCourseIds || []).filter((id) => id !== LEGACY_BCS_COURSE_ID),
   }));
-  return { removedCourse, removedQuiz };
+
+  const bcsSessionIds = new Set(
+    store.examSessions
+      .filter((s) => s.quizId === LEGACY_BCS_QUIZ_ID || /bcs/i.test(s.quizId) || /bcs/i.test(s.quizTitleEn || ""))
+      .map((s) => s.id),
+  );
+  const beforeSessions = store.examSessions.length;
+  store.examSessions = store.examSessions.filter((s) => !bcsSessionIds.has(s.id));
+  const removedSessions = beforeSessions - store.examSessions.length;
+
+  const beforeResults = store.examResults.length;
+  store.examResults = store.examResults.filter((r) => !bcsSessionIds.has(r.sessionId));
+  const removedResults = beforeResults - store.examResults.length;
+
+  const beforeCerts = store.certificates.length;
+  store.certificates = store.certificates.filter(
+    (c) =>
+      (c.courseId || "") !== LEGACY_BCS_COURSE_ID &&
+      !/bcs/i.test(c.quizTitle || "") &&
+      !/bcs/i.test(c.certificateNumber || ""),
+  );
+  const removedCerts = beforeCerts - store.certificates.length;
+
+  return { removedCourse, removedQuiz, removedSessions, removedResults, removedCerts };
 }
 
 export function ensureFinalPracticalSeeded(store: PersistentStoreData): boolean {
@@ -769,15 +799,18 @@ function getStore(): PersistentStoreData {
         `[OnneshaServerStore] Sanjibon Quiz 5 exact 15-Q migration completed: removedQ5Override=${mig5.removedQ5Override}`,
       );
     }
-    if (!loaded.purgedBcsDemoCourse) {
+    if (!loaded.purgedBcsDemoCourse || !loaded.purgedBcsDemoCourseV2) {
       const migBcs = migratePurgeBcsDemoCourseInStore(loaded);
       loaded.purgedBcsDemoCourse = true;
+      loaded.purgedBcsDemoCourseV2 = true;
       scheduleDiskPersist();
       console.info(
-        `[OnneshaServerStore] BCS demo purge: course=${migBcs.removedCourse}, quiz=${migBcs.removedQuiz}`,
+        `[OnneshaServerStore] BCS demo purge: course=${migBcs.removedCourse}, quiz=${migBcs.removedQuiz}, sessions=${migBcs.removedSessions}, results=${migBcs.removedResults}, certs=${migBcs.removedCerts}`,
       );
     }
-    loaded.autoIssueQuizCertificates = false;
+    if (typeof loaded.autoIssueQuizCertificates !== "boolean") {
+      loaded.autoIssueQuizCertificates = false;
+    }
     if (!loaded.seededFinalPractical) {
       const seeded = ensureFinalPracticalSeeded(loaded);
       loaded.seededFinalPractical = true;
@@ -1696,12 +1729,62 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
     totalParticipantsForCerts = count;
   }
 
-  // Industrial policy: do NOT auto-mint quiz-session certificates.
-  // Course Completion Certificates are issued manually (or via eligibility bulk issue)
-  // after Final Quiz + Practical are both complete and graded.
-  void finalResultsForCerts;
-  void totalParticipantsForCerts;
-  void totalMarks;
+  // Default industrial policy: do NOT auto-mint quiz-session certificates.
+  // Super Admin may re-enable via Admin → Practical → "Enable automatic quiz-session certificates".
+  if (store.autoIssueQuizCertificates === true && finalResultsForCerts.length > 0) {
+    const issued: CertificateData[] = [];
+    let idx = 0;
+    for (const result of finalResultsForCerts) {
+      if (result.passed === false) continue;
+      idx += 1;
+      const certNo = makeCertificateNumber(targetPin, result.rollNumber, idx);
+      const existing = store.certificates.find(
+        (c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase(),
+      );
+      if (existing?.cryptoSignature) continue;
+      const unsigned: CertificateData = {
+        id: `cert-quiz-${result.id}`,
+        certificateNumber: certNo,
+        kind: "quiz_session",
+        studentName: result.name,
+        studentRoll: result.rollNumber,
+        regionName: result.regionName || "",
+        quizTitle: session.quizTitleEn || "Quiz Session",
+        score: result.score,
+        scorePct: result.accuracyPct,
+        accuracyPercent: result.accuracyPct,
+        marksObtained: result.score,
+        totalMarks: totalMarks || 100,
+        totalPoints: totalMarks || 100,
+        rank: result.rank,
+        totalParticipants: totalParticipantsForCerts || 1,
+        issueDate: new Date().toISOString().slice(0, 10),
+        organizationName: resolveOrgName(store.branding),
+        institutionName: store.branding?.institutionTitle || "Onnesha Assessment Arena",
+        instructorName: "Assessment Host",
+        verificationUrl: `/verify/${certNo}`,
+        verified: true,
+      };
+      const sealed = sealCertificateWithLedger(
+        unsigned,
+        [...issued, ...store.certificates],
+        getStorePaths().dataDir,
+      );
+      issued.push(sealed);
+    }
+    if (issued.length) {
+      store.certificates = [
+        ...issued,
+        ...store.certificates.filter(
+          (c) =>
+            !issued.some(
+              (i) => i.certificateNumber.toLowerCase() === c.certificateNumber.toLowerCase(),
+            ),
+        ),
+      ];
+      triggerBackgroundExternalAnchoring(issued.map((c) => c.certificateNumber));
+    }
+  }
   scheduleDiskPersist();
 }
 
@@ -1845,7 +1928,7 @@ export const serverGetBootstrapData = createServerFn({ method: "GET" }).handler(
     practicalExams: isStaff ? store.practicalExams || [] : (store.practicalExams || []).filter((p) => p.status === "open" || p.status === "scheduled"),
     practicalSubmissions: isStaff ? store.practicalSubmissions || [] : [],
     courseRequirements: store.courseRequirements || [],
-    autoIssueQuizCertificates: false,
+    autoIssueQuizCertificates: store.autoIssueQuizCertificates === true,
     transactions: actor?.role === "admin" ? store.transactions : [],
     smsLogs: isStaff ? store.smsLogs : [],
     salesLeads: actor?.role === "admin" ? store.salesLeads : [],
@@ -4754,27 +4837,23 @@ function resolveQuizResultForStudent(
   store: PersistentStoreData,
   rollNumber: string,
   linkedQuizId?: string,
+  requiredQuizIds?: string[],
 ): ExamResultRecord | undefined {
-  const rollTok = normalizeRollToken(rollNumber);
-  if (!rollTok) return undefined;
-  const sessionQuizIds = new Set(
-    store.examSessions
-      .filter((s) => !linkedQuizId || s.quizId === linkedQuizId || s.quizId.includes("s10-final"))
-      .map((s) => s.id),
+  const allowed = Array.from(
+    new Set(
+      [linkedQuizId, ...(requiredQuizIds || [])].filter((id): id is string => !!id && id.length > 0),
+    ),
   );
-  const matches = store.examResults.filter((r) => {
-    if (normalizeRollToken(r.rollNumber) !== rollTok) return false;
-    if (linkedQuizId && sessionQuizIds.size > 0) {
-      return sessionQuizIds.has(r.sessionId) || !r.sessionId;
-    }
-    return true;
-  });
-  if (matches.length === 0) {
-    // Fallback: any result for this roll (final exam may share pin history)
-    const any = store.examResults.filter((r) => normalizeRollToken(r.rollNumber) === rollTok);
-    return [...any].sort((a, b) => b.accuracyPct - a.accuracyPct)[0];
+  // Also allow matching by slug variants of the same final quiz id
+  if (allowed.includes("quiz-sanjibon-s10-final")) {
+    allowed.push("sanjibon-session-10-final-exam");
   }
-  return [...matches].sort((a, b) => b.accuracyPct - a.accuracyPct)[0];
+  return findBestQuizResultForCourse({
+    results: store.examResults,
+    sessions: store.examSessions.map((s) => ({ id: s.id, pin: s.pin, quizId: s.quizId })),
+    allowedQuizIds: allowed,
+    rollNumber,
+  });
 }
 
 export const serverSavePracticalExam = createServerFn({ method: "POST" })
@@ -4786,12 +4865,95 @@ export const serverSavePracticalExam = createServerFn({ method: "POST" })
     }
     const store = getStore();
     if (!store.practicalExams) store.practicalExams = [];
-    const exam = { ...data.exam, updatedAt: new Date().toISOString() };
+    const weights = normalizeExamWeights(data.exam);
+    const exam: PracticalExam = {
+      ...data.exam,
+      quizWeightPct: weights.quizWeightPct,
+      practicalWeightPct: weights.practicalWeightPct,
+      tasks: (data.exam.tasks || []).map((t, i) => ({
+        ...t,
+        id: t.id || `task-${i + 1}-${Date.now()}`,
+        maxMarks: Math.max(1, Number(t.maxMarks) || 100),
+        sortOrder: t.sortOrder ?? i + 1,
+      })),
+      updatedAt: new Date().toISOString(),
+    };
+    if (!exam.tasks.length) {
+      return { success: false, error: "Practical exam needs at least one task." };
+    }
     const idx = store.practicalExams.findIndex((p) => p.id === exam.id);
     if (idx >= 0) store.practicalExams[idx] = exam;
     else store.practicalExams.unshift(exam);
     scheduleDiskPersist();
     return { success: true, exam };
+  });
+
+export const serverSaveCourseRequirement = createServerFn({ method: "POST" })
+  .validator((data: { requirement: CourseCompletionRequirement }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    if (!store.courseRequirements) store.courseRequirements = [];
+    const weights = normalizeExamWeights({
+      quizWeightPct: data.requirement.quizWeightPct,
+      practicalWeightPct: data.requirement.practicalWeightPct,
+    });
+    const requirement: CourseCompletionRequirement = {
+      ...data.requirement,
+      quizWeightPct: weights.quizWeightPct,
+      practicalWeightPct: weights.practicalWeightPct,
+      requiredQuizIds: (data.requirement.requiredQuizIds || []).filter(Boolean),
+    };
+    const idx = store.courseRequirements.findIndex((r) => r.courseId === requirement.courseId);
+    if (idx >= 0) store.courseRequirements[idx] = requirement;
+    else store.courseRequirements.push(requirement);
+    scheduleDiskPersist();
+    return { success: true, requirement };
+  });
+
+export const serverSetAutoIssueQuizCertificates = createServerFn({ method: "POST" })
+  .validator((data: { enabled: boolean }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || actor.role !== "admin") {
+      return { success: false, error: "Super Admin required." };
+    }
+    const store = getStore();
+    store.autoIssueQuizCertificates = !!data.enabled;
+    scheduleDiskPersist();
+    return { success: true, autoIssueQuizCertificates: store.autoIssueQuizCertificates };
+  });
+
+export const serverReturnPracticalForResubmit = createServerFn({ method: "POST" })
+  .validator((data: { submissionId: string; feedback?: string }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    const idx = (store.practicalSubmissions || []).findIndex((s) => s.id === data.submissionId);
+    if (idx < 0 || !store.practicalSubmissions?.[idx]) {
+      return { success: false, error: "Submission not found." };
+    }
+    const now = new Date().toISOString();
+    const prev = store.practicalSubmissions[idx]!;
+    store.practicalSubmissions[idx] = {
+      ...prev,
+      status: "returned",
+      grades: undefined,
+      practicalScorePct: undefined,
+      combinedPct: undefined,
+      instructorFeedback: data.feedback || prev.instructorFeedback,
+      gradedAt: undefined,
+      gradedBy: undefined,
+      updatedAt: now,
+    };
+    scheduleDiskPersist();
+    return { success: true, submission: store.practicalSubmissions[idx] };
   });
 
 export const serverSubmitPracticalWork = createServerFn({ method: "POST" })
@@ -4828,6 +4990,20 @@ export const serverSubmitPracticalWork = createServerFn({ method: "POST" })
       };
     }
 
+    if (!store.practicalSubmissions) store.practicalSubmissions = [];
+    const existingIdx = store.practicalSubmissions.findIndex(
+      (s) =>
+        s.practicalExamId === exam.id &&
+        normalizeRollToken(s.rollNumber) === normalizeRollToken(student.rollNumber),
+    );
+    const existing = existingIdx >= 0 ? store.practicalSubmissions[existingIdx] : undefined;
+    if (existing?.status === "graded") {
+      return {
+        success: false,
+        error: "This practical is already graded. Ask an instructor to return it before resubmitting.",
+      };
+    }
+
     const answersMeta = data.answers.map((a) => {
       const size = a.fileBase64 ? Math.ceil((a.fileBase64.length * 3) / 4) : undefined;
       return {
@@ -4843,7 +5019,8 @@ export const serverSubmitPracticalWork = createServerFn({ method: "POST" })
     if (!validation.ok) return { success: false, error: validation.error };
 
     const now = new Date().toISOString();
-    const late = !!(exam.closesAt && now > exam.closesAt);
+    const late = isPracticalPastDeadline(exam, now);
+    const requirement = (store.courseRequirements || []).find((r) => r.courseId === exam.courseId);
     const persistedAnswers: PracticalTaskAnswer[] = [];
     for (const a of data.answers) {
       let fileRelPath: string | undefined;
@@ -4860,30 +5037,30 @@ export const serverSubmitPracticalWork = createServerFn({ method: "POST" })
         if (!saved.ok) return { success: false, error: saved.error };
         fileRelPath = saved.relPath;
         fileSizeBytes = saved.size;
+      } else if (existing) {
+        const prevAns = existing.answers.find((x) => x.taskId === a.taskId);
+        fileRelPath = prevAns?.fileRelPath;
+        fileSizeBytes = prevAns?.fileSizeBytes;
       }
       persistedAnswers.push({
         taskId: a.taskId,
         textAnswer: (a.textAnswer || "").trim() || undefined,
         linkUrl: (a.linkUrl || "").trim() || undefined,
-        fileName: a.fileName,
-        fileMime: a.fileMime,
+        fileName: a.fileName || existing?.answers.find((x) => x.taskId === a.taskId)?.fileName,
+        fileMime: a.fileMime || existing?.answers.find((x) => x.taskId === a.taskId)?.fileMime,
         fileSizeBytes,
         fileRelPath,
       });
     }
 
-    if (!store.practicalSubmissions) store.practicalSubmissions = [];
-    const existingIdx = store.practicalSubmissions.findIndex(
-      (s) =>
-        s.practicalExamId === exam.id &&
-        normalizeRollToken(s.rollNumber) === normalizeRollToken(student.rollNumber),
+    const quizResult = resolveQuizResultForStudent(
+      store,
+      student.rollNumber,
+      exam.linkedQuizId,
+      requirement?.requiredQuizIds,
     );
-    const quizResult = resolveQuizResultForStudent(store, student.rollNumber, exam.linkedQuizId);
     const submission: PracticalSubmission = {
-      id:
-        existingIdx >= 0
-          ? store.practicalSubmissions[existingIdx]!.id
-          : `psub-${exam.id}-${normalizeRollToken(student.rollNumber)}`,
+      id: existing?.id || `psub-${exam.id}-${normalizeRollToken(student.rollNumber)}`,
       practicalExamId: exam.id,
       courseId: exam.courseId,
       rosterStudentId: student.id,
@@ -4893,12 +5070,11 @@ export const serverSubmitPracticalWork = createServerFn({ method: "POST" })
       regionId: student.regionId,
       regionName: student.regionName,
       answers: persistedAnswers,
-      grades: existingIdx >= 0 ? store.practicalSubmissions[existingIdx]!.grades : undefined,
+      grades: undefined,
       status: late ? "late" : "submitted",
       quizAccuracyPct: quizResult?.accuracyPct,
       submittedAt: now,
-      createdAt:
-        existingIdx >= 0 ? store.practicalSubmissions[existingIdx]!.createdAt : now,
+      createdAt: existing?.createdAt || now,
       updatedAt: now,
     };
 
@@ -4937,10 +5113,12 @@ export const serverGradePracticalSubmission = createServerFn({ method: "POST" })
       gradedAt: now,
     }));
     const stats = computePracticalScorePct(exam.tasks, grades);
+    const requirement = (store.courseRequirements || []).find((r) => r.courseId === exam.courseId);
     const quizResult = resolveQuizResultForStudent(
       store,
       submission.rollNumber,
       exam.linkedQuizId,
+      requirement?.requiredQuizIds,
     );
     const quizPct = quizResult?.accuracyPct ?? submission.quizAccuracyPct ?? 0;
     const combinedPct = computeCombinedFinalPct({
@@ -4966,6 +5144,104 @@ export const serverGradePracticalSubmission = createServerFn({ method: "POST" })
     return { success: true, submission: store.practicalSubmissions[idx] };
   });
 
+function issueCourseCertificateInStore(params: {
+  store: PersistentStoreData;
+  courseId: string;
+  rollNumber: string;
+  instructorName: string;
+}): {
+  success: boolean;
+  certificate?: CertificateData;
+  alreadyIssued?: boolean;
+  error?: string;
+  snapshot?: ReturnType<typeof evaluateCourseCompletion>;
+} {
+  const { store } = params;
+  ensureFinalPracticalSeeded(store);
+  const course = store.courses.find((c) => c.id === params.courseId);
+  if (!course) return { success: false, error: "Course not found." };
+  const requirement =
+    (store.courseRequirements || []).find((r) => r.courseId === course.id) ||
+    buildDefaultCourseRequirement(course.id);
+  const practicalExam = (store.practicalExams || []).find((p) => p.courseId === course.id);
+  const submission = (store.practicalSubmissions || []).find(
+    (s) =>
+      s.courseId === course.id &&
+      normalizeRollToken(s.rollNumber) === normalizeRollToken(params.rollNumber),
+  );
+  const quizResult = resolveQuizResultForStudent(
+    store,
+    params.rollNumber,
+    practicalExam?.linkedQuizId || requirement.requiredQuizIds?.[0],
+    requirement.requiredQuizIds,
+  );
+  const snap = evaluateCourseCompletion({
+    course,
+    requirement,
+    practicalExam,
+    submission,
+    quizResult,
+  });
+  if (!snap.eligibleForCourseCertificate) {
+    return {
+      success: false,
+      error: `Not eligible for course certificate. Missing: ${snap.missing.join(", ")}`,
+      snapshot: snap,
+    };
+  }
+
+  const certNo = makeCourseCertificateNumber(course.code, snap.rollNumber);
+  const existing = store.certificates.find(
+    (c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase(),
+  );
+  if (existing?.cryptoSignature) {
+    return { success: true, certificate: existing, alreadyIssued: true, snapshot: snap };
+  }
+
+  const titleEn = requirement.certificateTitleEn || "Certificate of Course Completion";
+  const unsigned: CertificateData = {
+    id: `cert-course-${course.id}-${normalizeRollToken(snap.rollNumber)}`,
+    certificateNumber: certNo,
+    kind: "course_completion",
+    courseId: course.id,
+    courseCode: course.code,
+    courseTitle: course.titleEn,
+    studentName: snap.studentName,
+    studentRoll: snap.rollNumber,
+    regionName: submission?.regionName || quizResult?.regionName || "",
+    quizTitle: `${course.code} — ${titleEn}`,
+    quizAccuracyPct: snap.quizAccuracyPct,
+    practicalScorePct: snap.practicalScorePct,
+    combinedScorePct: snap.combinedPct,
+    score: snap.combinedPct,
+    scorePct: snap.combinedPct,
+    accuracyPercent: snap.combinedPct,
+    marksObtained: snap.combinedPct,
+    totalMarks: 100,
+    totalPoints: 100,
+    rank: 1,
+    totalParticipants: 1,
+    issueDate: new Date().toISOString().slice(0, 10),
+    organizationName: resolveOrgName(store.branding),
+    institutionName: store.branding?.institutionTitle || "Onnesha Assessment Arena",
+    instructorName: params.instructorName || "Chief Assessment Officer",
+    verificationUrl: `/verify/${certNo}`,
+    verified: true,
+    credentialStatementEn: `This certifies that the learner has successfully completed the full course ${course.titleEn} (${course.code}), including the Final Quiz and Final Practical Examination, with a combined score of ${snap.combinedPct}%.`,
+    credentialStatementBn: `এই সনদপত্র দ্বারা প্রত্যয়িত হচ্ছে যে শিক্ষার্থী ${course.titleBn} (${course.code}) কোর্সের চূড়ান্ত কুইজ ও প্রায়োগিক পরীক্ষা সম্পন্ন করে সম্মিলিত ${snap.combinedPct}% নম্বর অর্জন করেছেন।`,
+  };
+  const sealed = sealCertificateWithLedger(unsigned, store.certificates, getStorePaths().dataDir);
+  store.certificates = [
+    sealed,
+    ...store.certificates.filter(
+      (c) => c.certificateNumber.toLowerCase() !== sealed.certificateNumber.toLowerCase(),
+    ),
+  ];
+  scheduleDiskPersist();
+  triggerBackgroundExternalAnchoring([sealed.certificateNumber]);
+  return { success: true, certificate: sealed, snapshot: snap };
+}
+
 export const serverIssueCourseCertificate = createServerFn({ method: "POST" })
   .validator((data: { courseId: string; rollNumber: string }) => data)
   .handler(async ({ data }) => {
@@ -4974,89 +5250,12 @@ export const serverIssueCourseCertificate = createServerFn({ method: "POST" })
       return { success: false, error: "Staff authentication required." };
     }
     const store = getStore();
-    ensureFinalPracticalSeeded(store);
-    const course = store.courses.find((c) => c.id === data.courseId);
-    if (!course) return { success: false, error: "Course not found." };
-    const requirement =
-      (store.courseRequirements || []).find((r) => r.courseId === course.id) ||
-      buildDefaultCourseRequirement(course.id);
-    const practicalExam = (store.practicalExams || []).find((p) => p.courseId === course.id);
-    const submission = (store.practicalSubmissions || []).find(
-      (s) =>
-        s.courseId === course.id &&
-        normalizeRollToken(s.rollNumber) === normalizeRollToken(data.rollNumber),
-    );
-    const quizResult = resolveQuizResultForStudent(
+    return issueCourseCertificateInStore({
       store,
-      data.rollNumber,
-      practicalExam?.linkedQuizId || requirement.requiredQuizIds?.[0],
-    );
-    const snap = evaluateCourseCompletion({
-      course,
-      requirement,
-      practicalExam,
-      submission,
-      quizResult,
-    });
-    if (!snap.eligibleForCourseCertificate) {
-      return {
-        success: false,
-        error: `Not eligible for course certificate. Missing: ${snap.missing.join(", ")}`,
-        snapshot: snap,
-      };
-    }
-
-    const certNo = makeCourseCertificateNumber(course.code, snap.rollNumber);
-    const existing = store.certificates.find(
-      (c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase(),
-    );
-    if (existing?.cryptoSignature) {
-      return { success: true, certificate: existing, alreadyIssued: true, snapshot: snap };
-    }
-
-    const titleEn =
-      requirement.certificateTitleEn || "Certificate of Course Completion";
-    const unsigned: CertificateData = {
-      id: `cert-course-${course.id}-${normalizeRollToken(snap.rollNumber)}`,
-      certificateNumber: certNo,
-      kind: "course_completion",
-      courseId: course.id,
-      courseCode: course.code,
-      courseTitle: course.titleEn,
-      studentName: snap.studentName,
-      studentRoll: snap.rollNumber,
-      regionName: submission?.regionName || quizResult?.regionName || "",
-      quizTitle: `${course.code} — ${titleEn}`,
-      quizAccuracyPct: snap.quizAccuracyPct,
-      practicalScorePct: snap.practicalScorePct,
-      combinedScorePct: snap.combinedPct,
-      score: snap.combinedPct,
-      scorePct: snap.combinedPct,
-      accuracyPercent: snap.combinedPct,
-      marksObtained: snap.combinedPct,
-      totalMarks: 100,
-      totalPoints: 100,
-      rank: 1,
-      totalParticipants: 1,
-      issueDate: new Date().toISOString().slice(0, 10),
-      organizationName: resolveOrgName(store.branding),
-      institutionName: store.branding?.institutionTitle || "Onnesha Assessment Arena",
+      courseId: data.courseId,
+      rollNumber: data.rollNumber,
       instructorName: actor.name || "Chief Assessment Officer",
-      verificationUrl: `/verify/${certNo}`,
-      verified: true,
-      credentialStatementEn: `This certifies that the learner has successfully completed the full course ${course.titleEn} (${course.code}), including the Final Quiz and Final Practical Examination, with a combined score of ${snap.combinedPct}%.`,
-      credentialStatementBn: `এই সনদপত্র দ্বারা প্রত্যয়িত হচ্ছে যে শিক্ষার্থী ${course.titleBn} (${course.code}) কোর্সের চূড়ান্ত কুইজ ও প্রায়োগিক পরীক্ষা সম্পন্ন করে সম্মিলিত ${snap.combinedPct}% নম্বর অর্জন করেছেন।`,
-    };
-    const sealed = sealCertificateWithLedger(unsigned, store.certificates, getStorePaths().dataDir);
-    store.certificates = [
-      sealed,
-      ...store.certificates.filter(
-        (c) => c.certificateNumber.toLowerCase() !== sealed.certificateNumber.toLowerCase(),
-      ),
-    ];
-    scheduleDiskPersist();
-    triggerBackgroundExternalAnchoring([sealed.certificateNumber]);
-    return { success: true, certificate: sealed, snapshot: snap };
+    });
   });
 
 export const serverBulkIssueCourseCertificates = createServerFn({ method: "POST" })
@@ -5068,30 +5267,42 @@ export const serverBulkIssueCourseCertificates = createServerFn({ method: "POST"
     }
     const store = getStore();
     ensureFinalPracticalSeeded(store);
-    const rolls = Array.from(
-      new Set(
-        (store.practicalSubmissions || [])
-          .filter((s) => s.courseId === data.courseId && s.status === "graded")
-          .map((s) => s.rollNumber),
-      ),
-    );
+    const requirement =
+      (store.courseRequirements || []).find((r) => r.courseId === data.courseId) ||
+      buildDefaultCourseRequirement(data.courseId);
+
+    let candidateRolls: string[] = [];
+    if (requirement.requirePractical !== false) {
+      candidateRolls = Array.from(
+        new Set(
+          (store.practicalSubmissions || [])
+            .filter((s) => s.courseId === data.courseId && s.status === "graded")
+            .map((s) => s.rollNumber),
+        ),
+      );
+    } else {
+      const allowed = requirement.requiredQuizIds || [];
+      const sessions = store.examSessions.filter((s) => allowed.includes(s.quizId));
+      const sessionIds = new Set(sessions.map((s) => s.id));
+      const pins = new Set(sessions.map((s) => s.pin));
+      candidateRolls = Array.from(
+        new Set(
+          store.examResults
+            .filter((r) => sessionIds.has(r.sessionId) || pins.has(r.pin))
+            .map((r) => r.rollNumber),
+        ),
+      );
+    }
+
     const issued: string[] = [];
     const skipped: Array<{ roll: string; reason: string }> = [];
-    for (const roll of rolls) {
-      // Invoke the same eligibility path by reusing the exported server fn client shape.
-      const res = (await (
-        serverIssueCourseCertificate as unknown as (args: {
-          data: { courseId: string; rollNumber: string };
-        }) => Promise<{
-          success: boolean;
-          certificate?: CertificateData;
-          error?: string;
-        }>
-      )({ data: { courseId: data.courseId, rollNumber: roll } })) as {
-        success: boolean;
-        certificate?: CertificateData;
-        error?: string;
-      };
+    for (const roll of candidateRolls) {
+      const res = issueCourseCertificateInStore({
+        store,
+        courseId: data.courseId,
+        rollNumber: roll,
+        instructorName: actor.name || "Chief Assessment Officer",
+      });
       if (res.success && res.certificate) issued.push(res.certificate.certificateNumber);
       else skipped.push({ roll, reason: res.error || "skipped" });
     }
@@ -5099,7 +5310,7 @@ export const serverBulkIssueCourseCertificates = createServerFn({ method: "POST"
   });
 
 export const serverGetStudentPortal = createServerFn({ method: "POST" })
-  .validator((data: { rollNumber: string; phone: string }) => data)
+  .validator((data: { rollNumber: string; phone: string; courseId?: string }) => data)
   .handler(async ({ data }) => {
     const store = getStore();
     ensureFinalPracticalSeeded(store);
@@ -5136,7 +5347,10 @@ export const serverGetStudentPortal = createServerFn({ method: "POST" })
     }
 
     const course =
-      store.courses.find((c) => c.id === SANJIBON_COURSE.id) || SANJIBON_COURSE;
+      (data.courseId ? store.courses.find((c) => c.id === data.courseId) : undefined) ||
+      store.courses.find((c) => c.id === SANJIBON_COURSE.id) ||
+      store.courses[0] ||
+      SANJIBON_COURSE;
     const practicalExam = (store.practicalExams || []).find((p) => p.courseId === course.id);
     const submission = (store.practicalSubmissions || []).find(
       (s) =>
@@ -5149,7 +5363,8 @@ export const serverGetStudentPortal = createServerFn({ method: "POST" })
     const quizResult = resolveQuizResultForStudent(
       store,
       student.rollNumber,
-      practicalExam?.linkedQuizId || "quiz-sanjibon-s10-final",
+      practicalExam?.linkedQuizId || requirement.requiredQuizIds?.[0],
+      requirement.requiredQuizIds,
     );
     const snap = evaluateCourseCompletion({
       course,
@@ -5216,6 +5431,7 @@ export const serverGetStudentPortal = createServerFn({ method: "POST" })
             verificationUrl: courseCert.verificationUrl,
           }
         : null,
-      autoIssueQuizCertificates: false,
+      requirement,
+      autoIssueQuizCertificates: store.autoIssueQuizCertificates === true,
     };
   });

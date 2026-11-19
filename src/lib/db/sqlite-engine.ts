@@ -335,6 +335,15 @@ class SQLiteEngine {
       "ALTER TABLE certificates ADD COLUMN otsCalendarUrl TEXT",
       "ALTER TABLE certificates ADD COLUMN otsSubmittedAt TEXT",
       "ALTER TABLE certificates ADD COLUMN otsBitcoinBlockHeight INTEGER",
+      "ALTER TABLE certificates ADD COLUMN kind TEXT",
+      "ALTER TABLE certificates ADD COLUMN courseId TEXT",
+      "ALTER TABLE certificates ADD COLUMN courseCode TEXT",
+      "ALTER TABLE certificates ADD COLUMN courseTitle TEXT",
+      "ALTER TABLE certificates ADD COLUMN quizAccuracyPct REAL",
+      "ALTER TABLE certificates ADD COLUMN practicalScorePct REAL",
+      "ALTER TABLE certificates ADD COLUMN combinedScorePct REAL",
+      "ALTER TABLE certificates ADD COLUMN credentialStatementEn TEXT",
+      "ALTER TABLE certificates ADD COLUMN credentialStatementBn TEXT",
     ];
     for (const sql of migrations) {
       try {

@@ -99,29 +99,35 @@ export function isPracticalWindowOpen(
   if (exam.status === "archived" || exam.status === "draft") return false;
   if (exam.status === "closed") return false;
   if (exam.opensAt && nowIso < exam.opensAt) return false;
-  if (exam.closesAt && nowIso > exam.closesAt) return false;
+  // closesAt alone does not block — late submissions are allowed while status is open/scheduled
   return exam.status === "open" || exam.status === "scheduled";
 }
 
+export function isPracticalPastDeadline(
+  exam: Pick<PracticalExam, "closesAt">,
+  nowIso = new Date().toISOString(),
+): boolean {
+  return !!(exam.closesAt && nowIso > exam.closesAt);
+}
+
+/** Pick best result for a roll among sessions whose quizId is in the allowed set. */
 export function findBestQuizResultForCourse(params: {
   results: ExamResultRecord[];
-  courseQuizIds: string[];
+  sessions: Array<{ id: string; pin: string; quizId: string }>;
+  allowedQuizIds: string[];
   rollNumber: string;
-  linkedQuizId?: string | undefined;
 }): ExamResultRecord | undefined {
   const rollTok = normalizeRollToken(params.rollNumber);
-  if (!rollTok) return undefined;
-  const quizSet = new Set(
-    [params.linkedQuizId, ...params.courseQuizIds].filter(Boolean) as string[],
-  );
+  if (!rollTok || params.allowedQuizIds.length === 0) return undefined;
+  const allowed = new Set(params.allowedQuizIds);
+  const sessionById = new Map(params.sessions.map((s) => [s.id, s]));
+  const sessionByPin = new Map(params.sessions.map((s) => [s.pin, s]));
   const matches = params.results.filter((r) => {
     if (normalizeRollToken(r.rollNumber) !== rollTok) return false;
-    // Prefer results whose session quiz is in the course set when quizId is on the session;
-    // ExamResultRecord itself has no quizId — callers should pre-filter by session when possible.
-    return true;
+    const sess = sessionById.get(r.sessionId) || sessionByPin.get(r.pin);
+    return !!sess && allowed.has(sess.quizId);
   });
   if (matches.length === 0) return undefined;
-  // Highest accuracy, then highest score
   return [...matches].sort((a, b) => {
     if (b.accuracyPct !== a.accuracyPct) return b.accuracyPct - a.accuracyPct;
     return b.score - a.score;

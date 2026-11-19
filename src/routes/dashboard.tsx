@@ -284,7 +284,8 @@ function DashboardPage() {
     );
   }, [quizzes, courses, isSuperAdmin, showAllModelPacks, assignedCourses, user?.id]);
 
-  const primaryHostQuizSlug = scopedQuizzes[0]?.slug || scopedQuizzes[0]?.id || "bcs-gk";
+  const primaryHostQuizSlug =
+    scopedQuizzes[0]?.slug || scopedQuizzes[0]?.id || "quiz-sanjibon-s10-final";
 
   // Filtered Roster by Region & Search Query
   const filteredRoster = useMemo(() => {

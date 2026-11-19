@@ -7,7 +7,8 @@ import {
   serverGetStudentPortal,
   serverSubmitPracticalWork,
 } from "@/lib/server-session";
-import type { PracticalExam, PracticalSubmission } from "@/lib/types";
+import type { PracticalExam, PracticalSubmission, PracticalTask } from "@/lib/types";
+import { isPracticalPastDeadline, isPracticalWindowOpen } from "@/lib/practical-exam";
 import {
   Award,
   BookOpen,
@@ -36,6 +37,14 @@ export const Route = createFileRoute("/portal")({
 
 type PortalPayload = Awaited<ReturnType<typeof serverGetStudentPortal>>;
 
+type TaskDraft = {
+  textAnswer: string;
+  linkUrl: string;
+  fileName?: string | undefined;
+  fileMime?: string | undefined;
+  fileBase64?: string | undefined;
+};
+
 function StudentPortalPage() {
   const { lang } = useLanguage();
   const [rollNumber, setRollNumber] = useState("");
@@ -44,16 +53,29 @@ function StudentPortalPage() {
   const [error, setError] = useState<string | null>(null);
   const [portal, setPortal] = useState<PortalPayload | null>(null);
 
-  const [textAnswer, setTextAnswer] = useState("");
-  const [linkUrl, setLinkUrl] = useState("");
-  const [fileName, setFileName] = useState<string | undefined>();
-  const [fileMime, setFileMime] = useState<string | undefined>();
-  const [fileBase64, setFileBase64] = useState<string | undefined>();
+  const [drafts, setDrafts] = useState<Record<string, TaskDraft>>({});
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
   const practicalExam = portal?.practicalExam as PracticalExam | undefined | null;
-  const primaryTask = practicalExam?.tasks?.[0];
+
+  const hydrateDrafts = (exam: PracticalExam | null | undefined, sub?: PracticalSubmission | null) => {
+    if (!exam) {
+      setDrafts({});
+      return;
+    }
+    const next: Record<string, TaskDraft> = {};
+    for (const task of exam.tasks) {
+      const ans = sub?.answers?.find((a) => a.taskId === task.id);
+      next[task.id] = {
+        textAnswer: ans?.textAnswer || "",
+        linkUrl: ans?.linkUrl || "",
+        fileName: ans?.fileName,
+        fileMime: ans?.fileMime,
+      };
+    }
+    setDrafts(next);
+  };
 
   const unlock = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,12 +92,7 @@ function StudentPortalPage() {
         return;
       }
       setPortal(res);
-      const existing = res.submission as PracticalSubmission | undefined;
-      const ans = existing?.answers?.[0];
-      if (ans) {
-        setTextAnswer(ans.textAnswer || "");
-        setLinkUrl(ans.linkUrl || "");
-      }
+      hydrateDrafts(res.practicalExam as PracticalExam | undefined, res.submission as PracticalSubmission | undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Portal unlock failed.");
     } finally {
@@ -83,11 +100,17 @@ function StudentPortalPage() {
     }
   };
 
-  const onFile = async (file: File | null) => {
+  const onFile = async (task: PracticalTask, file: File | null) => {
     if (!file) {
-      setFileName(undefined);
-      setFileMime(undefined);
-      setFileBase64(undefined);
+      setDrafts((d) => ({
+        ...d,
+        [task.id]: {
+          ...(d[task.id] || { textAnswer: "", linkUrl: "" }),
+          fileName: undefined,
+          fileMime: undefined,
+          fileBase64: undefined,
+        },
+      }));
       return;
     }
     const max = practicalExam?.maxFileBytes || 10 * 1024 * 1024;
@@ -103,13 +126,19 @@ function StudentPortalPage() {
     const bytes = new Uint8Array(buf);
     let binary = "";
     for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]!);
-    setFileName(file.name);
-    setFileMime(file.type || "application/octet-stream");
-    setFileBase64(btoa(binary));
+    setDrafts((d) => ({
+      ...d,
+      [task.id]: {
+        ...(d[task.id] || { textAnswer: "", linkUrl: "" }),
+        fileName: file.name,
+        fileMime: file.type || "application/octet-stream",
+        fileBase64: btoa(binary),
+      },
+    }));
   };
 
   const submitPractical = async () => {
-    if (!portal?.success || !practicalExam || !primaryTask) return;
+    if (!portal?.success || !practicalExam) return;
     setSubmitting(true);
     setNotice(null);
     try {
@@ -118,16 +147,17 @@ function StudentPortalPage() {
           practicalExamId: practicalExam.id,
           rollNumber: portal.student!.rollNumber,
           phone: portal.student!.phone || phone,
-          answers: [
-            {
-              taskId: primaryTask.id,
-              textAnswer,
-              linkUrl,
-              ...(fileName ? { fileName } : {}),
-              ...(fileMime ? { fileMime } : {}),
-              ...(fileBase64 ? { fileBase64 } : {}),
-            },
-          ],
+          answers: practicalExam.tasks.map((task) => {
+            const d = drafts[task.id] || { textAnswer: "", linkUrl: "" };
+            return {
+              taskId: task.id,
+              textAnswer: d.textAnswer,
+              linkUrl: d.linkUrl,
+              ...(d.fileName ? { fileName: d.fileName } : {}),
+              ...(d.fileMime ? { fileMime: d.fileMime } : {}),
+              ...(d.fileBase64 ? { fileBase64: d.fileBase64 } : {}),
+            };
+          }),
         },
       });
       if (!res.success) {
@@ -135,11 +165,16 @@ function StudentPortalPage() {
         return;
       }
       setNotice(lang === "bn" ? "প্রায়োগিক জমা সফল হয়েছে।" : "Practical submission saved.");
-      // Refresh portal snapshot
       const refreshed = await serverGetStudentPortal({
         data: { rollNumber: portal.student!.rollNumber, phone: portal.student!.phone || phone },
       });
-      if (refreshed.success) setPortal(refreshed);
+      if (refreshed.success) {
+        setPortal(refreshed);
+        hydrateDrafts(
+          refreshed.practicalExam as PracticalExam | undefined,
+          refreshed.submission as PracticalSubmission | undefined,
+        );
+      }
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Submission failed.");
     } finally {
@@ -149,6 +184,8 @@ function StudentPortalPage() {
 
   const completion = portal?.success ? portal.completion : null;
   const gradedLocked = portal?.submission?.status === "graded";
+  const windowOpen = practicalExam ? isPracticalWindowOpen(practicalExam) : false;
+  const pastDeadline = practicalExam ? isPracticalPastDeadline(practicalExam) : false;
 
   const progressSummary = useMemo(() => {
     if (!portal?.success) return null;
@@ -300,76 +337,121 @@ function StudentPortalPage() {
               <p className="text-sm text-muted-foreground">
                 {lang === "bn" ? practicalExam?.descriptionBn : practicalExam?.descriptionEn}
               </p>
-              {primaryTask && (
-                <div className="rounded-2xl border border-dashed border-border p-4 space-y-3">
-                  <div className="font-semibold text-sm">
-                    {lang === "bn" ? primaryTask.titleBn : primaryTask.titleEn}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {lang === "bn" ? primaryTask.promptBn : primaryTask.promptEn}
-                  </p>
-                  <label className="block text-xs font-semibold">
-                    {lang === "bn" ? "লিখিত উত্তর / রিফ্লেকশন" : "Written reflection"}
-                    <textarea
-                      value={textAnswer}
-                      onChange={(e) => setTextAnswer(e.target.value)}
-                      disabled={gradedLocked}
-                      rows={4}
-                      className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
-                    />
-                  </label>
-                  <label className="block text-xs font-semibold">
-                    {lang === "bn" ? "প্রজেক্ট লিংক (https)" : "Project link (https)"}
-                    <input
-                      value={linkUrl}
-                      onChange={(e) => setLinkUrl(e.target.value)}
-                      disabled={gradedLocked}
-                      className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
-                      placeholder="https://"
-                    />
-                  </label>
-                  {primaryTask.allowFile && !gradedLocked && (
-                    <label className="block text-xs font-semibold">
-                      {lang === "bn" ? "ফাইল (ঐচ্ছিক, সর্বোচ্চ ১০ MB)" : "File (optional, max 10 MB)"}
-                      <input
-                        type="file"
-                        className="mt-1 block w-full text-xs"
-                        onChange={(e) => void onFile(e.target.files?.[0] || null)}
-                      />
-                      {fileName && (
-                        <span className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                          <Upload className="h-3 w-3" /> {fileName}
-                        </span>
-                      )}
-                    </label>
-                  )}
-                  {portal.submission && (
-                    <p className="text-xs font-mono text-muted-foreground">
-                      Status: {portal.submission.status}
-                      {typeof portal.submission.practicalScorePct === "number"
-                        ? ` · practical ${portal.submission.practicalScorePct}%`
-                        : ""}
-                      {portal.submission.instructorFeedback
-                        ? ` · feedback: ${portal.submission.instructorFeedback}`
-                        : ""}
-                    </p>
-                  )}
-                  {!gradedLocked && (
-                    <button
-                      type="button"
-                      onClick={() => void submitPractical()}
-                      disabled={submitting}
-                      className="inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-sm font-bold text-background disabled:opacity-60"
-                    >
-                      {submitting ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Upload className="h-4 w-4" />
-                      )}
-                      {lang === "bn" ? "প্রায়োগিক জমা দিন" : "Submit practical"}
-                    </button>
-                  )}
+              {practicalExam && (
+                <div className="rounded-2xl border border-border/80 bg-muted/30 px-3 py-2 text-xs font-mono text-muted-foreground">
+                  Status: {practicalExam.status}
+                  {practicalExam.opensAt ? ` · opens ${new Date(practicalExam.opensAt).toLocaleString()}` : ""}
+                  {practicalExam.closesAt
+                    ? ` · deadline ${new Date(practicalExam.closesAt).toLocaleString()}`
+                    : " · no deadline"}
+                  {pastDeadline && windowOpen ? " · late submissions accepted" : ""}
+                  {!windowOpen ? " · window closed" : ""}
                 </div>
+              )}
+              {(practicalExam?.tasks || []).map((task) => {
+                const draft = drafts[task.id] || { textAnswer: "", linkUrl: "" };
+                return (
+                  <div
+                    key={task.id}
+                    className="rounded-2xl border border-dashed border-border p-4 space-y-3"
+                  >
+                    <div className="font-semibold text-sm">
+                      {lang === "bn" ? task.titleBn : task.titleEn}
+                      <span className="ml-2 font-mono text-[10px] text-muted-foreground">
+                        / {task.maxMarks}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {lang === "bn" ? task.promptBn : task.promptEn}
+                    </p>
+                    <label className="block text-xs font-semibold">
+                      {lang === "bn" ? "লিখিত উত্তর / রিফ্লেকশন" : "Written reflection"}
+                      {task.requireText ? " *" : ""}
+                      <textarea
+                        value={draft.textAnswer}
+                        onChange={(e) =>
+                          setDrafts((d) => ({
+                            ...d,
+                            [task.id]: { ...draft, textAnswer: e.target.value },
+                          }))
+                        }
+                        disabled={gradedLocked || !windowOpen}
+                        rows={4}
+                        className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                      />
+                    </label>
+                    <label className="block text-xs font-semibold">
+                      {lang === "bn" ? "প্রজেক্ট লিংক (https)" : "Project link (https)"}
+                      {task.requireLink ? " *" : ""}
+                      <input
+                        value={draft.linkUrl}
+                        onChange={(e) =>
+                          setDrafts((d) => ({
+                            ...d,
+                            [task.id]: { ...draft, linkUrl: e.target.value },
+                          }))
+                        }
+                        disabled={gradedLocked || !windowOpen}
+                        className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                        placeholder="https://"
+                      />
+                    </label>
+                    {task.allowFile && !gradedLocked && windowOpen && (
+                      <label className="block text-xs font-semibold">
+                        {lang === "bn" ? "ফাইল (ঐচ্ছিক)" : "File (optional)"}
+                        <input
+                          type="file"
+                          className="mt-1 block w-full text-xs"
+                          onChange={(e) => void onFile(task, e.target.files?.[0] || null)}
+                        />
+                        {draft.fileName && (
+                          <span className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                            <Upload className="h-3 w-3" /> {draft.fileName}
+                          </span>
+                        )}
+                      </label>
+                    )}
+                  </div>
+                );
+              })}
+              {portal.submission && (
+                <p className="text-xs font-mono text-muted-foreground">
+                  Status: {portal.submission.status}
+                  {typeof portal.submission.practicalScorePct === "number"
+                    ? ` · practical ${portal.submission.practicalScorePct}%`
+                    : ""}
+                  {portal.submission.instructorFeedback
+                    ? ` · feedback: ${portal.submission.instructorFeedback}`
+                    : ""}
+                </p>
+              )}
+              {!gradedLocked && windowOpen && (
+                <button
+                  type="button"
+                  onClick={() => void submitPractical()}
+                  disabled={submitting}
+                  className="inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-sm font-bold text-background disabled:opacity-60"
+                >
+                  {submitting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4" />
+                  )}
+                  {lang === "bn"
+                    ? pastDeadline
+                      ? "বিলম্বে জমা দিন"
+                      : "প্রায়োগিক জমা দিন"
+                    : pastDeadline
+                      ? "Submit late"
+                      : "Submit practical"}
+                </button>
+              )}
+              {gradedLocked && (
+                <p className="text-xs text-amber-700 dark:text-amber-300 font-semibold">
+                  {lang === "bn"
+                    ? "মার্কিং সম্পন্ন — পুনরায় জমা দিতে ইন্সট্রাক্টরকে রিটার্ন করতে বলুন।"
+                    : "Graded — ask an instructor to return the work before resubmitting."}
+                </p>
               )}
               {notice && <p className="text-sm text-emerald-700 dark:text-emerald-300">{notice}</p>}
             </section>
