@@ -962,8 +962,10 @@ describe("SQLite batch persistence & post-exam session recording performance", (
       const results = db.getExamResults("789012");
       expect(results).toHaveLength(1);
       expect(results[0]?.rollNumber).toBe("JHN-01");
+      // Quiz completion no longer auto-mints certificates
       const certs = db.getCertificates();
-      expect(certs.some((c) => c.certificateNumber === "ONN-7890-JHN01")).toBe(true);
+      expect(certs.some((c) => c.certificateNumber === "ONN-7890-JHN01")).toBe(false);
+      expect(results[0]?.passed).toBe(true);
 
       // Flush scheduled persist timer before restoring global window/localStorage
       sqliteEngine.persist();
@@ -983,15 +985,12 @@ describe("SQLite batch persistence & post-exam session recording performance", (
 });
 
 describe("course & quiz privacy access control helpers", () => {
-  it("marks Sanjibon course and all 11 Sanjibon quizzes private while keeping public demo course open", () => {
+  it("marks AI-DM-04 and all Sanjibon quizzes private by default (no public BCS demo pack)", () => {
     expect(isCoursePrivate(SANJIBON_COURSE)).toBe(true);
     expect(SANJIBON_QUIZZES.length).toBe(11);
     expect(SANJIBON_QUIZZES.every((q) => isQuizPrivate(q, DEFAULT_COURSES))).toBe(true);
-
-    const demoCourse = DEFAULT_COURSES.find((c) => c.id === "course-bcs-foundation");
-    expect(isCoursePrivate(demoCourse)).toBe(false);
-    const demoPack = READY_MADE_PACKS.find((q) => q.id === "pack-bcs-gk")!;
-    expect(isQuizPrivate(demoPack, DEFAULT_COURSES)).toBe(false);
+    expect(DEFAULT_COURSES.every((c) => c.id !== "course-bcs-foundation")).toBe(true);
+    expect(READY_MADE_PACKS.every((q) => q.id !== "pack-bcs-gk")).toBe(true);
   });
 
   it("propagates course isPrivate toggles immediately to all child quizzes", () => {
@@ -1001,10 +1000,9 @@ describe("course & quiz privacy access control helpers", () => {
     expect(SANJIBON_QUIZZES.every((q) => !isQuizPrivate(q, toggledPublicCourses))).toBe(true);
 
     const toggledPrivateCourses: Course[] = DEFAULT_COURSES.map((c) =>
-      c.id === "course-bcs-foundation" ? { ...c, isPrivate: true } : c,
+      c.id === "course-sanjibon-ai-dm" ? { ...c, isPrivate: true } : c,
     );
-    const demoPack = READY_MADE_PACKS.find((q) => q.id === "pack-bcs-gk")!;
-    expect(isQuizPrivate(demoPack, toggledPrivateCourses)).toBe(true);
+    expect(SANJIBON_QUIZZES.every((q) => isQuizPrivate(q, toggledPrivateCourses))).toBe(true);
   });
 });
 
@@ -1048,7 +1046,7 @@ describe("minimum passing threshold & certificate issuance gating", () => {
     expect(isPassingScore(oneOfTwenty, 50)).toBe(false);
   });
 
-  it("issues certificates only to candidates meeting the threshold and blocks revoked fallback reconstruction", async () => {
+  it("records pass/fail results by threshold without auto-issuing quiz certificates", async () => {
     const storageMap = new Map<string, string>();
     const origWindow = (globalThis as Record<string, unknown>)["window"];
     const origLocalStorage = (globalThis as Record<string, unknown>)["localStorage"];
@@ -1207,18 +1205,10 @@ describe("minimum passing threshold & certificate issuance gating", () => {
       expect(failRes?.accuracyPct).toBe(20);
       expect(failRes?.passed).toBe(false);
 
+      // Auto quiz certificates disabled — results persist, credentials do not mint here.
       const certs = db.getCertificates();
-      expect(certs.some((c) => c.certificateNumber === "ONN-4455-PASS01")).toBe(true);
+      expect(certs.some((c) => c.certificateNumber === "ONN-4455-PASS01")).toBe(false);
       expect(certs.some((c) => c.certificateNumber === "ONN-4455-FAIL02")).toBe(false);
-      expect(db.getCertificateById("ONN-4455-PASS01")?.studentName).toBe("Qualified Student");
-      expect(db.getCertificateById("ONN-4455-FAIL02")).toBeUndefined();
-
-      // Revoking an issued certificate must remove it and prevent deterministic resurrection
-      db.deleteCertificate("ONN-4455-PASS01", { syncToServer: false });
-      expect(db.getCertificates().some((c) => c.certificateNumber === "ONN-4455-PASS01")).toBe(
-        false,
-      );
-      expect(db.getCertificateById("ONN-4455-PASS01")).toBeUndefined();
 
       sqliteEngine.persist();
     } finally {
@@ -1538,12 +1528,11 @@ describe("minimum passing threshold & certificate issuance gating", () => {
         },
         { syncToServer: false },
       );
-      // Clear certificates table to verify deterministic PIN-prefix fallback resolves the PASSING attempt
-      sqliteEngine.run("DELETE FROM certificates WHERE LOWER(certificateNumber) = LOWER(?)", [
-        "ONN-8811-COLL09",
-      ]);
-      const resolvedPrefixCert = db.getCertificateById("ONN-8811-COLL09");
-      expect(resolvedPrefixCert?.score).toBe(4000);
+      // Auto quiz certs disabled: results still recorded for the passing attempt
+      const passingResult = db.getExamResults("881199").find((r) => r.rollNumber === "COLL-09");
+      expect(passingResult?.score).toBe(4000);
+      expect(passingResult?.passed).toBe(true);
+      expect(db.getCertificateById("ONN-8811-COLL09")).toBeUndefined();
     } finally {
       if (origWindow === undefined) {
         delete (globalThis as Record<string, unknown>)["window"];

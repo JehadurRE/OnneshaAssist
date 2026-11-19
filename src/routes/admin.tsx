@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import React, { useEffect, useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
+import { AdminPracticalPanel } from "@/components/admin/AdminPracticalPanel";
 import { CertificateDesignerStudio } from "@/components/admin/CertificateDesignerStudio";
 import { CertificateView } from "@/components/common/CertificateView";
 import { useAuth } from "@/lib/auth-context";
@@ -35,6 +36,7 @@ import {
   Building2,
   Check,
   CheckCircle2,
+  ClipboardList,
   Download,
   ExternalLink,
   Eye,
@@ -94,7 +96,13 @@ export const Route = createFileRoute("/admin")({
 });
 
 type AdminTab =
-  "courses" | "instructors" | "roster" | "certificates" | "settings" | "sales_billing";
+  | "courses"
+  | "practical"
+  | "instructors"
+  | "roster"
+  | "certificates"
+  | "settings"
+  | "sales_billing";
 
 function SuperAdminPage() {
   const { lang } = useLanguage();
@@ -180,7 +188,7 @@ function SuperAdminPage() {
   const [newUserDesignation, setNewUserDesignation] = useState("Course Instructor");
   const [newUserInstitution, setNewUserInstitution] = useState("Onnesha Academic Wing");
   const [newUserPhone, setNewUserPhone] = useState("");
-  const [newUserCourses, setNewUserCourses] = useState<string[]>(["course-bcs-foundation"]);
+  const [newUserCourses, setNewUserCourses] = useState<string[]>(["course-sanjibon-ai-dm"]);
 
   // Edit Existing Instructor / Reset Password Modal State
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
@@ -1059,6 +1067,19 @@ function SuperAdminPage() {
 
           <button
             type="button"
+            onClick={() => setActiveTab("practical")}
+            className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-extrabold transition ${
+              activeTab === "practical"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-card border border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <ClipboardList className="h-4 w-4" />
+            <span>2. Practical &amp; Course Certs</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab("instructors")}
             className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-extrabold transition ${
               activeTab === "instructors"
@@ -1067,7 +1088,7 @@ function SuperAdminPage() {
             }`}
           >
             <GraduationCap className="h-4 w-4" />
-            <span>2. Multiple Instructors &amp; Accounts ({users.length})</span>
+            <span>3. Multiple Instructors &amp; Accounts ({users.length})</span>
           </button>
 
           <button
@@ -1080,7 +1101,7 @@ function SuperAdminPage() {
             }`}
           >
             <MapPin className="h-4 w-4" />
-            <span>3. Regions &amp; Trainee Roster ({roster.length})</span>
+            <span>4. Regions &amp; Trainee Roster ({roster.length})</span>
           </button>
 
           <button
@@ -1093,7 +1114,7 @@ function SuperAdminPage() {
             }`}
           >
             <Award className="h-4 w-4" />
-            <span>4. Issued Certificates &amp; Pass Policy ({certificates.length})</span>
+            <span>5. Issued Certificates &amp; Pass Policy ({certificates.length})</span>
           </button>
 
           <button
@@ -1106,7 +1127,7 @@ function SuperAdminPage() {
             }`}
           >
             <Settings className="h-4 w-4" />
-            <span>5. Anti-Cheat Lock, Co-Branding &amp; DB Backup</span>
+            <span>6. Anti-Cheat Lock, Co-Branding &amp; DB Backup</span>
           </button>
 
           <button
@@ -1119,13 +1140,26 @@ function SuperAdminPage() {
             }`}
           >
             <Receipt className="h-4 w-4" />
-            <span>6. Sales Leads &amp; Billing ({salesLeads.length + transactions.length})</span>
+            <span>7. Sales Leads &amp; Billing ({salesLeads.length + transactions.length})</span>
           </button>
         </div>
 
         {/* =================================================================== */}
         {/* TAB 1: COURSES, MULTI-INSTRUCTOR TEAMS & SEQUENTIAL QUIZZES         */}
         {/* =================================================================== */}
+        {activeTab === "practical" && (
+          <div className="rounded-3xl border border-border bg-card p-5 sm:p-6">
+            <AdminPracticalPanel
+              courseId={courses.find((c) => c.id === "course-sanjibon-ai-dm")?.id || courses[0]?.id || "course-sanjibon-ai-dm"}
+              courseCode={
+                courses.find((c) => c.id === "course-sanjibon-ai-dm")?.code ||
+                courses[0]?.code ||
+                "AI-DM-04"
+              }
+            />
+          </div>
+        )}
+
         {activeTab === "courses" && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Left Column: Create / Edit Course with Multiple Instructors */}
@@ -1162,7 +1196,7 @@ function SuperAdminPage() {
                     <input
                       type="text"
                       required
-                      placeholder="BCS-101"
+                      placeholder="AI-DM-04"
                       value={courseCode}
                       onChange={(e) => setCourseCode(e.target.value)}
                       className="w-full rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs font-bold uppercase text-foreground outline-none focus:border-primary"

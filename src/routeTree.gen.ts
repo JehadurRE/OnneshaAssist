@@ -15,6 +15,7 @@ import { Route as ContactSalesRouteImport } from './routes/contact-sales'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as DevelopersRouteImport } from './routes/developers'
 import { Route as PlayRouteImport } from './routes/play'
+import { Route as PortalRouteImport } from './routes/portal'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as SecurityRouteImport } from './routes/security'
 import { Route as TimerRouteImport } from './routes/timer'
@@ -57,6 +58,11 @@ const DevelopersRoute = DevelopersRouteImport.update({
 const PlayRoute = PlayRouteImport.update({
   id: '/play',
   path: '/play',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PortalRoute = PortalRouteImport.update({
+  id: '/portal',
+  path: '/portal',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PricingRoute = PricingRouteImport.update({
@@ -132,6 +138,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/developers': typeof DevelopersRoute
   '/play': typeof PlayRoute
+  '/portal': typeof PortalRoute
   '/pricing': typeof PricingRoute
   '/security': typeof SecurityRoute
   '/timer': typeof TimerRoute
@@ -153,6 +160,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/developers': typeof DevelopersRoute
   '/play': typeof PlayRoute
+  '/portal': typeof PortalRoute
   '/pricing': typeof PricingRoute
   '/security': typeof SecurityRoute
   '/timer': typeof TimerRoute
@@ -175,6 +183,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/developers': typeof DevelopersRoute
   '/play': typeof PlayRoute
+  '/portal': typeof PortalRoute
   '/pricing': typeof PricingRoute
   '/security': typeof SecurityRoute
   '/timer': typeof TimerRoute
@@ -198,6 +207,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/developers'
     | '/play'
+    | '/portal'
     | '/pricing'
     | '/security'
     | '/timer'
@@ -219,6 +229,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/developers'
     | '/play'
+    | '/portal'
     | '/pricing'
     | '/security'
     | '/timer'
@@ -240,6 +251,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/developers'
     | '/play'
+    | '/portal'
     | '/pricing'
     | '/security'
     | '/timer'
@@ -262,6 +274,7 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   DevelopersRoute: typeof DevelopersRoute
   PlayRoute: typeof PlayRoute
+  PortalRoute: typeof PortalRoute
   PricingRoute: typeof PricingRoute
   SecurityRoute: typeof SecurityRoute
   TimerRoute: typeof TimerRoute
@@ -319,6 +332,13 @@ declare module '@tanstack/react-router' {
       path: '/play'
       fullPath: '/play'
       preLoaderRoute: typeof PlayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/portal': {
+      id: '/portal'
+      path: '/portal'
+      fullPath: '/portal'
+      preLoaderRoute: typeof PortalRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pricing': {
@@ -422,6 +442,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   DevelopersRoute: DevelopersRoute,
   PlayRoute: PlayRoute,
+  PortalRoute: PortalRoute,
   PricingRoute: PricingRoute,
   SecurityRoute: SecurityRoute,
   TimerRoute: TimerRoute,
@@ -439,13 +460,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

@@ -94,6 +94,18 @@ export const Navbar: React.FC = () => {
             </Link>
 
             <Link
+              to="/portal"
+              className={`flex items-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 transition-colors ${
+                isActive("/portal")
+                  ? "bg-primary/15 text-primary font-bold"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
+              }`}
+            >
+              <GraduationCap className="h-3.5 w-3.5" />
+              {lang === "bn" ? "পোর্টাল" : "Portal"}
+            </Link>
+
+            <Link
               to="/play"
               className={`flex items-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 transition-colors ${
                 isActive("/play")

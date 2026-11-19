@@ -10,7 +10,8 @@ services:
     disk:
       name: onnesha-data
       mountPath: /opt/render/project/src/.data
-      sizeGB: 1
+      # 5 GB: ~232 practical submissions (PDF/ZIP) + store headroom. Increase to 10 GB for video.
+      sizeGB: 5
     envVars:
       - key: NODE_ENV
         value: production

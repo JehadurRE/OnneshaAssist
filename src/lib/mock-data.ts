@@ -25,7 +25,7 @@ export const DEFAULT_USERS: ManagedUser[] = [
     designation: "System & Examination Controller",
     phone: "",
     plan: "institution_max",
-    assignedCourseIds: ["course-sanjibon-ai-dm", "course-bcs-foundation"],
+    assignedCourseIds: ["course-sanjibon-ai-dm"],
     status: "active",
     createdAt: "2026-01-01T00:00:00Z",
   },
@@ -39,32 +39,18 @@ export const DEFAULT_USERS: ManagedUser[] = [
     designation: "Course Instructor",
     phone: "",
     plan: "institution_max",
-    assignedCourseIds: ["course-sanjibon-ai-dm", "course-bcs-foundation"],
+    assignedCourseIds: ["course-sanjibon-ai-dm"],
     status: "active",
     createdAt: "2026-01-02T00:00:00Z",
   },
 ];
 
-export const DEFAULT_COURSES: Course[] = [
-  SANJIBON_COURSE,
-  {
-    id: "course-bcs-foundation",
-    code: "BCS-101",
-    titleEn: "General Assessment & Model Test Course",
-    titleBn: "সাধারণ মূল্যায়ন ও মডেল টেস্ট কোর্স",
-    descriptionEn: "Official multi-format examination course for live and self-paced assessments.",
-    descriptionBn: "লাইভ ও সেলফ-প্র্যাকটিস পরীক্ষার জন্য অফিসিয়াল মাল্টি-ফরম্যাট কোর্স।",
-    categoryEn: "General Knowledge",
-    categoryBn: "সাধারণ জ্ঞান",
-    icon: "🎯",
-    color: "from-emerald-500/20 to-teal-500/20",
-    instructorIds: ["usr-instructor-1"],
-    instructorNames: ["Course Instructor"],
-    isPrivate: false,
-    status: "active",
-    createdAt: "2026-01-05T00:00:00Z",
-  },
-];
+/** Production curriculum: AI-DM-04 only. Legacy BCS-101 demo pack removed. */
+export const DEFAULT_COURSES: Course[] = [SANJIBON_COURSE];
+
+/** Legacy demo course id — kept for migrations that soft-delete it from existing stores. */
+export const LEGACY_BCS_COURSE_ID = "course-bcs-foundation";
+export const LEGACY_BCS_QUIZ_ID = "pack-bcs-gk";
 
 const GENERAL_REGIONS: Region[] = [
   {
@@ -124,120 +110,7 @@ export const DEFAULT_REGIONS: Region[] = [
   ...GENERAL_REGIONS.filter((r) => !sanjibonRegionIds.has(r.id)),
 ];
 
-export const READY_MADE_PACKS: Quiz[] = [
-  ...SANJIBON_QUIZZES,
-  {
-    id: "pack-bcs-gk",
-    slug: "bcs-gk",
-    courseId: "course-bcs-foundation",
-    courseTitle: "General Assessment & Model Test Course",
-    quizNumber: 1,
-    instructorId: "usr-instructor-1",
-    instructorName: "Course Instructor",
-    icon: "🎯",
-    titleEn: "Quiz 1 — General Knowledge & Multi-Format Assessment",
-    titleBn: "কুইজ ১ — সাধারণ জ্ঞান ও মাল্টি-স্টাইল মূল্যায়ন",
-    descriptionEn:
-      "Standard assessment featuring Single MCQ, True/False, Multi-Select MCQ, and Written Short Answer questions.",
-    descriptionBn:
-      "একক MCQ, সত্য/মিথ্যা, মাল্টি-সিলেক্ট এবং সংক্ষিপ্ত লিখিত উত্তর সম্বলিত পরীক্ষা।",
-    categoryEn: "General Knowledge",
-    categoryBn: "সাধারণ জ্ঞান",
-    color: "from-emerald-500/20 to-teal-500/20",
-    isPrivate: false,
-    tags: ["BCS", "Job Prep", "General Knowledge", "Multi-Style"],
-    questions: [
-      {
-        id: "bgk-1",
-        textEn: "Where is the headquarters of the United Nations located?",
-        textBn: "জাতিসংঘের সদর দপ্তর কোথায় অবস্থিত?",
-        type: "single_mcq",
-        timeLimitSec: 20,
-        points: 1000,
-        negativeMarks: 0.25,
-        options: [
-          { id: "opt-1", textEn: "Geneva", textBn: "জেনেভা" },
-          { id: "opt-2", textEn: "New York", textBn: "নিউইয়র্ক", isCorrect: true },
-          { id: "opt-3", textEn: "Paris", textBn: "প্যারিস" },
-          { id: "opt-4", textEn: "London", textBn: "লন্ডন" },
-        ],
-        correctOptionIds: ["opt-2"],
-        explanationEn: "The Headquarters of the United Nations is in New York City, USA.",
-        explanationBn: "জাতিসংঘের মূল সদর দপ্তর মার্কিন যুক্তরাষ্ট্রের নিউইয়র্ক শহরে অবস্থিত।",
-      },
-      {
-        id: "bgk-2",
-        textEn:
-          "True or False: The Constitution of Bangladesh came into effect on 16 December 1972.",
-        textBn: "সত্য নাকি মিথ্যা: বাংলাদেশের সংবিধান ১৬ ডিসেম্বর ১৯৭২ থেকে কার্যকর হয়।",
-        type: "true_false",
-        timeLimitSec: 15,
-        points: 1000,
-        negativeMarks: 0,
-        options: [
-          { id: "opt-true", textEn: "True", textBn: "সত্য (True)", isCorrect: true },
-          { id: "opt-false", textEn: "False", textBn: "মিথ্যা (False)" },
-        ],
-        correctOptionIds: ["opt-true"],
-        explanationEn: "The Constitution of Bangladesh came into effect on 16 December 1972.",
-        explanationBn: "বাংলাদেশের সংবিধান ১৬ ডিসেম্বর ১৯৭২ থেকে কার্যকর হয়।",
-      },
-      {
-        id: "bgk-3",
-        textEn: "Select ALL countries that share an international land border with Bangladesh:",
-        textBn:
-          "বাংলাদেশের সাথে আন্তর্জাতিক স্থল সীমান্ত রয়েছে এমন সবগুলো দেশ নির্বাচন করুন (একাধিক সঠিক):",
-        type: "multi_mcq",
-        timeLimitSec: 25,
-        points: 1500,
-        negativeMarks: 0,
-        options: [
-          { id: "opt-1", textEn: "India", textBn: "ভারত (India)", isCorrect: true },
-          { id: "opt-2", textEn: "Myanmar", textBn: "মিয়ানমার (Myanmar)", isCorrect: true },
-          { id: "opt-3", textEn: "Nepal", textBn: "নেপাল (Nepal)" },
-          { id: "opt-4", textEn: "Bhutan", textBn: "ভুটান (Bhutan)" },
-        ],
-        correctOptionIds: ["opt-1", "opt-2"],
-        explanationEn: "Bangladesh shares land borders only with India and Myanmar.",
-        explanationBn: "বাংলাদেশের সাথে কেবল ভারত ও মিয়ানমার—এই দুটি দেশের স্থল সীমান্ত রয়েছে।",
-      },
-      {
-        id: "bgk-4",
-        textEn:
-          "Type the exact number: How many Sustainable Development Goals (SDGs) were declared by the UN?",
-        textBn: "সংখ্যাটি লিখুন: জাতিসংঘ ঘোষিত টেকসই উন্নয়ন লক্ষ্যমাত্রা (SDG) কয়টি?",
-        type: "written",
-        timeLimitSec: 25,
-        points: 1200,
-        negativeMarks: 0,
-        options: [],
-        correctOptionIds: [],
-        acceptedAnswers: ["17", "১৭", "seventeen", "17 goals"],
-        explanationEn: "The 2030 Agenda for Sustainable Development consists of 17 SDGs.",
-        explanationBn:
-          "২০১৫ সালে জাতিসংঘ ২০৩০ এজেন্ডা হিসেবে ১৭টি লক্ষ্যমাত্রা (SDG) নির্ধারণ করে।",
-      },
-      {
-        id: "bgk-5",
-        textEn: "Which is the largest administrative division of Bangladesh by land area?",
-        textBn: "আয়তনের দিক থেকে বাংলাদেশের বৃহত্তম প্রশাসনিক বিভাগ কোনটি?",
-        type: "single_mcq",
-        timeLimitSec: 20,
-        points: 1000,
-        negativeMarks: 0.25,
-        options: [
-          { id: "opt-1", textEn: "Dhaka", textBn: "ঢাকা" },
-          { id: "opt-2", textEn: "Rajshahi", textBn: "রাজশাহী" },
-          { id: "opt-3", textEn: "Chattogram", textBn: "চট্টগ্রাম", isCorrect: true },
-          { id: "opt-4", textEn: "Khulna", textBn: "খুলনা" },
-        ],
-        correctOptionIds: ["opt-3"],
-        explanationEn: "Chattogram division is the largest division in Bangladesh by area.",
-        explanationBn: "চট্টগ্রাম বিভাগ বাংলাদেশের সর্ববৃহৎ বিভাগ।",
-      },
-    ],
-  },
-];
+export const READY_MADE_PACKS: Quiz[] = [...SANJIBON_QUIZZES];
 
 export const PRICING_TIERS: PricingTier[] = [
   {

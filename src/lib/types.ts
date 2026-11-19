@@ -276,6 +276,8 @@ export interface MeritReport {
   weakTopics: WeakTopicItem[];
 }
 
+export type CertificateKind = "quiz_session" | "course_completion";
+
 export interface CertificateData {
   id: string;
   certificateNumber: string;
@@ -283,6 +285,16 @@ export interface CertificateData {
   studentRoll?: string;
   regionName?: string;
   quizTitle: string;
+  /** Industrial course-completion credentials use kind=course_completion. */
+  kind?: CertificateKind | undefined;
+  courseId?: string | undefined;
+  courseCode?: string | undefined;
+  courseTitle?: string | undefined;
+  quizAccuracyPct?: number | undefined;
+  practicalScorePct?: number | undefined;
+  combinedScorePct?: number | undefined;
+  credentialStatementEn?: string | undefined;
+  credentialStatementBn?: string | undefined;
   scorePct?: number;
   score?: number;
   marksObtained?: number;
@@ -392,6 +404,108 @@ export interface ExamResultRecord {
   passed?: boolean | undefined;
   answersJson?: string | undefined;
   createdAt: string;
+}
+
+/** Practical task inside a Final Practical Examination. */
+export interface PracticalTask {
+  id: string;
+  titleEn: string;
+  titleBn: string;
+  promptEn: string;
+  promptBn: string;
+  maxMarks: number;
+  requireText?: boolean | undefined;
+  requireLink?: boolean | undefined;
+  allowFile?: boolean | undefined;
+  sortOrder?: number | undefined;
+}
+
+export type PracticalExamStatus = "draft" | "scheduled" | "open" | "closed" | "archived";
+
+/** Course-linked practical exam (Part B of the Final Assessment). */
+export interface PracticalExam {
+  id: string;
+  courseId: string;
+  titleEn: string;
+  titleBn: string;
+  descriptionEn?: string | undefined;
+  descriptionBn?: string | undefined;
+  /** Usually the Final Quiz id used for Part A weighting. */
+  linkedQuizId?: string | undefined;
+  quizWeightPct?: number | undefined;
+  practicalWeightPct?: number | undefined;
+  passThresholdPct?: number | undefined;
+  status: PracticalExamStatus;
+  opensAt?: string | undefined;
+  closesAt?: string | undefined;
+  maxFileBytes?: number | undefined;
+  allowedMimeTypes?: string[] | undefined;
+  tasks: PracticalTask[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PracticalTaskAnswer {
+  taskId: string;
+  textAnswer?: string | undefined;
+  linkUrl?: string | undefined;
+  fileName?: string | undefined;
+  fileMime?: string | undefined;
+  fileSizeBytes?: number | undefined;
+  /** Relative path under DATA_DIR/submissions — never expose absolute FS paths to clients. */
+  fileRelPath?: string | undefined;
+}
+
+export interface PracticalGrade {
+  taskId: string;
+  marks: number;
+  maxMarks: number;
+  comment?: string | undefined;
+  gradedBy?: string | undefined;
+  gradedAt?: string | undefined;
+}
+
+export type PracticalSubmissionStatus =
+  | "draft"
+  | "submitted"
+  | "late"
+  | "graded"
+  | "returned";
+
+export interface PracticalSubmission {
+  id: string;
+  practicalExamId: string;
+  courseId: string;
+  rosterStudentId?: string | undefined;
+  rollNumber: string;
+  studentName: string;
+  phone?: string | undefined;
+  regionId?: string | undefined;
+  regionName?: string | undefined;
+  answers: PracticalTaskAnswer[];
+  grades?: PracticalGrade[] | undefined;
+  status: PracticalSubmissionStatus;
+  practicalScorePct?: number | undefined;
+  quizAccuracyPct?: number | undefined;
+  combinedPct?: number | undefined;
+  instructorFeedback?: string | undefined;
+  submittedAt?: string | undefined;
+  gradedAt?: string | undefined;
+  gradedBy?: string | undefined;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Policy for issuing an industrial course-completion certificate (not quiz-wise). */
+export interface CourseCompletionRequirement {
+  courseId: string;
+  requireQuiz: boolean;
+  requirePractical: boolean;
+  requiredQuizIds?: string[] | undefined;
+  quizWeightPct?: number | undefined;
+  practicalWeightPct?: number | undefined;
+  certificateTitleEn?: string | undefined;
+  certificateTitleBn?: string | undefined;
 }
 
 export type CertificateThemePreset =

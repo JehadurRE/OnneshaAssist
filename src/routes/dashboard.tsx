@@ -365,7 +365,7 @@ function DashboardPage() {
   const [editingQuizSlug, setEditingQuizSlug] = useState<string | null>(null);
   const [newQuizTitle, setNewQuizTitle] = useState("");
   const [newQuizCategory, setNewQuizCategory] = useState("General Knowledge");
-  const [newQuizCourseId, setNewQuizCourseId] = useState<string>("course-bcs-foundation");
+  const [newQuizCourseId, setNewQuizCourseId] = useState<string>("course-sanjibon-ai-dm");
   const [newQuizNumber, setNewQuizNumber] = useState<number>(5);
   const [newQuestions, setNewQuestions] = useState<Question[]>([
     {
@@ -393,7 +393,7 @@ function DashboardPage() {
       !!quiz.isTemplate ||
       (user?.role !== "admin" && !!quiz.instructorId && quiz.instructorId !== user?.id);
     const cloneMode = forceClone || isForeignOrTemplate;
-    const fallbackCourseId = courses[0]?.id || "course-bcs-foundation";
+    const fallbackCourseId = courses[0]?.id || "course-sanjibon-ai-dm";
     const cid = quiz.courseId || fallbackCourseId;
     const nextCourseQuizNum =
       quizzes
