@@ -5,12 +5,15 @@ import { Footer } from "@/components/layout/Footer";
 import { CertificateView } from "@/components/common/CertificateView";
 import { useLanguage } from "@/lib/i18n";
 import {
+  serverAskCourseTutor,
   serverClearStudentPortal,
   serverGetStudentPortal,
   serverSubmitPracticalWork,
 } from "@/lib/server-session";
 import type {
   CertificateData,
+  CourseMaterial,
+  CourseRecording,
   PracticalExam,
   PracticalSubmission,
   PracticalTask,
@@ -22,11 +25,15 @@ import {
   CheckCircle2,
   ClipboardList,
   ExternalLink,
+  Film,
   Loader2,
   Lock,
   LogOut,
+  MessageCircle,
   Phone,
+  Search,
   ShieldCheck,
+  Sparkles,
   Upload,
   User,
 } from "lucide-react";
@@ -95,9 +102,16 @@ function StudentPortalPage() {
   const { lang } = useLanguage();
   const [rollNumber, setRollNumber] = useState("");
   const [phone, setPhone] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [portal, setPortal] = useState<PortalPayload | null>(null);
+  const [portalTab, setPortalTab] = useState<
+    "overview" | "materials" | "recordings" | "tutor" | "practical" | "certificate"
+  >("overview");
+  const [tutorQ, setTutorQ] = useState("");
+  const [tutorA, setTutorA] = useState<string | null>(null);
+  const [tutorBusy, setTutorBusy] = useState(false);
 
   const [drafts, setDrafts] = useState<Record<string, TaskDraft>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -130,8 +144,13 @@ function StudentPortalPage() {
     setError(null);
     setNotice(null);
     try {
+      const q = searchQuery.trim() || phone.trim();
       const res = await serverGetStudentPortal({
-        data: { rollNumber: rollNumber.trim(), phone: phone.trim() },
+        data: {
+          query: q || undefined,
+          rollNumber: rollNumber.trim() || undefined,
+          phone: phone.trim() || q || undefined,
+        },
       });
       if (!res.success) {
         setPortal(null);
@@ -139,11 +158,36 @@ function StudentPortalPage() {
         return;
       }
       setPortal(res);
+      setPhone(res.student?.phone || phone);
+      setRollNumber(res.student?.rollNumber || rollNumber);
       hydrateDrafts(res.practicalExam as PracticalExam | undefined, res.submission as PracticalSubmission | undefined);
+      setPortalTab("overview");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Portal unlock failed.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const askTutor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!portal?.success || !portal.course?.id) return;
+    setTutorBusy(true);
+    setTutorA(null);
+    try {
+      const res = await serverAskCourseTutor({
+        data: {
+          courseId: portal.course.id,
+          question: tutorQ,
+          rollNumber: portal.student?.rollNumber,
+          lang: lang === "bn" ? "bn" : "en",
+        },
+      });
+      setTutorA(res.success ? res.answer : res.error || "Tutor unavailable.");
+    } catch (err) {
+      setTutorA(err instanceof Error ? err.message : "Tutor failed.");
+    } finally {
+      setTutorBusy(false);
     }
   };
 
@@ -287,24 +331,24 @@ function StudentPortalPage() {
               <h1 className="font-display text-4xl font-black tracking-tight sm:text-5xl lg:text-[3.25rem] leading-[1.08]">
                 {lang === "bn" ? (
                   <>
-                    রোল ও মোবাইল দিয়ে
-                    <span className="block text-emerald-600 dark:text-emerald-400">পোর্টাল খুলুন</span>
+                    মোবাইল দিয়ে
+                    <span className="block text-emerald-600 dark:text-emerald-400">লার্নিং পোর্টাল</span>
                   </>
                 ) : (
                   <>
-                    Unlock your
-                    <span className="block text-emerald-600 dark:text-emerald-400">course portal</span>
+                    Your learning
+                    <span className="block text-emerald-600 dark:text-emerald-400">&amp; exam portal</span>
                   </>
                 )}
               </h1>
               <p className="text-base text-muted-foreground leading-relaxed max-w-md">
                 {lang === "bn"
-                  ? "কুইজ অগ্রগতি, চূড়ান্ত প্রায়োগিক জমা, এবং কোর্স সমাপনী সনদপত্র — এক জায়গায়।"
-                  : "Quiz progress, final practical submission, and your course-completion certificate — in one place."}
+                  ? "ম্যাটেরিয়াল, রেকর্ডিং, AI টিউটর, ফাইনাল পরীক্ষা ও প্রায়োগিক — এক জায়গায়।"
+                  : "Materials, recordings, AI tutor, final exam, and practical — in one place."}
               </p>
               <ul className="grid gap-3 sm:grid-cols-3 text-xs font-semibold text-muted-foreground">
                 {[
-                  lang === "bn" ? "কুইজ অগ্রগতি" : "Quiz progress",
+                  lang === "bn" ? "ম্যাটেরিয়াল + AI" : "Materials + AI",
                   lang === "bn" ? "প্রায়োগিক জমা" : "Practical submit",
                   lang === "bn" ? "কোর্স সনদ" : "Course certificate",
                 ].map((label) => (
@@ -332,42 +376,28 @@ function StudentPortalPage() {
                 </div>
                 <p className="text-xs text-muted-foreground pl-11">
                   {lang === "bn"
-                    ? "নিবন্ধিত রোল ও মোবাইল নম্বর ব্যবহার করুন।"
-                    : "Use the roll and mobile number on your roster."}
+                    ? "কুইজের মতো — নিবন্ধিত মোবাইল দিয়ে সার্চ করুন, নাম অটো আসবে।"
+                    : "Same as quiz — search your registered mobile; name auto-fills."}
                 </p>
               </div>
 
               <label className="block space-y-1.5">
                 <span className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
-                  {lang === "bn" ? "রোল নম্বর" : "Roll number"}
+                  {lang === "bn" ? "মোবাইল / রোল সার্চ" : "Mobile / roll search"}
                 </span>
                 <div className="relative">
-                  <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <input
-                    value={rollNumber}
-                    onChange={(e) => setRollNumber(e.target.value)}
-                    className="w-full rounded-2xl border border-border bg-background py-3.5 pl-10 pr-4 text-sm font-semibold outline-none ring-emerald-500/30 focus:border-emerald-500 focus:ring-4"
-                    placeholder="BAR-01"
-                    autoComplete="username"
-                    autoFocus
-                    required
-                  />
-                </div>
-              </label>
-
-              <label className="block space-y-1.5">
-                <span className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
-                  {lang === "bn" ? "মোবাইল নম্বর" : "Mobile number"}
-                </span>
-                <div className="relative">
-                  <Phone className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full rounded-2xl border border-border bg-background py-3.5 pl-10 pr-4 text-sm font-semibold outline-none ring-emerald-500/30 focus:border-emerald-500 focus:ring-4"
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setPhone(e.target.value);
+                    }}
+                    className="w-full rounded-2xl border border-border bg-background py-3.5 pl-10 pr-4 text-sm font-semibold outline-none ring-emerald-500/30 focus:border-emerald-500 focus:ring-4 font-mono"
                     placeholder="01XXXXXXXXX"
                     inputMode="tel"
                     autoComplete="tel"
+                    autoFocus
                     required
                   />
                 </div>
@@ -452,6 +482,158 @@ function StudentPortalPage() {
               </div>
             </section>
 
+            <div className="flex flex-wrap gap-1.5 rounded-2xl border border-border bg-muted/40 p-1.5">
+              {(
+                [
+                  ["overview", lang === "bn" ? "ওভারভিউ" : "Overview", BookOpen],
+                  ["materials", lang === "bn" ? "ম্যাটেরিয়াল" : "Materials", BookOpen],
+                  ["recordings", lang === "bn" ? "রেকর্ডিং" : "Recordings", Film],
+                  ["tutor", lang === "bn" ? "AI টিউটর" : "AI Tutor", Sparkles],
+                  ["practical", lang === "bn" ? "প্রায়োগিক" : "Practical", ClipboardList],
+                  ["certificate", lang === "bn" ? "সনদ" : "Certificate", Award],
+                ] as const
+              ).map(([id, label, Icon]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setPortalTab(id)}
+                  className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-bold ${
+                    portalTab === id
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {(portal.announcements as { titleEn: string; titleBn: string; bodyEn: string; bodyBn: string }[] | undefined)
+              ?.length ? (
+              <section className="staff-panel space-y-2">
+                {(portal.announcements as { titleEn: string; titleBn: string; bodyEn: string; bodyBn: string }[]).map(
+                  (a, i) => (
+                    <div key={i} className="rounded-xl border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs">
+                      <div className="font-bold">{lang === "bn" ? a.titleBn : a.titleEn}</div>
+                      <p className="text-muted-foreground">{lang === "bn" ? a.bodyBn : a.bodyEn}</p>
+                    </div>
+                  ),
+                )}
+              </section>
+            ) : null}
+
+            {portalTab === "materials" && (
+              <section className="staff-panel space-y-3">
+                <h2 className="font-bold flex items-center gap-2">
+                  <BookOpen className="h-4 w-4" />
+                  {lang === "bn" ? "কোর্স ম্যাটেরিয়াল" : "Course materials"}
+                </h2>
+                {((portal.materials as CourseMaterial[] | undefined) || []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    {lang === "bn" ? "এখনো কোনো ম্যাটেরিয়াল প্রকাশ হয়নি।" : "No published materials yet."}
+                  </p>
+                ) : (
+                  ((portal.materials as CourseMaterial[]) || []).map((m) => (
+                    <article key={m.id} className="rounded-2xl border border-border px-4 py-3 space-y-1">
+                      <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                        {m.sessionLabel || m.type}
+                      </div>
+                      <h3 className="font-bold">{lang === "bn" ? m.titleBn : m.titleEn}</h3>
+                      <p className="text-xs text-muted-foreground whitespace-pre-wrap">
+                        {lang === "bn" ? m.bodyBn || m.descriptionBn : m.bodyEn || m.descriptionEn}
+                      </p>
+                      {m.url && (
+                        <a
+                          href={m.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 hover:underline"
+                        >
+                          <ExternalLink className="h-3 w-3" /> Open link
+                        </a>
+                      )}
+                    </article>
+                  ))
+                )}
+              </section>
+            )}
+
+            {portalTab === "recordings" && (
+              <section className="staff-panel space-y-3">
+                <h2 className="font-bold flex items-center gap-2">
+                  <Film className="h-4 w-4" />
+                  {lang === "bn" ? "ক্লাস রেকর্ডিং" : "Class recordings"}
+                </h2>
+                {((portal.recordings as CourseRecording[] | undefined) || []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    {lang === "bn" ? "রেকর্ডিং শীঘ্রই আসবে।" : "Recordings coming soon from your instructor."}
+                  </p>
+                ) : (
+                  ((portal.recordings as CourseRecording[]) || []).map((r) => (
+                    <a
+                      key={r.id}
+                      href={r.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-start justify-between gap-3 rounded-2xl border border-border px-4 py-3 hover:bg-accent"
+                    >
+                      <div>
+                        <div className="text-[10px] font-bold uppercase text-muted-foreground">
+                          {r.sessionLabel || r.provider || "video"}
+                        </div>
+                        <div className="font-bold">{lang === "bn" ? r.titleBn : r.titleEn}</div>
+                      </div>
+                      <ExternalLink className="h-4 w-4 shrink-0 text-emerald-600" />
+                    </a>
+                  ))
+                )}
+              </section>
+            )}
+
+            {portalTab === "tutor" && (
+              <section className="staff-panel space-y-3">
+                <h2 className="font-bold flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-amber-500" />
+                  {lang === "bn" ? "AI কোর্স টিউটর" : "AI course tutor"}
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  {lang === "bn"
+                    ? "প্রকাশিত ম্যাটেরিয়ালের উপর ভিত্তি করে প্রশ্ন করুন। পরীক্ষার আগে রিভিশনে কাজে লাগে।"
+                    : "Ask questions grounded in published materials — great for pre-exam revision."}
+                </p>
+                {!portal.hasAiTutor && (
+                  <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-800 dark:text-amber-200">
+                    AI Tutor needs a Gemini key in Admin → Settings.
+                  </p>
+                )}
+                <form onSubmit={askTutor} className="space-y-2">
+                  <textarea
+                    className="staff-input min-h-[88px]"
+                    value={tutorQ}
+                    onChange={(e) => setTutorQ(e.target.value)}
+                    placeholder={
+                      lang === "bn"
+                        ? "যেমন: ফাইনাল ক্যাপস্টোনে কী কী জমা দিতে হবে?"
+                        : "e.g. What must I submit in the final capstone?"
+                    }
+                    required
+                  />
+                  <button type="submit" disabled={tutorBusy} className="staff-btn-primary">
+                    {tutorBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+                    {lang === "bn" ? "জিজ্ঞাসা করুন" : "Ask tutor"}
+                  </button>
+                </form>
+                {tutorA && (
+                  <div className="rounded-2xl border border-border bg-muted/30 px-4 py-3 text-sm whitespace-pre-wrap">
+                    {tutorA}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {(portalTab === "overview" || portalTab === "practical") && (
+            <>
             <section className="staff-panel">
               <div className="mb-4 flex items-center gap-2 font-bold">
                 <BookOpen className="h-4 w-4" />
@@ -681,7 +863,10 @@ function StudentPortalPage() {
                 </>
               )}
             </section>
+            </>
+            )}
 
+            {(portalTab === "overview" || portalTab === "certificate") && (
             <section className="staff-panel">
               <div className="flex items-center gap-2 font-bold">
                 <Award className="h-4 w-4" />
@@ -734,6 +919,7 @@ function StudentPortalPage() {
                 </div>
               )}
             </section>
+            )}
           </div>
       </main>
       <Footer />

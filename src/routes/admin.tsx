@@ -4,6 +4,7 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { StaffShell } from "@/components/layout/StaffShell";
 import { AdminPracticalPanel } from "@/components/admin/AdminPracticalPanel";
+import { AdminLmsPanel } from "@/components/admin/AdminLmsPanel";
 import { CertificateDesignerStudio } from "@/components/admin/CertificateDesignerStudio";
 import { CertificateView } from "@/components/common/CertificateView";
 import { useAuth } from "@/lib/auth-context";
@@ -99,6 +100,7 @@ export const Route = createFileRoute("/admin")({
 type AdminTab =
   | "courses"
   | "practical"
+  | "lms"
   | "instructors"
   | "roster"
   | "certificates"
@@ -889,6 +891,7 @@ function SuperAdminPage() {
   const adminNav = [
     { id: "courses", label: "Courses & Quizzes", shortLabel: "Courses", icon: Layers, badge: courses.length, group: "Curriculum" },
     { id: "practical", label: "Final Exam Desk", shortLabel: "Final Exam", icon: ClipboardList, group: "Curriculum" },
+    { id: "lms", label: "Learning Content", shortLabel: "LMS", icon: BookOpen, group: "Curriculum" },
     { id: "instructors", label: "Instructors & Accounts", shortLabel: "Faculty", icon: GraduationCap, badge: users.length, group: "People" },
     { id: "roster", label: "Regions & Roster", shortLabel: "Roster", icon: MapPin, badge: roster.length, group: "People" },
     { id: "certificates", label: "Issued Certificates", shortLabel: "Certificates", icon: Award, badge: certificates.length, group: "Credentials" },
@@ -1025,6 +1028,17 @@ function SuperAdminPage() {
             <AdminPracticalPanel
               courses={courses}
               quizzes={quizzes}
+              initialCourseId={
+                courses.find((c) => c.id === "course-sanjibon-ai-dm")?.id || courses[0]?.id
+              }
+            />
+          </div>
+        )}
+
+        {activeTab === "lms" && (
+          <div className="staff-panel">
+            <AdminLmsPanel
+              courses={courses}
               initialCourseId={
                 courses.find((c) => c.id === "course-sanjibon-ai-dm")?.id || courses[0]?.id
               }

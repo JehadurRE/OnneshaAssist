@@ -7,6 +7,7 @@ import {
   serverJoinFinalExam,
   serverLookupFinalExamByPin,
   serverLookupFinalExamCandidate,
+  serverSaveFinalQuizAnswers,
   serverStartFinalQuizAttempt,
   serverSubmitFinalQuizAttempt,
 } from "@/lib/server-session";
@@ -100,6 +101,8 @@ function FinalExamPage() {
   const [activeQ, setActiveQ] = useState(0);
   const [nowTick, setNowTick] = useState(Date.now());
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [saveHint, setSaveHint] = useState<string | null>(null);
   const [result, setResult] = useState<{
     accuracyPct: number;
     quizMarks: number;
@@ -118,10 +121,27 @@ function FinalExamPage() {
   const timedOut = phase === "quiz" && !!endsAt && remainingMs <= 0;
 
   useEffect(() => {
-    if (!timedOut || submitting || !attemptId) return;
+    if (!timedOut || submitting || !attemptId || phase !== "quiz") return;
     void submitQuiz(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timedOut]);
+  }, [timedOut, submitting, attemptId, phase]);
+
+  // Autosave answers every 8s while in quiz
+  useEffect(() => {
+    if (phase !== "quiz" || !attemptId || !student?.rollNumber) return undefined;
+    const id = window.setInterval(() => {
+      void serverSaveFinalQuizAnswers({
+        data: {
+          attemptId,
+          rollNumber: student.rollNumber,
+          answers,
+        },
+      }).then((res) => {
+        if (res.success) setSaveHint(lang === "bn" ? "সেভ হয়েছে" : "Saved");
+      });
+    }, 8000);
+    return () => window.clearInterval(id);
+  }, [phase, attemptId, student?.rollNumber, answers, lang]);
 
   const questions: Question[] = quiz?.questions || [];
   const answeredCount = useMemo(
@@ -220,15 +240,21 @@ function FinalExamPage() {
       setStudent(res.student);
       setQuizDone(!!res.quizAlreadySubmitted);
       setPrior(res.priorAttempt);
+      if (res.inProgressAttempt?.id) {
+        setLoading(false);
+        await startQuiz(true);
+        return;
+      }
       setPhase("lobby");
     } finally {
       setLoading(false);
     }
   };
 
-  const startQuiz = async () => {
+  const startQuiz = async (fromResume = false) => {
     setLoading(true);
     setError(null);
+    setSubmitError(null);
     try {
       const res = await serverStartFinalQuizAttempt({
         data: {
@@ -245,9 +271,14 @@ function FinalExamPage() {
       setAttemptId(res.attempt.id);
       setEndsAt(res.attempt.endsAt);
       setQuiz(res.quiz);
-      setAnswers({});
+      setAnswers((res.answers as Record<string, string[]>) || {});
       setActiveQ(0);
       setPhase("quiz");
+      if (res.resumed || fromResume) {
+        setSaveHint(lang === "bn" ? "আগের উত্তর লোড হয়েছে" : "Resumed — answers restored");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not start quiz");
     } finally {
       setLoading(false);
     }
@@ -257,6 +288,7 @@ function FinalExamPage() {
     if (!attemptId || submitting) return;
     setSubmitting(true);
     setError(null);
+    setSubmitError(null);
     try {
       const res = await serverSubmitFinalQuizAttempt({
         data: {
@@ -267,7 +299,9 @@ function FinalExamPage() {
         },
       });
       if (!res.success) {
-        setError(res.error || "Submit failed");
+        const msg = res.error || "Submit failed";
+        setSubmitError(msg);
+        setError(msg);
         return;
       }
       setResult({
@@ -284,6 +318,10 @@ function FinalExamPage() {
         quizMaxMarks: res.quizMaxMarks,
       });
       setPhase("done");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Network error — tap Submit again";
+      setSubmitError(msg);
+      setError(msg);
     } finally {
       setSubmitting(false);
     }
@@ -592,6 +630,18 @@ function FinalExamPage() {
                     {lang === "bn" ? "কুইজ জমা দিন" : "Submit quiz"}
                   </button>
                 </div>
+                {(submitError || saveHint) && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    {submitError && (
+                      <span className="rounded-lg border border-destructive/40 bg-destructive/10 px-2.5 py-1.5 font-semibold text-destructive">
+                        {submitError} — {lang === "bn" ? "আবার চেষ্টা করুন" : "tap Submit again"}
+                      </span>
+                    )}
+                    {saveHint && !submitError && (
+                      <span className="text-muted-foreground font-semibold">{saveHint}</span>
+                    )}
+                  </div>
+                )}
                 <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
                   {questions.map((q, i) => {
                     const done = (answers[q.id] || []).length > 0;

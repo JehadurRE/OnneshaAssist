@@ -452,6 +452,13 @@ export interface PracticalExam {
   status: PracticalExamStatus;
   opensAt?: string | undefined;
   closesAt?: string | undefined;
+  /**
+   * When false, students cannot join/start the timed Final Quiz.
+   * Independent of practicalWindowOpen so closing the live quiz does not kill Part B.
+   */
+  quizWindowOpen?: boolean | undefined;
+  /** When false, practical/capstone submissions are rejected. Defaults to open while status is open/scheduled. */
+  practicalWindowOpen?: boolean | undefined;
   maxFileBytes?: number | undefined;
   allowedMimeTypes?: string[] | undefined;
   tasks: PracticalTask[];
@@ -537,6 +544,59 @@ export interface PracticalSubmission {
   submittedAt?: string | undefined;
   gradedAt?: string | undefined;
   gradedBy?: string | undefined;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Course learning material (PDF / link / note / slide) for the student portal LMS. */
+export type CourseMaterialType = "pdf" | "link" | "note" | "slide" | "other";
+
+export interface CourseMaterial {
+  id: string;
+  courseId: string;
+  sessionLabel?: string | undefined;
+  titleEn: string;
+  titleBn: string;
+  descriptionEn?: string | undefined;
+  descriptionBn?: string | undefined;
+  type: CourseMaterialType;
+  /** External or CDN URL (Drive, PDF link, etc.). */
+  url?: string | undefined;
+  /** Inline note body (used as AI tutor grounding too). */
+  bodyEn?: string | undefined;
+  bodyBn?: string | undefined;
+  sortOrder: number;
+  published: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CourseRecording {
+  id: string;
+  courseId: string;
+  sessionLabel?: string | undefined;
+  titleEn: string;
+  titleBn: string;
+  descriptionEn?: string | undefined;
+  descriptionBn?: string | undefined;
+  /** YouTube / Drive / Vimeo / direct URL. */
+  url: string;
+  provider?: "youtube" | "drive" | "vimeo" | "other" | undefined;
+  durationMin?: number | undefined;
+  sortOrder: number;
+  published: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CourseAnnouncement {
+  id: string;
+  courseId: string;
+  titleEn: string;
+  titleBn: string;
+  bodyEn: string;
+  bodyBn: string;
+  published: boolean;
   createdAt: string;
   updatedAt: string;
 }
