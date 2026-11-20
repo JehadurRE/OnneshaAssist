@@ -3,7 +3,10 @@ import React, { useEffect, useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { StaffShell } from "@/components/layout/StaffShell";
-import { AdminPracticalPanel } from "@/components/admin/AdminPracticalPanel";
+import {
+  AdminPracticalPanel,
+  type FinalExamDeskView,
+} from "@/components/admin/AdminPracticalPanel";
 import { AdminLmsPanel } from "@/components/admin/AdminLmsPanel";
 import { CertificateDesignerStudio } from "@/components/admin/CertificateDesignerStudio";
 import { CertificateView } from "@/components/common/CertificateView";
@@ -88,7 +91,20 @@ interface ActiveRoomRow {
   allowedRegionName: string;
 }
 
+interface AdminSearch {
+  tab?: string | undefined;
+  courseId?: string | undefined;
+  desk?: string | undefined;
+  sub?: string | undefined;
+}
+
 export const Route = createFileRoute("/admin")({
+  validateSearch: (search: Record<string, unknown>): AdminSearch => ({
+    tab: typeof search["tab"] === "string" ? search["tab"] : undefined,
+    courseId: typeof search["courseId"] === "string" ? search["courseId"] : undefined,
+    desk: typeof search["desk"] === "string" ? search["desk"] : undefined,
+    sub: typeof search["sub"] === "string" ? search["sub"] : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Super Admin Control Center · Onnesha Arena" },
@@ -112,10 +128,13 @@ type AdminTab =
   | "settings"
   | "sales_billing";
 
+const ADMIN_DESK_VIEWS = ["live", "grade", "setup", "certs"] as const;
+
 function SuperAdminPage() {
   const { lang } = useLanguage();
   const { user, isAuthenticated, isLoading: authLoading, login } = useAuth();
-  const navigate = useNavigate();
+  const navigate = useNavigate({ from: "/admin" });
+  const search = Route.useSearch();
 
   // Admin Gate Login State
   const [loginEmail, setLoginEmail] = useState("");
@@ -128,7 +147,9 @@ function SuperAdminPage() {
   const [loadingRooms, setLoadingRooms] = useState(false);
 
   // Core Database State
-  const [activeTab, setActiveTab] = useState<AdminTab>("courses");
+  const [activeTab, setActiveTab] = useState<AdminTab>(
+    (search.tab as AdminTab | undefined) || "courses",
+  );
   const [courses, setCourses] = useState<Course[]>([]);
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
@@ -267,6 +288,36 @@ function SuperAdminPage() {
       setLoadingRooms(false);
     }
   };
+
+  const goAdmin = (patch: {
+    tab?: AdminTab;
+    courseId?: string | undefined;
+    desk?: FinalExamDeskView | undefined;
+    sub?: string | null | undefined;
+  }) => {
+    if (patch.tab) setActiveTab(patch.tab);
+    void navigate({
+      search: (prev) => {
+        const next: AdminSearch = { ...prev };
+        if (patch.tab !== undefined) next.tab = patch.tab;
+        if (patch.courseId !== undefined) next.courseId = patch.courseId || undefined;
+        if (patch.desk !== undefined) next.desk = patch.desk;
+        if (patch.sub !== undefined) next.sub = patch.sub || undefined;
+        if (patch.tab && patch.tab !== "practical") {
+          next.desk = undefined;
+          next.sub = undefined;
+        }
+        return next;
+      },
+      replace: false,
+    });
+  };
+
+  useEffect(() => {
+    if (search.tab && search.tab !== activeTab) {
+      setActiveTab(search.tab as AdminTab);
+    }
+  }, [search.tab]);
 
   useEffect(() => {
     refreshAll();
@@ -943,7 +994,19 @@ function SuperAdminPage() {
       userEmail={user.email}
       activeId={activeTab}
       items={[...adminNav]}
-      onNavigate={(id) => setActiveTab(id as AdminTab)}
+      onNavigate={(id) =>
+        goAdmin({
+          tab: id as AdminTab,
+          desk:
+            id === "practical"
+              ? ADMIN_DESK_VIEWS.includes(search.desk as FinalExamDeskView)
+                ? (search.desk as FinalExamDeskView)
+                : "grade"
+              : undefined,
+          sub: id === "practical" ? search.sub || null : null,
+          courseId: id === "practical" ? search.courseId : undefined,
+        })
+      }
       toast={
         statusToast ? (
           <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-2xl border border-emerald-500/40 bg-emerald-600 px-4 py-3 text-xs font-bold text-white shadow-2xl animate-in fade-in">
@@ -1063,7 +1126,23 @@ function SuperAdminPage() {
               courses={courses}
               quizzes={quizzes}
               initialCourseId={
-                courses.find((c) => c.id === "course-sanjibon-ai-dm")?.id || courses[0]?.id
+                search.courseId ||
+                courses.find((c) => c.id === "course-sanjibon-ai-dm")?.id ||
+                courses[0]?.id
+              }
+              desk={
+                ADMIN_DESK_VIEWS.includes(search.desk as FinalExamDeskView)
+                  ? (search.desk as FinalExamDeskView)
+                  : "grade"
+              }
+              subId={search.sub}
+              onDeskNavigate={(patch) =>
+                goAdmin({
+                  tab: "practical",
+                  courseId: patch.courseId,
+                  desk: patch.desk,
+                  sub: patch.subId,
+                })
               }
             />
           </div>

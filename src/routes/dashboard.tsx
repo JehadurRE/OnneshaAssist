@@ -5,7 +5,10 @@ import { useAuth } from "@/lib/auth-context";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { StaffShell } from "@/components/layout/StaffShell";
-import { AdminPracticalPanel } from "@/components/admin/AdminPracticalPanel";
+import {
+  AdminPracticalPanel,
+  type FinalExamDeskView,
+} from "@/components/admin/AdminPracticalPanel";
 import { READY_MADE_PACKS, DEFAULT_REGIONS } from "@/lib/mock-data";
 import { AiQuizModal } from "@/components/dashboard/AiQuizModal";
 import { OmrSheetView } from "@/components/common/OmrSheetView";
@@ -79,6 +82,8 @@ interface DashboardSearch {
   tab?: string | undefined;
   courseId?: string | undefined;
   editQuizId?: string | undefined;
+  desk?: string | undefined;
+  sub?: string | undefined;
 }
 
 export const Route = createFileRoute("/dashboard")({
@@ -86,6 +91,8 @@ export const Route = createFileRoute("/dashboard")({
     tab: typeof search["tab"] === "string" ? search["tab"] : undefined,
     courseId: typeof search["courseId"] === "string" ? search["courseId"] : undefined,
     editQuizId: typeof search["editQuizId"] === "string" ? search["editQuizId"] : undefined,
+    desk: typeof search["desk"] === "string" ? search["desk"] : undefined,
+    sub: typeof search["sub"] === "string" ? search["sub"] : undefined,
   }),
   head: () => ({
     meta: [
@@ -112,6 +119,14 @@ type TabType =
   | "billing"
   | "settings";
 
+const DESK_VIEWS: FinalExamDeskView[] = ["live", "grade", "setup", "certs"];
+
+function parseDeskView(raw?: string): FinalExamDeskView | undefined {
+  return DESK_VIEWS.includes(raw as FinalExamDeskView)
+    ? (raw as FinalExamDeskView)
+    : undefined;
+}
+
 function DashboardPage() {
   const { lang } = useLanguage();
   const {
@@ -121,9 +136,12 @@ function DashboardPage() {
     updateProfile,
     changePassword,
   } = useAuth();
-  const navigate = useNavigate();
+  const navigate = useNavigate({ from: "/dashboard" });
+  const search = Route.useSearch();
 
-  const [activeTab, setActiveTab] = useState<TabType>("overview");
+  const [activeTab, setActiveTab] = useState<TabType>(
+    (search.tab as TabType | undefined) || "overview",
+  );
   const [regions, setRegions] = useState<Region[]>(DEFAULT_REGIONS);
   const [courses, setCourses] = useState<Course[]>([]);
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
@@ -451,17 +469,44 @@ function DashboardPage() {
   const loadQuizIntoEditorRef = useRef(handleLoadQuizIntoEditor);
   loadQuizIntoEditorRef.current = handleLoadQuizIntoEditor;
 
+  const goDashboard = (patch: {
+    tab?: TabType;
+    courseId?: string | undefined;
+    desk?: FinalExamDeskView | undefined;
+    sub?: string | null | undefined;
+    editQuizId?: string | undefined;
+  }) => {
+    if (patch.tab) setActiveTab(patch.tab);
+    void navigate({
+      search: (prev) => {
+        const next: DashboardSearch = { ...prev };
+        if (patch.tab !== undefined) next.tab = patch.tab;
+        if (patch.courseId !== undefined) next.courseId = patch.courseId || undefined;
+        if (patch.desk !== undefined) next.desk = patch.desk;
+        if (patch.sub !== undefined) next.sub = patch.sub || undefined;
+        if (patch.editQuizId !== undefined) next.editQuizId = patch.editQuizId;
+        if (patch.tab && patch.tab !== "final_exam") {
+          next.desk = undefined;
+          next.sub = undefined;
+        }
+        return next;
+      },
+      replace: false,
+    });
+  };
+
+  useEffect(() => {
+    if (search.tab && search.tab !== activeTab) {
+      setActiveTab(search.tab as TabType);
+    }
+  }, [search.tab]);
+
   useEffect(() => {
     if (typeof window === "undefined" || authLoading) return;
     if (editQuizParamAppliedRef.current) return;
-    const params = new URLSearchParams(window.location.search);
-    const tabParam = params.get("tab") as TabType | null;
-    const editQuizIdParam = params.get("editQuizId");
-    const courseIdParam = params.get("courseId");
+    const editQuizIdParam = search.editQuizId;
+    const courseIdParam = search.courseId;
 
-    if (tabParam) {
-      setActiveTab(tabParam);
-    }
     if (courseIdParam) {
       setNewQuizCourseId(courseIdParam);
       const count = db.getQuizzes().filter((q) => q.courseId === courseIdParam).length;
@@ -476,7 +521,7 @@ function DashboardPage() {
       return;
     }
     editQuizParamAppliedRef.current = true;
-  }, [authLoading, quizzes.length]);
+  }, [authLoading, quizzes.length, search.courseId, search.editQuizId]);
 
   const handleSaveQuiz = (e: React.FormEvent) => {
     e.preventDefault();
@@ -936,7 +981,14 @@ function DashboardPage() {
       userEmail={user?.email}
       activeId={activeTab}
       items={[...instructorNav]}
-      onNavigate={(id) => setActiveTab(id as TabType)}
+      onNavigate={(id) =>
+        goDashboard({
+          tab: id as TabType,
+          desk: id === "final_exam" ? parseDeskView(search.desk) || "grade" : undefined,
+          sub: id === "final_exam" ? search.sub || null : null,
+          courseId: id === "final_exam" ? search.courseId : undefined,
+        })
+      }
       toast={
         smsSuccessMsg ? (
           <div className="fixed bottom-6 right-6 z-50 max-w-sm rounded-2xl border border-emerald-500/40 bg-emerald-600 px-4 py-3 text-xs font-bold text-white shadow-2xl animate-in fade-in">
@@ -2878,7 +2930,17 @@ function DashboardPage() {
               <AdminPracticalPanel
                 courses={assignedCourses}
                 quizzes={scopedQuizzes}
-                initialCourseId={assignedCourses[0]?.id}
+                initialCourseId={search.courseId || assignedCourses[0]?.id}
+                desk={parseDeskView(search.desk) || "grade"}
+                subId={search.sub}
+                onDeskNavigate={(patch) =>
+                  goDashboard({
+                    tab: "final_exam",
+                    courseId: patch.courseId,
+                    desk: patch.desk,
+                    sub: patch.subId,
+                  })
+                }
               />
             )}
           </div>
