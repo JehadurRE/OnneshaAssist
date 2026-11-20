@@ -6193,6 +6193,9 @@ export const serverJoinFinalExam = createServerFn({ method: "POST" })
       (s) =>
         s.practicalExamId === exam.id && normalizeRollToken(s.rollNumber) === rollTok,
     );
+    // Continuous journey: portal session cookie so /portal opens without re-OTP after exam.
+    await setStudentPortalCookieForRoster(student);
+
     return {
       success: true as const,
       student: {
@@ -6709,6 +6712,45 @@ export const serverCloseFinalExamWindow = createServerFn({ method: "POST" })
     store.practicalExams![idx] = exam;
     scheduleDiskPersist();
     return { success: true as const, exam };
+  });
+
+/** Staff: extend an in-progress Final Exam attempt timer by N minutes. */
+export const serverExtendFinalExamAttempt = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      attemptId: string;
+      extraMinutes: number;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const extra = Math.max(1, Math.min(120, Math.floor(Number(data.extraMinutes) || 0)));
+    if (!extra) {
+      return { success: false as const, error: "extraMinutes must be a positive number." };
+    }
+    const store = getStore();
+    const attempts = store.finalExamAttempts || [];
+    const idx = attempts.findIndex((a) => a.id === data.attemptId);
+    if (idx < 0) return { success: false as const, error: "Attempt not found." };
+    const prev = attempts[idx]!;
+    if (prev.status !== "in_progress") {
+      return { success: false as const, error: "Only in-progress attempts can be extended." };
+    }
+    const baseMs = prev.endsAt ? new Date(prev.endsAt).getTime() : Date.now();
+    const from = Number.isFinite(baseMs) ? Math.max(baseMs, Date.now()) : Date.now();
+    const endsAt = new Date(from + extra * 60_000).toISOString();
+    const updated = {
+      ...prev,
+      endsAt,
+      updatedAt: new Date().toISOString(),
+    };
+    attempts[idx] = updated;
+    store.finalExamAttempts = attempts;
+    scheduleDiskPersist();
+    return { success: true as const, attempt: updated };
   });
 
 /** Admin-only: reset every admin → admin123, every instructor → instructor123. */

@@ -6,11 +6,12 @@ import { useAuth } from "@/lib/auth-context";
 import { useLanguage } from "@/lib/i18n";
 import {
   serverCloseFinalExamWindow,
+  serverGetBootstrapData,
   serverGetFinalExamDesk,
   serverOpenFinalExamWindow,
   serverSavePracticalExam,
 } from "@/lib/server-session";
-import type { FinalExamAttempt, PracticalExam, Question } from "@/lib/types";
+import type { Course, FinalExamAttempt, PracticalExam, Question } from "@/lib/types";
 import { generateFinalExamJoinPin } from "@/lib/practical-exam";
 import {
   CheckCircle2,
@@ -65,6 +66,8 @@ function FinalExamLiveHostPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [courseId, setCourseId] = useState("course-sanjibon-ai-dm");
+  const [courses, setCourses] = useState<Pick<Course, "id" | "code" | "titleEn" | "titleBn">[]>([]);
   const [exam, setExam] = useState<PracticalExam | null>(null);
   const [course, setCourse] = useState<{
     id: string;
@@ -77,6 +80,7 @@ function FinalExamLiveHostPage() {
   const [attempts, setAttempts] = useState<FinalExamAttempt[]>([]);
   const [windowOpen, setWindowOpen] = useState(false);
   const [windowHours, setWindowHours] = useState(3);
+  const [alsoClosePractical, setAlsoClosePractical] = useState(false);
   const [qIndex, setQIndex] = useState(0);
   const [revealAnswers, setRevealAnswers] = useState(false);
   const [projectorOnly, setProjectorOnly] = useState(false);
@@ -88,10 +92,11 @@ function FinalExamLiveHostPage() {
       ? `${window.location.origin}/final-exam`
       : "https://arena.onnesha.courses/final-exam";
 
-  const refresh = async (opts?: { light?: boolean }) => {
+  const refresh = async (opts?: { light?: boolean; forCourseId?: string }) => {
+    const cid = opts?.forCourseId || courseId;
     const res = await serverGetFinalExamDesk({
       data: {
-        courseId: "course-sanjibon-ai-dm",
+        courseId: cid,
         includeQuiz: !opts?.light,
       },
     });
@@ -104,7 +109,20 @@ function FinalExamLiveHostPage() {
     setCourse(res.course);
     setAttempts((res.attempts as FinalExamAttempt[]) || []);
     setWindowOpen(!!res.windowOpen);
-    if (res.quiz) {
+    if (!opts?.light) {
+      if (res.quiz) {
+        const qs = (res.quiz.questions || []) as Question[];
+        setQuestions(qs);
+        setQuizTitle(
+          lang === "bn" ? res.quiz.titleBn || res.quiz.titleEn || "" : res.quiz.titleEn || "",
+        );
+        setQIndex(0);
+      } else {
+        setQuestions([]);
+        setQuizTitle("");
+        setQIndex(0);
+      }
+    } else if (res.quiz) {
       const qs = (res.quiz.questions || []) as Question[];
       setQuestions(qs);
       setQuizTitle(
@@ -116,17 +134,48 @@ function FinalExamLiveHostPage() {
 
   useEffect(() => {
     if (authLoading || !isStaff) return;
-    void refresh();
+    void (async () => {
+      try {
+        const boot = await serverGetBootstrapData();
+        if (boot.success && Array.isArray(boot.courses) && boot.courses.length) {
+          const list = (boot.courses as Course[])
+            .filter((c) => c.status !== "archived")
+            .map((c) => ({
+              id: c.id,
+              code: c.code,
+              titleEn: c.titleEn,
+              titleBn: c.titleBn,
+            }));
+          setCourses(list);
+          if (!list.some((c) => c.id === courseId) && list[0]) {
+            setCourseId(list[0].id);
+          }
+        }
+      } catch {
+        // keep default courseId
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, isStaff]);
+
+  useEffect(() => {
+    if (authLoading || !isStaff) return;
+    setLoading(true);
+    setQuestions([]);
+    setQIndex(0);
+    void refresh({ forCourseId: courseId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, isStaff, courseId]);
 
   useEffect(() => {
     if (!isStaff) return undefined;
     const id = window.setInterval(() => {
-      void refresh({ light: true });
+      void refresh({ light: true, forCourseId: courseId });
       setNowTick(Date.now());
     }, 10_000);
     return () => window.clearInterval(id);
-  }, [isStaff]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isStaff, courseId]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowTick(Date.now()), 1000);
@@ -202,15 +251,89 @@ function FinalExamLiveHostPage() {
 
   const closeWindow = async () => {
     if (!exam) return;
-    if (!window.confirm("Close Final Exam window? Students cannot join after this.")) return;
+    const msg = alsoClosePractical
+      ? lang === "bn"
+        ? "কুইজ জয়েন উইন্ডো এবং প্রায়োগিক উইন্ডো দুটোই বন্ধ করবেন?"
+        : "Close quiz join window AND practical window?"
+      : lang === "bn"
+        ? "কুইজ জয়েন উইন্ডো বন্ধ করবেন? (প্রায়োগিক খোলা থাকবে)"
+        : "Close Final Exam quiz join window? (Practical stays open unless checked.)";
+    if (!window.confirm(msg)) return;
     setBusy("close");
     try {
-      const res = await serverCloseFinalExamWindow({ data: { examId: exam.id } });
-      setNotice(res.success ? "Window closed." : res.error || "Close failed");
+      const res = await serverCloseFinalExamWindow({
+        data: { examId: exam.id, alsoClosePractical },
+      });
+      setNotice(
+        res.success
+          ? alsoClosePractical
+            ? lang === "bn"
+              ? "কুইজ + প্রায়োগিক উইন্ডো বন্ধ।"
+              : "Quiz + practical windows closed."
+            : lang === "bn"
+              ? "কুইজ জয়েন উইন্ডো বন্ধ (প্রায়োগিক খোলা)।"
+              : "Quiz join closed (practical still open)."
+          : res.error || "Close failed",
+      );
       if (res.success && res.exam) {
         setExam(res.exam as PracticalExam);
         setWindowOpen(false);
       }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const closePracticalOnly = async () => {
+    if (!exam) return;
+    if (
+      !window.confirm(
+        lang === "bn"
+          ? "শুধু প্রায়োগিক জমা উইন্ডো বন্ধ করবেন? কুইজ জয়েন অপরিবর্তিত থাকবে।"
+          : "Close practical submission window only? Quiz join stays unchanged.",
+      )
+    ) {
+      return;
+    }
+    setBusy("close-practical");
+    try {
+      const next: PracticalExam = {
+        ...exam,
+        practicalWindowOpen: false,
+        updatedAt: new Date().toISOString(),
+      };
+      const res = await serverSavePracticalExam({ data: { exam: next } });
+      setNotice(
+        res.success
+          ? lang === "bn"
+            ? "প্রায়োগিক উইন্ডো বন্ধ।"
+            : "Practical window closed."
+          : res.error || "Close practical failed",
+      );
+      if (res.success && res.exam) setExam(res.exam as PracticalExam);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const openPracticalWindow = async () => {
+    if (!exam) return;
+    setBusy("open-practical");
+    try {
+      const next: PracticalExam = {
+        ...exam,
+        practicalWindowOpen: true,
+        updatedAt: new Date().toISOString(),
+      };
+      const res = await serverSavePracticalExam({ data: { exam: next } });
+      setNotice(
+        res.success
+          ? lang === "bn"
+            ? "প্রায়োগিক উইন্ডো খোলা।"
+            : "Practical window opened."
+          : res.error || "Open practical failed",
+      );
+      if (res.success && res.exam) setExam(res.exam as PracticalExam);
     } finally {
       setBusy(null);
     }
@@ -322,7 +445,9 @@ function FinalExamLiveHostPage() {
             {joinUrl}
           </div>
           <div className="mt-1 text-xs text-white/50">
-            PIN → Roll + Mobile → Start quiz · one overall countdown (not per-question)
+            {lang === "bn"
+              ? "PIN → মোবাইল সার্চ → কুইজ · একটি মোট কাউন্টডাউন (প্রশ্নপ্রতি নয়)"
+              : "PIN → Mobile search → Quiz · one overall countdown (not per-question)"}
           </div>
         </div>
 
@@ -424,6 +549,24 @@ function FinalExamLiveHostPage() {
               Share PIN + join link, customize overall quiz minutes, project questions for the room,
               and monitor who has joined — while candidates answer on their own devices.
             </p>
+            {courses.length > 0 && (
+              <label className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold">
+                <span className="text-muted-foreground">
+                  {lang === "bn" ? "কোর্স" : "Course"}
+                </span>
+                <select
+                  className="staff-input !py-1.5 !text-xs max-w-xs"
+                  value={courseId}
+                  onChange={(e) => setCourseId(e.target.value)}
+                >
+                  {courses.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.code} — {lang === "bn" ? c.titleBn : c.titleEn}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <Link to="/admin" className="staff-btn-ghost">
@@ -432,7 +575,11 @@ function FinalExamLiveHostPage() {
             <Link to="/final-exam" className="staff-btn-ghost">
               Student join page
             </Link>
-            <button type="button" className="staff-btn-ghost" onClick={() => void refresh()}>
+            <button
+              type="button"
+              className="staff-btn-ghost"
+              onClick={() => void refresh({ forCourseId: courseId })}
+            >
               <RefreshCw className="h-3.5 w-3.5" /> Refresh
             </button>
             <button type="button" className="staff-btn-primary" onClick={enterFullscreen}>
@@ -511,26 +658,54 @@ function FinalExamLiveHostPage() {
               </label>
 
               <div className="rounded-xl border border-border bg-muted/30 p-3 text-xs space-y-2">
-                <div className="font-semibold">Join link</div>
+                <div className="font-semibold">
+                  {lang === "bn" ? "জয়েন লিংক + QR" : "Join link + QR"}
+                </div>
                 <div className="break-all font-mono text-[11px]">{joinUrl}</div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="staff-btn-ghost !py-1.5 !px-2 text-[10px]"
-                    onClick={() => void copyText("link", joinUrl)}
-                  >
-                    <ClipboardCopy className="h-3 w-3" />
-                    {copied === "link" ? "Copied" : "Copy link"}
-                  </button>
-                  <button
-                    type="button"
-                    className="staff-btn-ghost !py-1.5 !px-2 text-[10px]"
-                    onClick={() => void copyText("pin", exam.joinPin || "")}
-                    disabled={!exam.joinPin}
-                  >
-                    <KeyRound className="h-3 w-3" />
-                    {copied === "pin" ? "Copied" : "Copy PIN"}
-                  </button>
+                <p className="text-[10px] text-muted-foreground">
+                  {lang === "bn"
+                    ? "PIN → মোবাইল সার্চ → কুইজ"
+                    : "PIN → Mobile search → Quiz"}
+                </p>
+                <div className="flex flex-wrap items-start gap-3">
+                  <img
+                    alt="QR"
+                    width={160}
+                    height={160}
+                    className="rounded-xl border border-border bg-white p-1"
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(joinUrl)}`}
+                  />
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      className="staff-btn-ghost !py-1.5 !px-2 text-[10px]"
+                      onClick={() => void copyText("link", joinUrl)}
+                    >
+                      <ClipboardCopy className="h-3 w-3" />
+                      {copied === "link"
+                        ? lang === "bn"
+                          ? "কপি হয়েছে"
+                          : "Copied"
+                        : lang === "bn"
+                          ? "লিংক কপি"
+                          : "Copy link"}
+                    </button>
+                    <button
+                      type="button"
+                      className="staff-btn-ghost !py-1.5 !px-2 text-[10px]"
+                      onClick={() => void copyText("pin", exam.joinPin || "")}
+                      disabled={!exam.joinPin}
+                    >
+                      <KeyRound className="h-3 w-3" />
+                      {copied === "pin"
+                        ? lang === "bn"
+                          ? "কপি হয়েছে"
+                          : "Copied"
+                        : lang === "bn"
+                          ? "PIN কপি"
+                          : "Copy PIN"}
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -554,8 +729,49 @@ function FinalExamLiveHostPage() {
                   onClick={() => void closeWindow()}
                   className="inline-flex items-center gap-1 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs font-bold text-destructive"
                 >
-                  <Square className="h-3.5 w-3.5" /> Close
+                  <Square className="h-3.5 w-3.5" />{" "}
+                  {lang === "bn" ? "কুইজ বন্ধ" : "Close quiz"}
                 </button>
+              </div>
+              <label className="flex items-center gap-2 text-[11px] font-semibold">
+                <input
+                  type="checkbox"
+                  checked={alsoClosePractical}
+                  onChange={(e) => setAlsoClosePractical(e.target.checked)}
+                />
+                {lang === "bn"
+                  ? "বন্ধ করার সময় প্রায়োগিকও বন্ধ করুন"
+                  : "Also close practical when closing quiz"}
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={busy === "close-practical" || exam.practicalWindowOpen === false}
+                  onClick={() => void closePracticalOnly()}
+                  className="staff-btn-ghost flex-1 !text-[10px]"
+                >
+                  {busy === "close-practical" ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Square className="h-3 w-3" />
+                  )}
+                  {lang === "bn" ? "শুধু প্রায়োগিক বন্ধ" : "Close practical only"}
+                </button>
+                {exam.practicalWindowOpen === false && (
+                  <button
+                    type="button"
+                    disabled={busy === "open-practical"}
+                    onClick={() => void openPracticalWindow()}
+                    className="staff-btn-ghost flex-1 !text-[10px]"
+                  >
+                    {busy === "open-practical" ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Timer className="h-3 w-3" />
+                    )}
+                    {lang === "bn" ? "প্রায়োগিক খুলুন" : "Open practical"}
+                  </button>
+                )}
               </div>
               <button
                 type="button"

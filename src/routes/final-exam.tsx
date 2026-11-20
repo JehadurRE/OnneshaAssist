@@ -642,7 +642,15 @@ function FinalExamPage() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => void submitQuiz(false)}
+                    onClick={() => {
+                      const ok = window.confirm(
+                        lang === "bn"
+                          ? "কুইজ জমা দিতে নিশ্চিত? জমার পর উত্তর আর বদলানো যাবে না।"
+                          : "Submit quiz now? You will not be able to change answers after this.",
+                      );
+                      if (!ok) return;
+                      void submitQuiz(false);
+                    }}
                     disabled={submitting}
                     className="staff-btn-primary"
                   >

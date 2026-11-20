@@ -4,6 +4,7 @@ import {
   serverBulkIssueCourseCertificates,
   serverCloseFinalExamWindow,
   serverDownloadPracticalFile,
+  serverExtendFinalExamAttempt,
   serverGetBootstrapData,
   serverGetFinalExamDesk,
   serverGradePracticalSubmission,
@@ -34,6 +35,7 @@ import {
 import {
   Award,
   ClipboardCheck,
+  Download,
   ExternalLink,
   KeyRound,
   Loader2,
@@ -46,6 +48,16 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
+
+type DeskAttempt = FinalExamAttempt & {
+  practicalStatus?: string | undefined;
+};
+
+function escapeCsvCell(value: string | number | undefined | null): string {
+  const s = value == null ? "" : String(value);
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
 
 function StatusPill({
   status,
@@ -79,7 +91,7 @@ export function AdminPracticalPanel(props: {
   );
   const [exams, setExams] = useState<PracticalExam[]>([]);
   const [subs, setSubs] = useState<PracticalSubmission[]>([]);
-  const [attempts, setAttempts] = useState<FinalExamAttempt[]>([]);
+  const [attempts, setAttempts] = useState<DeskAttempt[]>([]);
   const [requirements, setRequirements] = useState<CourseCompletionRequirement[]>([]);
   const [autoIssue, setAutoIssue] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -160,7 +172,7 @@ export function AdminPracticalPanel(props: {
           const others = prev.filter((e) => e.id !== res.exam!.id && e.courseId !== res.exam!.courseId);
           return [res.exam as PracticalExam, ...others];
         });
-        setAttempts((res.attempts as FinalExamAttempt[]) || []);
+        setAttempts((res.attempts as DeskAttempt[]) || []);
         setWindowOpen(!!res.windowOpen);
       }
     } finally {
@@ -522,6 +534,63 @@ export function AdminPracticalPanel(props: {
     }
   };
 
+  const exportAttemptsCsv = () => {
+    const header = [
+      "roll",
+      "name",
+      "status",
+      "quizMarks",
+      "practicalStatus",
+      "startedAt",
+      "submittedAt",
+    ];
+    const rows = attempts.map((a) =>
+      [
+        a.rollNumber,
+        a.studentName,
+        a.status,
+        typeof a.quizMarks === "number" ? a.quizMarks : "",
+        a.practicalStatus || "none",
+        a.startedAt || "",
+        a.submittedAt || "",
+      ]
+        .map(escapeCsvCell)
+        .join(","),
+    );
+    const csv = [header.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `final-exam-attempts-${course?.code || courseId}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setNotice(`Exported ${attempts.length} attempt(s) to CSV.`);
+  };
+
+  const extendAttempt = async (attemptId: string, extraMinutes: number) => {
+    setBusyId(`extend-${attemptId}-${extraMinutes}`);
+    setNotice(null);
+    try {
+      const res = await serverExtendFinalExamAttempt({
+        data: { attemptId, extraMinutes },
+      });
+      setNotice(
+        res.success
+          ? `Extended attempt +${extraMinutes} min (ends ${res.attempt?.endsAt ? new Date(res.attempt.endsAt).toLocaleTimeString() : "—"}).`
+          : res.error || "Extend failed.",
+      );
+      if (res.success && res.attempt) {
+        setAttempts((prev) =>
+          prev.map((a) => (a.id === res.attempt!.id ? { ...a, ...res.attempt! } : a)),
+        );
+      }
+      await refreshDesk();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   return (
     <div className="space-y-6 staff-surface">
       <div className="staff-panel-header !border-0 !pb-0 !mb-0">
@@ -733,23 +802,39 @@ export function AdminPracticalPanel(props: {
             </div>
           </div>
 
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-bold text-muted-foreground">
+              Live attempts ({attempts.length})
+            </div>
+            <button
+              type="button"
+              onClick={exportAttemptsCsv}
+              disabled={attempts.length === 0}
+              className="staff-btn-ghost !py-1.5 !px-2 text-[10px] disabled:opacity-50"
+            >
+              <Download className="h-3 w-3" /> Export CSV
+            </button>
+          </div>
+
           <div className="overflow-x-auto rounded-xl border border-border bg-card">
-            <table className="w-full min-w-[520px] text-left text-xs">
+            <table className="w-full min-w-[640px] text-left text-xs">
               <thead className="border-b border-border bg-muted/40 text-[10px] uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2 font-bold">Roll</th>
                   <th className="px-3 py-2 font-bold">Name</th>
                   <th className="px-3 py-2 font-bold">Status</th>
                   <th className="px-3 py-2 font-bold">Score</th>
+                  <th className="px-3 py-2 font-bold">Practical</th>
                   <th className="px-3 py-2 font-bold">Ends / submitted</th>
+                  <th className="px-3 py-2 font-bold">Extend</th>
                 </tr>
               </thead>
               <tbody>
                 {attempts.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
-                      No quiz attempts yet. After you open the window, students joining with PIN +
-                      roll + mobile appear here (auto-refresh every 12s).
+                    <td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
+                      No quiz attempts yet. After you open the window, students joining with PIN →
+                      mobile search appear here (auto-refresh every 12s).
                     </td>
                   </tr>
                 ) : (
@@ -765,12 +850,39 @@ export function AdminPracticalPanel(props: {
                           ? `${a.quizMarks}/${a.quizMaxMarks ?? "—"} (${a.accuracyPct ?? "—"}%)`
                           : "—"}
                       </td>
+                      <td className="px-3 py-2">
+                        <StatusPill status={a.practicalStatus || "none"} />
+                      </td>
                       <td className="px-3 py-2 font-mono text-[10px] text-muted-foreground">
                         {a.submittedAt
                           ? new Date(a.submittedAt).toLocaleString()
                           : a.endsAt
                             ? `until ${new Date(a.endsAt).toLocaleTimeString()}`
                             : "—"}
+                      </td>
+                      <td className="px-3 py-2">
+                        {a.status === "in_progress" ? (
+                          <div className="flex flex-wrap gap-1">
+                            <button
+                              type="button"
+                              disabled={busyId === `extend-${a.id}-5`}
+                              onClick={() => void extendAttempt(a.id, 5)}
+                              className="rounded-lg border border-border bg-background px-1.5 py-0.5 text-[10px] font-bold hover:bg-accent disabled:opacity-50"
+                            >
+                              +5m
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busyId === `extend-${a.id}-10`}
+                              onClick={() => void extendAttempt(a.id, 10)}
+                              className="rounded-lg border border-border bg-background px-1.5 py-0.5 text-[10px] font-bold hover:bg-accent disabled:opacity-50"
+                            >
+                              +10m
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </td>
                     </tr>
                   ))

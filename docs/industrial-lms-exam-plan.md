@@ -2,7 +2,7 @@
 
 **Product:** Learning Management System + Dedicated Examination System (classroom / institutional)  
 **Locale:** EN + BN · Bangladesh roster · PIN live rooms · Final Exam package  
-**Status:** Plan + implementation on branch `cursor/lms-exam-industrial-0b7e`
+**Status:** Shipped on `main` / remaining polish cleared in `cursor/ship-remaining-gaps-0b7e`
 
 ---
 
@@ -78,12 +78,12 @@ FinalExamAttempt.answers autosaved during in_progress
 
 ## Acceptance (industrial bar for this ship)
 
-- [ ] Student can finish Final MCQ after refresh; Submit always shows clear success/error  
-- [ ] Live host shows quiz questions **and** practical assignment for screen-share  
-- [ ] Portal shows Materials, Recordings, AI Tutor for the course  
-- [ ] Admin can add/edit/publish materials & recordings  
-- [ ] AI tutor refuses when no materials / no Gemini key; answers cite course context  
-- [ ] Closing quiz window does not block practical submit  
+- [x] Student can finish Final MCQ after refresh; Submit always shows clear success/error  
+- [x] Live host shows quiz questions **and** practical assignment for screen-share  
+- [x] Portal shows Materials, Recordings, AI Tutor for the course  
+- [x] Admin can add/edit/publish materials & recordings  
+- [x] AI tutor refuses when no materials / no Gemini key; answers cite course context  
+- [x] Closing quiz window does not block practical submit  
 
 ---
 

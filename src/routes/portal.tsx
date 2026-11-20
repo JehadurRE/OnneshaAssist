@@ -41,6 +41,7 @@ import {
   Phone,
   ShieldCheck,
   Sparkles,
+  Timer,
   Upload,
   User,
 } from "lucide-react";
@@ -118,8 +119,16 @@ function StudentPortalPage() {
   const [error, setError] = useState<string | null>(null);
   const [portal, setPortal] = useState<PortalPayload | null>(null);
   const [portalTab, setPortalTab] = useState<
-    "overview" | "materials" | "recordings" | "tutor" | "practical" | "certificate"
+    | "overview"
+    | "materials"
+    | "recordings"
+    | "quizzes"
+    | "final"
+    | "tutor"
+    | "practical"
+    | "certificate"
   >("overview");
+  const [switchingCourse, setSwitchingCourse] = useState(false);
   const [tutorQ, setTutorQ] = useState("");
   const [tutorA, setTutorA] = useState<string | null>(null);
   const [tutorBusy, setTutorBusy] = useState(false);
@@ -217,6 +226,32 @@ function StudentPortalPage() {
     );
     setPortalTab("overview");
     return true;
+  };
+
+  const switchCourse = async (nextCourseId: string) => {
+    if (!nextCourseId || nextCourseId === portal?.course?.id) return;
+    setSwitchingCourse(true);
+    setNotice(null);
+    try {
+      const res = await serverGetStudentPortal({ data: { courseId: nextCourseId } });
+      if (!res.success) {
+        setNoticeTone("err");
+        setNotice(res.error || "Could not switch course.");
+        return;
+      }
+      setPortal(res);
+      hydrateDrafts(
+        res.practicalExam as PracticalExam | undefined,
+        res.submission as PracticalSubmission | undefined,
+      );
+      setTutorA(null);
+      setTutorQ("");
+    } catch (err) {
+      setNoticeTone("err");
+      setNotice(err instanceof Error ? err.message : "Could not switch course.");
+    } finally {
+      setSwitchingCourse(false);
+    }
   };
 
   const requestOtp = async (e: React.FormEvent) => {
@@ -652,6 +687,26 @@ function StudentPortalPage() {
                   <p className="mt-2 text-sm font-semibold">
                     {portal.course?.code} — {lang === "bn" ? portal.course?.titleBn : portal.course?.titleEn}
                   </p>
+                  {(portal.courses?.length || 0) > 1 && (
+                    <label className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold">
+                      <span className="text-muted-foreground">
+                        {lang === "bn" ? "কোর্স" : "Course"}
+                      </span>
+                      <select
+                        className="staff-input !py-1.5 !text-xs max-w-xs"
+                        value={portal.course?.id || ""}
+                        disabled={switchingCourse}
+                        onChange={(e) => void switchCourse(e.target.value)}
+                      >
+                        {(portal.courses || []).map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.code} — {lang === "bn" ? c.titleBn : c.titleEn}
+                          </option>
+                        ))}
+                      </select>
+                      {switchingCourse && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    </label>
+                  )}
                   <button
                     type="button"
                     onClick={() => void signOutPortal()}
@@ -682,6 +737,8 @@ function StudentPortalPage() {
                   ["overview", lang === "bn" ? "ওভারভিউ" : "Overview", BookOpen],
                   ["materials", lang === "bn" ? "ম্যাটেরিয়াল" : "Materials", BookOpen],
                   ["recordings", lang === "bn" ? "রেকর্ডিং" : "Recordings", Film],
+                  ["quizzes", lang === "bn" ? "কুইজ" : "Quizzes", CheckCircle2],
+                  ["final", lang === "bn" ? "ফাইনাল" : "Final", Timer],
                   ["tutor", lang === "bn" ? "AI টিউটর" : "AI Tutor", Sparkles],
                   ["practical", lang === "bn" ? "প্রায়োগিক" : "Practical", ClipboardList],
                   ["certificate", lang === "bn" ? "সনদ" : "Certificate", Award],
@@ -702,6 +759,18 @@ function StudentPortalPage() {
                 </button>
               ))}
             </div>
+
+            {notice && portalTab !== "practical" && portalTab !== "overview" && (
+              <p
+                className={`text-sm font-semibold ${
+                  noticeTone === "err"
+                    ? "text-destructive"
+                    : "text-emerald-700 dark:text-emerald-300"
+                }`}
+              >
+                {notice}
+              </p>
+            )}
 
             {(portal.announcements as { titleEn: string; titleBn: string; bodyEn: string; bodyBn: string }[] | undefined)
               ?.length ? (
@@ -782,6 +851,130 @@ function StudentPortalPage() {
                     </a>
                   ))
                 )}
+              </section>
+            )}
+
+            {portalTab === "quizzes" && (
+              <section className="staff-panel space-y-3">
+                <div className="flex items-center gap-2 font-bold">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  {lang === "bn" ? "কুইজ অগ্রগতি" : "Quiz progress"}
+                  {progressSummary && (
+                    <span className="ml-auto font-mono text-xs text-muted-foreground">
+                      {progressSummary.done}/{progressSummary.total}{" "}
+                      {lang === "bn" ? "পাস" : "passed"}
+                    </span>
+                  )}
+                </div>
+                {(portal.quizProgress || []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    {lang === "bn"
+                      ? "এই কোর্সে এখনো কোনো সেশন কুইজ নেই।"
+                      : "No session quizzes for this course yet."}
+                  </p>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {(portal.quizProgress || []).map((q) => (
+                      <div
+                        key={q.quizId}
+                        className="rounded-2xl border border-border px-3 py-3 text-sm flex items-center justify-between gap-2"
+                      >
+                        <div>
+                          <div className="font-semibold">
+                            #{q.quizNumber ?? "—"}{" "}
+                            {lang === "bn" ? q.titleBn : q.titleEn}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {q.questionCount} Qs
+                            {typeof q.bestAccuracyPct === "number"
+                              ? ` · ${q.bestAccuracyPct}% ${lang === "bn" ? "সঠিকতা" : "accuracy"}`
+                              : ` · ${lang === "bn" ? "এখনো দেননি" : "not taken"}`}
+                            {q.passed
+                              ? ` · ${lang === "bn" ? "পাস" : "pass"}`
+                              : typeof q.bestAccuracyPct === "number"
+                                ? ` · ${lang === "bn" ? "ফেল" : "not passed"}`
+                                : ""}
+                          </div>
+                        </div>
+                        {q.passed ? (
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                        ) : (
+                          <span className="text-[10px] font-bold uppercase text-muted-foreground">
+                            pending
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <Link to="/play" className="inline-flex text-sm font-bold text-emerald-700 hover:underline">
+                  {lang === "bn" ? "লাইভ অ্যারেনা যোগ দিন →" : "Join live arena →"}
+                </Link>
+              </section>
+            )}
+
+            {portalTab === "final" && (
+              <section className="staff-panel space-y-4">
+                <div className="flex items-center gap-2 font-bold">
+                  <Timer className="h-4 w-4 text-amber-600" />
+                  {lang === "bn" ? "চূড়ান্ত পরীক্ষা" : "Final Exam"}
+                </div>
+                {portal.finalAttempt ? (
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="staff-metric">
+                      <div className="staff-metric-label">
+                        {lang === "bn" ? "স্ট্যাটাস" : "Status"}
+                      </div>
+                      <div className="staff-metric-value text-base capitalize">
+                        {portal.finalAttempt.status}
+                      </div>
+                    </div>
+                    <div className="staff-metric">
+                      <div className="staff-metric-label">
+                        {lang === "bn" ? "কুইজ নম্বর" : "Quiz marks"}
+                      </div>
+                      <div className="staff-metric-value text-base font-mono">
+                        {typeof portal.finalAttempt.quizMarks === "number"
+                          ? `${portal.finalAttempt.quizMarks}/${portal.finalAttempt.quizMaxMarks ?? "—"}`
+                          : "—"}
+                      </div>
+                    </div>
+                    <div className="staff-metric staff-metric-emerald">
+                      <div className="staff-metric-label">
+                        {lang === "bn" ? "সঠিকতা" : "Accuracy"}
+                      </div>
+                      <div className="staff-metric-value text-base font-mono">
+                        {typeof portal.finalAttempt.accuracyPct === "number"
+                          ? `${portal.finalAttempt.accuracyPct}%`
+                          : "—"}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {lang === "bn"
+                      ? "এখনো ফাইনাল কুইজ জমা নেই — PIN দিয়ে /final-exam এ যোগ দিন।"
+                      : "No Final Quiz attempt yet — join with PIN at /final-exam."}
+                  </p>
+                )}
+                {portal.finalAttempt?.submittedAt && (
+                  <p className="text-xs text-muted-foreground font-mono">
+                    {lang === "bn" ? "জমা" : "Submitted"}:{" "}
+                    {new Date(portal.finalAttempt.submittedAt).toLocaleString()}
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <Link to="/final-exam" className="staff-btn-primary">
+                    {lang === "bn" ? "ফাইনাল পরীক্ষা ডেস্ক →" : "Open Final Exam desk →"}
+                  </Link>
+                  <button
+                    type="button"
+                    className="staff-btn-ghost"
+                    onClick={() => setPortalTab("practical")}
+                  >
+                    {lang === "bn" ? "প্রায়োগিক জমা →" : "Practical submission →"}
+                  </button>
+                </div>
               </section>
             )}
 
