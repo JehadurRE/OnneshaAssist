@@ -377,9 +377,17 @@
     background: color-mix(in oklch, var(--color-accent) 55%, transparent);
   }
 
-  /* Assessment review cards — Final Exam Desk grading */
+  /* Assessment review — one student page */
   .assess-card {
     @apply overflow-hidden rounded-3xl border border-border/80 bg-card shadow-[0_1px_0_rgba(15,23,42,0.04)];
+    animation: assess-enter 0.28s ease-out;
+  }
+  @keyframes assess-enter {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .assess-card { animation: none; }
   }
   .assess-card-head {
     @apply flex flex-wrap items-start justify-between gap-4 border-b border-border/70 bg-gradient-to-br from-muted/50 via-card to-card px-5 py-4;

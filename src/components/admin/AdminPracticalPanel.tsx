@@ -35,6 +35,8 @@ import {
 } from "@/lib/practical-exam";
 import {
   Award,
+  ChevronLeft,
+  ChevronRight,
   ClipboardCheck,
   Download,
   ExternalLink,
@@ -53,6 +55,8 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
+
+export type FinalExamDeskView = "live" | "grade" | "setup" | "certs";
 
 type DeskAttempt = FinalExamAttempt & {
   practicalStatus?: string | undefined;
@@ -90,6 +94,18 @@ export function AdminPracticalPanel(props: {
   courses: Course[];
   quizzes: Quiz[];
   initialCourseId?: string | undefined;
+  /** Controlled desk section from the URL (?desk=). */
+  desk?: FinalExamDeskView | undefined;
+  /** Controlled submission id from the URL (?sub=) — one student per page. */
+  subId?: string | undefined;
+  /** Push desk/course/student into the route search so the address bar updates. */
+  onDeskNavigate?:
+    | ((patch: {
+        courseId?: string | undefined;
+        desk?: FinalExamDeskView | undefined;
+        subId?: string | null | undefined;
+      }) => void)
+    | undefined;
 }) {
   const [courseId, setCourseId] = useState(
     props.initialCourseId || props.courses[0]?.id || "course-sanjibon-ai-dm",
@@ -107,7 +123,20 @@ export function AdminPracticalPanel(props: {
   const [feedbackBySub, setFeedbackBySub] = useState<Record<string, string>>({});
   const [windowHours, setWindowHours] = useState(3);
   const [windowOpen, setWindowOpen] = useState(false);
-  const [deskView, setDeskView] = useState<"live" | "grade" | "setup" | "certs">("live");
+  const [deskView, setDeskView] = useState<FinalExamDeskView>(props.desk || "live");
+  const [activeSubId, setActiveSubId] = useState<string | null>(props.subId || null);
+  const [queueFilter, setQueueFilter] = useState<"needs" | "graded" | "all">("needs");
+
+  const goDesk = (patch: {
+    courseId?: string;
+    desk?: FinalExamDeskView;
+    subId?: string | null;
+  }) => {
+    if (patch.courseId !== undefined) setCourseId(patch.courseId);
+    if (patch.desk !== undefined) setDeskView(patch.desk);
+    if (patch.subId !== undefined) setActiveSubId(patch.subId);
+    props.onDeskNavigate?.(patch);
+  };
 
   const course = useMemo(
     () => props.courses.find((c) => c.id === courseId) || props.courses[0],
@@ -195,6 +224,14 @@ export function AdminPracticalPanel(props: {
   }, [props.initialCourseId]);
 
   useEffect(() => {
+    if (props.desk) setDeskView(props.desk);
+  }, [props.desk]);
+
+  useEffect(() => {
+    setActiveSubId(props.subId || null);
+  }, [props.subId]);
+
+  useEffect(() => {
     void refreshDesk();
   }, [courseId]);
 
@@ -245,6 +282,34 @@ export function AdminPracticalPanel(props: {
       ).length,
     [courseSubs],
   );
+
+  const filteredQueue = useMemo(() => {
+    if (queueFilter === "all") return courseSubs;
+    if (queueFilter === "graded") return courseSubs.filter((s) => s.status === "graded");
+    return courseSubs.filter(
+      (s) => s.status === "submitted" || s.status === "late" || s.status === "returned",
+    );
+  }, [courseSubs, queueFilter]);
+
+  const activeSub = useMemo(() => {
+    if (!activeSubId) return undefined;
+    return (
+      courseSubs.find((s) => s.id === activeSubId) ||
+      filteredQueue.find((s) => s.id === activeSubId)
+    );
+  }, [activeSubId, courseSubs, filteredQueue]);
+
+  const navQueue = useMemo(() => {
+    if (activeSub && !filteredQueue.some((s) => s.id === activeSub.id)) {
+      return [activeSub, ...filteredQueue];
+    }
+    return filteredQueue;
+  }, [activeSub, filteredQueue]);
+
+  const activeSubIndex = useMemo(() => {
+    if (!activeSub) return -1;
+    return navQueue.findIndex((s) => s.id === activeSub.id);
+  }, [navQueue, activeSub]);
 
   const markKey = (subId: string, taskId: string) => `${subId}::${taskId}`;
 
@@ -651,7 +716,7 @@ export function AdminPracticalPanel(props: {
   };
 
   const deskTabs: {
-    id: typeof deskView;
+    id: FinalExamDeskView;
     label: string;
     icon: React.ReactNode;
     badge?: number | undefined;
@@ -699,7 +764,7 @@ export function AdminPracticalPanel(props: {
           <select
             className="staff-input"
             value={courseId}
-            onChange={(e) => setCourseId(e.target.value)}
+            onChange={(e) => goDesk({ courseId: e.target.value, subId: null })}
           >
             {props.courses.map((c) => (
               <option key={c.id} value={c.id}>
@@ -733,7 +798,7 @@ export function AdminPracticalPanel(props: {
             <button
               key={tab.id}
               type="button"
-              onClick={() => setDeskView(tab.id)}
+              onClick={() => goDesk({ desk: tab.id, subId: tab.id === "grade" ? activeSubId : null })}
               className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors ${
                 active
                   ? "bg-card text-foreground shadow-sm"
@@ -1007,7 +1072,7 @@ export function AdminPracticalPanel(props: {
           <button
             type="button"
             onClick={() => {
-              setDeskView("setup");
+              goDesk({ desk: "setup", subId: null });
               const created = ensureExamLocal();
               if (created) void saveExamMeta(created);
             }}
@@ -1432,17 +1497,15 @@ export function AdminPracticalPanel(props: {
         </>
       )}
 
-      {deskView === "grade" && (
-      <section className="space-y-4">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="min-w-0 space-y-1">
-            <h3 className="text-base font-black tracking-tight">Grade practical work</h3>
-            <p className="text-xs text-muted-foreground">
-              Review answers, enter marks, then issue the course certificate. Certificates unlock
-              only after a grade is saved.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
+      {deskView === "grade" && !activeSub && (
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-0 space-y-1">
+              <h3 className="text-base font-black tracking-tight">Grading queue</h3>
+              <p className="text-xs text-muted-foreground">
+                Open one student at a time. Mark, save, then move to the next.
+              </p>
+            </div>
             <button
               type="button"
               onClick={() => void bulkIssue()}
@@ -1452,28 +1515,136 @@ export function AdminPracticalPanel(props: {
               <Award className="h-3.5 w-3.5" /> Issue all eligible
             </button>
           </div>
-        </div>
 
-        {courseSubs.length === 0 ? (
-          <div className="staff-empty">
-            <p className="staff-empty-title">No submissions yet</p>
-            <p className="staff-empty-desc">
-              Students submit practical work from the portal after the final quiz unlocks.
-            </p>
+          <div className="flex flex-wrap gap-1 rounded-2xl border border-border/80 bg-muted/30 p-1">
+            {(
+              [
+                { id: "needs" as const, label: `Needs grade (${pendingGradeCount})` },
+                {
+                  id: "graded" as const,
+                  label: `Graded (${courseSubs.filter((s) => s.status === "graded").length})`,
+                },
+                { id: "all" as const, label: `All (${courseSubs.length})` },
+              ] as const
+            ).map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setQueueFilter(f.id)}
+                className={`rounded-xl px-3 py-1.5 text-[11px] font-bold transition-colors ${
+                  queueFilter === f.id
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
           </div>
-        ) : (
-          courseSubs.map((sub) => {
+
+          {courseSubs.length === 0 ? (
+            <div className="staff-empty">
+              <p className="staff-empty-title">No submissions yet</p>
+              <p className="staff-empty-desc">
+                Students submit practical work from the portal after the final quiz unlocks.
+              </p>
+            </div>
+          ) : filteredQueue.length === 0 ? (
+            <div className="staff-empty">
+              <p className="staff-empty-title">Nothing in this filter</p>
+              <p className="staff-empty-desc">Try Graded or All.</p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-border/70 overflow-hidden rounded-3xl border border-border/80 bg-card">
+              {filteredQueue.map((sub, idx) => (
+                <li key={sub.id}>
+                  <button
+                    type="button"
+                    onClick={() => goDesk({ desk: "grade", subId: sub.id })}
+                    className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/40"
+                  >
+                    <span className="w-7 shrink-0 font-mono text-[11px] font-bold text-muted-foreground">
+                      {idx + 1}
+                    </span>
+                    <div className="assess-avatar !h-9 !w-9 !text-[11px]" aria-hidden>
+                      {studentInitials(sub.studentName)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-bold">{sub.studentName}</div>
+                      <div className="truncate font-mono text-[11px] text-muted-foreground">
+                        {sub.rollNumber}
+                        {sub.regionName ? ` · ${sub.regionName}` : ""}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <StatusPill status={sub.status} />
+                      {typeof sub.quizAccuracyPct === "number" && (
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          quiz {sub.quizAccuracyPct}%
+                        </span>
+                      )}
+                    </div>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {deskView === "grade" && activeSub && (
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => goDesk({ desk: "grade", subId: null })}
+              className="staff-btn-ghost !py-1.5 !px-2.5 text-[11px]"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" /> Queue
+            </button>
+            <div className="font-mono text-[11px] font-bold text-muted-foreground">
+              {activeSubIndex + 1} / {navQueue.length}
+            </div>
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                disabled={activeSubIndex <= 0}
+                onClick={() => {
+                  const prev = navQueue[activeSubIndex - 1];
+                  if (prev) goDesk({ desk: "grade", subId: prev.id });
+                }}
+                className="staff-btn-ghost !py-1.5 !px-2.5 text-[11px] disabled:opacity-40"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" /> Prev
+              </button>
+              <button
+                type="button"
+                disabled={activeSubIndex < 0 || activeSubIndex >= navQueue.length - 1}
+                onClick={() => {
+                  const next = navQueue[activeSubIndex + 1];
+                  if (next) goDesk({ desk: "grade", subId: next.id });
+                }}
+                className="staff-btn-ghost !py-1.5 !px-2.5 text-[11px] disabled:opacity-40"
+              >
+                Next <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {(() => {
+            const sub = activeSub;
             const graded = sub.status === "graded";
             const issueReady = canIssueCert(sub);
             return (
-              <article key={sub.id} className="assess-card">
+              <article className="assess-card">
                 <header className="assess-card-head">
                   <div className="flex min-w-0 items-start gap-3">
                     <div className="assess-avatar" aria-hidden>
                       {studentInitials(sub.studentName)}
                     </div>
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-black tracking-tight">
+                      <div className="truncate text-lg font-black tracking-tight">
                         {sub.studentName}
                       </div>
                       <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
@@ -1505,17 +1676,19 @@ export function AdminPracticalPanel(props: {
 
                 <div className="assess-body">
                   <div className="assess-work">
-                    <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-muted-foreground">
+                    <div className="flex items-center gap-1.5 text-[11px] font-bold tracking-wide text-muted-foreground">
                       <FileText className="h-3.5 w-3.5" /> Submitted work
                     </div>
                     {sub.answers.length === 0 ? (
                       <p className="text-sm text-muted-foreground">No answers attached.</p>
                     ) : (
-                      sub.answers.map((a) => {
+                      sub.answers.map((a, taskIdx) => {
                         const task = exam?.tasks.find((t) => t.id === a.taskId);
                         return (
                           <div key={a.taskId} className="assess-task">
-                            <div className="assess-task-title">{task?.titleEn || a.taskId}</div>
+                            <div className="assess-task-title">
+                              {taskIdx + 1}. {task?.titleEn || a.taskId}
+                            </div>
                             <div className="assess-task-body">{a.textAnswer || "—"}</div>
                             {a.linkUrl && (
                               <a
@@ -1633,6 +1806,18 @@ export function AdminPracticalPanel(props: {
                               Save a grade first to unlock the course certificate.
                             </p>
                           )}
+                          {activeSubIndex < navQueue.length - 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = navQueue[activeSubIndex + 1];
+                                if (next) goDesk({ desk: "grade", subId: next.id });
+                              }}
+                              className="staff-btn-ghost w-full !justify-center"
+                            >
+                              Next student <ChevronRight className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </div>
                       </>
                     ) : (
@@ -1644,9 +1829,8 @@ export function AdminPracticalPanel(props: {
                 </div>
               </article>
             );
-          })
-        )}
-      </section>
+          })()}
+        </section>
       )}
     </div>
   );
