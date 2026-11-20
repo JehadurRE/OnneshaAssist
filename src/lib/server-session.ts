@@ -36,12 +36,14 @@ import {
 } from "./lms-content";
 import { askCourseTutorViaGemini } from "./ai-tutor-core";
 import {
+  buildCourseCertificateEmail,
   isPortalEmailConfigured,
   isValidPortalEmail,
   normalizePortalEmail,
   resolveBrevoApiKey,
   resolveResendApiKey,
   sendPortalOtpEmail,
+  sendTransactionalEmail,
 } from "./email-otp";
 import {
   buildOriginalCompletionIndex,
@@ -5781,24 +5783,102 @@ function issueCourseCertificateInStore(params: {
   return { success: true, certificate: sealed, snapshot: snap };
 }
 
+function resolvePublicOrigin(): string {
+  if (typeof process !== "undefined") {
+    const fromEnv =
+      process.env["PUBLIC_APP_ORIGIN"]?.trim() ||
+      process.env["APP_ORIGIN"]?.trim() ||
+      process.env["RENDER_EXTERNAL_URL"]?.trim();
+    if (fromEnv) return fromEnv.replace(/\/+$/, "");
+  }
+  return "https://arena.onnesha.courses";
+}
+
+function findRosterEmailForRoll(
+  store: PersistentStoreData,
+  rollNumber: string,
+): string | undefined {
+  const rollTok = normalizeRollToken(rollNumber);
+  const student = store.roster.find((s) => normalizeRollToken(s.rollNumber) === rollTok);
+  const email = (student?.email || "").trim().toLowerCase();
+  return isValidPortalEmail(email) ? email : undefined;
+}
+
+async function emailCourseCertificateToStudent(params: {
+  store: PersistentStoreData;
+  certificate: CertificateData;
+}): Promise<
+  | { emailed: true; to: string; provider: string }
+  | { emailed: false; reason: string }
+> {
+  const to = findRosterEmailForRoll(params.store, params.certificate.studentRoll || "");
+  if (!to) {
+    return {
+      emailed: false,
+      reason: "No roster email for this roll — add email on roster to send certificate mail.",
+    };
+  }
+  const origin = resolvePublicOrigin();
+  const certNo = params.certificate.certificateNumber;
+  const verifyPath =
+    params.certificate.verificationUrl?.startsWith("http")
+      ? params.certificate.verificationUrl
+      : `${origin}/verify/${certNo}`;
+  const content = buildCourseCertificateEmail({
+    studentName: params.certificate.studentName || "Student",
+    courseTitle: params.certificate.courseTitle || "Course",
+    courseCode: params.certificate.courseCode || "",
+    certificateNumber: certNo,
+    combinedScorePct:
+      params.certificate.combinedScorePct ?? params.certificate.accuracyPercent,
+    verifyUrl: verifyPath,
+    portalUrl: `${origin}/portal`,
+  });
+  const sent = await sendTransactionalEmail({
+    to,
+    subject: content.subject,
+    text: content.text,
+    html: content.html,
+  });
+  if (!sent.ok) return { emailed: false, reason: sent.error };
+  return { emailed: true, to, provider: sent.provider };
+}
+
 export const serverIssueCourseCertificate = createServerFn({ method: "POST" })
-  .validator((data: { courseId: string; rollNumber: string }) => data)
+  .validator(
+    (data: {
+      courseId: string;
+      rollNumber: string;
+      /** Default true — email certificate when roster email exists. */
+      sendEmail?: boolean | undefined;
+    }) => data,
+  )
   .handler(async ({ data }) => {
     const actor = await getActorFromRequest();
     if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
       return { success: false, error: "Staff authentication required." };
     }
     const store = getStore();
-    return issueCourseCertificateInStore({
+    const res = issueCourseCertificateInStore({
       store,
       courseId: data.courseId,
       rollNumber: data.rollNumber,
       instructorName: actor.name || "Chief Assessment Officer",
     });
+    if (!res.success || !res.certificate) return res;
+    const wantEmail = data.sendEmail !== false;
+    if (!wantEmail) return { ...res, email: { emailed: false as const, reason: "skipped" } };
+    const email = await emailCourseCertificateToStudent({
+      store,
+      certificate: res.certificate,
+    });
+    return { ...res, email };
   });
 
 export const serverBulkIssueCourseCertificates = createServerFn({ method: "POST" })
-  .validator((data: { courseId: string }) => data)
+  .validator(
+    (data: { courseId: string; sendEmail?: boolean | undefined }) => data,
+  )
   .handler(async ({ data }) => {
     const actor = await getActorFromRequest();
     if (!actor || actor.role !== "admin") {
@@ -5833,7 +5913,9 @@ export const serverBulkIssueCourseCertificates = createServerFn({ method: "POST"
       );
     }
 
+    const wantEmail = data.sendEmail !== false;
     const issued: string[] = [];
+    const emailed: string[] = [];
     const skipped: Array<{ roll: string; reason: string }> = [];
     for (const roll of candidateRolls) {
       const res = issueCourseCertificateInStore({
@@ -5842,10 +5924,50 @@ export const serverBulkIssueCourseCertificates = createServerFn({ method: "POST"
         rollNumber: roll,
         instructorName: actor.name || "Chief Assessment Officer",
       });
-      if (res.success && res.certificate) issued.push(res.certificate.certificateNumber);
-      else skipped.push({ roll, reason: res.error || "skipped" });
+      if (res.success && res.certificate) {
+        issued.push(res.certificate.certificateNumber);
+        if (wantEmail) {
+          const mail = await emailCourseCertificateToStudent({
+            store,
+            certificate: res.certificate,
+          });
+          if (mail.emailed) emailed.push(mail.to);
+          else if (!res.alreadyIssued) {
+            skipped.push({ roll, reason: `issued but email failed: ${mail.reason}` });
+          }
+        }
+      } else skipped.push({ roll, reason: res.error || "skipped" });
     }
-    return { success: true, issuedCount: issued.length, issued, skipped };
+    return {
+      success: true,
+      issuedCount: issued.length,
+      emailedCount: emailed.length,
+      issued,
+      emailed,
+      skipped,
+    };
+  });
+
+/** Resend course-completion certificate email for an already-issued cert. */
+export const serverSendCourseCertificateEmail = createServerFn({ method: "POST" })
+  .validator((data: { certificateNumber: string }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    const certNo = (data.certificateNumber || "").trim();
+    const certificate = store.certificates.find(
+      (c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase(),
+    );
+    if (!certificate) return { success: false as const, error: "Certificate not found." };
+    if (certificate.kind && certificate.kind !== "course_completion") {
+      // Still allow other kinds — same email template works with course fields.
+    }
+    const mail = await emailCourseCertificateToStudent({ store, certificate });
+    if (!mail.emailed) return { success: false as const, error: mail.reason };
+    return { success: true as const, to: mail.to, provider: mail.provider };
   });
 
 export const serverGetStudentPortal = createServerFn({ method: "POST" })

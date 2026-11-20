@@ -19,7 +19,11 @@ import {
 import { downloadCertificatePdf } from "@/lib/pdf-generator";
 import { clampPassThresholdPct, isPassingScore, resolvePassThresholdPct } from "@/lib/scoring";
 import { gameEngine } from "@/lib/game-engine";
-import { serverGetActiveRooms, serverResetAllStaffPasswords } from "@/lib/server-session";
+import {
+  serverGetActiveRooms,
+  serverResetAllStaffPasswords,
+  serverSendCourseCertificateEmail,
+} from "@/lib/server-session";
 import {
   BrandingSettings,
   CertificateData,
@@ -49,6 +53,7 @@ import {
   LayoutDashboard,
   Loader2,
   Lock,
+  Mail,
   MapPin,
   Percent,
   Play,
@@ -175,6 +180,7 @@ function SuperAdminPage() {
   );
   const [previewCert, setPreviewCert] = useState<CertificateData | null>(null);
   const [downloadingCertNo, setDownloadingCertNo] = useState<string | null>(null);
+  const [emailingCertNo, setEmailingCertNo] = useState<string | null>(null);
   const [confirmRevokeCertNo, setConfirmRevokeCertNo] = useState<string | null>(null);
   const [confirmPurgeUnder50, setConfirmPurgeUnder50] = useState(false);
   const [isPurgingUnder50, setIsPurgingUnder50] = useState(false);
@@ -375,6 +381,25 @@ function SuperAdminPage() {
         ? `Set passing threshold for "${course.code}" to ${nextThreshold}%.`
         : `"${course.code}" now inherits global passing threshold.`,
     );
+  };
+
+  const handleEmailCourseCertificate = async (cert: CertificateData) => {
+    if (emailingCertNo) return;
+    setEmailingCertNo(cert.certificateNumber);
+    try {
+      const res = await serverSendCourseCertificateEmail({
+        data: { certificateNumber: cert.certificateNumber },
+      });
+      showNotice(
+        res.success
+          ? `Certificate email sent to ${res.to} (${res.provider})`
+          : res.error || "Could not send certificate email.",
+      );
+    } catch (err) {
+      showNotice(err instanceof Error ? err.message : "Certificate email failed.");
+    } finally {
+      setEmailingCertNo(null);
+    }
   };
 
   const handleDownloadAdminCertPdf = async (cert: CertificateData) => {
@@ -2909,6 +2934,18 @@ function SuperAdminPage() {
                                         {downloadingCertNo === cert.certificateNumber
                                           ? "..."
                                           : "PDF"}
+                                      </span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={emailingCertNo === cert.certificateNumber}
+                                      onClick={() => void handleEmailCourseCertificate(cert)}
+                                      className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-500/20 disabled:opacity-50"
+                                      title="Email certificate to roster address"
+                                    >
+                                      <Mail className="h-3 w-3" />
+                                      <span>
+                                        {emailingCertNo === cert.certificateNumber ? "..." : "Email"}
                                       </span>
                                     </button>
                                     <Link

@@ -13,6 +13,7 @@ import {
   serverReturnPracticalForResubmit,
   serverSaveCourseRequirement,
   serverSavePracticalExam,
+  serverSendCourseCertificateEmail,
   serverSetAutoIssueQuizCertificates,
 } from "@/lib/server-session";
 import { db } from "@/lib/db";
@@ -309,15 +310,50 @@ export function AdminPracticalPanel(props: {
     setBusyId(`issue-${roll}`);
     try {
       const res = await serverIssueCourseCertificate({
-        data: { courseId: course.id, rollNumber: roll },
+        data: { courseId: course.id, rollNumber: roll, sendEmail: true },
+      });
+      if (!res.success) {
+        setNotice(res.error || "Issue failed.");
+        return;
+      }
+      const mail = "email" in res ? res.email : undefined;
+      const mailNote = mail?.emailed
+        ? ` · emailed ${mail.to}`
+        : mail && "reason" in mail
+          ? ` · email: ${mail.reason}`
+          : "";
+      setNotice(`Issued ${res.certificate?.certificateNumber}${mailNote}`);
+      await syncCertsIntoAdmin();
+      await refresh();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const emailCertOne = async (roll: string) => {
+    if (!course) return;
+    const cert = db
+      .getCertificates()
+      .find(
+        (c) =>
+          c.kind === "course_completion" &&
+          c.courseId === course.id &&
+          (c.studentRoll || "").toLowerCase() === roll.toLowerCase(),
+      );
+    if (!cert) {
+      setNotice("Issue the course certificate first, then email it.");
+      return;
+    }
+    setBusyId(`email-${roll}`);
+    try {
+      const res = await serverSendCourseCertificateEmail({
+        data: { certificateNumber: cert.certificateNumber },
       });
       setNotice(
         res.success
-          ? `Issued ${res.certificate?.certificateNumber}`
-          : res.error || "Issue failed.",
+          ? `Certificate email sent to ${res.to} via ${res.provider}`
+          : res.error || "Email failed.",
       );
-      await syncCertsIntoAdmin();
-      await refresh();
     } finally {
       setBusyId(null);
     }
@@ -327,17 +363,19 @@ export function AdminPracticalPanel(props: {
     if (!course) return;
     if (
       !window.confirm(
-        `Issue course certificates for all eligible graded candidates in ${course.code}?`,
+        `Issue course certificates for all eligible graded candidates in ${course.code}?\n\nRoster emails will receive completion certificate mail automatically.`,
       )
     ) {
       return;
     }
     setBusyId("bulk");
     try {
-      const res = await serverBulkIssueCourseCertificates({ data: { courseId: course.id } });
+      const res = await serverBulkIssueCourseCertificates({
+        data: { courseId: course.id, sendEmail: true },
+      });
       setNotice(
         res.success
-          ? `Bulk issued ${res.issuedCount} course certificate(s). Skipped ${res.skipped?.length || 0}.`
+          ? `Bulk issued ${res.issuedCount}; emailed ${res.emailedCount ?? 0}. Skipped ${res.skipped?.length || 0}.`
           : res.error || "Bulk issue failed.",
       );
       await syncCertsIntoAdmin();
@@ -1355,12 +1393,21 @@ export function AdminPracticalPanel(props: {
                     disabled={busyId === `issue-${sub.rollNumber}` || !canIssueCert(sub)}
                     title={
                       canIssueCert(sub)
-                        ? "Issue course completion certificate (server checks quiz + practical eligibility)"
+                        ? "Issue course completion certificate and email student (roster email)"
                         : "Grade the practical first"
                     }
                     className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-bold text-emerald-700 disabled:opacity-40"
                   >
-                    Issue course cert
+                    Issue + email cert
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void emailCertOne(sub.rollNumber)}
+                    disabled={busyId === `email-${sub.rollNumber}`}
+                    title="Resend course completion certificate email to roster address"
+                    className="rounded-xl border border-border bg-background px-2.5 py-1.5 text-[11px] font-bold hover:bg-accent disabled:opacity-40"
+                  >
+                    Email cert
                   </button>
                 </div>
               </div>

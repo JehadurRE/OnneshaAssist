@@ -1,15 +1,10 @@
 /**
- * Portal email OTP delivery: Resend first, Brevo fallback when Resend
- * is missing, rate-limited, or fails.
+ * Transactional email: Resend first, Brevo fallback (OTP + certificates).
  *
  * Env:
  *   RESEND_API_KEY
- *   BREVO_API_KEY  (Brevo / Sendinblue transactional API key)
+ *   BREVO_API_KEY  (or SENDINBLUE_API_KEY)
  *   PORTAL_OTP_FROM_EMAIL  e.g. Onnesha Arena <otp@onnesha.courses>
- *
- * Same custom domain can authenticate both providers:
- *   - one merged SPF TXT (include Resend + Brevo)
- *   - separate DKIM selectors (resend._domainkey + mail._domainkey)
  */
 
 export type PortalEmailProvider = "resend" | "brevo";
@@ -64,8 +59,10 @@ function isResendQuotaError(status: number, detail: string): boolean {
 
 async function sendViaResend(params: {
   to: string;
-  code: string;
   from: string;
+  subject: string;
+  text: string;
+  html?: string | undefined;
   apiKey: string;
 }): Promise<{ ok: true; provider: "resend" } | { ok: false; error: string; retryable: boolean }> {
   try {
@@ -78,8 +75,9 @@ async function sendViaResend(params: {
       body: JSON.stringify({
         from: params.from,
         to: [params.to],
-        subject: `${params.code} — Onnesha Arena portal login`,
-        text: `Your Onnesha Student Portal verification code is ${params.code}.\n\nValid for 5 minutes. Do not share this code.\n\n— Onnesha Arena`,
+        subject: params.subject,
+        text: params.text,
+        ...(params.html ? { html: params.html } : {}),
       }),
     });
     if (!res.ok) {
@@ -105,14 +103,16 @@ async function sendViaResend(params: {
 
 async function sendViaBrevo(params: {
   to: string;
-  code: string;
   from: string;
+  subject: string;
+  text: string;
+  html?: string | undefined;
   apiKey: string;
 }): Promise<{ ok: true; provider: "brevo" } | { ok: false; error: string }> {
   const sender = parseFromAddress(params.from);
-  // Brevo rejects unverified senders — prefer custom domain from env; fall back only if set.
   if (!sender.email.includes("@") || sender.email.endsWith("@resend.dev")) {
-    const envSender = typeof process !== "undefined" ? process.env["BREVO_OTP_FROM_EMAIL"]?.trim() : undefined;
+    const envSender =
+      typeof process !== "undefined" ? process.env["BREVO_OTP_FROM_EMAIL"]?.trim() : undefined;
     if (envSender?.includes("@")) {
       Object.assign(sender, parseFromAddress(envSender));
     }
@@ -130,8 +130,9 @@ async function sendViaBrevo(params: {
           ? { name: sender.name, email: sender.email }
           : { email: sender.email },
         to: [{ email: params.to }],
-        subject: `${params.code} — Onnesha Arena portal login`,
-        textContent: `Your Onnesha Student Portal verification code is ${params.code}.\n\nValid for 5 minutes. Do not share this code.\n\n— Onnesha Arena`,
+        subject: params.subject,
+        textContent: params.text,
+        ...(params.html ? { htmlContent: params.html } : {}),
       }),
     });
     if (!res.ok) {
@@ -151,12 +152,12 @@ async function sendViaBrevo(params: {
   }
 }
 
-/**
- * Send portal OTP: try Resend first; on quota/failure fall back to Brevo.
- */
-export async function sendPortalOtpEmail(params: {
+/** Generic transactional send: Resend → Brevo fallback. */
+export async function sendTransactionalEmail(params: {
   to: string;
-  code: string;
+  subject: string;
+  text: string;
+  html?: string | undefined;
 }): Promise<
   | { ok: true; provider: PortalEmailProvider }
   | { ok: false; error: string }
@@ -170,7 +171,7 @@ export async function sendPortalOtpEmail(params: {
     return {
       ok: false,
       error:
-        "Email OTP is not configured. Set RESEND_API_KEY and/or BREVO_API_KEY (and PORTAL_OTP_FROM_EMAIL) on the server.",
+        "Email is not configured. Set RESEND_API_KEY and/or BREVO_API_KEY (and PORTAL_OTP_FROM_EMAIL) on the server.",
     };
   }
 
@@ -180,14 +181,15 @@ export async function sendPortalOtpEmail(params: {
   if (resendKey) {
     const primary = await sendViaResend({
       to,
-      code: params.code,
       from,
+      subject: params.subject,
+      text: params.text,
+      html: params.html,
       apiKey: resendKey,
     });
     if (primary.ok) return primary;
     errors.push(primary.error);
     if (!primary.retryable || !brevoKey) {
-      // Hard Resend failure with no Brevo → surface Resend error
       if (!brevoKey) return { ok: false, error: primary.error };
     }
   }
@@ -195,8 +197,10 @@ export async function sendPortalOtpEmail(params: {
   if (brevoKey) {
     const fallback = await sendViaBrevo({
       to,
-      code: params.code,
       from,
+      subject: params.subject,
+      text: params.text,
+      html: params.html,
       apiKey: brevoKey,
     });
     if (fallback.ok) return fallback;
@@ -205,8 +209,78 @@ export async function sendPortalOtpEmail(params: {
 
   return {
     ok: false,
-    error: errors.filter(Boolean).join(" → ") || "Email OTP providers failed.",
+    error: errors.filter(Boolean).join(" → ") || "Email providers failed.",
   };
+}
+
+export async function sendPortalOtpEmail(params: {
+  to: string;
+  code: string;
+}): Promise<
+  | { ok: true; provider: PortalEmailProvider }
+  | { ok: false; error: string }
+> {
+  return sendTransactionalEmail({
+    to: params.to,
+    subject: `${params.code} — Onnesha Arena portal login`,
+    text: `Your Onnesha Student Portal verification code is ${params.code}.\n\nValid for 5 minutes. Do not share this code.\n\n— Onnesha Arena`,
+  });
+}
+
+export function buildCourseCertificateEmail(params: {
+  studentName: string;
+  courseTitle: string;
+  courseCode: string;
+  certificateNumber: string;
+  combinedScorePct?: number | undefined;
+  verifyUrl: string;
+  portalUrl: string;
+}): { subject: string; text: string; html: string } {
+  const score =
+    typeof params.combinedScorePct === "number"
+      ? ` Combined score: ${params.combinedScorePct}%.`
+      : "";
+  const subject = `Course completion certificate — ${params.courseCode}`;
+  const text = [
+    `Congratulations ${params.studentName}!`,
+    "",
+    `Your course completion certificate for ${params.courseTitle} (${params.courseCode}) has been issued.`,
+    `Certificate number: ${params.certificateNumber}.${score}`,
+    "",
+    `Verify online: ${params.verifyUrl}`,
+    `Student portal: ${params.portalUrl}`,
+    "",
+    "— Onnesha Arena",
+  ].join("\n");
+  const html = `<div style="font-family:system-ui,sans-serif;line-height:1.5;color:#0f172a">
+  <p>Congratulations <strong>${escapeHtml(params.studentName)}</strong>!</p>
+  <p>Your <strong>course completion certificate</strong> for
+    <em>${escapeHtml(params.courseTitle)}</em>
+    (<code>${escapeHtml(params.courseCode)}</code>) has been issued.</p>
+  <p>Certificate number: <strong>${escapeHtml(params.certificateNumber)}</strong>${
+    typeof params.combinedScorePct === "number"
+      ? `<br/>Combined score: <strong>${params.combinedScorePct}%</strong>`
+      : ""
+  }</p>
+  <p>
+    <a href="${escapeHtml(params.verifyUrl)}" style="display:inline-block;padding:10px 16px;background:#059669;color:#fff;border-radius:10px;text-decoration:none;font-weight:700">
+      Verify certificate
+    </a>
+  </p>
+  <p style="font-size:13px;color:#64748b">
+    Portal: <a href="${escapeHtml(params.portalUrl)}">${escapeHtml(params.portalUrl)}</a>
+  </p>
+  <p style="font-size:12px;color:#94a3b8">— Onnesha Arena</p>
+</div>`;
+  return { subject, text, html };
+}
+
+function escapeHtml(raw: string): string {
+  return (raw || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 export function normalizePortalEmail(raw: string): string {
