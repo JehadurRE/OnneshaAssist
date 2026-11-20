@@ -95,7 +95,7 @@ export const Route = createFileRoute("/admin")({
       {
         name: "description",
         content:
-          "Institutional Super Admin panel for managing courses, multi-instructor assignments, sequential quizzes, regions, anti-cheat policies, and database backups.",
+          "Admin panel for courses, instructors, quizzes, final exams, regions, and settings.",
       },
     ],
   }),
@@ -937,7 +937,7 @@ function SuperAdminPage() {
     <StaffShell
       variant="admin"
       title="Command Center"
-      subtitle="Courses, faculty, practical exams, certificates, and platform controls."
+      subtitle="Courses, faculty, final exams, certificates, and settings."
       eyebrow="Super Admin"
       userName={user.name}
       userEmail={user.email}

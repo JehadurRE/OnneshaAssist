@@ -631,6 +631,22 @@ export interface CertificateSignatory {
   signatureStyle?: "script" | "formal" | "mono" | undefined;
 }
 
+/** Per-kind certificate visual design (quiz session vs course completion). */
+export interface CertificateDesignProfile {
+  certThemePreset?: CertificateThemePreset;
+  certShowBangladeshAiMap?: boolean;
+  certMapOpacity?: number;
+  certBgPrimaryColor?: string;
+  certBgSecondaryColor?: string;
+  certAccentColor?: string;
+  certBorderColor?: string;
+  certCustomBgUrl?: string;
+  certCustomBgOpacity?: number;
+  certBadgeTitle?: string;
+  certAuthoritySubtitle?: string;
+  certSignatories?: CertificateSignatory[];
+}
+
 export interface BrandingSettings {
   showPartnerLogo: boolean;
   partnerName: string;
@@ -641,6 +657,7 @@ export interface BrandingSettings {
   rightLogoUrl?: string | undefined;
   rightLogoLabel?: string | undefined;
   partnerLogos?: CertificatePartnerLogo[] | undefined;
+  /** @deprecated Legacy quiz-certificate fields — prefer quizCertificate. Used as quiz fallback. */
   certThemePreset?: CertificateThemePreset | undefined;
   certShowBangladeshAiMap?: boolean | undefined;
   certMapOpacity?: number | undefined;
@@ -653,6 +670,10 @@ export interface BrandingSettings {
   certBadgeTitle?: string | undefined;
   certAuthoritySubtitle?: string | undefined;
   certSignatories?: CertificateSignatory[] | undefined;
+  /** Design for normal quiz-session certificates. Falls back to top-level cert* when unset. */
+  quizCertificate?: CertificateDesignProfile | undefined;
+  /** Design for course completion / final-exam package certificates. */
+  courseCertificate?: CertificateDesignProfile | undefined;
   defaultEnforceFullscreen?: boolean | undefined;
   defaultBlockCopyPaste?: boolean | undefined;
   defaultMaxProctorViolations?: number | undefined;

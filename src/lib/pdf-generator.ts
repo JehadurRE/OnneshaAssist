@@ -8,6 +8,7 @@ import {
   Quiz,
 } from "./types";
 import {
+  brandingWithCertificateProfile,
   CertificateThemePalette,
   DEFAULT_CERTIFICATE_SIGNATORIES,
   resolveCertificateTheme,
@@ -729,7 +730,10 @@ export function drawCertificateOnCanvas(
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
-  const theme = resolveCertificateTheme(branding);
+  const certKind = certificate.kind === "course_completion" ? "course_completion" : "quiz_session";
+  // Overlay quiz/course design profile onto top-level cert* fields for this render.
+  branding = branding ? brandingWithCertificateProfile(branding, certKind) : branding;
+  const theme = resolveCertificateTheme(branding, certKind);
   const verifyUrl =
     typeof window !== "undefined"
       ? `${window.location.origin}/verify/${certificate.certificateNumber}`
@@ -1257,6 +1261,9 @@ export async function populateCertificateCanvas(
   certificate: CertificateData,
   branding?: BrandingSettings,
 ): Promise<void> {
+  const certKind = certificate.kind === "course_completion" ? "course_completion" : "quiz_session";
+  branding = branding ? brandingWithCertificateProfile(branding, certKind) : branding;
+
   // 1. Immediate synchronous draw (even better: reuse cached images immediately if already preloaded!)
   const leftSrc = (branding?.leftLogoUrl || "").trim() || onnesha.url;
   const rightSrc =

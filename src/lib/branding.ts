@@ -1,5 +1,7 @@
 import type {
   BrandingSettings,
+  CertificateDesignProfile,
+  CertificateKind,
   CertificatePartnerLogo,
   CertificateSignatory,
   CertificateThemePreset,
@@ -166,16 +168,7 @@ export const DEFAULT_CERTIFICATE_SIGNATORIES: CertificateSignatory[] = [
   },
 ];
 
-export const DEFAULT_BRANDING_SETTINGS: BrandingSettings = {
-  showPartnerLogo: false,
-  partnerName: "",
-  partnerLogoUrl: "",
-  institutionTitle: "Onnesha Assessment Arena",
-  leftLogoUrl: "",
-  leftLogoLabel: "",
-  rightLogoUrl: "",
-  rightLogoLabel: "",
-  partnerLogos: [],
+const DEFAULT_QUIZ_CERTIFICATE_PROFILE: CertificateDesignProfile = {
   certThemePreset: "emerald_gold",
   certShowBangladeshAiMap: true,
   certMapOpacity: 0.14,
@@ -189,6 +182,48 @@ export const DEFAULT_BRANDING_SETTINGS: BrandingSettings = {
   certAuthoritySubtitle:
     "National Training, Merit Evaluation & Cryptographic Examination Authority",
   certSignatories: DEFAULT_CERTIFICATE_SIGNATORIES.map((s) => ({ ...s })),
+};
+
+const DEFAULT_COURSE_CERTIFICATE_PROFILE: CertificateDesignProfile = {
+  certThemePreset: "bangla_heritage",
+  certShowBangladeshAiMap: true,
+  certMapOpacity: 0.14,
+  certBgPrimaryColor: "#fdfbf5",
+  certBgSecondaryColor: "#fdf2ea",
+  certAccentColor: "#991b1b",
+  certBorderColor: "#7f1d1d",
+  certCustomBgUrl: "",
+  certCustomBgOpacity: 0.22,
+  certBadgeTitle: "CERTIFICATE OF COURSE COMPLETION",
+  certAuthoritySubtitle:
+    "Final Examination Authority — Full Course Credential & Practical Assessment Board",
+  certSignatories: DEFAULT_CERTIFICATE_SIGNATORIES.map((s) => ({ ...s })),
+};
+
+export const DEFAULT_BRANDING_SETTINGS: BrandingSettings = {
+  showPartnerLogo: false,
+  partnerName: "",
+  partnerLogoUrl: "",
+  institutionTitle: "Onnesha Assessment Arena",
+  leftLogoUrl: "",
+  leftLogoLabel: "",
+  rightLogoUrl: "",
+  rightLogoLabel: "",
+  partnerLogos: [],
+  certThemePreset: DEFAULT_QUIZ_CERTIFICATE_PROFILE.certThemePreset,
+  certShowBangladeshAiMap: DEFAULT_QUIZ_CERTIFICATE_PROFILE.certShowBangladeshAiMap,
+  certMapOpacity: DEFAULT_QUIZ_CERTIFICATE_PROFILE.certMapOpacity,
+  certBgPrimaryColor: DEFAULT_QUIZ_CERTIFICATE_PROFILE.certBgPrimaryColor,
+  certBgSecondaryColor: DEFAULT_QUIZ_CERTIFICATE_PROFILE.certBgSecondaryColor,
+  certAccentColor: DEFAULT_QUIZ_CERTIFICATE_PROFILE.certAccentColor,
+  certBorderColor: DEFAULT_QUIZ_CERTIFICATE_PROFILE.certBorderColor,
+  certCustomBgUrl: DEFAULT_QUIZ_CERTIFICATE_PROFILE.certCustomBgUrl,
+  certCustomBgOpacity: DEFAULT_QUIZ_CERTIFICATE_PROFILE.certCustomBgOpacity,
+  certBadgeTitle: DEFAULT_QUIZ_CERTIFICATE_PROFILE.certBadgeTitle,
+  certAuthoritySubtitle: DEFAULT_QUIZ_CERTIFICATE_PROFILE.certAuthoritySubtitle,
+  certSignatories: DEFAULT_CERTIFICATE_SIGNATORIES.map((s) => ({ ...s })),
+  quizCertificate: { ...DEFAULT_QUIZ_CERTIFICATE_PROFILE },
+  courseCertificate: { ...DEFAULT_COURSE_CERTIFICATE_PROFILE },
   defaultEnforceFullscreen: false,
   defaultBlockCopyPaste: true,
   defaultMaxProctorViolations: 3,
@@ -240,6 +275,181 @@ function sanitizeHexColor(value: string | undefined, fallback: string): string {
   return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed : fallback;
 }
 
+function sanitizeThemePreset(
+  value: CertificateThemePreset | undefined,
+  fallback: CertificateThemePreset,
+): CertificateThemePreset {
+  if (value && value in CERTIFICATE_THEME_PRESETS) return value;
+  return fallback;
+}
+
+/**
+ * Sanitizes one certificate design profile against a fallback baseline.
+ */
+export function mergeCertificateDesignProfile(
+  incoming?: Partial<CertificateDesignProfile> | null,
+  current?: Partial<CertificateDesignProfile> | null,
+  fallback: CertificateDesignProfile = DEFAULT_QUIZ_CERTIFICATE_PROFILE,
+): CertificateDesignProfile {
+  const base: CertificateDesignProfile = { ...fallback, ...(current ?? {}) };
+  const next = incoming ?? {};
+  const fallbackSignatories =
+    Array.isArray(base.certSignatories) && base.certSignatories.length > 0
+      ? base.certSignatories
+      : fallback.certSignatories || DEFAULT_CERTIFICATE_SIGNATORIES;
+
+  const authoritySubtitle =
+    (next.certAuthoritySubtitle ?? base.certAuthoritySubtitle ?? "").trim() ||
+    fallback.certAuthoritySubtitle ||
+    DEFAULT_QUIZ_CERTIFICATE_PROFILE.certAuthoritySubtitle ||
+    "";
+
+  return {
+    certThemePreset: sanitizeThemePreset(
+      next.certThemePreset ?? base.certThemePreset,
+      fallback.certThemePreset || "emerald_gold",
+    ),
+    certShowBangladeshAiMap:
+      next.certShowBangladeshAiMap !== undefined
+        ? !!next.certShowBangladeshAiMap
+        : (base.certShowBangladeshAiMap ?? fallback.certShowBangladeshAiMap ?? true),
+    certMapOpacity: clampNumber(
+      next.certMapOpacity ?? base.certMapOpacity,
+      0.04,
+      0.45,
+      fallback.certMapOpacity ?? 0.14,
+    ),
+    certBgPrimaryColor: sanitizeHexColor(
+      next.certBgPrimaryColor ?? base.certBgPrimaryColor,
+      fallback.certBgPrimaryColor ?? "#fffdf8",
+    ),
+    certBgSecondaryColor: sanitizeHexColor(
+      next.certBgSecondaryColor ?? base.certBgSecondaryColor,
+      fallback.certBgSecondaryColor ?? "#eefaf4",
+    ),
+    certAccentColor: sanitizeHexColor(
+      next.certAccentColor ?? base.certAccentColor,
+      fallback.certAccentColor ?? "#047857",
+    ),
+    certBorderColor: sanitizeHexColor(
+      next.certBorderColor ?? base.certBorderColor,
+      fallback.certBorderColor ?? "#064e3b",
+    ),
+    certCustomBgUrl: (next.certCustomBgUrl ?? base.certCustomBgUrl ?? "").trim(),
+    certCustomBgOpacity: clampNumber(
+      next.certCustomBgOpacity ?? base.certCustomBgOpacity,
+      0.05,
+      0.85,
+      fallback.certCustomBgOpacity ?? 0.22,
+    ),
+    certBadgeTitle:
+      (next.certBadgeTitle ?? base.certBadgeTitle ?? "").trim() ||
+      fallback.certBadgeTitle ||
+      "CERTIFICATE OF MERIT & EXCELLENCE",
+    certAuthoritySubtitle: authoritySubtitle,
+    certSignatories: sanitizeSignatories(
+      next.certSignatories !== undefined ? next.certSignatories : base.certSignatories,
+      fallbackSignatories,
+    ),
+  };
+}
+
+function legacyProfileFromBranding(
+  branding: Partial<BrandingSettings> | null | undefined,
+): Partial<CertificateDesignProfile> {
+  if (!branding) return {};
+  const out: Partial<CertificateDesignProfile> = {};
+  if (branding.certThemePreset !== undefined) out.certThemePreset = branding.certThemePreset;
+  if (branding.certShowBangladeshAiMap !== undefined) {
+    out.certShowBangladeshAiMap = branding.certShowBangladeshAiMap;
+  }
+  if (branding.certMapOpacity !== undefined) out.certMapOpacity = branding.certMapOpacity;
+  if (branding.certBgPrimaryColor !== undefined) {
+    out.certBgPrimaryColor = branding.certBgPrimaryColor;
+  }
+  if (branding.certBgSecondaryColor !== undefined) {
+    out.certBgSecondaryColor = branding.certBgSecondaryColor;
+  }
+  if (branding.certAccentColor !== undefined) out.certAccentColor = branding.certAccentColor;
+  if (branding.certBorderColor !== undefined) out.certBorderColor = branding.certBorderColor;
+  if (branding.certCustomBgUrl !== undefined) out.certCustomBgUrl = branding.certCustomBgUrl;
+  if (branding.certCustomBgOpacity !== undefined) {
+    out.certCustomBgOpacity = branding.certCustomBgOpacity;
+  }
+  if (branding.certBadgeTitle !== undefined) out.certBadgeTitle = branding.certBadgeTitle;
+  if (branding.certAuthoritySubtitle !== undefined) {
+    out.certAuthoritySubtitle = branding.certAuthoritySubtitle;
+  }
+  if (branding.certSignatories !== undefined) out.certSignatories = branding.certSignatories;
+  return out;
+}
+
+function applyProfileToBrandingTopLevel(
+  branding: BrandingSettings,
+  profile: CertificateDesignProfile,
+): BrandingSettings {
+  return {
+    ...branding,
+    certThemePreset: profile.certThemePreset,
+    certShowBangladeshAiMap: profile.certShowBangladeshAiMap,
+    certMapOpacity: profile.certMapOpacity,
+    certBgPrimaryColor: profile.certBgPrimaryColor,
+    certBgSecondaryColor: profile.certBgSecondaryColor,
+    certAccentColor: profile.certAccentColor,
+    certBorderColor: profile.certBorderColor,
+    certCustomBgUrl: profile.certCustomBgUrl,
+    certCustomBgOpacity: profile.certCustomBgOpacity,
+    certBadgeTitle: profile.certBadgeTitle,
+    certAuthoritySubtitle: profile.certAuthoritySubtitle,
+    certSignatories: profile.certSignatories?.map((s) => ({ ...s })),
+  };
+}
+
+/**
+ * Resolves the design profile for a certificate kind.
+ * Quiz uses `quizCertificate`, falling back to legacy top-level cert* fields.
+ * Course uses `courseCertificate` with course-specific defaults.
+ */
+export function getCertificateDesignProfile(
+  branding: BrandingSettings | undefined,
+  kind: CertificateKind,
+): CertificateDesignProfile {
+  if (kind === "course_completion") {
+    return mergeCertificateDesignProfile(
+      branding?.courseCertificate,
+      undefined,
+      DEFAULT_COURSE_CERTIFICATE_PROFILE,
+    );
+  }
+  // quiz_session (and any unknown): prefer quizCertificate, else legacy top-level
+  const hasQuizProfile =
+    branding?.quizCertificate && Object.keys(branding.quizCertificate).length > 0;
+  if (hasQuizProfile) {
+    return mergeCertificateDesignProfile(
+      branding?.quizCertificate,
+      legacyProfileFromBranding(branding),
+      DEFAULT_QUIZ_CERTIFICATE_PROFILE,
+    );
+  }
+  return mergeCertificateDesignProfile(
+    legacyProfileFromBranding(branding),
+    undefined,
+    DEFAULT_QUIZ_CERTIFICATE_PROFILE,
+  );
+}
+
+/**
+ * Overlays the matching certificate design profile onto branding top-level cert*
+ * fields so resolveCertificateTheme / PDF renderers see the right palette.
+ */
+export function brandingWithCertificateProfile(
+  branding: BrandingSettings,
+  kind: CertificateKind,
+): BrandingSettings {
+  const profile = getCertificateDesignProfile(branding, kind);
+  return applyProfileToBrandingTopLevel(branding, profile);
+}
+
 /**
  * Merges partial branding settings onto an existing baseline while enforcing
  * safe bounds for themes, Bangladesh AI watermark opacity, logos, and signatories.
@@ -262,11 +472,50 @@ export function mergeBrandingSettings(
       ? base.certSignatories
       : DEFAULT_CERTIFICATE_SIGNATORIES;
 
+  const quizCertificate = mergeCertificateDesignProfile(
+    next.quizCertificate !== undefined
+      ? next.quizCertificate
+      : // When only legacy fields are patched, fold them into the quiz profile
+        next.certThemePreset !== undefined ||
+          next.certBadgeTitle !== undefined ||
+          next.certSignatories !== undefined ||
+          next.certShowBangladeshAiMap !== undefined ||
+          next.certMapOpacity !== undefined ||
+          next.certBgPrimaryColor !== undefined ||
+          next.certBgSecondaryColor !== undefined ||
+          next.certAccentColor !== undefined ||
+          next.certBorderColor !== undefined ||
+          next.certCustomBgUrl !== undefined ||
+          next.certCustomBgOpacity !== undefined ||
+          next.certAuthoritySubtitle !== undefined
+        ? legacyProfileFromBranding(next)
+        : undefined,
+    base.quizCertificate ?? legacyProfileFromBranding(base),
+    DEFAULT_QUIZ_CERTIFICATE_PROFILE,
+  );
+
+  const courseCertificate = mergeCertificateDesignProfile(
+    next.courseCertificate,
+    base.courseCertificate,
+    DEFAULT_COURSE_CERTIFICATE_PROFILE,
+  );
+
+  // Keep legacy top-level in sync with the quiz profile (quiz is the default surface).
+  const legacyFromQuiz = applyProfileToBrandingTopLevel(
+    {
+      ...base,
+      showPartnerLogo:
+        next.showPartnerLogo !== undefined ? !!next.showPartnerLogo : !!base.showPartnerLogo,
+      partnerName: (next.partnerName ?? base.partnerName ?? "").trim(),
+      partnerLogoUrl: (next.partnerLogoUrl ?? base.partnerLogoUrl ?? "").trim(),
+    },
+    quizCertificate,
+  );
+
   return {
-    showPartnerLogo:
-      next.showPartnerLogo !== undefined ? !!next.showPartnerLogo : !!base.showPartnerLogo,
-    partnerName: (next.partnerName ?? base.partnerName ?? "").trim(),
-    partnerLogoUrl: (next.partnerLogoUrl ?? base.partnerLogoUrl ?? "").trim(),
+    showPartnerLogo: legacyFromQuiz.showPartnerLogo,
+    partnerName: legacyFromQuiz.partnerName,
+    partnerLogoUrl: legacyFromQuiz.partnerLogoUrl,
     institutionTitle:
       (next.institutionTitle ?? base.institutionTitle ?? "").trim() ||
       DEFAULT_BRANDING_SETTINGS.institutionTitle,
@@ -277,50 +526,27 @@ export function mergeBrandingSettings(
     partnerLogos: sanitizePartnerLogos(
       next.partnerLogos !== undefined ? next.partnerLogos : base.partnerLogos,
     ),
-    certThemePreset,
-    certShowBangladeshAiMap:
-      next.certShowBangladeshAiMap !== undefined
-        ? !!next.certShowBangladeshAiMap
-        : (base.certShowBangladeshAiMap ?? true),
-    certMapOpacity: clampNumber(
-      next.certMapOpacity ?? base.certMapOpacity,
-      0.04,
-      0.45,
-      DEFAULT_BRANDING_SETTINGS.certMapOpacity ?? 0.14,
-    ),
-    certBgPrimaryColor: sanitizeHexColor(
-      next.certBgPrimaryColor ?? base.certBgPrimaryColor,
-      DEFAULT_BRANDING_SETTINGS.certBgPrimaryColor ?? "#fffdf8",
-    ),
-    certBgSecondaryColor: sanitizeHexColor(
-      next.certBgSecondaryColor ?? base.certBgSecondaryColor,
-      DEFAULT_BRANDING_SETTINGS.certBgSecondaryColor ?? "#eefaf4",
-    ),
-    certAccentColor: sanitizeHexColor(
-      next.certAccentColor ?? base.certAccentColor,
-      DEFAULT_BRANDING_SETTINGS.certAccentColor ?? "#047857",
-    ),
-    certBorderColor: sanitizeHexColor(
-      next.certBorderColor ?? base.certBorderColor,
-      DEFAULT_BRANDING_SETTINGS.certBorderColor ?? "#064e3b",
-    ),
-    certCustomBgUrl: (next.certCustomBgUrl ?? base.certCustomBgUrl ?? "").trim(),
-    certCustomBgOpacity: clampNumber(
-      next.certCustomBgOpacity ?? base.certCustomBgOpacity,
-      0.05,
-      0.85,
-      DEFAULT_BRANDING_SETTINGS.certCustomBgOpacity ?? 0.22,
-    ),
-    certBadgeTitle:
-      (next.certBadgeTitle ?? base.certBadgeTitle ?? "").trim() ||
-      DEFAULT_BRANDING_SETTINGS.certBadgeTitle,
-    certAuthoritySubtitle:
-      (next.certAuthoritySubtitle ?? base.certAuthoritySubtitle ?? "").trim() ||
-      DEFAULT_BRANDING_SETTINGS.certAuthoritySubtitle,
+    certThemePreset: quizCertificate.certThemePreset ?? certThemePreset,
+    certShowBangladeshAiMap: quizCertificate.certShowBangladeshAiMap,
+    certMapOpacity: quizCertificate.certMapOpacity,
+    certBgPrimaryColor: quizCertificate.certBgPrimaryColor,
+    certBgSecondaryColor: quizCertificate.certBgSecondaryColor,
+    certAccentColor: quizCertificate.certAccentColor,
+    certBorderColor: quizCertificate.certBorderColor,
+    certCustomBgUrl: quizCertificate.certCustomBgUrl,
+    certCustomBgOpacity: quizCertificate.certCustomBgOpacity,
+    certBadgeTitle: quizCertificate.certBadgeTitle,
+    certAuthoritySubtitle: quizCertificate.certAuthoritySubtitle,
     certSignatories: sanitizeSignatories(
-      next.certSignatories !== undefined ? next.certSignatories : base.certSignatories,
+      quizCertificate.certSignatories !== undefined
+        ? quizCertificate.certSignatories
+        : next.certSignatories !== undefined
+          ? next.certSignatories
+          : base.certSignatories,
       fallbackSignatories,
     ),
+    quizCertificate,
+    courseCertificate,
     defaultEnforceFullscreen:
       next.defaultEnforceFullscreen ?? base.defaultEnforceFullscreen ?? false,
     defaultBlockCopyPaste: next.defaultBlockCopyPaste ?? base.defaultBlockCopyPaste ?? true,
@@ -360,18 +586,24 @@ export function isDarkHexColor(hex: string): boolean {
 /**
  * Resolves effective visual palette for a BrandingSettings instance, applying
  * user overrides when `certThemePreset === "custom"`.
+ * When `kind` is provided, the matching quiz/course design profile is overlaid first.
  */
-export function resolveCertificateTheme(branding?: BrandingSettings): CertificateThemePalette {
-  const presetKey = branding?.certThemePreset || "emerald_gold";
+export function resolveCertificateTheme(
+  branding?: BrandingSettings,
+  kind?: CertificateKind,
+): CertificateThemePalette {
+  const effective =
+    branding && kind ? brandingWithCertificateProfile(branding, kind) : branding;
+  const presetKey = effective?.certThemePreset || "emerald_gold";
   const base = CERTIFICATE_THEME_PRESETS[presetKey] || CERTIFICATE_THEME_PRESETS.emerald_gold;
   if (presetKey !== "custom") {
     return base;
   }
 
-  const bgPrimary = sanitizeHexColor(branding?.certBgPrimaryColor, base.bgPrimary);
-  const bgSecondary = sanitizeHexColor(branding?.certBgSecondaryColor, base.bgSecondary);
-  const borderOuter = sanitizeHexColor(branding?.certBorderColor, base.borderOuter);
-  const accentColor = sanitizeHexColor(branding?.certAccentColor, base.accentColor);
+  const bgPrimary = sanitizeHexColor(effective?.certBgPrimaryColor, base.bgPrimary);
+  const bgSecondary = sanitizeHexColor(effective?.certBgSecondaryColor, base.bgSecondary);
+  const borderOuter = sanitizeHexColor(effective?.certBorderColor, base.borderOuter);
+  const accentColor = sanitizeHexColor(effective?.certAccentColor, base.accentColor);
   const isDark = isDarkHexColor(bgPrimary);
 
   return {

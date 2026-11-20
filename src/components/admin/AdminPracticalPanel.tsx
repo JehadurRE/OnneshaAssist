@@ -38,12 +38,16 @@ import {
   ClipboardCheck,
   Download,
   ExternalLink,
+  FileText,
   KeyRound,
   Loader2,
+  Mail,
   Plus,
+  Radio,
   RefreshCw,
   RotateCcw,
   Save,
+  Settings2,
   Square,
   Timer,
   Trash2,
@@ -103,6 +107,7 @@ export function AdminPracticalPanel(props: {
   const [feedbackBySub, setFeedbackBySub] = useState<Record<string, string>>({});
   const [windowHours, setWindowHours] = useState(3);
   const [windowOpen, setWindowOpen] = useState(false);
+  const [deskView, setDeskView] = useState<"live" | "grade" | "setup" | "certs">("live");
 
   const course = useMemo(
     () => props.courses.find((c) => c.id === courseId) || props.courses[0],
@@ -233,12 +238,28 @@ export function AdminPracticalPanel(props: {
     .filter((s) => s.courseId === courseId)
     .sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
 
+  const pendingGradeCount = useMemo(
+    () =>
+      courseSubs.filter(
+        (s) => s.status === "submitted" || s.status === "late" || s.status === "returned",
+      ).length,
+    [courseSubs],
+  );
+
   const markKey = (subId: string, taskId: string) => `${subId}::${taskId}`;
 
   const canGrade = (status: PracticalSubmissionStatus) =>
     status === "submitted" || status === "late" || status === "graded" || status === "returned";
 
   const canIssueCert = (sub: PracticalSubmission) => sub.status === "graded";
+
+  const studentInitials = (name: string) =>
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((p) => p[0]?.toUpperCase() || "")
+      .join("") || "?";
 
   const syncCertsIntoAdmin = async () => {
     try {
@@ -629,20 +650,35 @@ export function AdminPracticalPanel(props: {
     }
   };
 
+  const deskTabs: {
+    id: typeof deskView;
+    label: string;
+    icon: React.ReactNode;
+    badge?: number | undefined;
+  }[] = [
+    { id: "live", label: "Live session", icon: <Radio className="h-3.5 w-3.5" /> },
+    {
+      id: "grade",
+      label: "Grade work",
+      icon: <ClipboardCheck className="h-3.5 w-3.5" />,
+      badge: pendingGradeCount || undefined,
+    },
+    { id: "setup", label: "Exam setup", icon: <Settings2 className="h-3.5 w-3.5" /> },
+    { id: "certs", label: "Certificates", icon: <Award className="h-3.5 w-3.5" /> },
+  ];
+
   return (
     <div className="space-y-6 staff-surface">
       <div className="staff-panel-header !border-0 !pb-0 !mb-0">
         <div className="min-w-0 space-y-1">
-          <h2 className="staff-panel-title">Final Exam Live Desk</h2>
+          <h2 className="staff-panel-title">Final Exam Desk</h2>
           <p className="staff-panel-desc">
-            Open the PIN window, share it with candidates on{" "}
-            <span className="font-mono">/final-exam</span>, and monitor live MCQ attempts here.
-            One overall quiz timer — not per-question.
+            Open a PIN window, watch attempts, grade practicals, and issue course certificates.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link to="/final-exam-live" className="staff-btn-primary">
-            <ExternalLink className="h-3.5 w-3.5" /> Open Live Host Dashboard
+            <ExternalLink className="h-3.5 w-3.5" /> Live host
           </Link>
           <button
             type="button"
@@ -677,7 +713,7 @@ export function AdminPracticalPanel(props: {
             <StatusPill status={exam.status} />
             {windowOpen && (
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
-                window live
+                window open
               </span>
             )}
             <span className="text-[11px] text-muted-foreground font-mono">
@@ -687,20 +723,50 @@ export function AdminPracticalPanel(props: {
         )}
       </div>
 
+      <nav
+        className="flex flex-wrap gap-1 rounded-2xl border border-border/80 bg-muted/30 p-1"
+        aria-label="Final Exam Desk sections"
+      >
+        {deskTabs.map((tab) => {
+          const active = deskView === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setDeskView(tab.id)}
+              className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors ${
+                active
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-card/60 hover:text-foreground"
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+              {typeof tab.badge === "number" && tab.badge > 0 ? (
+                <span className="ml-0.5 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-black text-amber-800 dark:text-amber-200">
+                  {tab.badge}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </nav>
+
       {notice && (
         <div className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm">{notice}</div>
       )}
 
-      {exam && (
-        <section className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-4">
+      {deskView === "live" && exam && (
+        <section className="rounded-2xl border border-border/80 bg-card p-4 space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-                Live Final Exam dashboard
+              <div className="text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">
+                Live session
               </div>
-              <h3 className="mt-1 text-lg font-black">{exam.titleEn}</h3>
+              <h3 className="mt-1 text-lg font-black tracking-tight">{exam.titleEn}</h3>
               <p className="text-xs text-muted-foreground">
-                Candidates: verify PIN → roll + mobile → timed quiz → practical on /portal
+                Students join at <span className="font-mono">/final-exam</span> with the PIN, then
+                finish practical work in the portal.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -931,26 +997,32 @@ export function AdminPracticalPanel(props: {
         </section>
       )}
 
-      <section className="staff-row-card space-y-3">
-        <div className="text-sm font-bold">Quiz auto-certificates (legacy)</div>
-        <p className="text-[11px] text-muted-foreground">
-          Default is off. Course certificates are issued from this desk after Final Quiz + Practical.
-        </p>
-        <label className="flex items-center gap-2 text-xs font-semibold">
-          <input
-            type="checkbox"
-            checked={autoIssue}
-            disabled={busyId === "auto"}
-            onChange={(e) => void toggleAutoIssue(e.target.checked)}
-          />
-          Enable automatic quiz-session certificates
-        </label>
-      </section>
-
-      {!exam ? (
+      {deskView === "live" && !exam && (
         <div className="staff-empty space-y-3">
-          <p className="text-sm text-muted-foreground">
-            No practical exam configured for {course?.code || "this course"}.
+          <p className="staff-empty-title">No final exam yet</p>
+          <p className="staff-empty-desc">
+            Create the exam under Setup for {course?.code || "this course"}, then open the PIN window
+            here.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setDeskView("setup");
+              const created = ensureExamLocal();
+              if (created) void saveExamMeta(created);
+            }}
+            className="staff-btn-primary mx-auto"
+          >
+            <Plus className="h-3.5 w-3.5" /> Create final exam
+          </button>
+        </div>
+      )}
+
+      {deskView === "setup" && !exam && (
+        <div className="staff-empty space-y-3">
+          <p className="staff-empty-title">No practical exam configured</p>
+          <p className="staff-empty-desc">
+            Create a default final practical for {course?.code || "this course"}.
           </p>
           <button
             type="button"
@@ -958,12 +1030,14 @@ export function AdminPracticalPanel(props: {
               const created = ensureExamLocal();
               if (created) void saveExamMeta(created);
             }}
-            className="inline-flex items-center gap-1 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground"
+            className="staff-btn-primary mx-auto"
           >
             <Plus className="h-3.5 w-3.5" /> Create default Final Practical
           </button>
         </div>
-      ) : (
+      )}
+
+      {deskView === "setup" && exam && (
         <>
           <section className="staff-row-card space-y-4">
             <div className="text-sm font-bold">Window &amp; scoring</div>
@@ -1257,6 +1331,25 @@ export function AdminPracticalPanel(props: {
         </>
       )}
 
+      {deskView === "certs" && (
+        <>
+      <section className="staff-row-card space-y-3">
+        <div className="text-sm font-bold">Quiz certificates</div>
+        <p className="text-[11px] text-muted-foreground">
+          Off by default. Turn on only if each quiz session should email a certificate automatically.
+          Course completion certificates are issued from Grade work after the final package.
+        </p>
+        <label className="flex items-center gap-2 text-xs font-semibold">
+          <input
+            type="checkbox"
+            checked={autoIssue}
+            disabled={busyId === "auto"}
+            onChange={(e) => void toggleAutoIssue(e.target.checked)}
+          />
+          Auto-issue quiz-session certificates
+        </label>
+      </section>
+
       {requirement && course && (
         <section className="staff-row-card space-y-3">
           <div className="text-sm font-bold">Course certificate policy</div>
@@ -1336,169 +1429,225 @@ export function AdminPracticalPanel(props: {
           </button>
         </section>
       )}
+        </>
+      )}
 
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-sm font-bold">
-            <ClipboardCheck className="h-4 w-4" />
-            Submissions ({courseSubs.length})
+      {deskView === "grade" && (
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="min-w-0 space-y-1">
+            <h3 className="text-base font-black tracking-tight">Grade practical work</h3>
+            <p className="text-xs text-muted-foreground">
+              Review answers, enter marks, then issue the course certificate. Certificates unlock
+              only after a grade is saved.
+            </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void bulkIssue()}
-            disabled={busyId === "bulk" || !course || courseSubs.length === 0}
-            className="inline-flex items-center gap-1 rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold hover:bg-accent disabled:opacity-50"
-          >
-            <Award className="h-3.5 w-3.5" /> Bulk issue eligible
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void bulkIssue()}
+              disabled={busyId === "bulk" || !course || courseSubs.length === 0}
+              className="staff-btn-ghost disabled:opacity-50"
+            >
+              <Award className="h-3.5 w-3.5" /> Issue all eligible
+            </button>
+          </div>
         </div>
+
         {courseSubs.length === 0 ? (
-          <div className="staff-empty text-sm text-muted-foreground">
-            No practical submissions yet. Candidates submit via /portal after roster unlock.
+          <div className="staff-empty">
+            <p className="staff-empty-title">No submissions yet</p>
+            <p className="staff-empty-desc">
+              Students submit practical work from the portal after the final quiz unlocks.
+            </p>
           </div>
         ) : (
-          courseSubs.map((sub) => (
-            <div key={sub.id} className="staff-row-card space-y-3">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="font-bold text-sm">
-                    {sub.studentName}{" "}
-                    <span className="font-mono text-xs text-muted-foreground">{sub.rollNumber}</span>
+          courseSubs.map((sub) => {
+            const graded = sub.status === "graded";
+            const issueReady = canIssueCert(sub);
+            return (
+              <article key={sub.id} className="assess-card">
+                <header className="assess-card-head">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="assess-avatar" aria-hidden>
+                      {studentInitials(sub.studentName)}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-black tracking-tight">
+                        {sub.studentName}
+                      </div>
+                      <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                        {sub.rollNumber}
+                        {sub.regionName ? ` · ${sub.regionName}` : ""}
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                        <StatusPill status={sub.status} />
+                        {typeof sub.quizAccuracyPct === "number" && (
+                          <span className="staff-chip">Quiz {sub.quizAccuracyPct}%</span>
+                        )}
+                        {typeof sub.combinedPct === "number" && (
+                          <span className="staff-chip">Combined {sub.combinedPct}%</span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <StatusPill status={sub.status} />
-                    <span>{sub.regionName || "—"}</span>
-                    {typeof sub.combinedPct === "number" && (
-                      <span className="font-mono">combined {sub.combinedPct}%</span>
-                    )}
-                    {typeof sub.quizAccuracyPct === "number" && (
-                      <span className="font-mono">quiz {sub.quizAccuracyPct}%</span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {sub.status === "graded" && (
+                  {graded && (
                     <button
                       type="button"
                       onClick={() => void returnOne(sub)}
                       disabled={busyId === `return-${sub.id}`}
-                      className="inline-flex items-center gap-1 rounded-xl border border-border bg-background px-2.5 py-1.5 text-[11px] font-bold hover:bg-accent"
+                      className="staff-btn-ghost !py-1.5 !px-2.5 text-[11px]"
                     >
-                      <RotateCcw className="h-3 w-3" /> Return
+                      <RotateCcw className="h-3 w-3" /> Ask to resubmit
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => void issueOne(sub.rollNumber)}
-                    disabled={busyId === `issue-${sub.rollNumber}` || !canIssueCert(sub)}
-                    title={
-                      canIssueCert(sub)
-                        ? "Issue course completion certificate and email student (roster email)"
-                        : "Grade the practical first"
-                    }
-                    className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-bold text-emerald-700 disabled:opacity-40"
-                  >
-                    Issue + email cert
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void emailCertOne(sub.rollNumber)}
-                    disabled={busyId === `email-${sub.rollNumber}`}
-                    title="Resend course completion certificate email to roster address"
-                    className="rounded-xl border border-border bg-background px-2.5 py-1.5 text-[11px] font-bold hover:bg-accent disabled:opacity-40"
-                  >
-                    Email cert
-                  </button>
-                </div>
-              </div>
+                </header>
 
-              <div className="space-y-2 text-xs">
-                {sub.answers.map((a) => {
-                  const task = exam?.tasks.find((t) => t.id === a.taskId);
-                  return (
-                    <div key={a.taskId} className="rounded-xl bg-muted/40 px-3 py-2 space-y-1">
-                      <div className="font-semibold">{task?.titleEn || a.taskId}</div>
-                      <div className="whitespace-pre-wrap">{a.textAnswer || "—"}</div>
-                      {a.linkUrl && (
-                        <a
-                          href={a.linkUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-emerald-700 font-semibold hover:underline break-all"
-                        >
-                          {a.linkUrl}
-                        </a>
-                      )}
-                      {a.fileName && (
-                        <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] text-muted-foreground">
-                          <span>
-                            file: {a.fileName} ({a.fileSizeBytes || 0} bytes)
-                          </span>
-                          {a.fileRelPath && (
-                            <button
-                              type="button"
-                              onClick={() => void downloadFile(sub, a.taskId)}
-                              disabled={busyId === `dl-${sub.id}-${a.taskId}`}
-                              className="rounded-lg border border-border bg-background px-2 py-0.5 text-[10px] font-bold text-foreground hover:bg-accent"
-                            >
-                              Download
-                            </button>
+                <div className="assess-body">
+                  <div className="assess-work">
+                    <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-muted-foreground">
+                      <FileText className="h-3.5 w-3.5" /> Submitted work
+                    </div>
+                    {sub.answers.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No answers attached.</p>
+                    ) : (
+                      sub.answers.map((a) => {
+                        const task = exam?.tasks.find((t) => t.id === a.taskId);
+                        return (
+                          <div key={a.taskId} className="assess-task">
+                            <div className="assess-task-title">{task?.titleEn || a.taskId}</div>
+                            <div className="assess-task-body">{a.textAnswer || "—"}</div>
+                            {a.linkUrl && (
+                              <a
+                                href={a.linkUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex break-all text-xs font-bold text-emerald-700 hover:underline dark:text-emerald-300"
+                              >
+                                {a.linkUrl}
+                              </a>
+                            )}
+                            {a.fileName && (
+                              <div className="flex flex-wrap items-center gap-2 pt-1 font-mono text-[10px] text-muted-foreground">
+                                <span>
+                                  {a.fileName}
+                                  {typeof a.fileSizeBytes === "number"
+                                    ? ` · ${Math.round(a.fileSizeBytes / 1024)} KB`
+                                    : ""}
+                                </span>
+                                {a.fileRelPath && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void downloadFile(sub, a.taskId)}
+                                    disabled={busyId === `dl-${sub.id}-${a.taskId}`}
+                                    className="staff-btn-ghost !px-2 !py-0.5 text-[10px]"
+                                  >
+                                    <Download className="h-3 w-3" /> Download
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <aside className="assess-grade-rail">
+                    <h4>Marks</h4>
+                    {exam && canGrade(sub.status) ? (
+                      <>
+                        <div className="space-y-3">
+                          {exam.tasks.map((task) => (
+                            <label key={task.id} className="staff-field">
+                              <span className="staff-label">
+                                {task.titleEn}{" "}
+                                <span className="font-mono font-normal text-muted-foreground">
+                                  / {task.maxMarks}
+                                </span>
+                              </span>
+                              <input
+                                className="staff-input font-mono"
+                                inputMode="decimal"
+                                value={
+                                  marksBySubTask[markKey(sub.id, task.id)] ??
+                                  String(
+                                    sub.grades?.find((g) => g.taskId === task.id)?.marks ?? "",
+                                  )
+                                }
+                                onChange={(e) =>
+                                  setMarksBySubTask((m) => ({
+                                    ...m,
+                                    [markKey(sub.id, task.id)]: e.target.value,
+                                  }))
+                                }
+                              />
+                            </label>
+                          ))}
+                          <label className="staff-field">
+                            <span className="staff-label">Feedback to student</span>
+                            <textarea
+                              className="staff-input min-h-[72px]"
+                              rows={3}
+                              value={feedbackBySub[sub.id] ?? sub.instructorFeedback ?? ""}
+                              onChange={(e) =>
+                                setFeedbackBySub((m) => ({ ...m, [sub.id]: e.target.value }))
+                              }
+                            />
+                          </label>
+                        </div>
+                        <div className="assess-actions">
+                          <button
+                            type="button"
+                            onClick={() => void gradeOne(sub)}
+                            disabled={busyId === sub.id}
+                            className="staff-btn-primary w-full disabled:opacity-60"
+                          >
+                            {busyId === sub.id
+                              ? "Saving…"
+                              : graded
+                                ? "Update grade"
+                                : "Save grade"}
+                          </button>
+                          {issueReady ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => void issueOne(sub.rollNumber)}
+                                disabled={busyId === `issue-${sub.rollNumber}`}
+                                className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 text-xs font-bold text-emerald-800 hover:bg-emerald-500/15 disabled:opacity-50 dark:text-emerald-200"
+                              >
+                                <Award className="h-3.5 w-3.5" /> Issue &amp; email certificate
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void emailCertOne(sub.rollNumber)}
+                                disabled={busyId === `email-${sub.rollNumber}`}
+                                className="staff-btn-ghost w-full !justify-center disabled:opacity-50"
+                              >
+                                <Mail className="h-3.5 w-3.5" /> Resend certificate email
+                              </button>
+                            </>
+                          ) : (
+                            <p className="text-[11px] leading-relaxed text-muted-foreground">
+                              Save a grade first to unlock the course certificate.
+                            </p>
                           )}
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {exam && canGrade(sub.status) && (
-                <div className="space-y-2 border-t border-border/60 pt-3">
-                  {exam.tasks.map((task) => (
-                    <label key={task.id} className="text-xs font-semibold block">
-                      Marks / {task.maxMarks} — {task.titleEn}
-                      <input
-                        className="mt-1 block w-28 rounded-xl border border-border bg-background px-2 py-1.5"
-                        value={
-                          marksBySubTask[markKey(sub.id, task.id)] ??
-                          String(sub.grades?.find((g) => g.taskId === task.id)?.marks ?? "")
-                        }
-                        onChange={(e) =>
-                          setMarksBySubTask((m) => ({
-                            ...m,
-                            [markKey(sub.id, task.id)]: e.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                  ))}
-                  <label className="text-xs font-semibold block">
-                    Feedback
-                    <input
-                      className="mt-1 block w-full rounded-xl border border-border bg-background px-2 py-1.5"
-                      value={feedbackBySub[sub.id] ?? sub.instructorFeedback ?? ""}
-                      onChange={(e) =>
-                        setFeedbackBySub((m) => ({ ...m, [sub.id]: e.target.value }))
-                      }
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => void gradeOne(sub)}
-                    disabled={busyId === sub.id}
-                    className="rounded-xl bg-primary px-3 py-2 text-xs font-bold text-primary-foreground disabled:opacity-60"
-                  >
-                    {busyId === sub.id
-                      ? "Saving…"
-                      : sub.status === "graded"
-                        ? "Update grade"
-                        : "Save grade"}
-                  </button>
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        This submission is not ready to grade yet.
+                      </p>
+                    )}
+                  </aside>
                 </div>
-              )}
-            </div>
-          ))
+              </article>
+            );
+          })
         )}
       </section>
+      )}
     </div>
   );
 }
