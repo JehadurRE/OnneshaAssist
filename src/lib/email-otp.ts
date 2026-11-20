@@ -235,42 +235,103 @@ export function buildCourseCertificateEmail(params: {
   combinedScorePct?: number | undefined;
   verifyUrl: string;
   portalUrl: string;
+  /** Optional badge title from course design profile (used in subject). */
+  badgeTitle?: string | undefined;
 }): { subject: string; text: string; html: string } {
   const score =
     typeof params.combinedScorePct === "number"
       ? ` Combined score: ${params.combinedScorePct}%.`
       : "";
-  const subject = `Course completion certificate — ${params.courseCode}`;
+  const badge = (params.badgeTitle || "").trim();
+  const subject = badge
+    ? `${badge} — ${params.courseCode || "Course"}`
+    : `Course completion certificate — ${params.courseCode}`;
   const text = [
-    `Congratulations ${params.studentName}!`,
+    `Hi ${params.studentName},`,
     "",
-    `Your course completion certificate for ${params.courseTitle} (${params.courseCode}) has been issued.`,
+    `Your course completion certificate for ${params.courseTitle} (${params.courseCode}) is ready.`,
     `Certificate number: ${params.certificateNumber}.${score}`,
     "",
-    `Verify online: ${params.verifyUrl}`,
-    `Student portal: ${params.portalUrl}`,
+    `Open / verify: ${params.verifyUrl}`,
+    `Portal: ${params.portalUrl}`,
     "",
     "— Onnesha Arena",
   ].join("\n");
-  const html = `<div style="font-family:system-ui,sans-serif;line-height:1.5;color:#0f172a">
-  <p>Congratulations <strong>${escapeHtml(params.studentName)}</strong>!</p>
-  <p>Your <strong>course completion certificate</strong> for
-    <em>${escapeHtml(params.courseTitle)}</em>
-    (<code>${escapeHtml(params.courseCode)}</code>) has been issued.</p>
-  <p>Certificate number: <strong>${escapeHtml(params.certificateNumber)}</strong>${
+  const html = `<div style="font-family:Georgia,'Times New Roman',serif;line-height:1.55;color:#0f172a;max-width:560px">
+  <p style="font-size:15px">Hi <strong>${escapeHtml(params.studentName)}</strong>,</p>
+  <p style="font-size:15px">Your <strong>course completion certificate</strong> for
+    ${escapeHtml(params.courseTitle)}
+    (<code style="font-family:ui-monospace,monospace">${escapeHtml(params.courseCode)}</code>) is ready.</p>
+  <p style="font-size:14px">Certificate number: <strong>${escapeHtml(params.certificateNumber)}</strong>${
     typeof params.combinedScorePct === "number"
       ? `<br/>Combined score: <strong>${params.combinedScorePct}%</strong>`
       : ""
   }</p>
   <p>
-    <a href="${escapeHtml(params.verifyUrl)}" style="display:inline-block;padding:10px 16px;background:#059669;color:#fff;border-radius:10px;text-decoration:none;font-weight:700">
-      Verify certificate
+    <a href="${escapeHtml(params.verifyUrl)}" style="display:inline-block;padding:12px 18px;background:#0f766e;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;font-family:system-ui,sans-serif">
+      Open certificate
     </a>
   </p>
-  <p style="font-size:13px;color:#64748b">
-    Portal: <a href="${escapeHtml(params.portalUrl)}">${escapeHtml(params.portalUrl)}</a>
+  <p style="font-size:13px;color:#64748b;font-family:system-ui,sans-serif">
+    Portal: <a href="${escapeHtml(params.portalUrl)}" style="color:#0f766e">${escapeHtml(params.portalUrl)}</a>
   </p>
-  <p style="font-size:12px;color:#94a3b8">— Onnesha Arena</p>
+  <p style="font-size:12px;color:#94a3b8;font-family:system-ui,sans-serif">— Onnesha Arena</p>
+</div>`;
+  return { subject, text, html };
+}
+
+export function buildQuizCertificateEmail(params: {
+  studentName: string;
+  quizTitle: string;
+  certificateNumber: string;
+  scorePct?: number | undefined;
+  rank?: number | undefined;
+  totalParticipants?: number | undefined;
+  verifyUrl: string;
+  portalUrl: string;
+  badgeTitle?: string | undefined;
+}): { subject: string; text: string; html: string } {
+  const badge = (params.badgeTitle || "").trim() || "Quiz merit certificate";
+  const scoreLine =
+    typeof params.scorePct === "number" ? ` Score: ${params.scorePct}%.` : "";
+  const rankLine =
+    typeof params.rank === "number" && typeof params.totalParticipants === "number"
+      ? ` Rank: ${params.rank} of ${params.totalParticipants}.`
+      : "";
+  const subject = `${badge} — ${params.quizTitle}`;
+  const text = [
+    `Hi ${params.studentName},`,
+    "",
+    `Your quiz certificate for "${params.quizTitle}" is ready.`,
+    `Certificate number: ${params.certificateNumber}.${scoreLine}${rankLine}`,
+    "",
+    `Open / verify: ${params.verifyUrl}`,
+    `Portal: ${params.portalUrl}`,
+    "",
+    "— Onnesha Arena",
+  ].join("\n");
+  const html = `<div style="font-family:Georgia,'Times New Roman',serif;line-height:1.55;color:#0f172a;max-width:560px">
+  <p style="font-size:15px">Hi <strong>${escapeHtml(params.studentName)}</strong>,</p>
+  <p style="font-size:15px">Your <strong>quiz certificate</strong> for
+    “${escapeHtml(params.quizTitle)}” is ready.</p>
+  <p style="font-size:14px">Certificate number: <strong>${escapeHtml(params.certificateNumber)}</strong>${
+    typeof params.scorePct === "number"
+      ? `<br/>Score: <strong>${params.scorePct}%</strong>`
+      : ""
+  }${
+    typeof params.rank === "number" && typeof params.totalParticipants === "number"
+      ? `<br/>Rank: <strong>${params.rank}</strong> of ${params.totalParticipants}`
+      : ""
+  }</p>
+  <p>
+    <a href="${escapeHtml(params.verifyUrl)}" style="display:inline-block;padding:12px 18px;background:#1d4ed8;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;font-family:system-ui,sans-serif">
+      Open certificate
+    </a>
+  </p>
+  <p style="font-size:13px;color:#64748b;font-family:system-ui,sans-serif">
+    Portal: <a href="${escapeHtml(params.portalUrl)}" style="color:#1d4ed8">${escapeHtml(params.portalUrl)}</a>
+  </p>
+  <p style="font-size:12px;color:#94a3b8;font-family:system-ui,sans-serif">— Onnesha Arena</p>
 </div>`;
   return { subject, text, html };
 }

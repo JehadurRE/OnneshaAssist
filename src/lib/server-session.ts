@@ -26,7 +26,11 @@ import {
   Region,
   RosterStudent,
 } from "./types";
-import { DEFAULT_BRANDING_SETTINGS, mergeBrandingSettings } from "./branding";
+import {
+  DEFAULT_BRANDING_SETTINGS,
+  getCertificateDesignProfile,
+  mergeBrandingSettings,
+} from "./branding";
 import { purgeUnderThresholdExamsInStore, type PurgeExamSummary } from "./exam-purge";
 import { generateQuizViaGeminiRest, resolveEnvGeminiApiKey } from "./ai-quiz-core";
 import {
@@ -37,6 +41,7 @@ import {
 import { askCourseTutorViaGemini } from "./ai-tutor-core";
 import {
   buildCourseCertificateEmail,
+  buildQuizCertificateEmail,
   isPortalEmailConfigured,
   isValidPortalEmail,
   normalizePortalEmail,
@@ -1967,6 +1972,10 @@ function persistCompletedExamToStore(session: ServerLiveSession) {
         ),
       ];
       triggerBackgroundExternalAnchoring(issued.map((c) => c.certificateNumber));
+      // Best-effort quiz certificate emails when roster email exists (Resend → Brevo).
+      void Promise.allSettled(
+        issued.map((cert) => emailCertificateToStudent({ store, certificate: cert })),
+      );
     }
   }
   scheduleDiskPersist();
@@ -5804,7 +5813,7 @@ function findRosterEmailForRoll(
   return isValidPortalEmail(email) ? email : undefined;
 }
 
-async function emailCourseCertificateToStudent(params: {
+async function emailCertificateToStudent(params: {
   store: PersistentStoreData;
   certificate: CertificateData;
 }): Promise<
@@ -5824,16 +5833,37 @@ async function emailCourseCertificateToStudent(params: {
     params.certificate.verificationUrl?.startsWith("http")
       ? params.certificate.verificationUrl
       : `${origin}/verify/${certNo}`;
-  const content = buildCourseCertificateEmail({
-    studentName: params.certificate.studentName || "Student",
-    courseTitle: params.certificate.courseTitle || "Course",
-    courseCode: params.certificate.courseCode || "",
-    certificateNumber: certNo,
-    combinedScorePct:
-      params.certificate.combinedScorePct ?? params.certificate.accuracyPercent,
-    verifyUrl: verifyPath,
-    portalUrl: `${origin}/portal`,
-  });
+  const portalUrl = `${origin}/portal`;
+  const kind =
+    params.certificate.kind === "course_completion" ? "course_completion" : "quiz_session";
+  const design = getCertificateDesignProfile(params.store.branding, kind);
+  const content =
+    kind === "course_completion"
+      ? buildCourseCertificateEmail({
+          studentName: params.certificate.studentName || "Student",
+          courseTitle: params.certificate.courseTitle || "Course",
+          courseCode: params.certificate.courseCode || "",
+          certificateNumber: certNo,
+          combinedScorePct:
+            params.certificate.combinedScorePct ?? params.certificate.accuracyPercent,
+          verifyUrl: verifyPath,
+          portalUrl,
+          badgeTitle: design.certBadgeTitle,
+        })
+      : buildQuizCertificateEmail({
+          studentName: params.certificate.studentName || "Student",
+          quizTitle: params.certificate.quizTitle || "Quiz Session",
+          certificateNumber: certNo,
+          scorePct:
+            params.certificate.scorePct ??
+            params.certificate.accuracyPercent ??
+            undefined,
+          rank: params.certificate.rank,
+          totalParticipants: params.certificate.totalParticipants,
+          verifyUrl: verifyPath,
+          portalUrl,
+          badgeTitle: design.certBadgeTitle,
+        });
   const sent = await sendTransactionalEmail({
     to,
     subject: content.subject,
@@ -5842,6 +5872,17 @@ async function emailCourseCertificateToStudent(params: {
   });
   if (!sent.ok) return { emailed: false, reason: sent.error };
   return { emailed: true, to, provider: sent.provider };
+}
+
+/** @deprecated Prefer emailCertificateToStudent — kept for call-site clarity. */
+async function emailCourseCertificateToStudent(params: {
+  store: PersistentStoreData;
+  certificate: CertificateData;
+}): Promise<
+  | { emailed: true; to: string; provider: string }
+  | { emailed: false; reason: string }
+> {
+  return emailCertificateToStudent(params);
 }
 
 export const serverIssueCourseCertificate = createServerFn({ method: "POST" })
@@ -5881,8 +5922,8 @@ export const serverBulkIssueCourseCertificates = createServerFn({ method: "POST"
   )
   .handler(async ({ data }) => {
     const actor = await getActorFromRequest();
-    if (!actor || actor.role !== "admin") {
-      return { success: false, error: "Super Admin required for bulk issuance." };
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false, error: "Staff authentication required for bulk issuance." };
     }
     const store = getStore();
     ensureFinalPracticalSeeded(store);
@@ -5948,6 +5989,33 @@ export const serverBulkIssueCourseCertificates = createServerFn({ method: "POST"
     };
   });
 
+/**
+ * Send (or resend) certificate email for an already-issued cert.
+ * Picks quiz vs course template from `certificate.kind`.
+ */
+export const serverSendCertificateEmail = createServerFn({ method: "POST" })
+  .validator((data: { certificateNumber: string }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    const certNo = (data.certificateNumber || "").trim();
+    const certificate = store.certificates.find(
+      (c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase(),
+    );
+    if (!certificate) return { success: false as const, error: "Certificate not found." };
+    const mail = await emailCertificateToStudent({ store, certificate });
+    if (!mail.emailed) return { success: false as const, error: mail.reason };
+    return {
+      success: true as const,
+      to: mail.to,
+      provider: mail.provider,
+      kind: certificate.kind === "course_completion" ? "course_completion" : "quiz_session",
+    };
+  });
+
 /** Resend course-completion certificate email for an already-issued cert. */
 export const serverSendCourseCertificateEmail = createServerFn({ method: "POST" })
   .validator((data: { certificateNumber: string }) => data)
@@ -5962,10 +6030,7 @@ export const serverSendCourseCertificateEmail = createServerFn({ method: "POST" 
       (c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase(),
     );
     if (!certificate) return { success: false as const, error: "Certificate not found." };
-    if (certificate.kind && certificate.kind !== "course_completion") {
-      // Still allow other kinds — same email template works with course fields.
-    }
-    const mail = await emailCourseCertificateToStudent({ store, certificate });
+    const mail = await emailCertificateToStudent({ store, certificate });
     if (!mail.emailed) return { success: false as const, error: mail.reason };
     return { success: true as const, to: mail.to, provider: mail.provider };
   });

@@ -1,13 +1,17 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
+  brandingWithCertificateProfile,
   CERTIFICATE_THEME_PRESETS,
   DEFAULT_BRANDING_SETTINGS,
   DEFAULT_CERTIFICATE_SIGNATORIES,
+  getCertificateDesignProfile,
 } from "@/lib/branding";
 import { downloadCertificatePdf, populateCertificateCanvas } from "@/lib/pdf-generator";
 import type {
   BrandingSettings,
   CertificateData,
+  CertificateDesignProfile,
+  CertificateKind,
   CertificatePartnerLogo,
   CertificateSignatory,
   CertificateThemePreset,
@@ -15,6 +19,7 @@ import type {
 import {
   Award,
   Download,
+  GraduationCap,
   Image as ImageIcon,
   Layers,
   Map as MapIcon,
@@ -34,13 +39,20 @@ interface CertificateDesignerStudioProps {
   onSave: () => void;
 }
 
-const PREVIEW_SAMPLE_CERTIFICATE: CertificateData = {
+type DesignerCertProfile = "quiz" | "course";
+
+function profileToKind(profile: DesignerCertProfile): CertificateKind {
+  return profile === "course" ? "course_completion" : "quiz_session";
+}
+
+const PREVIEW_SAMPLE_QUIZ: CertificateData = {
   id: "preview-sample-cert",
   certificateNumber: "ONN-OMR8-OLL001",
   studentName: "Nusrat Jahan Chowdhury",
   studentRoll: "2026-8841",
   regionName: "Dhaka Range",
-  quizTitle: "Bangladesh National AI & Engineering Olympiad — Final",
+  quizTitle: "Bangladesh National AI & Engineering Olympiad — Session Quiz",
+  kind: "quiz_session",
   organizationName: "Onnesha Assessment Arena",
   instructorName: "Prof. Dr. Tanvir Ahmed",
   score: 96,
@@ -60,6 +72,21 @@ const PREVIEW_SAMPLE_CERTIFICATE: CertificateData = {
   rekorStatus: "anchored",
   rekorLogIndex: 3850588166,
   otsStatus: "pending_bitcoin",
+};
+
+const PREVIEW_SAMPLE_COURSE: CertificateData = {
+  ...PREVIEW_SAMPLE_QUIZ,
+  id: "preview-sample-course-cert",
+  certificateNumber: "ONN-COURSE-SB04-OLL001",
+  kind: "course_completion",
+  courseId: "course-sanjibon-ai-dm",
+  courseCode: "SB-AI-DM",
+  courseTitle: "Sanjibon AI for Disaster Management",
+  quizTitle: "SB-AI-DM — Certificate of Course Completion",
+  combinedScorePct: 92,
+  quizAccuracyPct: 94,
+  practicalScorePct: 90,
+  verificationUrl: "https://arena.onnesha.courses/verify/ONN-COURSE-SB04-OLL001",
 };
 
 async function readImageFileAsDataUrl(
@@ -203,11 +230,44 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
 }) => {
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [studioTab, setStudioTab] = useState<"theme" | "logos" | "signatories">("theme");
+  const [designProfile, setDesignProfile] = useState<DesignerCertProfile>("quiz");
   const [isDownloadingSample, setIsDownloadingSample] = useState(false);
 
+  const certKind = profileToKind(designProfile);
+  const activeProfile = getCertificateDesignProfile(branding, certKind);
+  const previewSample = designProfile === "course" ? PREVIEW_SAMPLE_COURSE : PREVIEW_SAMPLE_QUIZ;
+
+  /** Patch the selected design profile only; preserve the other. Quiz also syncs legacy top-level. */
+  const patchActiveProfile = (patch: Partial<CertificateDesignProfile>) => {
+    const nextProfile: CertificateDesignProfile = { ...activeProfile, ...patch };
+    if (designProfile === "course") {
+      onChange({
+        ...branding,
+        courseCertificate: nextProfile,
+      });
+      return;
+    }
+    onChange({
+      ...branding,
+      quizCertificate: nextProfile,
+      certThemePreset: nextProfile.certThemePreset,
+      certShowBangladeshAiMap: nextProfile.certShowBangladeshAiMap,
+      certMapOpacity: nextProfile.certMapOpacity,
+      certBgPrimaryColor: nextProfile.certBgPrimaryColor,
+      certBgSecondaryColor: nextProfile.certBgSecondaryColor,
+      certAccentColor: nextProfile.certAccentColor,
+      certBorderColor: nextProfile.certBorderColor,
+      certCustomBgUrl: nextProfile.certCustomBgUrl,
+      certCustomBgOpacity: nextProfile.certCustomBgOpacity,
+      certBadgeTitle: nextProfile.certBadgeTitle,
+      certAuthoritySubtitle: nextProfile.certAuthoritySubtitle,
+      certSignatories: nextProfile.certSignatories,
+    });
+  };
+
   const signatories: CertificateSignatory[] =
-    Array.isArray(branding.certSignatories) && branding.certSignatories.length > 0
-      ? branding.certSignatories
+    Array.isArray(activeProfile.certSignatories) && activeProfile.certSignatories.length > 0
+      ? activeProfile.certSignatories
       : DEFAULT_CERTIFICATE_SIGNATORIES;
 
   const partnerLogos: CertificatePartnerLogo[] = Array.isArray(branding.partnerLogos)
@@ -217,24 +277,26 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
   useEffect(() => {
     const timer = setTimeout(() => {
       if (previewCanvasRef.current) {
+        const sample = designProfile === "course" ? PREVIEW_SAMPLE_COURSE : PREVIEW_SAMPLE_QUIZ;
         const previewCert: CertificateData = {
-          ...PREVIEW_SAMPLE_CERTIFICATE,
+          ...sample,
           organizationName:
             branding.institutionTitle ||
-            PREVIEW_SAMPLE_CERTIFICATE.organizationName ||
+            sample.organizationName ||
             "Onnesha Assessment Arena",
         };
-        populateCertificateCanvas(previewCanvasRef.current, previewCert, branding);
+        const overlay = brandingWithCertificateProfile(branding, profileToKind(designProfile));
+        populateCertificateCanvas(previewCanvasRef.current, previewCert, overlay);
       }
     }, 60);
     return () => clearTimeout(timer);
-  }, [branding]);
+  }, [branding, designProfile]);
 
   const handleSetSignatoryCount = (count: number) => {
     const target = Math.max(1, Math.min(4, count));
     const current = [...signatories];
     if (current.length > target) {
-      onChange({ ...branding, certSignatories: current.slice(0, target) });
+      patchActiveProfile({ certSignatories: current.slice(0, target) });
       return;
     }
     const presetTemplates: CertificateSignatory[] = [
@@ -268,12 +330,12 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
       };
       current.push({ ...tpl, id: `sig-${Date.now()}-${idx}` });
     }
-    onChange({ ...branding, certSignatories: current });
+    patchActiveProfile({ certSignatories: current });
   };
 
   const handleUpdateSignatory = (index: number, patch: Partial<CertificateSignatory>) => {
     const updated = signatories.map((sig, i) => (i === index ? { ...sig, ...patch } : sig));
-    onChange({ ...branding, certSignatories: updated });
+    patchActiveProfile({ certSignatories: updated });
   };
 
   const handleAddPartnerLogo = () => {
@@ -301,10 +363,10 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
     try {
       await downloadCertificatePdf(
         {
-          ...PREVIEW_SAMPLE_CERTIFICATE,
+          ...previewSample,
           organizationName:
             branding.institutionTitle ||
-            PREVIEW_SAMPLE_CERTIFICATE.organizationName ||
+            previewSample.organizationName ||
             "Onnesha Assessment Arena",
         },
         branding,
@@ -314,7 +376,7 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
     }
   };
 
-  const activePreset = (branding.certThemePreset || "emerald_gold") as CertificateThemePreset;
+  const activePreset = (activeProfile.certThemePreset || "emerald_gold") as CertificateThemePreset;
 
   return (
     <div className="rounded-3xl border border-border bg-card p-6 space-y-6">
@@ -325,8 +387,9 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
             <span>Certificate Designer Studio &amp; Co-Branding</span>
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Customize themes, Bangladesh AI watermark, left/right crests, partner strip, and 1–4
-            institutional signatories with real-time canvas preview.
+            Two independent designs: quiz-session certificates and course-completion / final-exam
+            credentials. Themes, map, badge title, and signatories are per profile; logos stay
+            shared.
           </p>
         </div>
 
@@ -340,6 +403,7 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
                 defaultEnforceFullscreen: branding.defaultEnforceFullscreen,
                 defaultBlockCopyPaste: branding.defaultBlockCopyPaste,
                 defaultMaxProctorViolations: branding.defaultMaxProctorViolations,
+                portalAuthChannel: branding.portalAuthChannel,
               })
             }
             className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold text-foreground hover:bg-accent transition cursor-pointer"
@@ -365,6 +429,49 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
             <span>Save Certificate Design</span>
           </button>
         </div>
+      </div>
+
+      {/* Dual profile switcher */}
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2 rounded-2xl border border-border bg-background p-1.5 max-w-xl">
+          <button
+            type="button"
+            onClick={() => setDesignProfile("quiz")}
+            className={`flex items-center justify-center gap-1.5 rounded-xl py-2.5 px-3 text-xs font-extrabold transition cursor-pointer ${
+              designProfile === "quiz"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Award className="h-3.5 w-3.5" />
+            <span>Quiz certificate</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setDesignProfile("course")}
+            className={`flex items-center justify-center gap-1.5 rounded-xl py-2.5 px-3 text-xs font-extrabold transition cursor-pointer ${
+              designProfile === "course"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <GraduationCap className="h-3.5 w-3.5" />
+            <span>Course completion</span>
+          </button>
+        </div>
+        <p className="text-[11px] text-muted-foreground max-w-2xl">
+          {designProfile === "course" ? (
+            <>
+              Editing the <strong className="text-foreground">course completion</strong> look —
+              used after Final Exam + practical.
+            </>
+          ) : (
+            <>
+              Editing the <strong className="text-foreground">quiz certificate</strong> look —
+              used for single quiz sessions.
+            </>
+          )}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
@@ -427,7 +534,7 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
                         <button
                           key={key}
                           type="button"
-                          onClick={() => onChange({ ...branding, certThemePreset: key })}
+                          onClick={() => patchActiveProfile({ certThemePreset: key })}
                           className={`rounded-xl border p-3 text-left transition cursor-pointer ${
                             selected
                               ? "border-primary bg-primary/10 ring-1 ring-primary"
@@ -479,28 +586,27 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
                   </div>
                   <input
                     type="checkbox"
-                    checked={branding.certShowBangladeshAiMap ?? true}
+                    checked={activeProfile.certShowBangladeshAiMap ?? true}
                     onChange={(e) =>
-                      onChange({ ...branding, certShowBangladeshAiMap: e.target.checked })
+                      patchActiveProfile({ certShowBangladeshAiMap: e.target.checked })
                     }
                     className="h-4 w-4 rounded border-border text-primary"
                   />
                 </label>
 
-                {(branding.certShowBangladeshAiMap ?? true) && (
+                {(activeProfile.certShowBangladeshAiMap ?? true) && (
                   <div className="flex items-center gap-3 pt-1">
                     <span className="text-[10px] font-bold uppercase text-muted-foreground whitespace-nowrap">
-                      Map Intensity ({Math.round((branding.certMapOpacity ?? 0.14) * 100)}%)
+                      Map Intensity ({Math.round((activeProfile.certMapOpacity ?? 0.14) * 100)}%)
                     </span>
                     <input
                       type="range"
                       min={0.05}
                       max={0.4}
                       step={0.01}
-                      value={branding.certMapOpacity ?? 0.14}
+                      value={activeProfile.certMapOpacity ?? 0.14}
                       onChange={(e) =>
-                        onChange({
-                          ...branding,
+                        patchActiveProfile({
                           certMapOpacity: parseFloat(e.target.value) || 0.14,
                         })
                       }
@@ -520,7 +626,7 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
                   {activePreset !== "custom" && (
                     <button
                       type="button"
-                      onClick={() => onChange({ ...branding, certThemePreset: "custom" })}
+                      onClick={() => patchActiveProfile({ certThemePreset: "custom" })}
                       className="text-[10px] font-bold text-primary hover:underline cursor-pointer"
                     >
                       Switch to Custom Palette
@@ -560,12 +666,12 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
                         <div className="flex items-center gap-1.5">
                           <input
                             type="color"
-                            value={branding[c.key] || c.fallback}
-                            onChange={(e) => onChange({ ...branding, [c.key]: e.target.value })}
+                            value={activeProfile[c.key] || c.fallback}
+                            onChange={(e) => patchActiveProfile({ [c.key]: e.target.value })}
                             className="h-6 w-8 rounded border-0 bg-transparent cursor-pointer"
                           />
                           <span className="font-mono text-[10px] text-foreground">
-                            {branding[c.key] || c.fallback}
+                            {activeProfile[c.key] || c.fallback}
                           </span>
                         </div>
                       </label>
@@ -575,28 +681,27 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
 
                 <ImageFieldInput
                   label="Optional Background Image Texture / Wallpaper"
-                  value={branding.certCustomBgUrl || ""}
+                  value={activeProfile.certCustomBgUrl || ""}
                   placeholder="https://example.com/guilloche-bg.png or Upload"
                   maxDim={1400}
                   preferLossless={false}
                   hint="Tip: Upload an image directly to guarantee CORS-free PDF downloads."
-                  onChange={(val) => onChange({ ...branding, certCustomBgUrl: val })}
+                  onChange={(val) => patchActiveProfile({ certCustomBgUrl: val })}
                 />
 
-                {branding.certCustomBgUrl && (
+                {activeProfile.certCustomBgUrl && (
                   <div className="flex items-center gap-3">
                     <span className="text-[10px] font-bold uppercase text-muted-foreground whitespace-nowrap">
-                      BG Overlay ({Math.round((branding.certCustomBgOpacity ?? 0.22) * 100)}%)
+                      BG Overlay ({Math.round((activeProfile.certCustomBgOpacity ?? 0.22) * 100)}%)
                     </span>
                     <input
                       type="range"
                       min={0.05}
                       max={0.85}
                       step={0.02}
-                      value={branding.certCustomBgOpacity ?? 0.22}
+                      value={activeProfile.certCustomBgOpacity ?? 0.22}
                       onChange={(e) =>
-                        onChange({
-                          ...branding,
+                        patchActiveProfile({
                           certCustomBgOpacity: parseFloat(e.target.value) || 0.22,
                         })
                       }
@@ -619,6 +724,7 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
                     placeholder="Onnesha Assessment Arena"
                     className="w-full rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold"
                   />
+                  <p className="mt-1 text-[10px] text-muted-foreground">Shared across both profiles</p>
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold uppercase text-muted-foreground mb-1">
@@ -626,9 +732,13 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
                   </label>
                   <input
                     type="text"
-                    value={branding.certBadgeTitle || ""}
-                    onChange={(e) => onChange({ ...branding, certBadgeTitle: e.target.value })}
-                    placeholder="CERTIFICATE OF MERIT & EXCELLENCE"
+                    value={activeProfile.certBadgeTitle || ""}
+                    onChange={(e) => patchActiveProfile({ certBadgeTitle: e.target.value })}
+                    placeholder={
+                      designProfile === "course"
+                        ? "CERTIFICATE OF COURSE COMPLETION"
+                        : "CERTIFICATE OF MERIT & EXCELLENCE"
+                    }
                     className="w-full rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold"
                   />
                 </div>
@@ -638,11 +748,15 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
                   </label>
                   <input
                     type="text"
-                    value={branding.certAuthoritySubtitle || ""}
+                    value={activeProfile.certAuthoritySubtitle || ""}
                     onChange={(e) =>
-                      onChange({ ...branding, certAuthoritySubtitle: e.target.value })
+                      patchActiveProfile({ certAuthoritySubtitle: e.target.value })
                     }
-                    placeholder="National Training, Merit Evaluation & Cryptographic Examination Authority"
+                    placeholder={
+                      designProfile === "course"
+                        ? "Final Examination Authority — Full Course Credential"
+                        : "National Training, Merit Evaluation & Cryptographic Examination Authority"
+                    }
                     className="w-full rounded-xl border border-border bg-card px-3 py-2 text-xs"
                   />
                 </div>
@@ -939,7 +1053,8 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
         <div className="xl:col-span-6 space-y-3 lg:sticky lg:top-20">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">
-              Live A4 Certificate Preview (2400 × 1700)
+              Live A4 Preview —{" "}
+              {designProfile === "course" ? "Course completion" : "Quiz certificate"} (2400 × 1700)
             </span>
             <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
               LIVE SYNC
@@ -954,10 +1069,10 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
             />
           </div>
           <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Changes update this preview immediately. Click{" "}
-            <strong className="text-foreground">Save Certificate Design</strong> to publish across
-            all <code className="font-mono text-foreground">/verify/:certId</code> links, candidate
-            dashboards, and downloaded PDFs.
+            Preview uses the selected profile only. Click{" "}
+            <strong className="text-foreground">Save Certificate Design</strong> to publish both
+            quiz and course designs to{" "}
+            <code className="font-mono text-foreground">/verify/:certId</code>, portals, and PDFs.
           </p>
         </div>
       </div>

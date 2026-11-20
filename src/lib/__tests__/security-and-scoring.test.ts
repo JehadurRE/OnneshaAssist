@@ -683,6 +683,33 @@ describe("certificate designer branding, themes, Bangladesh map & multi-signator
     expect(merged.partnerLogos?.[0]?.name).toBe("ICT Division");
     expect(merged.certSignatories).toHaveLength(4);
     expect(merged.certSignatories?.[2]?.signatureStyle).toBe("mono");
+    expect(merged.quizCertificate?.certThemePreset).toBe("dhaka_ai_navy");
+    expect(merged.quizCertificate?.certSignatories).toHaveLength(4);
+    expect(merged.courseCertificate?.certBadgeTitle).toMatch(/COURSE COMPLETION/i);
+  });
+
+  it("keeps quiz and course certificate design profiles independent", () => {
+    const merged = mergeBrandingSettings({
+      quizCertificate: {
+        certThemePreset: "dhaka_ai_navy",
+        certBadgeTitle: "QUIZ MERIT",
+        certAccentColor: "#fbbf24",
+      },
+      courseCertificate: {
+        certThemePreset: "bangla_heritage",
+        certBadgeTitle: "CERTIFICATE OF COURSE COMPLETION",
+        certAccentColor: "#991b1b",
+      },
+    });
+    expect(merged.quizCertificate?.certBadgeTitle).toBe("QUIZ MERIT");
+    expect(merged.courseCertificate?.certBadgeTitle).toBe("CERTIFICATE OF COURSE COMPLETION");
+    expect(merged.certBadgeTitle).toBe("QUIZ MERIT"); // legacy mirrors quiz
+    expect(merged.certThemePreset).toBe("dhaka_ai_navy");
+
+    const quizTheme = resolveCertificateTheme(merged, "quiz_session");
+    const courseTheme = resolveCertificateTheme(merged, "course_completion");
+    expect(quizTheme.id).toBe("dhaka_ai_navy");
+    expect(courseTheme.id).toBe("bangla_heritage");
   });
 
   it("resolves preset palettes cleanly and adapts ink contrast automatically for custom dark backgrounds", () => {

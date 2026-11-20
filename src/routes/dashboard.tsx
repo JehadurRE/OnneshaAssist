@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth-context";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { StaffShell } from "@/components/layout/StaffShell";
+import { AdminPracticalPanel } from "@/components/admin/AdminPracticalPanel";
 import { READY_MADE_PACKS, DEFAULT_REGIONS } from "@/lib/mock-data";
 import { AiQuizModal } from "@/components/dashboard/AiQuizModal";
 import { OmrSheetView } from "@/components/common/OmrSheetView";
@@ -41,6 +42,7 @@ import {
   BookOpen,
   Check,
   ChevronRight,
+  ClipboardList,
   Copy,
   Download,
   FileSpreadsheet,
@@ -87,7 +89,7 @@ export const Route = createFileRoute("/dashboard")({
   }),
   head: () => ({
     meta: [
-      { title: "Instructor Studio & Regional Assessment Command · Onnesha Arena" },
+      { title: "Instructor Studio · Onnesha Arena" },
       {
         name: "description",
         content:
@@ -103,6 +105,7 @@ type TabType =
   | "quizzes"
   | "ai_creator"
   | "roster"
+  | "final_exam"
   | "results"
   | "certificates"
   | "sms_logs"
@@ -908,25 +911,26 @@ function DashboardPage() {
 
   const instructorNav = [
     { id: "overview", label: "Overview", shortLabel: "Overview", icon: LayoutDashboard, group: "Home" },
-    { id: "roster", label: "Regions & Candidates", shortLabel: "Roster", icon: MapPin, badge: roster.length, group: "People" },
-    { id: "quizzes", label: "Model Tests & Packs", shortLabel: "Quizzes", icon: BookOpen, badge: quizzes.length, group: "Curriculum" },
-    { id: "ai_creator", label: "Manual Question Studio", shortLabel: "Studio", icon: PenTool, group: "Curriculum" },
-    { id: "results", label: "Regional Merit & Analysis", shortLabel: "Results", icon: Trophy, group: "Outcomes" },
-    { id: "certificates", label: "Verifiable Certificates", shortLabel: "Certificates", icon: Award, badge: certificates.length, group: "Outcomes" },
-    { id: "sms_logs", label: "Guardian SMS Logs", shortLabel: "SMS", icon: MessageSquare, badge: smsLogs.length, group: "Ops" },
-    { id: "billing", label: "Subscription & bKash", shortLabel: "Billing", icon: Receipt, group: "Ops" },
-    { id: "settings", label: "API & Settings", shortLabel: "Settings", icon: Settings, group: "Ops" },
+    { id: "roster", label: "Roster", shortLabel: "Roster", icon: MapPin, badge: roster.length, group: "People" },
+    { id: "quizzes", label: "Quizzes", shortLabel: "Quizzes", icon: BookOpen, badge: quizzes.length, group: "Curriculum" },
+    { id: "ai_creator", label: "Question studio", shortLabel: "Studio", icon: PenTool, group: "Curriculum" },
+    { id: "final_exam", label: "Final Exam Desk", shortLabel: "Final Exam", icon: ClipboardList, group: "Curriculum" },
+    { id: "results", label: "Results", shortLabel: "Results", icon: Trophy, group: "Outcomes" },
+    { id: "certificates", label: "Certificates", shortLabel: "Certificates", icon: Award, badge: certificates.length, group: "Outcomes" },
+    { id: "sms_logs", label: "SMS logs", shortLabel: "SMS", icon: MessageSquare, badge: smsLogs.length, group: "Ops" },
+    { id: "billing", label: "Billing", shortLabel: "Billing", icon: Receipt, group: "Ops" },
+    { id: "settings", label: "Settings", shortLabel: "Settings", icon: Settings, group: "Ops" },
   ] as const;
 
   return (
     <StaffShell
       variant="instructor"
       title="Instructor Studio"
-      subtitle="Regional rosters, model tests, live arena, SMS, and certificates."
+      subtitle="Rosters, quizzes, final exams, grading, and certificates."
       eyebrow={
         showPartnerLogo && partnerName
           ? `Onnesha × ${partnerName}`
-          : institutionNameInput || "Onnesha Assessment Arena"
+          : institutionNameInput || "Onnesha Arena"
       }
       userName={user?.name}
       userEmail={user?.email}
@@ -2861,14 +2865,31 @@ function DashboardPage() {
           </div>
         )}
 
-        {/* TAB 6: VERIFIABLE CERTIFICATES */}
+        {activeTab === "final_exam" && (
+          <div className="animate-in fade-in">
+            {assignedCourses.length === 0 ? (
+              <div className="staff-empty">
+                <p className="staff-empty-title">No courses assigned</p>
+                <p className="staff-empty-desc">
+                  Ask an admin to assign you to a course before opening the Final Exam Desk.
+                </p>
+              </div>
+            ) : (
+              <AdminPracticalPanel
+                courses={assignedCourses}
+                quizzes={scopedQuizzes}
+                initialCourseId={assignedCourses[0]?.id}
+              />
+            )}
+          </div>
+        )}
+
+        {/* TAB 6: CERTIFICATES */}
         {activeTab === "certificates" && (
           <div className="space-y-6 animate-in fade-in">
-            <h2 className="font-display text-xl font-bold text-foreground">
-              Cryptographic QR Verifiable Certificates
-            </h2>
+            <h2 className="font-display text-xl font-bold text-foreground">Certificates</h2>
             <p className="text-xs text-muted-foreground">
-              Official digital credentials issued to examinees with public verification URLs.
+              Issued credentials with a public verification link.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
