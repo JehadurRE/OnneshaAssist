@@ -5888,8 +5888,8 @@ export const serverRefreshPracticalQuizScores = createServerFn({ method: "POST" 
           rollNumber: sub.rollNumber,
           from: prev,
           to: quizPct,
-          matchedVia: match?.matchedVia,
-          matchedRoll: match?.result.rollNumber,
+          ...(match?.matchedVia ? { matchedVia: match.matchedVia } : {}),
+          ...(match?.result?.rollNumber ? { matchedRoll: match.result.rollNumber } : {}),
         });
       }
     }
@@ -5959,8 +5959,8 @@ export const serverGetStudentFinalQuizRecord = createServerFn({ method: "POST" }
             })
           : sub.combinedPct,
       weights: {
-        quizWeightPct: exam.quizWeightPct,
-        practicalWeightPct: exam.practicalWeightPct,
+        ...(typeof exam.quizWeightPct === "number" ? { quizWeightPct: exam.quizWeightPct } : {}),
+        ...(typeof exam.practicalWeightPct === "number" ? { practicalWeightPct: exam.practicalWeightPct } : {}),
         quizMaxMarks: exam.quizMaxMarks || FINAL_QUIZ_MARKS,
         practicalMaxMarks: exam.practicalMaxMarks || FINAL_PRACTICAL_MARKS,
         totalMaxMarks: exam.totalMaxMarks || FINAL_TOTAL_MARKS,

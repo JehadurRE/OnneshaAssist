@@ -268,8 +268,8 @@ export function AdminPracticalPanel(props: {
       if (res.success && res.quiz) {
         setQuizRecord(res.quiz as FinalQuizRecordSnapshot);
         setQuizRecordMeta({
-          combinedPct: res.combinedPct,
-          practicalScorePct: res.practicalScorePct,
+          ...(typeof res.combinedPct === "number" ? { combinedPct: res.combinedPct } : {}),
+          ...(typeof res.practicalScorePct === "number" ? { practicalScorePct: res.practicalScorePct } : {}),
           weights: res.weights,
         });
       } else {
