@@ -8,6 +8,7 @@ import {
   serverGetBootstrapData,
   serverGetFinalExamDesk,
   serverGradePracticalSubmission,
+  serverImportGoogleFormPracticals,
   serverIssueCourseCertificate,
   serverOpenFinalExamWindow,
   serverReturnPracticalForResubmit,
@@ -466,6 +467,36 @@ export function AdminPracticalPanel(props: {
       );
       await syncCertsIntoAdmin();
       await refresh();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const importGoogleFormBackups = async (dryRun: boolean) => {
+    if (!course) return;
+    if (
+      !dryRun &&
+      !window.confirm(
+        `Import Google Form practical backups into ${course.code}?\n\nMatched students get a late submission in the Grade queue. Already-graded rows are skipped.`,
+      )
+    ) {
+      return;
+    }
+    setBusyId(dryRun ? "gform-dry" : "gform");
+    setNotice(null);
+    try {
+      const res = await serverImportGoogleFormPracticals({
+        data: { courseId: course.id, dryRun },
+      });
+      if (!res.success) {
+        setNotice(res.error || "Google Form import failed.");
+        return;
+      }
+      const unmatched = (res.unmatchedPhone || []).slice(0, 8).join("; ");
+      setNotice(
+        `${dryRun ? "Dry run — " : ""}Google Form import: ${res.imported || 0} new, ${res.updated || 0} updated, ${res.skippedGraded || 0} skipped (graded), ${(res.unmatchedPhone || []).length} unmatched phones.${unmatched ? ` Unmatched: ${unmatched}` : ""}`,
+      );
+      if (!dryRun) await refresh({ soft: true });
     } finally {
       setBusyId(null);
     }
@@ -1506,14 +1537,32 @@ export function AdminPracticalPanel(props: {
                 Open one student at a time. Mark, save, then move to the next.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => void bulkIssue()}
-              disabled={busyId === "bulk" || !course || courseSubs.length === 0}
-              className="staff-btn-ghost disabled:opacity-50"
-            >
-              <Award className="h-3.5 w-3.5" /> Issue all eligible
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void importGoogleFormBackups(true)}
+                disabled={!!busyId || !course}
+                className="staff-btn-ghost disabled:opacity-50"
+              >
+                {busyId === "gform-dry" ? "Checking…" : "Preview Google Form import"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void importGoogleFormBackups(false)}
+                disabled={!!busyId || !course}
+                className="staff-btn-ghost disabled:opacity-50"
+              >
+                {busyId === "gform" ? "Importing…" : "Import Google Form (33)"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void bulkIssue()}
+                disabled={busyId === "bulk" || !course || courseSubs.length === 0}
+                className="staff-btn-ghost disabled:opacity-50"
+              >
+                <Award className="h-3.5 w-3.5" /> Issue all eligible
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-1 rounded-2xl border border-border/80 bg-muted/30 p-1">

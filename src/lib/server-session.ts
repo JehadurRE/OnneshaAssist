@@ -5694,6 +5694,236 @@ export const serverGradePracticalSubmission = createServerFn({ method: "POST" })
     return { success: true, submission: store.practicalSubmissions[idx] };
   });
 
+type GoogleFormPracticalRow = {
+  phone: string;
+  name?: string;
+  brandName?: string;
+  brandNameLink?: string;
+  marketResearch?: string;
+  fbCreatives?: string;
+  adScript?: string;
+  adScriptLink?: string;
+  adVideo?: string;
+  adVideoLink?: string;
+  landingPage?: string;
+  landingUrl?: string;
+  bonusAi?: string;
+  bonusShot?: string;
+};
+
+function buildAnswersFromGoogleFormProps(
+  row: GoogleFormPracticalRow,
+): PracticalTaskAnswer[] {
+  const fileNote = (name: string | undefined) => {
+    const n = (name || "").trim();
+    if (!n) return undefined;
+    if (/^https?:\/\//i.test(n)) return undefined;
+    // Treat non-URL blobs as uploaded file names from the Google Form.
+    if (n.includes(".") || n.length > 8) return n.split("\n")[0]?.trim();
+    return undefined;
+  };
+  return [
+    {
+      taskId: "task-brand-name",
+      textAnswer: (row.brandName || "").trim() || undefined,
+      linkUrl: (row.brandNameLink || "").trim() || undefined,
+    },
+    {
+      taskId: "task-market-research",
+      textAnswer: (row.marketResearch || "").trim() || undefined,
+      fileName: fileNote(row.marketResearch),
+    },
+    {
+      taskId: "task-fb-creatives",
+      textAnswer: (row.fbCreatives || "").trim() || undefined,
+      fileName: fileNote((row.fbCreatives || "").split("\n").find((l) => l.includes("."))),
+    },
+    {
+      taskId: "task-ad-script",
+      textAnswer: (row.adScript || "").trim() || undefined,
+      linkUrl: (row.adScriptLink || "").trim() || undefined,
+    },
+    {
+      taskId: "task-ad-video",
+      textAnswer: (row.adVideo || "").trim() || undefined,
+      linkUrl: (row.adVideoLink || "").trim() || undefined,
+      fileName: fileNote(row.adVideo),
+    },
+    {
+      taskId: "task-landing-page",
+      textAnswer: (row.landingPage || "").trim() || undefined,
+      linkUrl: (row.landingUrl || "").trim() || undefined,
+    },
+  ];
+}
+
+/**
+ * Merge Google Form practical backup responses into Final Exam submissions.
+ * Matches roster by mobile; skips already-graded rows; marks imports as late.
+ */
+export const serverImportGoogleFormPracticals = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      courseId?: string | undefined;
+      dryRun?: boolean | undefined;
+      /** When omitted, loads scripts/data/google-form-practical-ai-dm.json from disk. */
+      rows?: GoogleFormPracticalRow[] | undefined;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    ensureFinalPracticalSeeded(store);
+    const courseId = data.courseId || "course-sanjibon-ai-dm";
+    const exam = (store.practicalExams || []).find((p) => p.courseId === courseId);
+    if (!exam) return { success: false, error: "Final practical exam not found for course." };
+
+    let rows = data.rows;
+    if (!rows || rows.length === 0) {
+      try {
+        const { readFileSync } = await import("node:fs");
+        const { join } = await import("node:path");
+        const filePath = join(
+          process.cwd(),
+          "scripts/data/google-form-practical-ai-dm.json",
+        );
+        rows = JSON.parse(readFileSync(filePath, "utf8")) as GoogleFormPracticalRow[];
+      } catch {
+        return {
+          success: false,
+          error: "No rows provided and could not read scripts/data/google-form-practical-ai-dm.json",
+        };
+      }
+    }
+
+    if (!store.practicalSubmissions) store.practicalSubmissions = [];
+    const now = new Date().toISOString();
+    const summary = {
+      imported: 0,
+      updated: 0,
+      skippedGraded: 0,
+      unmatchedPhone: [] as string[],
+      matched: [] as Array<{ phone: string; rollNumber: string; name: string; action: string }>,
+    };
+
+    for (const row of rows) {
+      const phone = normalizeBdPhone(row.phone || "");
+      if (!phone) {
+        summary.unmatchedPhone.push(row.phone || "(empty)");
+        continue;
+      }
+      const student = (store.roster || []).find(
+        (s) =>
+          normalizeBdPhone(s.phone) === phone ||
+          normalizeBdPhone(s.guardianPhone) === phone,
+      );
+      if (!student) {
+        summary.unmatchedPhone.push(`${row.phone} (${row.name || "?"})`);
+        continue;
+      }
+
+      const answers = buildAnswersFromGoogleFormProps(row);
+      const existingIdx = store.practicalSubmissions.findIndex(
+        (s) =>
+          s.practicalExamId === exam.id &&
+          normalizeRollToken(s.rollNumber) === normalizeRollToken(student.rollNumber),
+      );
+      const existing =
+        existingIdx >= 0 ? store.practicalSubmissions[existingIdx] : undefined;
+      if (existing?.status === "graded") {
+        summary.skippedGraded += 1;
+        summary.matched.push({
+          phone: row.phone,
+          rollNumber: student.rollNumber,
+          name: student.name,
+          action: "skipped_graded",
+        });
+        continue;
+      }
+
+      const quizResult = resolveQuizResultForStudent(
+        store,
+        student.rollNumber,
+        exam.linkedQuizId,
+        (store.courseRequirements || []).find((r) => r.courseId === courseId)?.requiredQuizIds,
+      );
+      const feedbackBits = [
+        "Imported from Google Form backup (exam app submit failed).",
+        row.bonusAi ? `AI assistant bonus: ${row.bonusAi}` : "",
+        "Original files stay in the Google Form / Drive — download from the form if needed.",
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      const submission: PracticalSubmission = {
+        id:
+          existing?.id ||
+          `psub-${exam.id}-${normalizeRollToken(student.rollNumber)}`,
+        practicalExamId: exam.id,
+        courseId: exam.courseId,
+        rosterStudentId: student.id,
+        rollNumber: student.rollNumber,
+        studentName: student.name || row.name || "Student",
+        phone: student.phone || phone,
+        regionId: student.regionId,
+        regionName: student.regionName,
+        answers,
+        grades: undefined,
+        status: "late",
+        quizAccuracyPct: quizResult?.accuracyPct ?? existing?.quizAccuracyPct,
+        instructorFeedback: feedbackBits,
+        submittedAt: existing?.submittedAt || now,
+        createdAt: existing?.createdAt || now,
+        updatedAt: now,
+      };
+
+      if (data.dryRun) {
+        summary.matched.push({
+          phone: row.phone,
+          rollNumber: student.rollNumber,
+          name: student.name,
+          action: existing ? "would_update" : "would_create",
+        });
+        continue;
+      }
+
+      if (existingIdx >= 0) {
+        store.practicalSubmissions[existingIdx] = submission;
+        summary.updated += 1;
+        summary.matched.push({
+          phone: row.phone,
+          rollNumber: student.rollNumber,
+          name: student.name,
+          action: "updated",
+        });
+      } else {
+        store.practicalSubmissions.unshift(submission);
+        summary.imported += 1;
+        summary.matched.push({
+          phone: row.phone,
+          rollNumber: student.rollNumber,
+          name: student.name,
+          action: "created",
+        });
+      }
+    }
+
+    if (!data.dryRun && (summary.imported > 0 || summary.updated > 0)) {
+      scheduleDiskPersist();
+    }
+    return {
+      success: true,
+      dryRun: !!data.dryRun,
+      courseId,
+      examId: exam.id,
+      totalRows: rows.length,
+      ...summary,
+    };
+  });
+
 function issueCourseCertificateInStore(params: {
   store: PersistentStoreData;
   courseId: string;
