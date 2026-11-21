@@ -7,6 +7,7 @@ import {
   serverExtendFinalExamAttempt,
   serverGetBootstrapData,
   serverGetFinalExamDesk,
+  serverGetFinalGradeSheet,
   serverGradePracticalSubmission,
   serverApplyReviewedPracticalGrades,
   serverGetStudentFinalQuizRecord,
@@ -40,12 +41,18 @@ import {
   type FinalQuizRecordSnapshot,
 } from "@/lib/practical-exam";
 import {
+  finalGradeSheetCsv,
+  type FinalGradeSheetRow,
+} from "@/lib/final-gradesheet";
+import { downloadFinalGradeSheetPdf } from "@/lib/pdf-generator";
+import {
   Award,
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
   Download,
   ExternalLink,
+  FileSpreadsheet,
   FileText,
   KeyRound,
   Loader2,
@@ -62,7 +69,7 @@ import {
   Users,
 } from "lucide-react";
 
-export type FinalExamDeskView = "live" | "grade" | "setup" | "certs";
+export type FinalExamDeskView = "live" | "grade" | "setup" | "certs" | "sheet";
 
 type DeskAttempt = FinalExamAttempt & {
   practicalStatus?: string | undefined;
@@ -144,6 +151,18 @@ export function AdminPracticalPanel(props: {
       totalMaxMarks?: number;
     };
   } | null>(null);
+  const [sheetRows, setSheetRows] = useState<FinalGradeSheetRow[]>([]);
+  const [sheetMeta, setSheetMeta] = useState<{
+    courseTitle: string;
+    examTitle: string;
+    courseCode: string;
+    generatedAt: string;
+    counts: { total: number; graded: number; withQuiz: number };
+    quizMaxMarks: number;
+    practicalMaxMarks: number;
+    totalMaxMarks: number;
+  } | null>(null);
+  const [sheetLoading, setSheetLoading] = useState(false);
 
   const goDesk = (patch: {
     courseId?: string;
@@ -921,6 +940,81 @@ export function AdminPracticalPanel(props: {
     }
   };
 
+  const loadGradeSheet = async () => {
+    if (!course) return;
+    setSheetLoading(true);
+    setNotice(null);
+    try {
+      const res = await serverGetFinalGradeSheet({ data: { courseId: course.id } });
+      if (!res.success) {
+        setNotice(res.error || "Could not load gradesheet.");
+        setSheetRows([]);
+        setSheetMeta(null);
+        return;
+      }
+      setSheetRows(res.rows);
+      setSheetMeta({
+        courseTitle: res.courseTitle,
+        examTitle: res.examTitle,
+        courseCode: res.courseCode,
+        generatedAt: res.generatedAt,
+        counts: res.counts,
+        quizMaxMarks: res.quizMaxMarks,
+        practicalMaxMarks: res.practicalMaxMarks,
+        totalMaxMarks: res.totalMaxMarks,
+      });
+    } finally {
+      setSheetLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (deskView === "sheet" && course) {
+      void loadGradeSheet();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when desk/course changes
+  }, [deskView, courseId]);
+
+  const exportGradeSheetCsv = () => {
+    if (!sheetRows.length || !sheetMeta) {
+      setNotice("Load the gradesheet first.");
+      return;
+    }
+    const csv = finalGradeSheetCsv(sheetRows);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Onnesha-Final-Gradesheet-${sheetMeta.courseCode || "final"}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setNotice(`Downloaded CSV (${sheetRows.length} students).`);
+  };
+
+  const exportGradeSheetPdf = async () => {
+    if (!sheetRows.length || !sheetMeta) {
+      setNotice("Load the gradesheet first.");
+      return;
+    }
+    setBusyId("sheet-pdf");
+    setNotice(null);
+    try {
+      await downloadFinalGradeSheetPdf({
+        courseTitle: sheetMeta.courseTitle,
+        examTitle: sheetMeta.examTitle,
+        courseCode: sheetMeta.courseCode,
+        rows: sheetRows,
+        branding: db.getBranding(),
+        generatedAt: sheetMeta.generatedAt,
+      });
+      setNotice(`Downloaded PDF gradesheet (${sheetRows.length} students).`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "PDF export failed.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const deskTabs: {
     id: FinalExamDeskView;
     label: string;
@@ -933,6 +1027,12 @@ export function AdminPracticalPanel(props: {
       label: "Grade work",
       icon: <ClipboardCheck className="h-3.5 w-3.5" />,
       badge: pendingGradeCount || undefined,
+    },
+    {
+      id: "sheet",
+      label: "Gradesheet",
+      icon: <FileSpreadsheet className="h-3.5 w-3.5" />,
+      badge: sheetMeta?.counts.total || (subs.length ? subs.length : undefined),
     },
     { id: "setup", label: "Exam setup", icon: <Settings2 className="h-3.5 w-3.5" /> },
     { id: "certs", label: "Certificates", icon: <Award className="h-3.5 w-3.5" /> },
@@ -1600,6 +1700,123 @@ export function AdminPracticalPanel(props: {
             </button>
           </section>
         </>
+      )}
+
+      {deskView === "sheet" && (
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-0 space-y-1">
+              <h3 className="text-base font-black tracking-tight">Final Exam gradesheet</h3>
+              <p className="text-xs text-muted-foreground">
+                All students — quiz /{sheetMeta?.quizMaxMarks ?? 30}, practical /
+                {sheetMeta?.practicalMaxMarks ?? 40}, total /{sheetMeta?.totalMaxMarks ?? 70}. Export
+                CSV or PDF for review and gazette.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void loadGradeSheet()}
+                disabled={sheetLoading || !course}
+                className="staff-btn-ghost"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${sheetLoading ? "animate-spin" : ""}`} />
+                {sheetLoading ? "Loading…" : "Reload"}
+              </button>
+              <button
+                type="button"
+                onClick={exportGradeSheetCsv}
+                disabled={!sheetRows.length}
+                className="staff-btn-ghost"
+              >
+                <Download className="h-3.5 w-3.5" /> CSV
+              </button>
+              <button
+                type="button"
+                onClick={() => void exportGradeSheetPdf()}
+                disabled={!sheetRows.length || busyId === "sheet-pdf"}
+                className="staff-btn-primary"
+              >
+                {busyId === "sheet-pdf" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <FileText className="h-3.5 w-3.5" />
+                )}
+                PDF export
+              </button>
+            </div>
+          </div>
+
+          {sheetMeta && (
+            <div className="flex flex-wrap gap-3 text-[11px] font-semibold text-muted-foreground">
+              <span>
+                {sheetMeta.counts.total} students · {sheetMeta.counts.graded} graded ·{" "}
+                {sheetMeta.counts.withQuiz} with quiz
+              </span>
+              <span className="font-mono">
+                Generated {new Date(sheetMeta.generatedAt).toLocaleString()}
+              </span>
+            </div>
+          )}
+
+          {sheetLoading && !sheetRows.length ? (
+            <div className="rounded-2xl border border-border/80 bg-card p-8 text-center text-sm text-muted-foreground">
+              <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" /> Building gradesheet…
+            </div>
+          ) : sheetRows.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-8 text-center text-sm text-muted-foreground">
+              No practical submissions yet for this course.
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-border/80 bg-card">
+              <table className="w-full min-w-[720px] text-left text-xs">
+                <thead className="border-b border-border bg-muted/40 text-[10px] font-black uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2.5">#</th>
+                    <th className="px-3 py-2.5">Roll</th>
+                    <th className="px-3 py-2.5">Name</th>
+                    <th className="px-3 py-2.5">Region</th>
+                    <th className="px-3 py-2.5 text-right">Quiz</th>
+                    <th className="px-3 py-2.5 text-right">Practical</th>
+                    <th className="px-3 py-2.5 text-right">Total</th>
+                    <th className="px-3 py-2.5 text-right">Combined %</th>
+                    <th className="px-3 py-2.5">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sheetRows.map((r) => (
+                    <tr
+                      key={r.submissionId || `${r.rollNumber}-${r.rank}`}
+                      className="border-b border-border/60 last:border-0 hover:bg-muted/30"
+                    >
+                      <td className="px-3 py-2 font-mono text-muted-foreground">{r.rank}</td>
+                      <td className="px-3 py-2 font-mono font-semibold">{r.rollNumber}</td>
+                      <td className="px-3 py-2 font-semibold">{r.studentName}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{r.regionName || "—"}</td>
+                      <td className="px-3 py-2 text-right font-mono">
+                        {r.quizFound || r.quizAccuracyPct > 0
+                          ? `${r.quizMarks}/${r.quizMaxMarks}`
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono">
+                        {r.practicalGraded || r.practicalScorePct > 0
+                          ? `${r.practicalMarks}/${r.practicalMaxMarks}`
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono font-bold">
+                        {r.totalMarks}/{r.maxTotal}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono">{r.combinedPct}%</td>
+                      <td className="px-3 py-2">
+                        <StatusPill status={r.practicalStatus} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       )}
 
       {deskView === "certs" && (

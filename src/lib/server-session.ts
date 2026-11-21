@@ -94,6 +94,10 @@ import {
   type FinalQuizRecordSnapshot,
 } from "./practical-exam";
 import {
+  buildFinalGradeSheetRows,
+  type FinalGradeSheetRow,
+} from "./final-gradesheet";
+import {
   isCoursePrivate,
   isQuizPrivate,
   normalizeBdPhone,
@@ -5969,6 +5973,71 @@ export const serverGetStudentFinalQuizRecord = createServerFn({ method: "POST" }
         practicalMaxMarks: exam.practicalMaxMarks || FINAL_PRACTICAL_MARKS,
         totalMaxMarks: exam.totalMaxMarks || FINAL_TOTAL_MARKS,
       },
+    };
+  });
+
+/** Staff: full Final Exam gradesheet (quiz /30 + practical /40 + total /70) for all submissions. */
+export const serverGetFinalGradeSheet = createServerFn({ method: "POST" })
+  .validator((data: { courseId?: string | undefined }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    ensureFinalPracticalSeeded(store);
+    const courseId = data.courseId || "course-sanjibon-ai-dm";
+    const exam = (store.practicalExams || []).find((p) => p.courseId === courseId);
+    if (!exam) return { success: false as const, error: "Final exam not found." };
+    const course = (store.courses || []).find((c) => c.id === courseId);
+    const requirement = (store.courseRequirements || []).find((r) => r.courseId === courseId);
+    const submissions = (store.practicalSubmissions || []).filter(
+      (s) => s.practicalExamId === exam.id || s.courseId === courseId,
+    );
+    const quizByRoll = new Map<string, { accuracyPct: number; found: boolean }>();
+    for (const sub of submissions) {
+      const tok = normalizeRollToken(sub.rollNumber);
+      if (quizByRoll.has(tok)) continue;
+      const match = resolveQuizResultMatchForStudent(
+        store,
+        sub.rollNumber,
+        exam.linkedQuizId,
+        requirement?.requiredQuizIds,
+        {
+          phone: sub.phone,
+          studentName: sub.studentName,
+          regionId: sub.regionId,
+        },
+      );
+      quizByRoll.set(tok, {
+        accuracyPct: match?.result.accuracyPct ?? 0,
+        found: !!match,
+      });
+    }
+    const rows: FinalGradeSheetRow[] = buildFinalGradeSheetRows({
+      exam,
+      submissions,
+      quizByRoll,
+      normalizeRoll: normalizeRollToken,
+    });
+    const graded = rows.filter((r) => r.practicalGraded).length;
+    const withQuiz = rows.filter((r) => r.quizFound).length;
+    return {
+      success: true as const,
+      courseId,
+      courseCode: course?.code || "",
+      courseTitle: course?.titleEn || exam.titleEn,
+      examTitle: exam.titleEn,
+      quizMaxMarks: exam.quizMaxMarks || FINAL_QUIZ_MARKS,
+      practicalMaxMarks: exam.practicalMaxMarks || FINAL_PRACTICAL_MARKS,
+      totalMaxMarks: exam.totalMaxMarks || FINAL_TOTAL_MARKS,
+      generatedAt: new Date().toISOString(),
+      counts: {
+        total: rows.length,
+        graded,
+        withQuiz,
+      },
+      rows,
     };
   });
 

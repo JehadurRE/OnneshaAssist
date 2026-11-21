@@ -128,7 +128,7 @@ type AdminTab =
   | "settings"
   | "sales_billing";
 
-const ADMIN_DESK_VIEWS = ["live", "grade", "setup", "certs"] as const;
+const ADMIN_DESK_VIEWS = ["live", "grade", "sheet", "setup", "certs"] as const;
 
 function SuperAdminPage() {
   const { lang } = useLanguage();

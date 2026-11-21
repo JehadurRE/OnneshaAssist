@@ -119,7 +119,7 @@ type TabType =
   | "billing"
   | "settings";
 
-const DESK_VIEWS: FinalExamDeskView[] = ["live", "grade", "setup", "certs"];
+const DESK_VIEWS: FinalExamDeskView[] = ["live", "grade", "sheet", "setup", "certs"];
 
 function parseDeskView(raw?: string): FinalExamDeskView | undefined {
   return DESK_VIEWS.includes(raw as FinalExamDeskView)

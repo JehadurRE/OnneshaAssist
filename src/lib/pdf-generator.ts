@@ -2245,3 +2245,187 @@ export async function downloadMeritGazettePdf(params: {
     `Onnesha-Merit-Gazette-${new Date().toISOString().slice(0, 10)}.pdf`,
   );
 }
+
+/** Final Exam package gradesheet PDF — quiz/30 + practical/40 + total/70 for all students. */
+export async function downloadFinalGradeSheetPdf(params: {
+  courseTitle: string;
+  examTitle: string;
+  courseCode?: string | undefined;
+  rows: Array<{
+    rank: number;
+    rollNumber: string;
+    studentName: string;
+    regionName: string;
+    quizMarks: number;
+    quizMaxMarks: number;
+    quizAccuracyPct: number;
+    quizFound: boolean;
+    practicalMarks: number;
+    practicalMaxMarks: number;
+    practicalScorePct: number;
+    practicalGraded: boolean;
+    totalMarks: number;
+    maxTotal: number;
+    combinedPct: number;
+    practicalStatus: string;
+  }>;
+  branding?: BrandingSettings | undefined;
+  generatedAt?: string | undefined;
+}): Promise<void> {
+  const { courseTitle, examTitle, courseCode, rows, branding } = params;
+  const generatedAt = params.generatedAt || new Date().toISOString();
+  const dateLabel = new Date(generatedAt).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+
+  const [onneshaLogo] = await Promise.all([
+    loadImageSafe(branding?.leftLogoUrl || onnesha.url),
+  ]);
+
+  const W = 1684; // A4 landscape @ ~144dpi
+  const H = 1190;
+  const M = 48;
+  const headerH = 118;
+  const footerH = 56;
+  const rowH = 28;
+  const colX = {
+    rank: M,
+    roll: M + 48,
+    name: M + 148,
+    region: M + 430,
+    quiz: M + 620,
+    prac: M + 760,
+    total: M + 920,
+    pct: M + 1060,
+    status: M + 1160,
+  };
+  const usableH = H - headerH - footerH - M;
+  const rowsPerPage = Math.max(1, Math.floor(usableH / rowH));
+  const totalPages = Math.max(1, Math.ceil(rows.length / rowsPerPage));
+  const canvases: HTMLCanvasElement[] = [];
+
+  for (let pageIdx = 0; pageIdx < totalPages; pageIdx++) {
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, W, H);
+
+    if (onneshaLogo) {
+      ctx.drawImage(onneshaLogo, M, 28, 56, 56);
+    }
+    ctx.fillStyle = "#0f172a";
+    ctx.font = "bold 28px Georgia, 'Times New Roman', serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText("Final Exam Gradesheet", M + (onneshaLogo ? 72 : 0), 52);
+    ctx.font = "600 16px system-ui, sans-serif";
+    ctx.fillStyle = "#334155";
+    ctx.fillText(
+      `${courseCode ? `${courseCode} · ` : ""}${courseTitle}`,
+      M + (onneshaLogo ? 72 : 0),
+      76,
+    );
+    ctx.font = "14px system-ui, sans-serif";
+    ctx.fillStyle = "#64748b";
+    ctx.fillText(
+      `${examTitle}  ·  Quiz /${rows[0]?.quizMaxMarks ?? 30} + Practical /${rows[0]?.practicalMaxMarks ?? 40} = /${rows[0]?.maxTotal ?? 70}  ·  ${dateLabel}`,
+      M + (onneshaLogo ? 72 : 0),
+      98,
+    );
+
+    const tableTop = headerH;
+    const pageRows = rows.slice(pageIdx * rowsPerPage, (pageIdx + 1) * rowsPerPage);
+
+    // Header row
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(M, tableTop, W - 2 * M, rowH);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 12px system-ui, sans-serif";
+    ctx.textBaseline = "middle";
+    const hy = tableTop + rowH / 2;
+    ctx.textAlign = "left";
+    ctx.fillText("#", colX.rank + 6, hy);
+    ctx.fillText("Roll", colX.roll, hy);
+    ctx.fillText("Name", colX.name, hy);
+    ctx.fillText("Region", colX.region, hy);
+    ctx.textAlign = "right";
+    ctx.fillText("Quiz", colX.quiz + 100, hy);
+    ctx.fillText("Practical", colX.prac + 120, hy);
+    ctx.fillText("Total", colX.total + 100, hy);
+    ctx.fillText("Combined %", colX.pct + 90, hy);
+    ctx.textAlign = "left";
+    ctx.fillText("Status", colX.status, hy);
+
+    let y = tableTop + rowH;
+    pageRows.forEach((r, i) => {
+      if (i % 2 === 0) {
+        ctx.fillStyle = "#f8fafc";
+        ctx.fillRect(M, y, W - 2 * M, rowH);
+      }
+      ctx.fillStyle = "#0f172a";
+      ctx.font = "13px system-ui, sans-serif";
+      ctx.textBaseline = "middle";
+      const cy = y + rowH / 2;
+      ctx.textAlign = "left";
+      ctx.fillText(String(r.rank), colX.rank + 6, cy);
+      ctx.font = "600 13px ui-monospace, monospace";
+      ctx.fillText(r.rollNumber.slice(0, 14), colX.roll, cy);
+      ctx.font = "13px system-ui, sans-serif";
+      const name = r.studentName.length > 28 ? `${r.studentName.slice(0, 26)}…` : r.studentName;
+      ctx.fillText(name, colX.name, cy);
+      const region =
+        r.regionName.length > 16 ? `${r.regionName.slice(0, 14)}…` : r.regionName || "—";
+      ctx.fillText(region, colX.region, cy);
+      ctx.textAlign = "right";
+      ctx.fillText(
+        r.quizFound || r.quizAccuracyPct > 0
+          ? `${r.quizMarks}/${r.quizMaxMarks}`
+          : "—",
+        colX.quiz + 100,
+        cy,
+      );
+      ctx.fillText(
+        r.practicalGraded || r.practicalScorePct > 0
+          ? `${r.practicalMarks}/${r.practicalMaxMarks}`
+          : "—",
+        colX.prac + 120,
+        cy,
+      );
+      ctx.font = "bold 13px system-ui, sans-serif";
+      ctx.fillText(`${r.totalMarks}/${r.maxTotal}`, colX.total + 100, cy);
+      ctx.font = "13px system-ui, sans-serif";
+      ctx.fillText(`${r.combinedPct}%`, colX.pct + 90, cy);
+      ctx.textAlign = "left";
+      ctx.fillStyle = r.practicalStatus === "graded" ? "#166534" : "#64748b";
+      ctx.fillText(r.practicalStatus || "—", colX.status, cy);
+      y += rowH;
+    });
+
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(M, tableTop, W - 2 * M, y - tableTop);
+
+    ctx.fillStyle = "#64748b";
+    ctx.font = "12px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(
+      `Page ${pageIdx + 1} of ${totalPages}  ·  ${rows.length} students  ·  Onnesha Final Exam Gradesheet`,
+      W / 2,
+      H - 28,
+    );
+
+    canvases.push(canvas);
+  }
+
+  const pdfBytes = buildPdfFromCanvases(canvases, "landscape");
+  const slug = (courseCode || "final").replace(/[^a-zA-Z0-9-_]/g, "-");
+  triggerBlobDownload(
+    pdfBytes,
+    `Onnesha-Final-Gradesheet-${slug}-${new Date().toISOString().slice(0, 10)}.pdf`,
+  );
+}
