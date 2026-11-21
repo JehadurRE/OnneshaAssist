@@ -6,6 +6,8 @@ import type {
   Course,
   CourseCompletionRequirement,
   ExamResultRecord,
+  ExamSessionRecord,
+  FinalExamAttempt,
   PracticalExam,
   PracticalGrade,
   PracticalSubmission,
@@ -19,6 +21,28 @@ import { normalizeBdPhone, normalizeRollToken } from "./sanjibon-seed-data";
 export const FINAL_QUIZ_MARKS = 30;
 export const FINAL_PRACTICAL_MARKS = 40;
 export const FINAL_TOTAL_MARKS = FINAL_QUIZ_MARKS + FINAL_PRACTICAL_MARKS; // 70
+
+/**
+ * Sanjibon final quiz id aliases.
+ * Quiz 17 (`imported-quiz-1795079103116`) was used as the makeup / actual timed
+ * final paper for students who missed the original final window.
+ */
+export const SANJIBON_FINAL_QUIZ_ID = "quiz-sanjibon-s10-final";
+export const SANJIBON_QUIZ17_MAKEUP_ID = "imported-quiz-1795079103116";
+export const SANJIBON_FINAL_QUIZ_ALIASES = [
+  SANJIBON_FINAL_QUIZ_ID,
+  "sanjibon-session-10-final-exam",
+  SANJIBON_QUIZ17_MAKEUP_ID,
+] as const;
+
+/** Expand a quiz-id list so any final alias accepts every other final alias. */
+export function expandFinalQuizIds(ids: Array<string | undefined | null>): string[] {
+  const base = ids.filter((id): id is string => !!id && id.length > 0);
+  const aliasSet = new Set<string>(SANJIBON_FINAL_QUIZ_ALIASES);
+  const hit = base.some((id) => aliasSet.has(id));
+  if (!hit) return Array.from(new Set(base));
+  return Array.from(new Set([...base, ...SANJIBON_FINAL_QUIZ_ALIASES]));
+}
 
 /** Weights mirror 30/40 of 70 so combined % maps cleanly to /70. */
 export const DEFAULT_QUIZ_WEIGHT = Math.round((FINAL_QUIZ_MARKS / FINAL_TOTAL_MARKS) * 100); // 43
@@ -392,7 +416,7 @@ export function buildDefaultFinalPracticalExam(course: Course): PracticalExam {
       `Join with the shared PIN on /final-exam. Part A: ${FINAL_QUIZ_MARKS}-mark MCQ (single overall timer, not per-question). Part B: ${FINAL_PRACTICAL_MARKS}-mark applied package. Total ${FINAL_TOTAL_MARKS} marks.`,
     descriptionBn:
       `/final-exam এ শেয়ার করা PIN দিয়ে যোগ দিন। অংশ ক: ${FINAL_QUIZ_MARKS} নম্বরের MCQ (একটি মোট টাইমার — প্রশ্নপ্রতি নয়)। অংশ খ: ${FINAL_PRACTICAL_MARKS} নম্বরের প্রায়োগিক প্যাকেজ। মোট ${FINAL_TOTAL_MARKS} নম্বর।`,
-    linkedQuizId: "quiz-sanjibon-s10-final",
+    linkedQuizId: SANJIBON_FINAL_QUIZ_ID,
     joinPin: generateFinalExamJoinPin(),
     quizDurationMinutes: 10,
     quizMaxMarks: FINAL_QUIZ_MARKS,
@@ -435,7 +459,7 @@ export function upgradeFinalExamPackage(exam: PracticalExam): PracticalExam {
     titleBn: exam.titleBn?.includes("টাইমড")
       ? exam.titleBn
       : "চূড়ান্ত পরীক্ষা — টাইমড কুইজ + ক্যাপস্টোন প্যাকেজ",
-    linkedQuizId: exam.linkedQuizId || "quiz-sanjibon-s10-final",
+    linkedQuizId: exam.linkedQuizId || SANJIBON_FINAL_QUIZ_ID,
     joinPin: exam.joinPin || generateFinalExamJoinPin(),
     quizDurationMinutes: exam.quizDurationMinutes || 10,
     quizMaxMarks: FINAL_QUIZ_MARKS,
@@ -455,11 +479,313 @@ export function buildDefaultCourseRequirement(courseId: string): CourseCompletio
     courseId,
     requireQuiz: true,
     requirePractical: true,
-    requiredQuizIds: ["quiz-sanjibon-s10-final"],
+    requiredQuizIds: [...SANJIBON_FINAL_QUIZ_ALIASES],
     quizWeightPct: DEFAULT_QUIZ_WEIGHT,
     practicalWeightPct: DEFAULT_PRACTICAL_WEIGHT,
     certificateTitleEn: "Certificate of Course Completion",
     certificateTitleBn: "কোর্স সমাপনী সনদপত্র",
+  };
+}
+
+export interface MergeMakeupQuizIntoFinalParams {
+  exam: PracticalExam;
+  requirement?: CourseCompletionRequirement | undefined;
+  makeupQuizIds?: string[] | undefined;
+  results: ExamResultRecord[];
+  sessions: ExamSessionRecord[];
+  attempts: FinalExamAttempt[];
+  submissions: PracticalSubmission[];
+  nowIso?: string | undefined;
+}
+
+export interface MergeMakeupQuizIntoFinalResult {
+  requirementRequiredQuizIds: string[];
+  linkedQuizId: string;
+  makeupQuizIds: string[];
+  attemptsCreated: number;
+  attemptsUpgraded: number;
+  attemptsSkipped: number;
+  submissionsUpdated: number;
+  resultsLinked: number;
+  sample: Array<{
+    rollNumber: string;
+    name: string;
+    accuracyPct: number;
+    action: string;
+  }>;
+  attempts: FinalExamAttempt[];
+  submissions: PracticalSubmission[];
+  results: ExamResultRecord[];
+  sessions: ExamSessionRecord[];
+}
+
+/**
+ * Merge makeup Quiz 17 (or other makeup quiz) scores into the Final Exam package:
+ * - expand allowed quiz ids so makeup counts as the final
+ * - mint / upgrade FinalExamAttempt rows from the best makeup result
+ * - refresh practical submission quizAccuracyPct (and combinedPct when graded)
+ * - ensure a fer/fes transcript exists for each merged attempt
+ */
+export function mergeMakeupQuizIntoFinalExam(
+  params: MergeMakeupQuizIntoFinalParams,
+): MergeMakeupQuizIntoFinalResult {
+  const nowIso = params.nowIso || new Date().toISOString();
+  const makeupQuizIds = Array.from(
+    new Set(
+      (params.makeupQuizIds?.length
+        ? params.makeupQuizIds
+        : [SANJIBON_QUIZ17_MAKEUP_ID]
+      ).filter(Boolean),
+    ),
+  );
+  const allowed = expandFinalQuizIds([
+    params.exam.linkedQuizId,
+    ...(params.requirement?.requiredQuizIds || []),
+    ...makeupQuizIds,
+  ]);
+  const makeupSet = new Set(makeupQuizIds);
+  const sessionById = new Map(params.sessions.map((s) => [s.id, s]));
+  const sessionByPin = new Map(params.sessions.map((s) => [s.pin, s]));
+
+  const bestByRoll = new Map<string, ExamResultRecord>();
+  for (const r of params.results) {
+    const sess = sessionById.get(r.sessionId) || sessionByPin.get(r.pin);
+    if (!sess || !makeupSet.has(sess.quizId)) continue;
+    const tok = normalizeRollToken(r.rollNumber);
+    if (!tok) continue;
+    const prev = bestByRoll.get(tok);
+    if (
+      !prev ||
+      r.accuracyPct > prev.accuracyPct ||
+      (r.accuracyPct === prev.accuracyPct && r.score > prev.score)
+    ) {
+      bestByRoll.set(tok, r);
+    }
+  }
+
+  const attempts = [...params.attempts];
+  const submissions = [...params.submissions];
+  const results = [...params.results];
+  const sessions = [...params.sessions];
+
+  const quizMax = params.exam.quizMaxMarks || FINAL_QUIZ_MARKS;
+  let attemptsCreated = 0;
+  let attemptsUpgraded = 0;
+  let attemptsSkipped = 0;
+  let submissionsUpdated = 0;
+  let resultsLinked = 0;
+  const sample: MergeMakeupQuizIntoFinalResult["sample"] = [];
+
+  const pickAttemptIndex = (rollTok: string): number => {
+    let bestIdx = -1;
+    for (let i = 0; i < attempts.length; i++) {
+      const a = attempts[i]!;
+      if (a.practicalExamId !== params.exam.id) continue;
+      if (normalizeRollToken(a.rollNumber) !== rollTok) continue;
+      if (bestIdx < 0) {
+        bestIdx = i;
+        continue;
+      }
+      const prev = attempts[bestIdx]!;
+      const prevDone = prev.status === "submitted" || prev.status === "graded";
+      const curDone = a.status === "submitted" || a.status === "graded";
+      if (curDone && !prevDone) bestIdx = i;
+      else if (curDone === prevDone && (a.accuracyPct || 0) > (prev.accuracyPct || 0)) {
+        bestIdx = i;
+      }
+    }
+    return bestIdx;
+  };
+
+  for (const [tok, makeup] of bestByRoll) {
+    const quizMarks = marksFromPct(makeup.accuracyPct, quizMax);
+    const idx = pickAttemptIndex(tok);
+    const existing = idx >= 0 ? attempts[idx] : undefined;
+    let action = "skipped";
+
+    if (!existing || (existing.status !== "submitted" && existing.status !== "graded")) {
+      const attemptId = existing?.id || `fea-merge-${tok}-${Date.now().toString(36)}`;
+      const sessionId = `fes-${attemptId}`;
+      const resultId = `fer-${attemptId}`;
+      const startedAt = existing?.startedAt || makeup.createdAt || nowIso;
+      const endsAt = existing?.endsAt || nowIso;
+      const attempt: FinalExamAttempt = {
+        id: attemptId,
+        practicalExamId: params.exam.id,
+        courseId: params.exam.courseId,
+        quizId: makeupQuizIds[0] || SANJIBON_QUIZ17_MAKEUP_ID,
+        pin: params.exam.joinPin || makeup.pin,
+        rollNumber: makeup.rollNumber,
+        studentName: makeup.name,
+        phone: makeup.phone,
+        regionId: makeup.regionId,
+        regionName: makeup.regionName,
+        startedAt,
+        endsAt,
+        submittedAt: makeup.createdAt || nowIso,
+        status: "submitted",
+        answers: existing?.answers || {},
+        correctCount: makeup.correctCount,
+        incorrectCount: makeup.incorrectCount,
+        unansweredCount: makeup.unattemptedCount,
+        accuracyPct: makeup.accuracyPct,
+        quizMarks,
+        quizMaxMarks: quizMax,
+        resultId,
+        sessionId,
+        createdAt: existing?.createdAt || nowIso,
+        updatedAt: nowIso,
+      };
+      if (idx >= 0) attempts[idx] = attempt;
+      else attempts.unshift(attempt);
+
+      const result: ExamResultRecord = {
+        id: resultId,
+        sessionId,
+        pin: attempt.pin,
+        participantId: `fp-${tok}`,
+        rollNumber: makeup.rollNumber,
+        name: makeup.name,
+        phone: makeup.phone,
+        regionId: makeup.regionId,
+        regionName: makeup.regionName,
+        score: quizMarks,
+        rank: 1,
+        correctCount: makeup.correctCount,
+        incorrectCount: makeup.incorrectCount,
+        unattemptedCount: makeup.unattemptedCount,
+        accuracyPct: makeup.accuracyPct,
+        passed: makeup.passed,
+        answersJson: makeup.answersJson || "{}",
+        createdAt: makeup.createdAt || nowIso,
+      };
+      const totalQ =
+        makeup.correctCount + makeup.incorrectCount + makeup.unattemptedCount || 0;
+      const totalQuestions = totalQ > 0 ? totalQ : 30;
+      const session: ExamSessionRecord = {
+        id: sessionId,
+        pin: attempt.pin,
+        quizId: attempt.quizId,
+        quizTitleEn: "Final Exam (Quiz 17 makeup merge)",
+        quizTitleBn: "চূড়ান্ত পরীক্ষা (কুইজ ১৭ মেকআপ)",
+        hostId: "final-exam-desk",
+        totalQuestions,
+        participantCount: 1,
+        averageScore: quizMarks,
+        highestScore: quizMarks,
+        passThresholdPct: params.exam.passThresholdPct,
+        createdAt: startedAt,
+      };
+      const rIdx = results.findIndex((r) => r.id === resultId);
+      if (rIdx >= 0) results[rIdx] = result;
+      else results.unshift(result);
+      const sIdx = sessions.findIndex((s) => s.id === sessionId);
+      if (sIdx >= 0) sessions[sIdx] = session;
+      else sessions.unshift(session);
+      attemptsCreated += 1;
+      resultsLinked += 1;
+      action = "attempt_created";
+    } else if ((existing.accuracyPct || 0) + 0.05 < makeup.accuracyPct) {
+      const sessionId = existing.sessionId || `fes-${existing.id}`;
+      const resultId = existing.resultId || `fer-${existing.id}`;
+      attempts[idx] = {
+        ...existing,
+        quizId: existing.quizId || makeupQuizIds[0] || SANJIBON_QUIZ17_MAKEUP_ID,
+        status: existing.status === "graded" ? "graded" : "submitted",
+        correctCount: makeup.correctCount,
+        incorrectCount: makeup.incorrectCount,
+        unansweredCount: makeup.unattemptedCount,
+        accuracyPct: makeup.accuracyPct,
+        quizMarks,
+        quizMaxMarks: quizMax,
+        resultId,
+        sessionId,
+        submittedAt: existing.submittedAt || makeup.createdAt || nowIso,
+        updatedAt: nowIso,
+      };
+      const rIdx = results.findIndex((r) => r.id === resultId || r.id === makeup.id);
+      if (rIdx >= 0) {
+        results[rIdx] = {
+          ...results[rIdx]!,
+          accuracyPct: makeup.accuracyPct,
+          score: quizMarks,
+          correctCount: makeup.correctCount,
+          incorrectCount: makeup.incorrectCount,
+          unattemptedCount: makeup.unattemptedCount,
+          passed: makeup.passed ?? results[rIdx]!.passed,
+        };
+      } else {
+        results.unshift({
+          ...makeup,
+          id: resultId,
+          sessionId,
+          pin: existing.pin || makeup.pin,
+          score: quizMarks,
+        });
+        resultsLinked += 1;
+      }
+      attemptsUpgraded += 1;
+      action = "attempt_upgraded";
+    } else {
+      attemptsSkipped += 1;
+      action = "skipped_equal_or_better";
+    }
+
+    const subIdx = submissions.findIndex(
+      (s) =>
+        (s.practicalExamId === params.exam.id || s.courseId === params.exam.courseId) &&
+        normalizeRollToken(s.rollNumber) === tok,
+    );
+    if (subIdx >= 0) {
+      const sub = submissions[subIdx]!;
+      const prev = sub.quizAccuracyPct;
+      if (prev == null || makeup.accuracyPct > prev + 0.05) {
+        const nextQuiz = makeup.accuracyPct;
+        const combined =
+          typeof sub.practicalScorePct === "number"
+            ? computeCombinedFinalPct({
+                quizAccuracyPct: nextQuiz,
+                practicalScorePct: sub.practicalScorePct,
+                quizWeightPct: params.exam.quizWeightPct,
+                practicalWeightPct: params.exam.practicalWeightPct,
+              })
+            : sub.combinedPct;
+        submissions[subIdx] = {
+          ...sub,
+          quizAccuracyPct: nextQuiz,
+          combinedPct: combined,
+          updatedAt: nowIso,
+        };
+        submissionsUpdated += 1;
+        if (action.startsWith("skipped")) action = "submission_updated";
+        else action = `${action}+submission`;
+      }
+    }
+
+    if (sample.length < 25) {
+      sample.push({
+        rollNumber: makeup.rollNumber,
+        name: makeup.name,
+        accuracyPct: makeup.accuracyPct,
+        action,
+      });
+    }
+  }
+
+  return {
+    requirementRequiredQuizIds: allowed,
+    linkedQuizId: params.exam.linkedQuizId || makeupQuizIds[0] || SANJIBON_QUIZ17_MAKEUP_ID,
+    makeupQuizIds,
+    attemptsCreated,
+    attemptsUpgraded,
+    attemptsSkipped,
+    submissionsUpdated,
+    resultsLinked,
+    sample,
+    attempts,
+    submissions,
+    results,
+    sessions,
   };
 }
 
