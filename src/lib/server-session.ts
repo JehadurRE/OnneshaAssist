@@ -5753,6 +5753,139 @@ function buildAnswersFromGoogleFormProps(
   ];
 }
 
+type ReviewedPracticalGradeRow = {
+  submissionId: string;
+  rollNumber?: string;
+  grades: PracticalGrade[];
+  instructorFeedback?: string;
+};
+
+/**
+ * Apply a pre-reviewed practical grade sheet (bilingual EN/BN comments).
+ * Loads scripts/data/practical-grades-reviewed.json when rows omitted.
+ * Skips already-graded unless regrade=true. Staff can still edit marks in the desk.
+ */
+export const serverApplyReviewedPracticalGrades = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      courseId?: string | undefined;
+      dryRun?: boolean | undefined;
+      regrade?: boolean | undefined;
+      rows?: ReviewedPracticalGradeRow[] | undefined;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    ensureFinalPracticalSeeded(store);
+    const courseId = data.courseId || "course-sanjibon-ai-dm";
+    const exam = (store.practicalExams || []).find((p) => p.courseId === courseId);
+    if (!exam) return { success: false as const, error: "Final practical exam not found for course." };
+
+    let rows = data.rows;
+    if (!rows || rows.length === 0) {
+      try {
+        const { readFileSync } = await import("node:fs");
+        const { join } = await import("node:path");
+        const filePath = join(process.cwd(), "scripts/data/practical-grades-reviewed.json");
+        const parsed = JSON.parse(readFileSync(filePath, "utf8")) as {
+          rows?: ReviewedPracticalGradeRow[];
+        };
+        rows = parsed.rows || [];
+      } catch {
+        return {
+          success: false as const,
+          error: "No rows provided and could not read scripts/data/practical-grades-reviewed.json",
+        };
+      }
+    }
+
+    const requirement = (store.courseRequirements || []).find((r) => r.courseId === courseId);
+    const regrade = data.regrade === true;
+    const now = new Date().toISOString();
+    let applied = 0;
+    let skippedGraded = 0;
+    let missing = 0;
+    const sample: Array<{ rollNumber: string; earned: number; max: number; pct: number }> = [];
+
+    for (const row of rows) {
+      const idx = (store.practicalSubmissions || []).findIndex((s) => s.id === row.submissionId);
+      if (idx < 0 || !store.practicalSubmissions?.[idx]) {
+        missing += 1;
+        continue;
+      }
+      const sub = store.practicalSubmissions[idx]!;
+      if (!regrade && sub.status === "graded") {
+        skippedGraded += 1;
+        continue;
+      }
+      if (!row.grades?.length) {
+        missing += 1;
+        continue;
+      }
+
+      const grades = row.grades.map((g) => ({
+        taskId: g.taskId,
+        marks: Math.max(0, Number(g.marks) || 0),
+        maxMarks: Math.max(1, Number(g.maxMarks) || 1),
+        comment: g.comment,
+        gradedBy: actor.id,
+        gradedAt: now,
+      }));
+      const stats = computePracticalScorePct(exam.tasks, grades);
+      const quizResult = resolveQuizResultForStudent(
+        store,
+        sub.rollNumber,
+        exam.linkedQuizId,
+        requirement?.requiredQuizIds,
+      );
+      const quizPct = quizResult?.accuracyPct ?? sub.quizAccuracyPct ?? 0;
+      const combinedPct = computeCombinedFinalPct({
+        quizAccuracyPct: quizPct,
+        practicalScorePct: stats.pct,
+        quizWeightPct: exam.quizWeightPct,
+        practicalWeightPct: exam.practicalWeightPct,
+      });
+
+      if (!data.dryRun) {
+        store.practicalSubmissions[idx] = {
+          ...sub,
+          grades,
+          status: "graded",
+          practicalScorePct: stats.pct,
+          quizAccuracyPct: quizPct,
+          combinedPct,
+          instructorFeedback: row.instructorFeedback || sub.instructorFeedback,
+          gradedAt: now,
+          gradedBy: actor.id,
+          updatedAt: now,
+        };
+      }
+      applied += 1;
+      if (sample.length < 15) {
+        sample.push({
+          rollNumber: sub.rollNumber,
+          earned: stats.earned,
+          max: stats.max,
+          pct: stats.pct,
+        });
+      }
+    }
+
+    if (!data.dryRun && applied > 0) scheduleDiskPersist();
+    return {
+      success: true as const,
+      dryRun: !!data.dryRun,
+      applied,
+      skippedGraded,
+      missing,
+      sample,
+    };
+  });
+
 /**
  * Merge Quiz 17 makeup results into the Final Exam package for students who
  * missed the original final window and sat Quiz 17 individually (live host or desk).
