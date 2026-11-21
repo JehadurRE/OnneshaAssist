@@ -5806,7 +5806,11 @@ export const serverGradePracticalSubmission = createServerFn({ method: "POST" })
       practicalScorePct: stats.pct,
       quizAccuracyPct: quizPct,
       combinedPct,
-      instructorFeedback: data.instructorFeedback,
+      // Preserve prior overall feedback when caller omits / sends blank unintentionally.
+      instructorFeedback:
+        typeof data.instructorFeedback === "string"
+          ? data.instructorFeedback
+          : submission.instructorFeedback,
       gradedAt: now,
       gradedBy: actor.id,
       updatedAt: now,

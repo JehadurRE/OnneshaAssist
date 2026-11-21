@@ -383,19 +383,31 @@ export function AdminPracticalPanel(props: {
 
   const gradeOne = async (sub: PracticalSubmission) => {
     if (!exam?.tasks.length) return;
+    const overallFeedback =
+      feedbackBySub[sub.id] !== undefined
+        ? feedbackBySub[sub.id]!
+        : sub.instructorFeedback || "";
     const grades = exam.tasks.map((task) => {
+      const existing = sub.grades?.find((g) => g.taskId === task.id);
       const raw =
-        marksBySubTask[markKey(sub.id, task.id)] ??
-        String(sub.grades?.find((g) => g.taskId === task.id)?.marks ?? "");
+        marksBySubTask[markKey(sub.id, task.id)] ?? String(existing?.marks ?? "");
       if (raw.trim() === "") {
         return null;
       }
       const marks = Number(raw);
+      // Keep per-task bilingual remarks unless staff explicitly edited overall-only flow.
+      // Never replace task comments with the overall feedback box (that wiped EN/BN notes).
+      const commentKey = markKey(sub.id, `${task.id}::comment`);
+      const editedComment = marksBySubTask[commentKey];
+      const comment =
+        editedComment !== undefined
+          ? editedComment
+          : existing?.comment || "";
       return {
         taskId: task.id,
         marks,
         maxMarks: task.maxMarks,
-        comment: feedbackBySub[sub.id] || "",
+        comment,
       };
     });
     if (grades.some((g) => !g || !Number.isFinite(g.marks) || g.marks < 0)) {
@@ -412,11 +424,25 @@ export function AdminPracticalPanel(props: {
         data: {
           submissionId: sub.id,
           grades: validGrades,
-          instructorFeedback: feedbackBySub[sub.id] || "",
+          instructorFeedback: overallFeedback,
         },
       });
       setNotice(res.success ? `Graded ${sub.rollNumber}.` : res.error || "Grade failed.");
-      await refresh();
+      if (res.success) {
+        setMarksBySubTask((m) => {
+          const next = { ...m };
+          for (const key of Object.keys(next)) {
+            if (key.startsWith(`${sub.id}::`)) delete next[key];
+          }
+          return next;
+        });
+        setFeedbackBySub((m) => {
+          const next = { ...m };
+          delete next[sub.id];
+          return next;
+        });
+      }
+      await refresh({ soft: true });
     } finally {
       setBusyId(null);
     }
@@ -612,21 +638,23 @@ export function AdminPracticalPanel(props: {
     }
   };
 
-  const applyReviewedGrades = async (dryRun: boolean) => {
+  const applyReviewedGrades = async (dryRun: boolean, regrade = false) => {
     if (!course) return;
     if (
       !dryRun &&
       !window.confirm(
-        `Apply reviewed practical marks for ${course.code}?\n\nEach task has bilingual EN/BN comments. You can still edit any student afterward.`,
+        regrade
+          ? `Restore reviewed marks + bilingual comments for ALL graded students in ${course.code}?\n\nThis overwrites current marks/comments from the reviewed grade sheet.`
+          : `Apply reviewed practical marks for ${course.code}?\n\nEach task has bilingual EN/BN comments. You can still edit any student afterward.`,
       )
     ) {
       return;
     }
-    setBusyId(dryRun ? "revgrade-dry" : "revgrade");
+    setBusyId(dryRun ? "revgrade-dry" : regrade ? "revgrade-restore" : "revgrade");
     setNotice(null);
     try {
       const res = await serverApplyReviewedPracticalGrades({
-        data: { courseId: course.id, dryRun },
+        data: { courseId: course.id, dryRun, regrade },
       });
       if (!res.success) {
         setNotice(res.error || "Apply reviewed grades failed.");
@@ -637,9 +665,13 @@ export function AdminPracticalPanel(props: {
         .map((s) => `${s.rollNumber} ${s.earned}/${s.max}`)
         .join("; ");
       setNotice(
-        `${dryRun ? "Dry run — " : ""}Reviewed marks: applied ${res.applied || 0}, skipped graded ${res.skippedGraded || 0}, missing ${res.missing || 0}.${sample ? ` Sample: ${sample}` : ""}`,
+        `${dryRun ? "Dry run — " : ""}${regrade ? "Restored" : "Reviewed marks"}: applied ${res.applied || 0}, skipped graded ${res.skippedGraded || 0}, missing ${res.missing || 0}.${sample ? ` Sample: ${sample}` : ""}`,
       );
-      if (!dryRun) await refresh({ soft: true });
+      if (!dryRun) {
+        setMarksBySubTask({});
+        setFeedbackBySub({});
+        await refresh({ soft: true });
+      }
     } finally {
       setBusyId(null);
     }
@@ -1709,6 +1741,14 @@ export function AdminPracticalPanel(props: {
               </button>
               <button
                 type="button"
+                onClick={() => void applyReviewedGrades(false, true)}
+                disabled={!!busyId || !course}
+                className="staff-btn-ghost disabled:opacity-50"
+              >
+                {busyId === "revgrade-restore" ? "Restoring…" : "Restore comments"}
+              </button>
+              <button
+                type="button"
                 onClick={() => void mergeQuiz17IntoFinal(true)}
                 disabled={!!busyId || !course}
                 className="staff-btn-ghost disabled:opacity-50"
@@ -2069,34 +2109,49 @@ export function AdminPracticalPanel(props: {
                         <div className="space-y-3">
                           {exam.tasks.map((task) => {
                             const existing = sub.grades?.find((g) => g.taskId === task.id);
+                            const commentKey = markKey(sub.id, `${task.id}::comment`);
                             return (
-                              <label key={task.id} className="staff-field">
-                                <span className="staff-label">
-                                  {task.titleEn}{" "}
-                                  <span className="font-mono font-normal text-muted-foreground">
-                                    / {task.maxMarks}
+                              <div key={task.id} className="staff-field">
+                                <label className="block">
+                                  <span className="staff-label">
+                                    {task.titleEn}{" "}
+                                    <span className="font-mono font-normal text-muted-foreground">
+                                      / {task.maxMarks}
+                                    </span>
                                   </span>
-                                </span>
-                                <input
-                                  className="staff-input font-mono"
-                                  inputMode="decimal"
-                                  value={
-                                    marksBySubTask[markKey(sub.id, task.id)] ??
-                                    String(existing?.marks ?? "")
-                                  }
-                                  onChange={(e) =>
-                                    setMarksBySubTask((m) => ({
-                                      ...m,
-                                      [markKey(sub.id, task.id)]: e.target.value,
-                                    }))
-                                  }
-                                />
-                                {existing?.comment ? (
-                                  <span className="mt-1 block text-[10px] leading-snug text-muted-foreground">
-                                    {existing.comment}
-                                  </span>
-                                ) : null}
-                              </label>
+                                  <input
+                                    className="staff-input font-mono"
+                                    inputMode="decimal"
+                                    value={
+                                      marksBySubTask[markKey(sub.id, task.id)] ??
+                                      String(existing?.marks ?? "")
+                                    }
+                                    onChange={(e) =>
+                                      setMarksBySubTask((m) => ({
+                                        ...m,
+                                        [markKey(sub.id, task.id)]: e.target.value,
+                                      }))
+                                    }
+                                  />
+                                </label>
+                                <label className="mt-1.5 block">
+                                  <span className="sr-only">Comment for {task.titleEn}</span>
+                                  <textarea
+                                    className="staff-input min-h-[52px] text-[10px] leading-snug"
+                                    rows={2}
+                                    placeholder="EN / BN remark for this task"
+                                    value={
+                                      marksBySubTask[commentKey] ?? existing?.comment ?? ""
+                                    }
+                                    onChange={(e) =>
+                                      setMarksBySubTask((m) => ({
+                                        ...m,
+                                        [commentKey]: e.target.value,
+                                      }))
+                                    }
+                                  />
+                                </label>
+                              </div>
                             );
                           })}
                           <label className="staff-field">
