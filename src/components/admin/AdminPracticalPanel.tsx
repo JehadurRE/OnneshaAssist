@@ -8,6 +8,7 @@ import {
   serverGetBootstrapData,
   serverGetFinalExamDesk,
   serverGradePracticalSubmission,
+  serverApplyReviewedPracticalGrades,
   serverImportGoogleFormPracticals,
   serverMergeQuiz17IntoFinal,
   serverIssueCourseCertificate,
@@ -530,6 +531,39 @@ export function AdminPracticalPanel(props: {
         await refresh({ soft: true });
         if (deskView === "live") await refreshDesk();
       }
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const applyReviewedGrades = async (dryRun: boolean) => {
+    if (!course) return;
+    if (
+      !dryRun &&
+      !window.confirm(
+        `Apply reviewed practical marks for ${course.code}?\n\nEach task has bilingual EN/BN comments. You can still edit any student afterward.`,
+      )
+    ) {
+      return;
+    }
+    setBusyId(dryRun ? "revgrade-dry" : "revgrade");
+    setNotice(null);
+    try {
+      const res = await serverApplyReviewedPracticalGrades({
+        data: { courseId: course.id, dryRun },
+      });
+      if (!res.success) {
+        setNotice(res.error || "Apply reviewed grades failed.");
+        return;
+      }
+      const sample = (res.sample || [])
+        .slice(0, 5)
+        .map((s) => `${s.rollNumber} ${s.earned}/${s.max}`)
+        .join("; ");
+      setNotice(
+        `${dryRun ? "Dry run — " : ""}Reviewed marks: applied ${res.applied || 0}, skipped graded ${res.skippedGraded || 0}, missing ${res.missing || 0}.${sample ? ` Sample: ${sample}` : ""}`,
+      );
+      if (!dryRun) await refresh({ soft: true });
     } finally {
       setBusyId(null);
     }
@@ -1573,6 +1607,24 @@ export function AdminPracticalPanel(props: {
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
+                onClick={() => void applyReviewedGrades(true)}
+                disabled={!!busyId || !course}
+                className="staff-btn-ghost disabled:opacity-50"
+              >
+                {busyId === "revgrade-dry" ? "Checking…" : "Preview reviewed marks"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void applyReviewedGrades(false)}
+                disabled={!!busyId || !course || pendingGradeCount === 0}
+                className="staff-btn-ghost disabled:opacity-50"
+              >
+                {busyId === "revgrade"
+                  ? "Applying…"
+                  : `Apply reviewed marks (${pendingGradeCount})`}
+              </button>
+              <button
+                type="button"
                 onClick={() => void mergeQuiz17IntoFinal(true)}
                 disabled={!!busyId || !course}
                 className="staff-btn-ghost disabled:opacity-50"
@@ -1829,32 +1881,38 @@ export function AdminPracticalPanel(props: {
                     {exam && canGrade(sub.status) ? (
                       <>
                         <div className="space-y-3">
-                          {exam.tasks.map((task) => (
-                            <label key={task.id} className="staff-field">
-                              <span className="staff-label">
-                                {task.titleEn}{" "}
-                                <span className="font-mono font-normal text-muted-foreground">
-                                  / {task.maxMarks}
+                          {exam.tasks.map((task) => {
+                            const existing = sub.grades?.find((g) => g.taskId === task.id);
+                            return (
+                              <label key={task.id} className="staff-field">
+                                <span className="staff-label">
+                                  {task.titleEn}{" "}
+                                  <span className="font-mono font-normal text-muted-foreground">
+                                    / {task.maxMarks}
+                                  </span>
                                 </span>
-                              </span>
-                              <input
-                                className="staff-input font-mono"
-                                inputMode="decimal"
-                                value={
-                                  marksBySubTask[markKey(sub.id, task.id)] ??
-                                  String(
-                                    sub.grades?.find((g) => g.taskId === task.id)?.marks ?? "",
-                                  )
-                                }
-                                onChange={(e) =>
-                                  setMarksBySubTask((m) => ({
-                                    ...m,
-                                    [markKey(sub.id, task.id)]: e.target.value,
-                                  }))
-                                }
-                              />
-                            </label>
-                          ))}
+                                <input
+                                  className="staff-input font-mono"
+                                  inputMode="decimal"
+                                  value={
+                                    marksBySubTask[markKey(sub.id, task.id)] ??
+                                    String(existing?.marks ?? "")
+                                  }
+                                  onChange={(e) =>
+                                    setMarksBySubTask((m) => ({
+                                      ...m,
+                                      [markKey(sub.id, task.id)]: e.target.value,
+                                    }))
+                                  }
+                                />
+                                {existing?.comment ? (
+                                  <span className="mt-1 block text-[10px] leading-snug text-muted-foreground">
+                                    {existing.comment}
+                                  </span>
+                                ) : null}
+                              </label>
+                            );
+                          })}
                           <label className="staff-field">
                             <span className="staff-label">Feedback to student</span>
                             <textarea
