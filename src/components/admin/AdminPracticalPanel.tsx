@@ -9,9 +9,11 @@ import {
   serverGetFinalExamDesk,
   serverGradePracticalSubmission,
   serverApplyReviewedPracticalGrades,
+  serverGetStudentFinalQuizRecord,
   serverImportGoogleFormPracticals,
   serverMergeQuiz17IntoFinal,
   serverIssueCourseCertificate,
+  serverRefreshPracticalQuizScores,
   serverOpenFinalExamWindow,
   serverReturnPracticalForResubmit,
   serverSaveCourseRequirement,
@@ -35,6 +37,7 @@ import {
   buildDefaultCourseRequirement,
   buildDefaultFinalPracticalExam,
   generateFinalExamJoinPin,
+  type FinalQuizRecordSnapshot,
 } from "@/lib/practical-exam";
 import {
   Award,
@@ -129,6 +132,18 @@ export function AdminPracticalPanel(props: {
   const [deskView, setDeskView] = useState<FinalExamDeskView>(props.desk || "live");
   const [activeSubId, setActiveSubId] = useState<string | null>(props.subId || null);
   const [queueFilter, setQueueFilter] = useState<"needs" | "graded" | "all">("needs");
+  const [quizRecord, setQuizRecord] = useState<FinalQuizRecordSnapshot | null>(null);
+  const [quizRecordMeta, setQuizRecordMeta] = useState<{
+    combinedPct?: number;
+    practicalScorePct?: number;
+    weights?: {
+      quizWeightPct?: number;
+      practicalWeightPct?: number;
+      quizMaxMarks?: number;
+      practicalMaxMarks?: number;
+      totalMaxMarks?: number;
+    };
+  } | null>(null);
 
   const goDesk = (patch: {
     courseId?: string;
@@ -237,6 +252,35 @@ export function AdminPracticalPanel(props: {
   useEffect(() => {
     void refreshDesk();
   }, [courseId]);
+
+  useEffect(() => {
+    if (!activeSubId || !courseId) {
+      setQuizRecord(null);
+      setQuizRecordMeta(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const res = await serverGetStudentFinalQuizRecord({
+        data: { courseId, submissionId: activeSubId },
+      });
+      if (cancelled) return;
+      if (res.success && res.quiz) {
+        setQuizRecord(res.quiz as FinalQuizRecordSnapshot);
+        setQuizRecordMeta({
+          combinedPct: res.combinedPct,
+          practicalScorePct: res.practicalScorePct,
+          weights: res.weights,
+        });
+      } else {
+        setQuizRecord(null);
+        setQuizRecordMeta(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSubId, courseId, subs]);
 
   useEffect(() => {
     if (!exam || (exam.status !== "open" && exam.status !== "scheduled")) return undefined;
@@ -531,6 +575,38 @@ export function AdminPracticalPanel(props: {
         await refresh({ soft: true });
         if (deskView === "live") await refreshDesk();
       }
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const refreshQuizScores = async () => {
+    if (!course) return;
+    if (
+      !window.confirm(
+        `Refresh Final Quiz % on all practicals for ${course.code}?\n\nFixes students whose quiz used a different roll/phone (e.g. NOA-08 ↔ 009297).`,
+      )
+    ) {
+      return;
+    }
+    setBusyId("quiz-refresh");
+    setNotice(null);
+    try {
+      const res = await serverRefreshPracticalQuizScores({
+        data: { courseId: course.id },
+      });
+      if (!res.success) {
+        setNotice(res.error || "Quiz score refresh failed.");
+        return;
+      }
+      const sample = (res.sample || [])
+        .slice(0, 5)
+        .map((s) => `${s.rollNumber}: ${s.from ?? "—"}→${s.to}%`)
+        .join("; ");
+      setNotice(
+        `Quiz scores refreshed: ${res.updated || 0} updated, ${res.unchanged || 0} unchanged.${sample ? ` Sample: ${sample}` : ""}`,
+      );
+      await refresh({ soft: true });
     } finally {
       setBusyId(null);
     }
@@ -1607,6 +1683,14 @@ export function AdminPracticalPanel(props: {
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
+                onClick={() => void refreshQuizScores()}
+                disabled={!!busyId || !course}
+                className="staff-btn-ghost disabled:opacity-50"
+              >
+                {busyId === "quiz-refresh" ? "Refreshing…" : "Refresh quiz scores"}
+              </button>
+              <button
+                type="button"
                 onClick={() => void applyReviewedGrades(true)}
                 disabled={!!busyId || !course}
                 className="staff-btn-ghost disabled:opacity-50"
@@ -1803,12 +1887,26 @@ export function AdminPracticalPanel(props: {
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                         <StatusPill status={sub.status} />
-                        {typeof sub.quizAccuracyPct === "number" && (
-                          <span className="staff-chip">Quiz {sub.quizAccuracyPct}%</span>
+                        <span className="staff-chip">
+                          Quiz{" "}
+                          {quizRecord?.found
+                            ? `${quizRecord.quizMarks}/${quizRecord.quizMaxMarks} (${quizRecord.accuracyPct}%)`
+                            : typeof sub.quizAccuracyPct === "number"
+                              ? `${sub.quizAccuracyPct}%`
+                              : "—"}
+                        </span>
+                        {typeof (quizRecordMeta?.practicalScorePct ?? sub.practicalScorePct) ===
+                          "number" && (
+                          <span className="staff-chip">
+                            Practical {quizRecordMeta?.practicalScorePct ?? sub.practicalScorePct}%
+                          </span>
                         )}
-                        {typeof sub.combinedPct === "number" && (
-                          <span className="staff-chip">Combined {sub.combinedPct}%</span>
-                        )}
+                        <span className="staff-chip">
+                          Combined{" "}
+                          {typeof (quizRecordMeta?.combinedPct ?? sub.combinedPct) === "number"
+                            ? `${quizRecordMeta?.combinedPct ?? sub.combinedPct}%`
+                            : "—"}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -1826,6 +1924,94 @@ export function AdminPracticalPanel(props: {
 
                 <div className="assess-body">
                   <div className="assess-work">
+                    <section className="mb-4 rounded-2xl border border-border/70 bg-muted/20 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-[11px] font-bold tracking-wide text-muted-foreground">
+                          Final Quiz record
+                        </div>
+                        {quizRecord?.matchedVia && quizRecord.found && (
+                          <span className="staff-chip !normal-case">
+                            matched via {quizRecord.matchedVia}
+                            {quizRecord.matchedRollNumber &&
+                            quizRecord.matchedRollNumber !== sub.rollNumber
+                              ? ` · roll ${quizRecord.matchedRollNumber}`
+                              : ""}
+                          </span>
+                        )}
+                      </div>
+                      {quizRecord?.found ? (
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                          <div className="rounded-xl bg-background/80 px-3 py-2">
+                            <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                              Marks
+                            </div>
+                            <div className="font-mono text-sm font-black">
+                              {quizRecord.quizMarks}/{quizRecord.quizMaxMarks}
+                              <span className="ml-1 text-xs font-semibold text-muted-foreground">
+                                ({quizRecord.accuracyPct}%)
+                              </span>
+                            </div>
+                          </div>
+                          <div className="rounded-xl bg-background/80 px-3 py-2">
+                            <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                              Answers
+                            </div>
+                            <div className="text-sm font-semibold">
+                              ✓ {quizRecord.correctCount} · ✗ {quizRecord.incorrectCount} · —{" "}
+                              {quizRecord.unattemptedCount}
+                            </div>
+                          </div>
+                          <div className="rounded-xl bg-background/80 px-3 py-2">
+                            <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                              Session
+                            </div>
+                            <div className="font-mono text-[11px] font-semibold">
+                              PIN {quizRecord.pin || "—"}
+                              {quizRecord.quizTitleEn ? (
+                                <div className="mt-0.5 truncate font-sans text-[10px] font-medium text-muted-foreground">
+                                  {quizRecord.quizTitleEn}
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                          {(quizRecord.noteEn || quizRecord.submittedAt) && (
+                            <div className="sm:col-span-2 lg:col-span-3 text-[11px] leading-relaxed text-muted-foreground">
+                              {quizRecord.noteEn}
+                              {quizRecord.noteBn ? ` / ${quizRecord.noteBn}` : ""}
+                              {quizRecord.submittedAt
+                                ? ` · submitted ${new Date(quizRecord.submittedAt).toLocaleString("en-GB", { timeZone: "Asia/Dhaka" })} Asia/Dhaka`
+                                : ""}
+                            </div>
+                          )}
+                          {typeof quizRecordMeta?.weights?.quizWeightPct === "number" &&
+                            typeof quizRecordMeta.practicalScorePct === "number" && (
+                              <div className="sm:col-span-2 lg:col-span-3 rounded-xl border border-dashed border-border/80 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+                                Combined = quiz {quizRecord.accuracyPct}% ×{" "}
+                                {quizRecordMeta.weights.quizWeightPct}% + practical{" "}
+                                {quizRecordMeta.practicalScorePct}% ×{" "}
+                                {quizRecordMeta.weights.practicalWeightPct}%
+                                {typeof quizRecordMeta.combinedPct === "number"
+                                  ? ` → ${quizRecordMeta.combinedPct}%`
+                                  : ""}
+                                {typeof quizRecordMeta.weights.quizMaxMarks === "number" &&
+                                typeof quizRecordMeta.weights.practicalMaxMarks === "number"
+                                  ? ` · package ${quizRecord.quizMarks}/${quizRecordMeta.weights.quizMaxMarks} quiz + practical /${quizRecordMeta.weights.practicalMaxMarks}`
+                                  : ""}
+                              </div>
+                            )}
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                          {quizRecord?.noteEn ||
+                            "No Final Quiz result linked to this roll yet."}
+                          {quizRecord?.noteBn ? ` / ${quizRecord.noteBn}` : ""}
+                          {" "}
+                          Use <span className="font-semibold">Refresh quiz scores</span> if they
+                          sat under another roll/phone.
+                        </p>
+                      )}
+                    </section>
+
                     <div className="flex items-center gap-1.5 text-[11px] font-bold tracking-wide text-muted-foreground">
                       <FileText className="h-3.5 w-3.5" /> Submitted work
                     </div>

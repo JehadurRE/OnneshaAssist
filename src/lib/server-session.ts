@@ -70,7 +70,9 @@ import {
 import {
   buildDefaultCourseRequirement,
   buildDefaultFinalPracticalExam,
+  buildFinalQuizRecordSnapshot,
   expandFinalQuizIds,
+  FINAL_PRACTICAL_MARKS,
   FINAL_QUIZ_MARKS,
   FINAL_TOTAL_MARKS,
   generateFinalExamJoinPin,
@@ -83,11 +85,13 @@ import {
   computePracticalScorePct,
   evaluateCourseCompletion,
   findBestQuizResultForCourse,
+  findBestQuizResultMatchForCourse,
   isPracticalPastDeadline,
   makeCourseCertificateNumber,
   matchRosterIdentity,
   normalizeExamWeights,
   validateSubmissionPayload,
+  type FinalQuizRecordSnapshot,
 } from "./practical-exam";
 import {
   isCoursePrivate,
@@ -5314,14 +5318,125 @@ function resolveQuizResultForStudent(
   rollNumber: string,
   linkedQuizId?: string,
   requiredQuizIds?: string[],
+  identity?: {
+    phone?: string | undefined;
+    studentName?: string | undefined;
+    regionId?: string | undefined;
+  },
 ): ExamResultRecord | undefined {
+  return resolveQuizResultMatchForStudent(store, rollNumber, linkedQuizId, requiredQuizIds, identity)
+    ?.result;
+}
+
+function resolveQuizResultMatchForStudent(
+  store: PersistentStoreData,
+  rollNumber: string,
+  linkedQuizId?: string,
+  requiredQuizIds?: string[],
+  identity?: {
+    phone?: string | undefined;
+    studentName?: string | undefined;
+    regionId?: string | undefined;
+  },
+) {
   // Final quiz aliases include Quiz 17 makeup so individually hosted makeups count.
   const allowed = expandFinalQuizIds([linkedQuizId, ...(requiredQuizIds || [])]);
-  return findBestQuizResultForCourse({
+  const sessions = store.examSessions.map((s) => ({ id: s.id, pin: s.pin, quizId: s.quizId }));
+  const match = findBestQuizResultMatchForCourse({
     results: store.examResults,
-    sessions: store.examSessions.map((s) => ({ id: s.id, pin: s.pin, quizId: s.quizId })),
+    sessions,
     allowedQuizIds: allowed,
     rollNumber,
+    phone: identity?.phone,
+    studentName: identity?.studentName,
+    regionId: identity?.regionId,
+  });
+  if (match) return match;
+
+  // Fallback: FinalExamAttempt rows (when fer transcript missing but attempt scored).
+  const rollTok = normalizeRollToken(rollNumber);
+  const phoneTok = normalizeBdPhone(identity?.phone || "");
+  const attempts = (store.finalExamAttempts || []).filter((a) => {
+    if (!(a.status === "submitted" || a.status === "graded")) return false;
+    if (!allowed.includes(a.quizId)) return false;
+    if (rollTok && normalizeRollToken(a.rollNumber) === rollTok) return true;
+    if (phoneTok.length >= 10 && normalizeBdPhone(a.phone) === phoneTok) return true;
+    return false;
+  });
+  if (attempts.length === 0) return undefined;
+  const bestAttempt = [...attempts].sort(
+    (a, b) => (b.accuracyPct || 0) - (a.accuracyPct || 0),
+  )[0]!;
+  const synthetic: ExamResultRecord = {
+    id: bestAttempt.resultId || `fer-${bestAttempt.id}`,
+    sessionId: bestAttempt.sessionId || `fes-${bestAttempt.id}`,
+    pin: bestAttempt.pin,
+    participantId: `fp-${normalizeRollToken(bestAttempt.rollNumber)}`,
+    rollNumber: bestAttempt.rollNumber,
+    name: bestAttempt.studentName,
+    phone: bestAttempt.phone,
+    regionId: bestAttempt.regionId,
+    regionName: bestAttempt.regionName,
+    score: bestAttempt.quizMarks ?? marksFromPct(bestAttempt.accuracyPct || 0, FINAL_QUIZ_MARKS),
+    rank: 1,
+    correctCount: bestAttempt.correctCount || 0,
+    incorrectCount: bestAttempt.incorrectCount || 0,
+    unattemptedCount: bestAttempt.unansweredCount || 0,
+    accuracyPct: bestAttempt.accuracyPct || 0,
+    passed: (bestAttempt.accuracyPct || 0) >= 50,
+    createdAt: bestAttempt.submittedAt || bestAttempt.updatedAt || bestAttempt.createdAt,
+  };
+  return {
+    result: synthetic,
+    matchedVia:
+      rollTok && normalizeRollToken(bestAttempt.rollNumber) === rollTok
+        ? ("roll" as const)
+        : ("phone" as const),
+    attemptId: bestAttempt.id,
+  };
+}
+
+function buildStudentQuizSnapshot(
+  store: PersistentStoreData,
+  params: {
+    rollNumber: string;
+    phone?: string | undefined;
+    studentName?: string | undefined;
+    regionId?: string | undefined;
+    linkedQuizId?: string | undefined;
+    requiredQuizIds?: string[] | undefined;
+    quizMaxMarks?: number | undefined;
+  },
+): FinalQuizRecordSnapshot {
+  const match = resolveQuizResultMatchForStudent(
+    store,
+    params.rollNumber,
+    params.linkedQuizId,
+    params.requiredQuizIds,
+    {
+      phone: params.phone,
+      studentName: params.studentName,
+      regionId: params.regionId,
+    },
+  );
+  const quizId = match?.result
+    ? store.examSessions.find(
+        (s) => s.id === match.result.sessionId || s.pin === match.result.pin,
+      )?.quizId || params.linkedQuizId
+    : params.linkedQuizId;
+  const quizTitle =
+    (quizId &&
+      (store.customQuizzes.find((q) => q.id === quizId)?.titleEn ||
+        store.examSessions.find((s) => s.quizId === quizId)?.quizTitleEn)) ||
+    undefined;
+  return buildFinalQuizRecordSnapshot({
+    result: match?.result,
+    matchedVia: match?.matchedVia,
+    quizMaxMarks: params.quizMaxMarks,
+    quizId,
+    quizTitleEn: quizTitle,
+    attemptId: (match as { attemptId?: string } | undefined)?.attemptId,
+    submissionRoll: params.rollNumber,
   });
 }
 
@@ -5604,6 +5719,11 @@ export const serverSubmitPracticalWork = createServerFn({ method: "POST" })
       student.rollNumber,
       exam.linkedQuizId,
       requirement?.requiredQuizIds,
+      {
+        phone: student.phone,
+        studentName: student.name,
+        regionId: student.regionId,
+      },
     );
     const submission: PracticalSubmission = {
       id: existing?.id || `psub-${exam.id}-${normalizeRollToken(student.rollNumber)}`,
@@ -5665,6 +5785,11 @@ export const serverGradePracticalSubmission = createServerFn({ method: "POST" })
       submission.rollNumber,
       exam.linkedQuizId,
       requirement?.requiredQuizIds,
+      {
+        phone: submission.phone,
+        studentName: submission.studentName,
+        regionId: submission.regionId,
+      },
     );
     const quizPct = quizResult?.accuracyPct ?? submission.quizAccuracyPct ?? 0;
     const combinedPct = computeCombinedFinalPct({
@@ -5688,6 +5813,159 @@ export const serverGradePracticalSubmission = createServerFn({ method: "POST" })
     };
     scheduleDiskPersist();
     return { success: true, submission: store.practicalSubmissions[idx] };
+  });
+
+/** Recompute quizAccuracyPct + combinedPct using roll/phone/name quiz linking. */
+export const serverRefreshPracticalQuizScores = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      courseId?: string | undefined;
+      dryRun?: boolean | undefined;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    ensureFinalPracticalSeeded(store);
+    const courseId = data.courseId || "course-sanjibon-ai-dm";
+    const exam = (store.practicalExams || []).find((p) => p.courseId === courseId);
+    if (!exam) return { success: false as const, error: "Final practical exam not found." };
+    const requirement = (store.courseRequirements || []).find((r) => r.courseId === courseId);
+    const now = new Date().toISOString();
+    let updated = 0;
+    let unchanged = 0;
+    const sample: Array<{
+      rollNumber: string;
+      from: number | null;
+      to: number;
+      matchedVia?: string;
+      matchedRoll?: string;
+    }> = [];
+
+    for (let i = 0; i < (store.practicalSubmissions || []).length; i++) {
+      const sub = store.practicalSubmissions![i]!;
+      if (sub.practicalExamId !== exam.id && sub.courseId !== courseId) continue;
+      const match = resolveQuizResultMatchForStudent(
+        store,
+        sub.rollNumber,
+        exam.linkedQuizId,
+        requirement?.requiredQuizIds,
+        {
+          phone: sub.phone,
+          studentName: sub.studentName,
+          regionId: sub.regionId,
+        },
+      );
+      const quizPct = match?.result.accuracyPct ?? 0;
+      const prev = typeof sub.quizAccuracyPct === "number" ? sub.quizAccuracyPct : null;
+      if (prev != null && Math.abs(prev - quizPct) < 0.05) {
+        unchanged += 1;
+        continue;
+      }
+      const combinedPct =
+        typeof sub.practicalScorePct === "number"
+          ? computeCombinedFinalPct({
+              quizAccuracyPct: quizPct,
+              practicalScorePct: sub.practicalScorePct,
+              quizWeightPct: exam.quizWeightPct,
+              practicalWeightPct: exam.practicalWeightPct,
+            })
+          : sub.combinedPct;
+      if (!data.dryRun) {
+        store.practicalSubmissions![i] = {
+          ...sub,
+          quizAccuracyPct: quizPct,
+          combinedPct,
+          updatedAt: now,
+        };
+      }
+      updated += 1;
+      if (sample.length < 20) {
+        sample.push({
+          rollNumber: sub.rollNumber,
+          from: prev,
+          to: quizPct,
+          matchedVia: match?.matchedVia,
+          matchedRoll: match?.result.rollNumber,
+        });
+      }
+    }
+
+    if (!data.dryRun && updated > 0) scheduleDiskPersist();
+    return {
+      success: true as const,
+      dryRun: !!data.dryRun,
+      updated,
+      unchanged,
+      sample,
+    };
+  });
+
+/** Staff: detailed Final Quiz record for one practical student (marks breakdown). */
+export const serverGetStudentFinalQuizRecord = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      courseId?: string | undefined;
+      submissionId?: string | undefined;
+      rollNumber?: string | undefined;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    ensureFinalPracticalSeeded(store);
+    const courseId = data.courseId || "course-sanjibon-ai-dm";
+    const exam = (store.practicalExams || []).find((p) => p.courseId === courseId);
+    if (!exam) return { success: false as const, error: "Final exam not found." };
+    const requirement = (store.courseRequirements || []).find((r) => r.courseId === courseId);
+    const sub = (store.practicalSubmissions || []).find((s) =>
+      data.submissionId
+        ? s.id === data.submissionId
+        : data.rollNumber
+          ? normalizeRollToken(s.rollNumber) === normalizeRollToken(data.rollNumber) &&
+            (s.practicalExamId === exam.id || s.courseId === courseId)
+          : false,
+    );
+    if (!sub) return { success: false as const, error: "Submission not found." };
+    const snapshot = buildStudentQuizSnapshot(store, {
+      rollNumber: sub.rollNumber,
+      phone: sub.phone,
+      studentName: sub.studentName,
+      regionId: sub.regionId,
+      linkedQuizId: exam.linkedQuizId,
+      requiredQuizIds: requirement?.requiredQuizIds,
+      quizMaxMarks: exam.quizMaxMarks || FINAL_QUIZ_MARKS,
+    });
+    return {
+      success: true as const,
+      submissionId: sub.id,
+      rollNumber: sub.rollNumber,
+      studentName: sub.studentName,
+      quiz: snapshot,
+      practicalScorePct: sub.practicalScorePct,
+      combinedPct:
+        typeof sub.practicalScorePct === "number"
+          ? computeCombinedFinalPct({
+              quizAccuracyPct: snapshot.accuracyPct,
+              practicalScorePct: sub.practicalScorePct,
+              quizWeightPct: exam.quizWeightPct,
+              practicalWeightPct: exam.practicalWeightPct,
+            })
+          : sub.combinedPct,
+      weights: {
+        quizWeightPct: exam.quizWeightPct,
+        practicalWeightPct: exam.practicalWeightPct,
+        quizMaxMarks: exam.quizMaxMarks || FINAL_QUIZ_MARKS,
+        practicalMaxMarks: exam.practicalMaxMarks || FINAL_PRACTICAL_MARKS,
+        totalMaxMarks: exam.totalMaxMarks || FINAL_TOTAL_MARKS,
+      },
+    };
   });
 
 type GoogleFormPracticalRow = {
@@ -5841,6 +6119,11 @@ export const serverApplyReviewedPracticalGrades = createServerFn({ method: "POST
         sub.rollNumber,
         exam.linkedQuizId,
         requirement?.requiredQuizIds,
+        {
+          phone: sub.phone,
+          studentName: sub.studentName,
+          regionId: sub.regionId,
+        },
       );
       const quizPct = quizResult?.accuracyPct ?? sub.quizAccuracyPct ?? 0;
       const combinedPct = computeCombinedFinalPct({
@@ -6083,6 +6366,11 @@ export const serverImportGoogleFormPracticals = createServerFn({ method: "POST" 
         student.rollNumber,
         exam.linkedQuizId,
         (store.courseRequirements || []).find((r) => r.courseId === courseId)?.requiredQuizIds,
+        {
+          phone: student.phone,
+          studentName: student.name,
+          regionId: student.regionId,
+        },
       );
       const feedbackBits = [
         "Imported from Google Form backup (exam app submit failed).",

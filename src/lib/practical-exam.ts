@@ -183,28 +183,181 @@ export function isPracticalPastDeadline(
   return !!(exam.closesAt && nowIso > exam.closesAt);
 }
 
-/** Pick best result for a roll among sessions whose quizId is in the allowed set. */
-export function findBestQuizResultForCourse(params: {
-  results: ExamResultRecord[];
-  sessions: Array<{ id: string; pin: string; quizId: string }>;
-  allowedQuizIds: string[];
-  rollNumber: string;
-}): ExamResultRecord | undefined {
-  const rollTok = normalizeRollToken(params.rollNumber);
-  if (!rollTok || params.allowedQuizIds.length === 0) return undefined;
-  const allowed = new Set(params.allowedQuizIds);
-  const sessionById = new Map(params.sessions.map((s) => [s.id, s]));
-  const sessionByPin = new Map(params.sessions.map((s) => [s.pin, s]));
-  const matches = params.results.filter((r) => {
-    if (normalizeRollToken(r.rollNumber) !== rollTok) return false;
-    const sess = sessionById.get(r.sessionId) || sessionByPin.get(r.pin);
-    return !!sess && allowed.has(sess.quizId);
-  });
+function normalizePersonNameToken(name: string | undefined): string {
+  return (name || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\b(md|mohammad|muhammad|মো|মোঃ|মিয়া|mia)\b/gi, " ")
+    .replace(/\s+/g, "")
+    .trim();
+}
+
+function pickBestExamResult(matches: ExamResultRecord[]): ExamResultRecord | undefined {
   if (matches.length === 0) return undefined;
   return [...matches].sort((a, b) => {
     if (b.accuracyPct !== a.accuracyPct) return b.accuracyPct - a.accuracyPct;
     return b.score - a.score;
   })[0];
+}
+
+export type QuizResultMatchVia = "roll" | "phone" | "name";
+
+export interface QuizResultMatch {
+  result: ExamResultRecord;
+  matchedVia: QuizResultMatchVia;
+}
+
+/**
+ * Pick best result among sessions whose quizId is in the allowed set.
+ * Match order: roll → phone → unique same-region name (duplicate roster safety).
+ */
+export function findBestQuizResultForCourse(params: {
+  results: ExamResultRecord[];
+  sessions: Array<{ id: string; pin: string; quizId: string }>;
+  allowedQuizIds: string[];
+  rollNumber: string;
+  phone?: string | undefined;
+  studentName?: string | undefined;
+  regionId?: string | undefined;
+}): ExamResultRecord | undefined {
+  return findBestQuizResultMatchForCourse(params)?.result;
+}
+
+export function findBestQuizResultMatchForCourse(params: {
+  results: ExamResultRecord[];
+  sessions: Array<{ id: string; pin: string; quizId: string }>;
+  allowedQuizIds: string[];
+  rollNumber: string;
+  phone?: string | undefined;
+  studentName?: string | undefined;
+  regionId?: string | undefined;
+}): QuizResultMatch | undefined {
+  if (params.allowedQuizIds.length === 0) return undefined;
+  const allowed = new Set(params.allowedQuizIds);
+  const sessionById = new Map(params.sessions.map((s) => [s.id, s]));
+  const sessionByPin = new Map(params.sessions.map((s) => [s.pin, s]));
+  const inAllowed = (r: ExamResultRecord) => {
+    const sess = sessionById.get(r.sessionId) || sessionByPin.get(r.pin);
+    return !!sess && allowed.has(sess.quizId);
+  };
+  const allowedResults = params.results.filter(inAllowed);
+  if (allowedResults.length === 0) return undefined;
+
+  const rollTok = normalizeRollToken(params.rollNumber);
+  if (rollTok) {
+    const byRoll = allowedResults.filter((r) => normalizeRollToken(r.rollNumber) === rollTok);
+    const best = pickBestExamResult(byRoll);
+    if (best) return { result: best, matchedVia: "roll" };
+  }
+
+  const phoneTok = normalizeBdPhone(params.phone || "");
+  if (phoneTok.length >= 10) {
+    const byPhone = allowedResults.filter((r) => normalizeBdPhone(r.phone) === phoneTok);
+    const best = pickBestExamResult(byPhone);
+    if (best) return { result: best, matchedVia: "phone" };
+  }
+
+  const nameTok = normalizePersonNameToken(params.studentName);
+  if (nameTok.length >= 4) {
+    const byName = allowedResults.filter((r) => {
+      const rn = normalizePersonNameToken(r.name);
+      if (!rn) return false;
+      return rn === nameTok || rn.includes(nameTok) || nameTok.includes(rn);
+    });
+    const regionFiltered = params.regionId
+      ? byName.filter((r) => !r.regionId || r.regionId === params.regionId)
+      : byName;
+    const pool = regionFiltered.length > 0 ? regionFiltered : byName;
+    // Only accept when a single roll identity remains (avoid wrong-student merges).
+    const rolls = new Set(pool.map((r) => normalizeRollToken(r.rollNumber)));
+    if (rolls.size === 1) {
+      const best = pickBestExamResult(pool);
+      if (best) return { result: best, matchedVia: "name" };
+    }
+  }
+
+  return undefined;
+}
+
+/** Staff-facing Final Quiz record for grading desk breakdown. */
+export interface FinalQuizRecordSnapshot {
+  found: boolean;
+  accuracyPct: number;
+  quizMarks: number;
+  quizMaxMarks: number;
+  correctCount: number;
+  incorrectCount: number;
+  unattemptedCount: number;
+  passed?: boolean | undefined;
+  resultId?: string | undefined;
+  sessionId?: string | undefined;
+  pin?: string | undefined;
+  quizId?: string | undefined;
+  quizTitleEn?: string | undefined;
+  matchedVia?: QuizResultMatchVia | "attempt" | undefined;
+  matchedRollNumber?: string | undefined;
+  matchedName?: string | undefined;
+  attemptId?: string | undefined;
+  submittedAt?: string | undefined;
+  noteEn?: string | undefined;
+  noteBn?: string | undefined;
+}
+
+export function buildFinalQuizRecordSnapshot(params: {
+  result?: ExamResultRecord | undefined;
+  matchedVia?: QuizResultMatchVia | "attempt" | undefined;
+  quizMaxMarks?: number | undefined;
+  quizId?: string | undefined;
+  quizTitleEn?: string | undefined;
+  attemptId?: string | undefined;
+  submissionRoll?: string | undefined;
+}): FinalQuizRecordSnapshot {
+  const quizMax = params.quizMaxMarks || FINAL_QUIZ_MARKS;
+  const r = params.result;
+  if (!r) {
+    return {
+      found: false,
+      accuracyPct: 0,
+      quizMarks: 0,
+      quizMaxMarks: quizMax,
+      correctCount: 0,
+      incorrectCount: 0,
+      unattemptedCount: 0,
+      noteEn: "No Final Quiz result linked to this student yet.",
+      noteBn: "এই শিক্ষার্থীর সাথে চূড়ান্ত কুইজ রেকর্ড যুক্ত হয়নি।",
+    };
+  }
+  const accuracyPct = Number(r.accuracyPct) || 0;
+  const quizMarks = marksFromPct(accuracyPct, quizMax);
+  const rollMismatch =
+    params.submissionRoll &&
+    normalizeRollToken(params.submissionRoll) !== normalizeRollToken(r.rollNumber);
+  return {
+    found: true,
+    accuracyPct,
+    quizMarks,
+    quizMaxMarks: quizMax,
+    correctCount: r.correctCount,
+    incorrectCount: r.incorrectCount,
+    unattemptedCount: r.unattemptedCount,
+    passed: r.passed,
+    resultId: r.id,
+    sessionId: r.sessionId,
+    pin: r.pin,
+    quizId: params.quizId,
+    quizTitleEn: params.quizTitleEn,
+    matchedVia: params.matchedVia,
+    matchedRollNumber: r.rollNumber,
+    matchedName: r.name,
+    attemptId: params.attemptId,
+    submittedAt: r.createdAt,
+    noteEn: rollMismatch
+      ? `Linked via ${params.matchedVia || "match"} — quiz roll is ${r.rollNumber} (practical roll differs).`
+      : undefined,
+    noteBn: rollMismatch
+      ? `${params.matchedVia || "ম্যাচ"} দিয়ে যুক্ত — কুইজ রোল ${r.rollNumber} (প্র্যাকটিক্যাল রোল আলাদা)।`
+      : undefined,
+  };
 }
 
 export interface CourseCompletionSnapshot {
