@@ -70,10 +70,13 @@ import {
 import {
   buildDefaultCourseRequirement,
   buildDefaultFinalPracticalExam,
+  expandFinalQuizIds,
   FINAL_QUIZ_MARKS,
   FINAL_TOTAL_MARKS,
   generateFinalExamJoinPin,
   marksFromPct,
+  mergeMakeupQuizIntoFinalExam,
+  SANJIBON_QUIZ17_MAKEUP_ID,
   shouldUpgradeFinalExamPackage,
   upgradeFinalExamPackage,
   computeCombinedFinalPct,
@@ -5312,15 +5315,8 @@ function resolveQuizResultForStudent(
   linkedQuizId?: string,
   requiredQuizIds?: string[],
 ): ExamResultRecord | undefined {
-  const allowed = Array.from(
-    new Set(
-      [linkedQuizId, ...(requiredQuizIds || [])].filter((id): id is string => !!id && id.length > 0),
-    ),
-  );
-  // Also allow matching by slug variants of the same final quiz id
-  if (allowed.includes("quiz-sanjibon-s10-final")) {
-    allowed.push("sanjibon-session-10-final-exam");
-  }
+  // Final quiz aliases include Quiz 17 makeup so individually hosted makeups count.
+  const allowed = expandFinalQuizIds([linkedQuizId, ...(requiredQuizIds || [])]);
   return findBestQuizResultForCourse({
     results: store.examResults,
     sessions: store.examSessions.map((s) => ({ id: s.id, pin: s.pin, quizId: s.quizId })),
@@ -5756,6 +5752,111 @@ function buildAnswersFromGoogleFormProps(
     },
   ];
 }
+
+/**
+ * Merge Quiz 17 makeup results into the Final Exam package for students who
+ * missed the original final window and sat Quiz 17 individually (live host or desk).
+ * Upgrades weak final attempts, mints missing attempts, refreshes practical quiz %.
+ */
+export const serverMergeQuiz17IntoFinal = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      courseId?: string | undefined;
+      dryRun?: boolean | undefined;
+      makeupQuizId?: string | undefined;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    ensureFinalPracticalSeeded(store);
+    const courseId = data.courseId || "course-sanjibon-ai-dm";
+    const exam = (store.practicalExams || []).find((p) => p.courseId === courseId);
+    if (!exam) return { success: false as const, error: "Final practical exam not found for course." };
+
+    const reqIdx = (store.courseRequirements || []).findIndex((r) => r.courseId === courseId);
+    const requirement =
+      reqIdx >= 0
+        ? store.courseRequirements![reqIdx]!
+        : buildDefaultCourseRequirement(courseId);
+    const makeupQuizId = data.makeupQuizId || SANJIBON_QUIZ17_MAKEUP_ID;
+    const merged = mergeMakeupQuizIntoFinalExam({
+      exam,
+      requirement,
+      makeupQuizIds: [makeupQuizId],
+      results: store.examResults || [],
+      sessions: store.examSessions || [],
+      attempts: (store.finalExamAttempts || []).filter((a) => a.practicalExamId === exam.id),
+      submissions: (store.practicalSubmissions || []).filter(
+        (s) => s.practicalExamId === exam.id || s.courseId === courseId,
+      ),
+    });
+
+    if (data.dryRun) {
+      return {
+        success: true as const,
+        dryRun: true as const,
+        attemptsCreated: merged.attemptsCreated,
+        attemptsUpgraded: merged.attemptsUpgraded,
+        attemptsSkipped: merged.attemptsSkipped,
+        submissionsUpdated: merged.submissionsUpdated,
+        resultsLinked: merged.resultsLinked,
+        requiredQuizIds: merged.requirementRequiredQuizIds,
+        sample: merged.sample,
+      };
+    }
+
+    // Apply requirement + linked quiz aliases
+    const nextReq = {
+      ...requirement,
+      requiredQuizIds: merged.requirementRequiredQuizIds,
+    };
+    if (!store.courseRequirements) store.courseRequirements = [];
+    if (reqIdx >= 0) store.courseRequirements[reqIdx] = nextReq;
+    else store.courseRequirements.push(nextReq);
+
+    const examIdx = (store.practicalExams || []).findIndex((p) => p.id === exam.id);
+    if (examIdx >= 0 && store.practicalExams) {
+      // Keep current linked paper if set; otherwise point at Quiz 17 makeup.
+      store.practicalExams[examIdx] = {
+        ...exam,
+        linkedQuizId: exam.linkedQuizId || makeupQuizId,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    // Replace course-scoped attempts/submissions; keep other courses intact.
+    const otherAttempts = (store.finalExamAttempts || []).filter(
+      (a) => a.practicalExamId !== exam.id,
+    );
+    store.finalExamAttempts = [...merged.attempts, ...otherAttempts];
+    rebuildFinalAttemptIndex(store);
+
+    const otherSubs = (store.practicalSubmissions || []).filter(
+      (s) => s.practicalExamId !== exam.id && s.courseId !== courseId,
+    );
+    store.practicalSubmissions = [...merged.submissions, ...otherSubs];
+
+    // Sessions/results are global — write the merged arrays (merge only adds/updates).
+    store.examSessions = merged.sessions;
+    store.examResults = merged.results;
+    scheduleDiskPersist();
+
+    return {
+      success: true as const,
+      dryRun: false as const,
+      attemptsCreated: merged.attemptsCreated,
+      attemptsUpgraded: merged.attemptsUpgraded,
+      attemptsSkipped: merged.attemptsSkipped,
+      submissionsUpdated: merged.submissionsUpdated,
+      resultsLinked: merged.resultsLinked,
+      requiredQuizIds: merged.requirementRequiredQuizIds,
+      sample: merged.sample,
+    };
+  });
 
 /**
  * Merge Google Form practical backup responses into Final Exam submissions.

@@ -9,6 +9,7 @@ import {
   serverGetFinalExamDesk,
   serverGradePracticalSubmission,
   serverImportGoogleFormPracticals,
+  serverMergeQuiz17IntoFinal,
   serverIssueCourseCertificate,
   serverOpenFinalExamWindow,
   serverReturnPracticalForResubmit,
@@ -497,6 +498,38 @@ export function AdminPracticalPanel(props: {
         `${dryRun ? "Dry run — " : ""}Google Form import: ${res.imported || 0} new, ${res.updated || 0} updated, ${res.skippedGraded || 0} skipped (graded), ${(res.unmatchedPhone || []).length} unmatched phones.${unmatched ? ` Unmatched: ${unmatched}` : ""}`,
       );
       if (!dryRun) await refresh({ soft: true });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const mergeQuiz17IntoFinal = async (dryRun: boolean) => {
+    if (!course) return;
+    if (
+      !dryRun &&
+      !window.confirm(
+        `Merge Quiz 17 makeup scores into the Final Exam for ${course.code}?\n\nStudents who sat Quiz 17 individually will get final-quiz credit. Weak final attempts are upgraded; practical quiz % is refreshed.`,
+      )
+    ) {
+      return;
+    }
+    setBusyId(dryRun ? "q17-dry" : "q17-merge");
+    setNotice(null);
+    try {
+      const res = await serverMergeQuiz17IntoFinal({
+        data: { courseId: course.id, dryRun },
+      });
+      if (!res.success) {
+        setNotice(res.error || "Quiz 17 merge failed.");
+        return;
+      }
+      setNotice(
+        `${dryRun ? "Dry run — " : ""}Quiz 17 → Final: created ${res.attemptsCreated || 0}, upgraded ${res.attemptsUpgraded || 0}, skipped ${res.attemptsSkipped || 0}, practical refreshed ${res.submissionsUpdated || 0}.`,
+      );
+      if (!dryRun) {
+        await refresh({ soft: true });
+        if (deskView === "live") await refreshDesk();
+      }
     } finally {
       setBusyId(null);
     }
@@ -1538,6 +1571,22 @@ export function AdminPracticalPanel(props: {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void mergeQuiz17IntoFinal(true)}
+                disabled={!!busyId || !course}
+                className="staff-btn-ghost disabled:opacity-50"
+              >
+                {busyId === "q17-dry" ? "Checking…" : "Preview Quiz 17 → Final"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void mergeQuiz17IntoFinal(false)}
+                disabled={!!busyId || !course}
+                className="staff-btn-ghost disabled:opacity-50"
+              >
+                {busyId === "q17-merge" ? "Merging…" : "Merge Quiz 17 → Final"}
+              </button>
               <button
                 type="button"
                 onClick={() => void importGoogleFormBackups(true)}

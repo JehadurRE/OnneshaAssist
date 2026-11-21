@@ -4,15 +4,25 @@ import {
   computeCombinedFinalPct,
   computePracticalScorePct,
   evaluateCourseCompletion,
+  expandFinalQuizIds,
   findBestQuizResultForCourse,
   isPracticalPastDeadline,
   isPracticalWindowOpen,
   makeCourseCertificateNumber,
   matchRosterIdentity,
+  mergeMakeupQuizIntoFinalExam,
   normalizeExamWeights,
+  SANJIBON_QUIZ17_MAKEUP_ID,
   validateSubmissionPayload,
 } from "../practical-exam";
-import type { Course, ExamResultRecord, PracticalExam, PracticalSubmission } from "../types";
+import type {
+  Course,
+  ExamResultRecord,
+  ExamSessionRecord,
+  FinalExamAttempt,
+  PracticalExam,
+  PracticalSubmission,
+} from "../types";
 
 const course: Course = {
   id: "course-sanjibon-ai-dm",
@@ -260,6 +270,143 @@ describe("practical window & submission validation", () => {
       rollNumber: "BAR-01",
     });
     expect(none).toBeUndefined();
+  });
+
+  it("expands final quiz aliases to include Quiz 17 makeup", () => {
+    expect(expandFinalQuizIds(["quiz-sanjibon-s10-final"])).toEqual(
+      expect.arrayContaining([
+        "quiz-sanjibon-s10-final",
+        "sanjibon-session-10-final-exam",
+        SANJIBON_QUIZ17_MAKEUP_ID,
+      ]),
+    );
+    expect(expandFinalQuizIds(["quiz-sanjibon-s01"])).toEqual(["quiz-sanjibon-s01"]);
+  });
+
+  it("merges Quiz 17 makeup into final attempts and refreshes practical quiz %", () => {
+    const exam = buildDefaultFinalPracticalExam(course);
+    exam.id = "practical-course-sanjibon-ai-dm-final";
+    exam.joinPin = "290546";
+    exam.linkedQuizId = SANJIBON_QUIZ17_MAKEUP_ID;
+
+    const sessions: ExamSessionRecord[] = [
+      {
+        id: "exam-425209",
+        pin: "425209",
+        quizId: SANJIBON_QUIZ17_MAKEUP_ID,
+        quizTitleEn: "Quiz 17",
+        quizTitleBn: "Quiz 17",
+        hostId: "host-1",
+        totalQuestions: 30,
+        participantCount: 1,
+        averageScore: 21,
+        highestScore: 21,
+        createdAt: "2026-11-19T10:00:00Z",
+      },
+    ];
+    const results: ExamResultRecord[] = [
+      {
+        id: "r-makeup",
+        sessionId: "exam-425209",
+        pin: "425209",
+        participantId: "p1",
+        rollNumber: "COX-14",
+        name: "SHAFIUL ISLAM",
+        score: 24,
+        rank: 1,
+        correctCount: 24,
+        incorrectCount: 6,
+        unattemptedCount: 0,
+        accuracyPct: 80,
+        passed: true,
+        createdAt: "2026-11-19T10:05:00Z",
+      },
+    ];
+    const attempts: FinalExamAttempt[] = [
+      {
+        id: "fea-weak",
+        practicalExamId: exam.id,
+        courseId: course.id,
+        quizId: SANJIBON_QUIZ17_MAKEUP_ID,
+        pin: "290546",
+        rollNumber: "SYL-17",
+        studentName: "Obaidul",
+        startedAt: "2026-11-19T09:00:00Z",
+        endsAt: "2026-11-19T09:10:00Z",
+        submittedAt: "2026-11-19T09:10:00Z",
+        status: "submitted",
+        accuracyPct: 3.3,
+        quizMarks: 1,
+        quizMaxMarks: 30,
+        correctCount: 1,
+        incorrectCount: 29,
+        unansweredCount: 0,
+        createdAt: "2026-11-19T09:00:00Z",
+        updatedAt: "2026-11-19T09:10:00Z",
+      },
+    ];
+    // Separate makeup result for the weak attempt upgrade
+    results.push({
+      id: "r-syl",
+      sessionId: "exam-425209",
+      pin: "425209",
+      participantId: "p2",
+      rollNumber: "SYL-17",
+      name: "Obaidul",
+      score: 21,
+      rank: 2,
+      correctCount: 21,
+      incorrectCount: 9,
+      unattemptedCount: 0,
+      accuracyPct: 70,
+      passed: true,
+      createdAt: "2026-11-19T11:00:00Z",
+    });
+    const submissions: PracticalSubmission[] = [
+      {
+        id: "psub-1",
+        practicalExamId: exam.id,
+        courseId: course.id,
+        rollNumber: "SYL-17",
+        studentName: "Obaidul",
+        answers: [],
+        status: "submitted",
+        quizAccuracyPct: 3.3,
+        createdAt: "2026-11-19T12:00:00Z",
+        updatedAt: "2026-11-19T12:00:00Z",
+      },
+    ];
+
+    const merged = mergeMakeupQuizIntoFinalExam({
+      exam,
+      requirement: {
+        courseId: course.id,
+        requireQuiz: true,
+        requirePractical: true,
+        requiredQuizIds: ["quiz-sanjibon-s10-final"],
+        quizWeightPct: 43,
+        practicalWeightPct: 57,
+      },
+      makeupQuizIds: [SANJIBON_QUIZ17_MAKEUP_ID],
+      results,
+      sessions,
+      attempts,
+      submissions,
+      nowIso: "2026-11-21T12:00:00Z",
+    });
+
+    expect(merged.attemptsCreated).toBe(1); // COX-14
+    expect(merged.attemptsUpgraded).toBe(1); // SYL-17
+    expect(merged.submissionsUpdated).toBe(1);
+    expect(merged.requirementRequiredQuizIds).toEqual(
+      expect.arrayContaining(["quiz-sanjibon-s10-final", SANJIBON_QUIZ17_MAKEUP_ID]),
+    );
+    const cox = merged.attempts.find((a) => a.rollNumber === "COX-14");
+    expect(cox?.status).toBe("submitted");
+    expect(cox?.accuracyPct).toBe(80);
+    const syl = merged.attempts.find((a) => a.rollNumber === "SYL-17");
+    expect(syl?.accuracyPct).toBe(70);
+    expect(merged.submissions[0]?.quizAccuracyPct).toBe(70);
   });
 
   it("matches roster by normalized roll + BD phone", () => {
