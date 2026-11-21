@@ -6,6 +6,7 @@ import {
   evaluateCourseCompletion,
   expandFinalQuizIds,
   findBestQuizResultForCourse,
+  findBestQuizResultMatchForCourse,
   isPracticalPastDeadline,
   isPracticalWindowOpen,
   makeCourseCertificateNumber,
@@ -270,6 +271,55 @@ describe("practical window & submission validation", () => {
       rollNumber: "BAR-01",
     });
     expect(none).toBeUndefined();
+  });
+
+  it("links Final Quiz by phone or unique same-region name when roll differs", () => {
+    const sessions = [
+      { id: "exam-final", pin: "290546", quizId: "imported-quiz-1795079103116" },
+    ];
+    const results: ExamResultRecord[] = [
+      {
+        id: "r-riday",
+        sessionId: "exam-final",
+        pin: "290546",
+        participantId: "p1",
+        rollNumber: "009297",
+        name: "Md Riday",
+        phone: "01624489758",
+        regionId: "reg-noakhali",
+        score: 30,
+        rank: 1,
+        correctCount: 30,
+        incorrectCount: 0,
+        unattemptedCount: 0,
+        accuracyPct: 100,
+        passed: true,
+        createdAt: "2026-11-19T12:00:00Z",
+      },
+    ];
+    const byPhone = findBestQuizResultMatchForCourse({
+      results,
+      sessions,
+      allowedQuizIds: ["imported-quiz-1795079103116"],
+      rollNumber: "NOA-08",
+      phone: "01624489758",
+      studentName: "MD.Riday",
+      regionId: "reg-noakhali",
+    });
+    expect(byPhone?.matchedVia).toBe("phone");
+    expect(byPhone?.result.accuracyPct).toBe(100);
+
+    const byName = findBestQuizResultMatchForCourse({
+      results,
+      sessions,
+      allowedQuizIds: ["imported-quiz-1795079103116"],
+      rollNumber: "NOA-08",
+      phone: "01869865298",
+      studentName: "MD.Riday",
+      regionId: "reg-noakhali",
+    });
+    expect(byName?.matchedVia).toBe("name");
+    expect(byName?.result.rollNumber).toBe("009297");
   });
 
   it("expands final quiz aliases to include Quiz 17 makeup", () => {
