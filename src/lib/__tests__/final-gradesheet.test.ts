@@ -6,7 +6,7 @@ import {
 import type { PracticalExam, PracticalSubmission } from "../types";
 import { normalizeRollToken } from "../sanjibon-seed-data";
 
-const exam = {
+const exam: PracticalExam = {
   id: "exam-1",
   courseId: "course-1",
   titleEn: "Final",
@@ -18,7 +18,9 @@ const exam = {
   totalMaxMarks: 70,
   quizWeightPct: 43,
   practicalWeightPct: 57,
-} as PracticalExam;
+  createdAt: "",
+  updatedAt: "",
+};
 
 describe("final gradesheet", () => {
   it("ranks by total marks and builds csv", () => {
