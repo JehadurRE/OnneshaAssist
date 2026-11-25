@@ -9,6 +9,11 @@ import {
   selectOrderedPoolCandidates,
 } from "../ai-pool";
 import { suggestPracticalGradeViaAiPool } from "../ai-copilots";
+import {
+  buildDefaultSanjibonKnowledgeBase,
+  retrieveCourseKnowledgeContext,
+  shouldSuppressFloatingAiChat,
+} from "../course-kb";
 import type { AiPoolNode, PracticalExam, PracticalSubmission } from "../types";
 
 function makeNode(overrides: Partial<AiPoolNode> & { id: string; provider: AiPoolNode["provider"] }): AiPoolNode {
@@ -255,5 +260,29 @@ describe("Multi-Provider AI Pool Engine", () => {
     expect(suggestion.grades[0]?.marks).toBe(20); // clamped from 99 -> 20
     expect(suggestion.grades[1]?.marks).toBe(0); // clamped from -5 -> 0
     expect(suggestion.overallFeedback).toBe("Good effort overall.");
+  });
+
+  it("retrieves dedicated per-course KB context with citations and suppresses chat on live exams", () => {
+    const kbEntries = buildDefaultSanjibonKnowledgeBase();
+    const res = retrieveCourseKnowledgeContext({
+      kbEntries,
+      materials: [],
+      query: "capstone video landing page checklist",
+    });
+    expect(res.totalIndexedDocs).toBe(kbEntries.length);
+    expect(res.sourcesUsed.length).toBeGreaterThan(0);
+    expect(res.sourcesUsed[0]?.title).toContain("Capstone");
+    expect(res.context).toContain("Start Frame");
+
+    // Exam integrity guard: hidden on live exam routes, visible everywhere else
+    expect(shouldSuppressFloatingAiChat("/play")).toBe(true);
+    expect(shouldSuppressFloatingAiChat("/final-exam")).toBe(true);
+    expect(shouldSuppressFloatingAiChat("/final-exam-live")).toBe(true);
+    expect(shouldSuppressFloatingAiChat("/host/quiz-1")).toBe(true);
+    expect(shouldSuppressFloatingAiChat("/")).toBe(false);
+    expect(shouldSuppressFloatingAiChat("/portal")).toBe(false);
+    expect(shouldSuppressFloatingAiChat("/vault")).toBe(false);
+    expect(shouldSuppressFloatingAiChat("/dashboard")).toBe(false);
+    expect(shouldSuppressFloatingAiChat("/admin")).toBe(false);
   });
 });

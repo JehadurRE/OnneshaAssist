@@ -1,22 +1,44 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   serverAiDraftLmsContent,
+  serverAiGenerateCourseKbEntry,
+  serverDeleteCourseKnowledgeEntry,
   serverDeleteCourseMaterial,
   serverDeleteCourseRecording,
   serverGetBootstrapData,
   serverSaveCourseAnnouncement,
+  serverSaveCourseKnowledgeEntry,
   serverSaveCourseMaterial,
   serverSaveCourseRecording,
 } from "@/lib/server-session";
 import { newLmsId } from "@/lib/lms-content";
+import { COURSE_KB_CATEGORIES } from "@/lib/course-kb";
 import type {
   Course,
   CourseAnnouncement,
+  CourseKnowledgeCategory,
+  CourseKnowledgeEntry,
   CourseMaterial,
   CourseMaterialType,
   CourseRecording,
 } from "@/lib/types";
-import { BookOpen, Film, Loader2, Megaphone, Plus, Save, Sparkles, Trash2, Wand2 } from "lucide-react";
+import {
+  BookOpen,
+  Database,
+  Film,
+  Loader2,
+  Megaphone,
+  Pencil,
+  Pin,
+  Plus,
+  Power,
+  Save,
+  Sparkles,
+  Trash2,
+  Upload,
+  Wand2,
+  X,
+} from "lucide-react";
 
 export function AdminLmsPanel(props: { courses: Course[]; initialCourseId?: string | undefined }) {
   const [courseId, setCourseId] = useState(
@@ -25,9 +47,146 @@ export function AdminLmsPanel(props: { courses: Course[]; initialCourseId?: stri
   const [materials, setMaterials] = useState<CourseMaterial[]>([]);
   const [recordings, setRecordings] = useState<CourseRecording[]>([]);
   const [announcements, setAnnouncements] = useState<CourseAnnouncement[]>([]);
+  const [kbEntries, setKbEntries] = useState<CourseKnowledgeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  // Dedicated Per-Course Knowledge Base Editor State
+  const [kbFormOpen, setKbFormOpen] = useState(false);
+  const [kbEditId, setKbEditId] = useState<string | undefined>(undefined);
+  const [kbTitleEn, setKbTitleEn] = useState("");
+  const [kbTitleBn, setKbTitleBn] = useState("");
+  const [kbCategory, setKbCategory] = useState<CourseKnowledgeCategory>("syllabus");
+  const [kbTagsCsv, setKbTagsCsv] = useState("");
+  const [kbContent, setKbContent] = useState("");
+  const [kbPinned, setKbPinned] = useState(false);
+  const [kbSourceFile, setKbSourceFile] = useState<string | undefined>(undefined);
+  const [kbAiBusy, setKbAiBusy] = useState(false);
+
+  const courseKb = useMemo(
+    () =>
+      kbEntries
+        .filter((k) => k.courseId === courseId)
+        .sort(
+          (a, b) =>
+            Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) ||
+            (b.updatedAt || "").localeCompare(a.updatedAt || ""),
+        ),
+    [kbEntries, courseId],
+  );
+  const totalKbChars = useMemo(
+    () => courseKb.filter((k) => k.enabled).reduce((s, k) => s + k.content.length, 0),
+    [courseKb],
+  );
+
+  const openNewKbForm = () => {
+    setKbEditId(undefined);
+    setKbTitleEn("");
+    setKbTitleBn("");
+    setKbCategory("syllabus");
+    setKbTagsCsv("");
+    setKbContent("");
+    setKbPinned(false);
+    setKbSourceFile(undefined);
+    setKbFormOpen(true);
+  };
+
+  const openEditKbForm = (entry: CourseKnowledgeEntry) => {
+    setKbEditId(entry.id);
+    setKbTitleEn(entry.titleEn);
+    setKbTitleBn(entry.titleBn || "");
+    setKbCategory(entry.category);
+    setKbTagsCsv((entry.tags || []).join(", "));
+    setKbContent(entry.content);
+    setKbPinned(Boolean(entry.pinned));
+    setKbSourceFile(entry.sourceFileName);
+    setKbFormOpen(true);
+  };
+
+  const handleKbFileUpload = async (file: File | null) => {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      if (!text.trim()) {
+        setNotice("Uploaded file is empty.");
+        return;
+      }
+      setKbEditId(undefined);
+      setKbTitleEn(file.name.replace(/\.[^.]+$/, ""));
+      setKbTitleBn("");
+      setKbCategory("reference");
+      setKbContent(text.slice(0, 60_000));
+      setKbSourceFile(file.name);
+      setKbFormOpen(true);
+      setNotice(`Loaded "${file.name}" (${text.length.toLocaleString()} chars) — click Save KB Document.`);
+    } catch {
+      setNotice("Could not read text from file. Use .txt, .md, .csv, or .json.");
+    }
+  };
+
+  const handleSaveKb = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy("kb-save");
+    setNotice(null);
+    try {
+      const res = await serverSaveCourseKnowledgeEntry({
+        data: {
+          id: kbEditId,
+          courseId,
+          titleEn: kbTitleEn.trim(),
+          titleBn: kbTitleBn.trim() || undefined,
+          category: kbCategory,
+          content: kbContent.trim(),
+          tags: kbTagsCsv
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean),
+          sourceFileName: kbSourceFile,
+          enabled: true,
+          pinned: kbPinned,
+        },
+      });
+      if (!res.success) {
+        setNotice(res.error || "Could not save KB document.");
+        return;
+      }
+      setKbFormOpen(false);
+      setNotice(kbEditId ? "Updated Course Knowledge Base document." : "Added dedicated document to Course Knowledge Base.");
+      await refresh();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleAiBuildKbDoc = async () => {
+    if (!kbTitleEn.trim() || kbAiBusy) {
+      setNotice("Enter a topic/title in Title (EN) first to synthesize a Knowledge Base document with AI.");
+      return;
+    }
+    setKbAiBusy(true);
+    setNotice(null);
+    try {
+      const res = await serverAiGenerateCourseKbEntry({
+        data: {
+          courseId,
+          topic: kbTitleEn.trim(),
+          category: kbCategory,
+          rawNotes: kbContent.trim() || undefined,
+          pinned: kbPinned,
+        },
+      });
+      if (!res.success) {
+        setNotice(res.error || "AI Knowledge Base generation failed.");
+        return;
+      }
+      setKbFormOpen(false);
+      setNotice(`AI synthesized & saved "${res.entry?.titleEn}" into this course's Knowledge Base (${res.provider} · ${res.model}).`);
+      await refresh();
+    } finally {
+      setKbAiBusy(false);
+    }
+  };
 
   // AI Bilingual LMS Authoring Copilot
   const [aiKind, setAiKind] = useState<"material" | "announcement">("material");
@@ -124,6 +283,7 @@ export function AdminLmsPanel(props: { courses: Course[]; initialCourseId?: stri
         setMaterials((res.courseMaterials as CourseMaterial[]) || []);
         setRecordings((res.courseRecordings as CourseRecording[]) || []);
         setAnnouncements((res.courseAnnouncements as CourseAnnouncement[]) || []);
+        setKbEntries((res.courseKnowledgeBase as CourseKnowledgeEntry[]) || []);
       }
     } finally {
       setLoading(false);
@@ -203,6 +363,271 @@ export function AdminLmsPanel(props: { courses: Course[]; initialCourseId?: stri
       {notice && (
         <div className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm">{notice}</div>
       )}
+
+      {/* DEDICATED PER-COURSE KNOWLEDGE BASE STUDIO */}
+      <section className="rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/10 via-card to-emerald-500/5 p-4 sm:p-5 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary/15 text-primary">
+              <Database className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-display text-base font-black text-foreground">
+                  Dedicated Course Knowledge Base
+                </h3>
+                <span className="rounded-full border border-emerald-500/35 bg-emerald-500/15 px-2.5 py-0.5 font-mono text-[10px] font-extrabold text-emerald-700 dark:text-emerald-300">
+                  {courseKb.filter((k) => k.enabled).length} Active Docs ·{" "}
+                  {(totalKbChars / 1000).toFixed(1)}k Chars
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Documents stored here exclusively ground the Student AI Tutor and Floating AI Assist
+                widget for this course (alongside published LMS materials &amp; practical rubrics).
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="cursor-pointer staff-btn-ghost text-xs">
+              <Upload className="h-3.5 w-3.5 text-primary" />
+              <span>Upload .txt / .md</span>
+              <input
+                type="file"
+                accept=".txt,.md,.markdown,.csv,.json,text/plain,text/markdown"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] || null;
+                  void handleKbFileUpload(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={openNewKbForm}
+              className="staff-btn-primary text-xs"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Add KB Document</span>
+            </button>
+          </div>
+        </div>
+
+        {kbFormOpen && (
+          <form
+            onSubmit={handleSaveKb}
+            className="rounded-2xl border border-border bg-card p-4 space-y-3 shadow-sm animate-in fade-in"
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-display text-xs font-black uppercase tracking-wider text-primary">
+                {kbEditId ? "Edit Knowledge Base Document" : "New Course Knowledge Base Document"}
+              </span>
+              <button
+                type="button"
+                onClick={() => setKbFormOpen(false)}
+                className="rounded-lg p-1 text-muted-foreground hover:bg-accent"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+              <input
+                type="text"
+                required
+                value={kbTitleEn}
+                onChange={(e) => setKbTitleEn(e.target.value)}
+                placeholder="Document Title (EN) — e.g. Session 04 Prompting Cheat-Sheet *"
+                className="sm:col-span-5 staff-input text-xs font-semibold"
+              />
+              <input
+                type="text"
+                value={kbTitleBn}
+                onChange={(e) => setKbTitleBn(e.target.value)}
+                placeholder="বাংলা শিরোনাম (ঐচ্ছিক)"
+                className="sm:col-span-4 staff-input text-xs"
+              />
+              <select
+                value={kbCategory}
+                onChange={(e) => setKbCategory(e.target.value as CourseKnowledgeCategory)}
+                className="sm:col-span-3 staff-input text-xs font-bold"
+              >
+                {COURSE_KB_CATEGORIES.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.labelEn}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <textarea
+              rows={6}
+              required
+              value={kbContent}
+              onChange={(e) => setKbContent(e.target.value)}
+              placeholder="Paste syllabus details, lecture notes, FAQs, grading rubric, tool workflows, or policies in English and/or Bengali…"
+              className="staff-input min-h-[140px] text-xs leading-relaxed"
+            />
+
+            <div className="flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[220px]">
+                <input
+                  type="text"
+                  value={kbTagsCsv}
+                  onChange={(e) => setKbTagsCsv(e.target.value)}
+                  placeholder="Tags (comma separated, e.g. final exam, video, rubric)"
+                  className="staff-input text-xs flex-1 max-w-xs"
+                />
+                <label className="inline-flex items-center gap-1.5 text-xs font-bold text-foreground cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={kbPinned}
+                    onChange={(e) => setKbPinned(e.target.checked)}
+                    className="h-4 w-4 accent-primary rounded"
+                  />
+                  <span>Pin (Always include in AI context)</span>
+                </label>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={kbAiBusy || !kbTitleEn.trim()}
+                  onClick={() => void handleAiBuildKbDoc()}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-violet-500/40 bg-violet-500/15 px-3 py-2 text-xs font-extrabold text-violet-700 hover:bg-violet-500/25 transition disabled:opacity-50 dark:text-violet-300"
+                  title="Have AI Pool expand Title + rough notes into a complete bilingual KB document"
+                >
+                  {kbAiBusy ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Wand2 className="h-3.5 w-3.5" />
+                  )}
+                  <span>{kbAiBusy ? "Synthesizing…" : "AI Expand & Save"}</span>
+                </button>
+                <button
+                  type="submit"
+                  disabled={busy === "kb-save"}
+                  className="staff-btn-primary text-xs"
+                >
+                  {busy === "kb-save" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Save className="h-3.5 w-3.5" />
+                  )}
+                  <span>Save KB Document</span>
+                </button>
+              </div>
+            </div>
+          </form>
+        )}
+
+        {courseKb.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border bg-card/60 p-5 text-center text-xs text-muted-foreground">
+            No dedicated Knowledge Base documents added for this course yet. Add syllabus guides,
+            FAQs, or upload `.txt`/`.md` notes so students get hyper-accurate AI answers for this
+            course.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {courseKb.map((entry) => (
+              <div
+                key={entry.id}
+                className={`rounded-2xl border p-3.5 bg-card space-y-2 transition ${
+                  entry.enabled ? "border-border shadow-xs" : "border-border/50 opacity-65"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                      <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-extrabold uppercase text-primary">
+                        {entry.category.replace("_", " ")}
+                      </span>
+                      {entry.pinned && (
+                        <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                          <Pin className="h-2.5 w-2.5" /> Pinned
+                        </span>
+                      )}
+                      <span className="font-mono text-[10px] text-muted-foreground">
+                        {entry.content.length.toLocaleString()} chars
+                      </span>
+                    </div>
+                    <h4 className="font-display text-xs font-extrabold text-foreground truncate">
+                      {entry.titleEn}
+                    </h4>
+                    {entry.titleBn && (
+                      <p className="text-[11px] text-muted-foreground truncate">{entry.titleBn}</p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setBusy(entry.id);
+                        try {
+                          await serverSaveCourseKnowledgeEntry({
+                            data: {
+                              id: entry.id,
+                              courseId: entry.courseId,
+                              titleEn: entry.titleEn,
+                              titleBn: entry.titleBn,
+                              category: entry.category,
+                              content: entry.content,
+                              tags: entry.tags,
+                              enabled: !entry.enabled,
+                              pinned: entry.pinned,
+                            },
+                          });
+                          await refresh();
+                        } finally {
+                          setBusy(null);
+                        }
+                      }}
+                      className={`rounded-lg border p-1.5 ${
+                        entry.enabled
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
+                          : "border-border text-muted-foreground"
+                      }`}
+                      title={entry.enabled ? "Disable from AI context" : "Enable in AI context"}
+                    >
+                      <Power className="h-3 w-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openEditKbForm(entry)}
+                      className="rounded-lg border border-border p-1.5 text-muted-foreground hover:text-foreground"
+                      title="Edit KB document"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!window.confirm(`Delete KB document "${entry.titleEn}"?`)) return;
+                        setBusy(entry.id);
+                        try {
+                          await serverDeleteCourseKnowledgeEntry({ data: { id: entry.id } });
+                          await refresh();
+                        } finally {
+                          setBusy(null);
+                        }
+                      }}
+                      className="rounded-lg border border-destructive/30 p-1.5 text-destructive hover:bg-destructive/10"
+                      title="Delete KB document"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">
+                  {entry.content}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* AI Bilingual LMS Authoring Copilot */}
       <form

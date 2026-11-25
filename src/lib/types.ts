@@ -601,6 +601,32 @@ export interface CourseAnnouncement {
   updatedAt: string;
 }
 
+export type CourseKnowledgeCategory =
+  | "syllabus"
+  | "lecture_notes"
+  | "faq"
+  | "practical_rubric"
+  | "policy"
+  | "toolkit"
+  | "reference";
+
+/** Dedicated Knowledge Base document scoped to a single course for Student AI Tutor & Global AI Assist. */
+export interface CourseKnowledgeEntry {
+  id: string;
+  courseId: string;
+  titleEn: string;
+  titleBn?: string | undefined;
+  category: CourseKnowledgeCategory;
+  content: string;
+  tags?: string[] | undefined;
+  sourceFileName?: string | undefined;
+  enabled: boolean;
+  pinned?: boolean | undefined;
+  createdBy?: string | undefined;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** Policy for issuing an industrial course-completion certificate (not quiz-wise). */
 export interface CourseCompletionRequirement {
   courseId: string;

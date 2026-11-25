@@ -10,6 +10,8 @@ import {
   Course,
   CourseAnnouncement,
   CourseCompletionRequirement,
+  CourseKnowledgeCategory,
+  CourseKnowledgeEntry,
   CourseMaterial,
   CourseRecording,
   ExamResultRecord,
@@ -55,6 +57,11 @@ import {
   buildDefaultSanjibonLmsContent,
   newLmsId,
 } from "./lms-content";
+import {
+  buildDefaultSanjibonKnowledgeBase,
+  buildPlatformSupportContext,
+  retrieveCourseKnowledgeContext,
+} from "./course-kb";
 import {
   askCourseTutorViaAiPool,
   type TutorHistoryTurn,
@@ -235,8 +242,10 @@ interface PersistentStoreData {
   courseMaterials?: CourseMaterial[] | undefined;
   courseRecordings?: CourseRecording[] | undefined;
   courseAnnouncements?: CourseAnnouncement[] | undefined;
+  courseKnowledgeBase?: CourseKnowledgeEntry[] | undefined;
   courseRequirements?: CourseCompletionRequirement[] | undefined;
   seededLmsContentV1?: boolean | undefined;
+  seededCourseKbV1?: boolean | undefined;
   purgedSampleData?: boolean | undefined;
   purgedUnder50Initial?: boolean | undefined;
   purgedBcsDemoCourse?: boolean | undefined;
@@ -751,8 +760,10 @@ function loadInitialStore(): PersistentStoreData {
             courseMaterials: parsed.courseMaterials || [],
             courseRecordings: parsed.courseRecordings || [],
             courseAnnouncements: parsed.courseAnnouncements || [],
+            courseKnowledgeBase: parsed.courseKnowledgeBase || [],
             courseRequirements: parsed.courseRequirements || [],
             seededLmsContentV1: !!parsed.seededLmsContentV1,
+            seededCourseKbV1: !!parsed.seededCourseKbV1,
             purgedSampleData: purged,
             purgedUnder50Initial: !!parsed.purgedUnder50Initial,
             purgedBcsDemoCourse: !!parsed.purgedBcsDemoCourse,
@@ -805,8 +816,10 @@ function loadInitialStore(): PersistentStoreData {
     courseMaterials: [],
     courseRecordings: [],
     courseAnnouncements: [],
+    courseKnowledgeBase: [],
     courseRequirements: [],
     seededLmsContentV1: false,
+    seededCourseKbV1: false,
     purgedSampleData: false,
     purgedUnder50Initial: true,
     purgedBcsDemoCourse: true,
@@ -980,13 +993,28 @@ function getStore(): PersistentStoreData {
   return globalStore.__onneshaStore;
 }
 
+export function ensureCourseKbSeeded(store: PersistentStoreData): boolean {
+  if (!store.courseKnowledgeBase) store.courseKnowledgeBase = [];
+  if (store.seededCourseKbV1) return false;
+  const courseId = SANJIBON_COURSE.id;
+  const hasKb = store.courseKnowledgeBase.some((k) => k.courseId === courseId);
+  if (hasKb) {
+    store.seededCourseKbV1 = true;
+    return false;
+  }
+  store.courseKnowledgeBase.unshift(...buildDefaultSanjibonKnowledgeBase());
+  store.seededCourseKbV1 = true;
+  return true;
+}
+
 export function ensureLmsContentSeeded(store: PersistentStoreData): boolean {
   if (!store.courseMaterials) store.courseMaterials = [];
   if (!store.courseRecordings) store.courseRecordings = [];
   if (!store.courseAnnouncements) store.courseAnnouncements = [];
+  const kbChanged = ensureCourseKbSeeded(store);
   const courseId = SANJIBON_COURSE.id;
   const hasMat = store.courseMaterials.some((m) => m.courseId === courseId);
-  if (hasMat) return false;
+  if (hasMat) return kbChanged;
   const seed = buildDefaultSanjibonLmsContent();
   store.courseMaterials.unshift(...seed.materials);
   store.courseRecordings.unshift(...seed.recordings);
@@ -2181,6 +2209,7 @@ export const serverGetBootstrapData = createServerFn({ method: "GET" }).handler(
     courseAnnouncements: isStaff
       ? store.courseAnnouncements || []
       : (store.courseAnnouncements || []).filter((a) => a.published),
+    courseKnowledgeBase: isStaff ? store.courseKnowledgeBase || [] : [],
     courseRequirements: store.courseRequirements || [],
     autoIssueQuizCertificates: store.autoIssueQuizCertificates === true,
     transactions: actor?.role === "admin" ? store.transactions : [],
@@ -7105,6 +7134,9 @@ export const serverGetStudentPortal = createServerFn({ method: "POST" })
         ensureStoreAiPool(store),
         store.serverGeminiApiKey,
       ),
+      courseKbCount: (store.courseKnowledgeBase || []).filter(
+        (k) => k.courseId === course.id && k.enabled,
+      ).length,
       courseCertificate: courseCert
         ? {
             ...courseCert,
@@ -8015,19 +8047,40 @@ export const serverAskCourseTutor = createServerFn({ method: "POST" })
       };
     }
     const course = store.courses.find((c) => c.id === data.courseId);
+    const kbEntries = (store.courseKnowledgeBase || []).filter(
+      (k) => k.courseId === data.courseId && k.enabled,
+    );
     const materials = (store.courseMaterials || []).filter(
       (m) => m.courseId === data.courseId && m.published,
     );
-    const context = buildAiTutorContext({
+    const recordings = (store.courseRecordings || []).filter(
+      (r) => r.courseId === data.courseId && r.published,
+    );
+    const announcements = (store.courseAnnouncements || []).filter(
+      (a) => a.courseId === data.courseId && a.published,
+    );
+    const practicalExam = (store.practicalExams || []).find((e) => e.courseId === data.courseId);
+    const retrieved = retrieveCourseKnowledgeContext({
+      course,
+      kbEntries,
       materials,
-      courseTitle: course?.titleEn,
+      recordings,
+      announcements,
+      practicalExam,
+      query: data.question,
     });
+    const fallbackContext =
+      retrieved.context.trim() ||
+      buildAiTutorContext({
+        materials,
+        courseTitle: course?.titleEn,
+      });
     try {
       const res = await askCourseTutorViaAiPool(
         pool,
         {
           question: data.question,
-          context,
+          context: fallbackContext,
           lang: data.lang,
           mode: data.mode,
           history: data.history,
@@ -8045,6 +8098,7 @@ export const serverAskCourseTutor = createServerFn({ method: "POST" })
         provider: res.provider,
         nodeLabel: res.nodeLabel,
         latencyMs: res.latencyMs,
+        sourcesUsed: retrieved.sourcesUsed,
       };
     } catch (err) {
       return {
@@ -8503,6 +8557,369 @@ export const serverAiAnalyzeExamSession = createServerFn({ method: "POST" })
       return {
         success: false as const,
         error: err instanceof Error ? err.message : "AI cohort diagnostic failed.",
+      };
+    }
+  });
+
+// ============================================================================
+// DEDICATED PER-COURSE KNOWLEDGE BASE CRUD & GLOBAL FLOATING AI ASSISTANT
+// ============================================================================
+
+export const serverGetCourseKnowledgeBase = createServerFn({ method: "GET" })
+  .validator((data: { courseId?: string | undefined }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    ensureLmsContentSeeded(store);
+    const all = store.courseKnowledgeBase || [];
+    const entries = data.courseId ? all.filter((e) => e.courseId === data.courseId) : all;
+    entries.sort(
+      (a, b) =>
+        Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) ||
+        (b.updatedAt || "").localeCompare(a.updatedAt || ""),
+    );
+    return {
+      success: true as const,
+      entries,
+    };
+  });
+
+export const serverSaveCourseKnowledgeEntry = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      id?: string | undefined;
+      courseId: string;
+      titleEn: string;
+      titleBn?: string | undefined;
+      category: CourseKnowledgeCategory;
+      content: string;
+      tags?: string[] | undefined;
+      sourceFileName?: string | undefined;
+      enabled?: boolean | undefined;
+      pinned?: boolean | undefined;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const cleanTitle = (data.titleEn || "").trim();
+    const cleanContent = (data.content || "").trim();
+    if (!data.courseId || !cleanTitle || cleanContent.length < 10) {
+      return {
+        success: false as const,
+        error: "Course, title, and knowledge content (at least 10 characters) are required.",
+      };
+    }
+
+    const store = getStore();
+    ensureLmsContentSeeded(store);
+    if (!store.courseKnowledgeBase) store.courseKnowledgeBase = [];
+    const nowIso = new Date().toISOString();
+    const idx = data.id ? store.courseKnowledgeBase.findIndex((e) => e.id === data.id) : -1;
+    const prev = idx >= 0 ? store.courseKnowledgeBase[idx] : undefined;
+
+    const next: CourseKnowledgeEntry = {
+      id: prev?.id || newLmsId("kb"),
+      courseId: data.courseId,
+      titleEn: cleanTitle,
+      titleBn: data.titleBn?.trim() || undefined,
+      category: data.category || "reference",
+      content: cleanContent.slice(0, 60_000),
+      tags: Array.isArray(data.tags)
+        ? data.tags.map((t) => t.trim()).filter(Boolean).slice(0, 12)
+        : prev?.tags,
+      sourceFileName: data.sourceFileName?.trim() || prev?.sourceFileName,
+      enabled: data.enabled !== undefined ? Boolean(data.enabled) : prev?.enabled ?? true,
+      pinned: data.pinned !== undefined ? Boolean(data.pinned) : prev?.pinned ?? false,
+      createdBy: prev?.createdBy || actor.name,
+      createdAt: prev?.createdAt || nowIso,
+      updatedAt: nowIso,
+    };
+
+    if (idx >= 0) {
+      store.courseKnowledgeBase[idx] = next;
+    } else {
+      store.courseKnowledgeBase.unshift(next);
+    }
+    scheduleDiskPersist();
+    return { success: true as const, entry: next };
+  });
+
+export const serverDeleteCourseKnowledgeEntry = createServerFn({ method: "POST" })
+  .validator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    store.courseKnowledgeBase = (store.courseKnowledgeBase || []).filter((e) => e.id !== data.id);
+    scheduleDiskPersist();
+    return { success: true as const };
+  });
+
+export const serverAiGenerateCourseKbEntry = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      courseId: string;
+      topic: string;
+      category: CourseKnowledgeCategory;
+      rawNotes?: string | undefined;
+      pinned?: boolean | undefined;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    ensureLmsContentSeeded(store);
+    const pool = ensureStoreAiPool(store);
+    if (!hasAnyConfiguredAiProvider(pool, store.serverGeminiApiKey)) {
+      return {
+        success: false as const,
+        error: "No AI provider configured in Admin → AI Pool.",
+      };
+    }
+    const course = store.courses.find((c) => c.id === data.courseId);
+    try {
+      const draft = await draftLmsContentViaAiPool(
+        pool,
+        {
+          kind: "material",
+          topic: data.topic,
+          courseTitle: course?.titleEn,
+          sessionLabel: `Course KB (${data.category})`,
+          extraNotes: data.rawNotes,
+          actorName: actor.name,
+        },
+        {
+          legacyServerGeminiKey: store.serverGeminiApiKey,
+          onMutate: () => scheduleDiskPersist(),
+        },
+      );
+      const nowIso = new Date().toISOString();
+      const entry: CourseKnowledgeEntry = {
+        id: newLmsId("kb"),
+        courseId: data.courseId,
+        titleEn: draft.titleEn,
+        titleBn: draft.titleBn,
+        category: data.category || "reference",
+        content: [draft.bodyEn, draft.bodyBn ? `\n---\nবাংলা সারসংক্ষেপ:\n${draft.bodyBn}` : ""]
+          .filter(Boolean)
+          .join("\n"),
+        tags: [data.category, "AI Generated"],
+        enabled: true,
+        pinned: Boolean(data.pinned),
+        createdBy: `${actor.name} (via ${draft.provider})`,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+      if (!store.courseKnowledgeBase) store.courseKnowledgeBase = [];
+      store.courseKnowledgeBase.unshift(entry);
+      scheduleDiskPersist();
+      return {
+        success: true as const,
+        entry,
+        provider: draft.provider,
+        model: draft.model,
+        latencyMs: draft.latencyMs,
+      };
+    } catch (err) {
+      return {
+        success: false as const,
+        error: err instanceof Error ? err.message : "AI Knowledge Base generation failed.",
+      };
+    }
+  });
+
+/**
+ * Open to ALL students, visitors, and staff so the floating AI Assist widget everywhere
+ * knows which dedicated Course Knowledge Bases are available for the current user.
+ */
+export const serverGetFloatingAiContext = createServerFn({ method: "GET" }).handler(async () => {
+  const store = getStore();
+  ensureLmsContentSeeded(store);
+  const pool = ensureStoreAiPool(store);
+  const online = hasAnyConfiguredAiProvider(pool, store.serverGeminiApiKey);
+
+  const actor = await getActorFromRequest();
+  const isStaff = Boolean(actor && (actor.role === "admin" || actor.role === "instructor"));
+  const portalStudent = await getRosterStudentFromPortalCookie(store);
+
+  // Signed-in students and staff can query every active course's dedicated KB;
+  // anonymous visitors can query public courses + Onnesha Platform Support KB.
+  const visibleCourses = store.courses.filter(
+    (c) => c.status !== "archived" && (isStaff || Boolean(portalStudent) || !isCoursePrivate(c)),
+  );
+
+  const availableCourses = visibleCourses.map((c) => {
+    const kbDocs = (store.courseKnowledgeBase || []).filter(
+      (k) => k.courseId === c.id && k.enabled,
+    ).length;
+    const matDocs = (store.courseMaterials || []).filter(
+      (m) => m.courseId === c.id && m.published,
+    ).length;
+    return {
+      id: c.id,
+      code: c.code,
+      titleEn: c.titleEn,
+      titleBn: c.titleBn,
+      kbDocCount: kbDocs + matDocs,
+      dedicatedKbCount: kbDocs,
+    };
+  });
+
+  const defaultCourseId =
+    availableCourses.find((c) => c.id === SANJIBON_COURSE.id)?.id ||
+    availableCourses[0]?.id ||
+    "platform";
+
+  return {
+    success: true as const,
+    online,
+    availableCourses,
+    defaultCourseId,
+    studentName: portalStudent?.name || actor?.name || undefined,
+    studentRoll: portalStudent?.rollNumber || undefined,
+    isStaff,
+  };
+});
+
+/**
+ * Universal Floating AI Support & Course Knowledge Base Assistant.
+ * Available to ALL students, visitors, and staff across the platform.
+ * Enforces strict academic integrity (refuses live exam answer requests).
+ */
+export const serverAskFloatingAiAssistant = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      question: string;
+      courseId?: string | undefined;
+      lang?: "en" | "bn" | undefined;
+      mode?: TutorStudyMode | undefined;
+      history?: TutorHistoryTurn[] | undefined;
+      currentPath?: string | undefined;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const cleanQ = (data.question || "").trim();
+    if (cleanQ.length < 2) {
+      return { success: false as const, error: "Please type a question first." };
+    }
+    if (cleanQ.length > 2000) {
+      return { success: false as const, error: "Question is too long (max 2,000 characters)." };
+    }
+
+    const store = getStore();
+    ensureLmsContentSeeded(store);
+    const pool = ensureStoreAiPool(store);
+    if (!hasAnyConfiguredAiProvider(pool, store.serverGeminiApiKey)) {
+      return {
+        success: false as const,
+        error:
+          "AI Assistant is currently offline. Administrator needs to connect an AI provider (OpenRouter, Gemini, OpenAI, Claude, or Groq) in Admin → AI Pool.",
+      };
+    }
+
+    const actor = await getActorFromRequest();
+    const isStaff = Boolean(actor && (actor.role === "admin" || actor.role === "instructor"));
+    const portalStudent = await getRosterStudentFromPortalCookie(store);
+
+    const requestedCourseId = data.courseId?.trim();
+    const targetCourse =
+      requestedCourseId && requestedCourseId !== "platform"
+        ? store.courses.find(
+            (c) =>
+              c.id === requestedCourseId &&
+              c.status !== "archived" &&
+              (isStaff || Boolean(portalStudent) || !isCoursePrivate(c)),
+          )
+        : undefined;
+
+    let contextText: string;
+    let sourcesUsed: Array<{ id: string; title: string; kind: string }> = [];
+    let scopeLabel = "Onnesha Platform Support";
+
+    if (targetCourse) {
+      scopeLabel = `[${targetCourse.code}] ${targetCourse.titleEn}`;
+      const kbEntries = (store.courseKnowledgeBase || []).filter(
+        (k) => k.courseId === targetCourse.id && k.enabled,
+      );
+      const materials = (store.courseMaterials || []).filter(
+        (m) => m.courseId === targetCourse.id && m.published,
+      );
+      const recordings = (store.courseRecordings || []).filter(
+        (r) => r.courseId === targetCourse.id && r.published,
+      );
+      const announcements = (store.courseAnnouncements || []).filter(
+        (a) => a.courseId === targetCourse.id && a.published,
+      );
+      const practicalExam = (store.practicalExams || []).find(
+        (e) => e.courseId === targetCourse.id,
+      );
+      const retrieved = retrieveCourseKnowledgeContext({
+        course: targetCourse,
+        kbEntries,
+        materials,
+        recordings,
+        announcements,
+        practicalExam,
+        query: cleanQ,
+      });
+      const platformCtx = buildPlatformSupportContext([targetCourse]);
+      contextText = `${retrieved.context}\n\n${platformCtx}`;
+      sourcesUsed = retrieved.sourcesUsed;
+    } else {
+      const publicCourses = store.courses.filter(
+        (c) => c.status !== "archived" && (isStaff || Boolean(portalStudent) || !isCoursePrivate(c)),
+      );
+      contextText = buildPlatformSupportContext(publicCourses);
+      sourcesUsed = [{ id: "platform-kb", title: "Onnesha Platform Support KB", kind: "platform" }];
+    }
+
+    const actorLabel = portalStudent
+      ? `Student ${portalStudent.rollNumber}`
+      : actor
+        ? `${actor.role}: ${actor.name}`
+        : `Visitor (${data.currentPath || "/"})`;
+
+    try {
+      const res = await askCourseTutorViaAiPool(
+        pool,
+        {
+          question: cleanQ,
+          context: contextText,
+          lang: data.lang,
+          mode: data.mode || "explain",
+          history: data.history,
+          actorName: actorLabel,
+        },
+        {
+          legacyServerGeminiKey: store.serverGeminiApiKey,
+          onMutate: () => scheduleDiskPersist(),
+        },
+      );
+      return {
+        success: true as const,
+        answer: res.answer,
+        scopeLabel,
+        sourcesUsed,
+        provider: res.provider,
+        model: res.model,
+        nodeLabel: res.nodeLabel,
+        latencyMs: res.latencyMs,
+      };
+    } catch (err) {
+      return {
+        success: false as const,
+        error: err instanceof Error ? err.message : "AI Assistant failed to respond.",
       };
     }
   });

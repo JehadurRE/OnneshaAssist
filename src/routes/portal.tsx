@@ -142,6 +142,7 @@ function StudentPortalPage() {
       id: string;
       role: "user" | "assistant";
       content: string;
+      sourcesUsed?: Array<{ id: string; title: string; kind: string }>;
       provider?: string;
       model?: string;
       latencyMs?: number;
@@ -357,6 +358,7 @@ function StudentPortalPage() {
             id: `a-${Date.now()}`,
             role: "assistant",
             content: res.answer,
+            sourcesUsed: res.sourcesUsed,
             provider: res.provider,
             model: res.model,
             latencyMs: res.latencyMs,
@@ -1185,35 +1187,50 @@ function StudentPortalPage() {
                         >
                           <div>{msg.content}</div>
                           {msg.role === "assistant" && !msg.error && (
-                            <div className="mt-2.5 pt-2 border-t border-border/60 flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted-foreground font-mono">
-                              <span>
-                                {msg.provider ? `${msg.provider} · ` : ""}
-                                {msg.model || "AI Pool"}
-                                {msg.latencyMs ? ` · ${msg.latencyMs}ms` : ""}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  try {
-                                    await navigator.clipboard.writeText(msg.content);
-                                    setCopiedTutorMsgId(msg.id);
-                                    window.setTimeout(() => setCopiedTutorMsgId(null), 1800);
-                                  } catch {
-                                    // ignore clipboard errors
-                                  }
-                                }}
-                                className="inline-flex items-center gap-1 font-sans font-bold text-primary hover:underline"
-                              >
-                                {copiedTutorMsgId === msg.id ? (
-                                  <>
-                                    <Check className="h-3 w-3" /> Copied
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy className="h-3 w-3" /> Copy
-                                  </>
-                                )}
-                              </button>
+                            <div className="mt-2.5 pt-2 border-t border-border/60 space-y-1.5">
+                              {msg.sourcesUsed && msg.sourcesUsed.length > 0 && (
+                                <div className="flex flex-wrap items-center gap-1">
+                                  <BookOpen className="h-3 w-3 text-primary shrink-0" />
+                                  {msg.sourcesUsed.slice(0, 4).map((src) => (
+                                    <span
+                                      key={src.id}
+                                      className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary"
+                                    >
+                                      {src.title}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted-foreground font-mono">
+                                <span>
+                                  {msg.provider ? `${msg.provider} · ` : ""}
+                                  {msg.model || "AI Pool"}
+                                  {msg.latencyMs ? ` · ${msg.latencyMs}ms` : ""}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      await navigator.clipboard.writeText(msg.content);
+                                      setCopiedTutorMsgId(msg.id);
+                                      window.setTimeout(() => setCopiedTutorMsgId(null), 1800);
+                                    } catch {
+                                      // ignore clipboard errors
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-1 font-sans font-bold text-primary hover:underline"
+                                >
+                                  {copiedTutorMsgId === msg.id ? (
+                                    <>
+                                      <Check className="h-3 w-3" /> Copied
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="h-3 w-3" /> Copy
+                                    </>
+                                  )}
+                                </button>
+                              </div>
                             </div>
                           )}
                         </div>

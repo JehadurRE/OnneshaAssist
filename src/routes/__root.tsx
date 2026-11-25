@@ -10,6 +10,7 @@ import {
 import { useEffect, type ReactNode } from "react";
 import { LanguageProvider } from "../lib/i18n";
 import { AuthProvider } from "../lib/auth-context";
+import { FloatingAiAssistant } from "../components/common/FloatingAiAssistant";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
@@ -144,6 +145,7 @@ function RootComponent() {
       <AuthProvider>
         <LanguageProvider>
           <Outlet />
+          <FloatingAiAssistant />
         </LanguageProvider>
       </AuthProvider>
     </QueryClientProvider>
