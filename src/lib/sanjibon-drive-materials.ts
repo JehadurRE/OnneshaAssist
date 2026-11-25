@@ -14,16 +14,115 @@ export const SANJIBON_CANVA_ROOT_URL = "https://www.canva.com/folder/FAHavzClUOM
 
 export const SANJIBON_DRIVE_FILE_COUNT = 102;
 
+export const SANJIBON_DAY1_ZOOM_RECORDING_URL =
+  "https://us06web.zoom.us/rec/share/-yCc2MTXBEGMpYaAR07VhiIxqZUY4RLhmNIgISNBqDnTDFCTKLMoz_uaRvIawYOB.cKxmrl212VeV0SmT";
+
+export const SANJIBON_DAY1_ZOOM_PASSCODE = "f!Z7Ir3A";
+
+export const SANJIBON_DAY2_ZOOM_RECORDING_URL =
+  "https://us06web.zoom.us/rec/share/7VhqPSwJd-wLNlPdAmMfiggEOXytu82HD2is479UmTRQWwW81l1GoraRc1GqjViH.z6tkBbLJUH2wF7U9?pwd=DLwSn5lN41C8OWH02AAAIAAAABlDT7CUQ0hgC9YrUzAKq2PHpkAEUftaLLS1es3HhOgRb4ssZu0flOfVxmbj2vbqtzAwMDAwNA";
+
+export const SANJIBON_DAY2_ZOOM_NOTES_URL =
+  "https://docs.zoom.us/doc/Bdqsq7gMSrOqxLRJ-P2-Rw?from=doc_share&skipCheck=1";
+
+export const SANJIBON_DAY3_ZOOM_RECORDING_URL =
+  "https://us06web.zoom.us/rec/share/NJYLpJwHT3EoqaclEMc74Up4a_QF_DG8SOLTKmQAyVn0S7lW3f9j_u4JU1oaM5XW.VFGhREY6lEBSMhdQ?pwd=DNxyzGqJOKSUuaYOGQAAIAAAABMDDvQXY-2i7k3rKogpsypoISqwZT7l1M-wDMnh93393A4hoH2nPh01AY1hmAgG7DAwMDAwNA";
+
+export const SANJIBON_DAY3_ZOOM_NOTES_URL =
+  "https://docs.zoom.us/doc/CoD4DO_GThei3Bu70Xlbpw?from=doc_share&skipCheck=1";
+
+export const SANJIBON_DAY4_ZOOM_RECORDING_URL =
+  "https://us06web.zoom.us/rec/share/PK8qfRi5ZO3Qyybr1EXRAM1Maet8iic-QMGRCkGq23Gfm9PyWMBDLXgjzi2UDk6f.YH6vNwzJyo96wdlA?pwd=DEl9bhM3SJ-yA5ZUHgAAIAAAAJE30wdg0SvMHArDNok-CvOaTnzGEaCu02Z1J0l1CbfbjV9hd-mdpTfdybgc5_L8xzAwMDAwNA";
+
+export const SANJIBON_DAY4_ZOOM_NOTES_URL =
+  "https://docs.zoom.us/doc/Dv513wtBQTynMwfjeL3AuQ?from=doc_share&skipCheck=1";
+
 export const SANJIBON_DAY5_ZOOM_RECORDING_URL =
   "https://us06web.zoom.us/rec/share/9kRo5Zw_xG9AibcUa86yZKj07joxcKPyzYkvWAspopy8x3W5w2USTGAV2e8DpA0.UnlpR8cWcerO6gCV?pwd=DBrftVeUT3LKxUCWjQAAIAAAAFlsun4CqByjHJ-r5L1MuyF50Qy37W1mpyQ1O-4OTuibwvkPwjiTWdNP4tChDWf_jTAwMDAwNA";
 
 const DRIVE_SEED_TS = "2026-11-15T00:00:00.000Z";
+const DAY1_REC_TS = "2026-11-15T18:00:00.000Z";
+const DAY2_REC_TS = "2026-11-16T18:00:00.000Z";
+const DAY3_REC_TS = "2026-11-17T18:00:00.000Z";
+const DAY4_REC_TS = "2026-11-19T18:00:00.000Z";
 const ZOOM_REC_TS = "2026-11-20T04:39:00.000Z";
 
 export function buildSanjibonClassRecordings(
   courseId: string = SANJIBON_COURSE.id,
 ): CourseRecording[] {
   return [
+    {
+      id: "rec-sanjibon-day1-zoom",
+      courseId,
+      sessionLabel: "Day 1 · Sessions 01 & 02",
+      titleEn: "Day 1 — Live Class Recording (Prompt Writing Basics & AI Market Research)",
+      titleBn: "দিন ১ — লাইভ ক্লাস রেকর্ডিং (প্রম্পট রাইটিং ও এআই মার্কেট রিসার্চ)",
+      descriptionEn:
+        "Official Zoom cloud recording covering Session 01 (Course Orientation, CLEAR Prompt Framework, Starter Prompt Library) & Session 02 (Market/Competitor Research & Custom AI Helper). Passcode required: f!Z7Ir3A.",
+      descriptionBn:
+        "সেশন ০১ (কোর্স পরিচিতি, CLEAR প্রম্পট ফ্রেমওয়ার্ক) ও সেশন ০২ (বাজার ও প্রতিযোগী রিসার্চ, কাস্টম এআই হেল্পার)-এর Zoom রেকর্ডিং। পাসকোড: f!Z7Ir3A।",
+      url: SANJIBON_DAY1_ZOOM_RECORDING_URL,
+      passcode: SANJIBON_DAY1_ZOOM_PASSCODE,
+      provider: "zoom",
+      sortOrder: 1,
+      published: true,
+      createdAt: DAY1_REC_TS,
+      updatedAt: DAY1_REC_TS,
+    },
+    {
+      id: "rec-sanjibon-day2-zoom",
+      courseId,
+      sessionLabel: "Day 2 · Sessions 03 & 04",
+      titleEn: "Day 2 — Live Class Recording & Meeting Notes (AI Product Photo & Canva Ad Banners)",
+      titleBn: "দিন ২ — লাইভ ক্লাস রেকর্ডিং ও মিটিং নোটস (এআই প্রোডাক্ট ফটো ও ক্যানভা ব্যানার)",
+      descriptionEn:
+        "Official Zoom cloud recording & Zoom Docs meeting notes covering Session 03 (SLABC Product Photography) & Session 04 (Social Media & Google Ad Banners in Canva).",
+      descriptionBn:
+        "সেশন ০৩ (SLABC প্রোডাক্ট ফটোগ্রাফি) ও সেশন ০৪ (Canva-তে সোশ্যাল মিডিয়া ও গুগল অ্যাড ব্যানার ডিজাইন)-এর Zoom রেকর্ডিং ও মিটিং নোটস।",
+      url: SANJIBON_DAY2_ZOOM_RECORDING_URL,
+      notesUrl: SANJIBON_DAY2_ZOOM_NOTES_URL,
+      provider: "zoom",
+      sortOrder: 2,
+      published: true,
+      createdAt: DAY2_REC_TS,
+      updatedAt: DAY2_REC_TS,
+    },
+    {
+      id: "rec-sanjibon-day3-zoom",
+      courseId,
+      sessionLabel: "Day 3 · Sessions 05 & 06",
+      titleEn: "Day 3 — Live Class Recording & Meeting Notes (AI Short Video, Voiceover & Ad Copy)",
+      titleBn: "দিন ৩ — লাইভ ক্লাস রেকর্ডিং ও মিটিং নোটস (শর্ট ভিডিও, ভয়েসওভার ও অ্যাড কপি)",
+      descriptionEn:
+        "Official Zoom cloud recording & Zoom Docs meeting notes covering Session 05 (HPPC Short Video & Bangla/English Voiceover) & Session 06 (PAS/AIDA/BAB Ad Copywriting & Practical Test 1).",
+      descriptionBn:
+        "সেশন ০৫ (HPPC শর্ট ভিডিও ও বাংলা/ইংরেজি ভয়েসওভার) ও সেশন ০৬ (PAS/AIDA/BAB অ্যাড কপি ও প্র্যাকটিক্যাল টেস্ট ১)-এর Zoom রেকর্ডিং ও মিটিং নোটস।",
+      url: SANJIBON_DAY3_ZOOM_RECORDING_URL,
+      notesUrl: SANJIBON_DAY3_ZOOM_NOTES_URL,
+      provider: "zoom",
+      sortOrder: 3,
+      published: true,
+      createdAt: DAY3_REC_TS,
+      updatedAt: DAY3_REC_TS,
+    },
+    {
+      id: "rec-sanjibon-day4-zoom",
+      courseId,
+      sessionLabel: "Day 4 · Sessions 07 & 08",
+      titleEn: "Day 4 — Live Class Recording & Meeting Notes (No-Code AI Website, Hosting & SEO)",
+      titleBn: "দিন ৪ — লাইভ ক্লাস রেকর্ডিং ও মিটিং নোটস (নো-কোড এআই ওয়েবসাইট, পাবলিশিং ও SEO)",
+      descriptionEn:
+        "Official Zoom cloud recording & Zoom Docs meeting notes covering Session 07 (No-Code Sales Landing Page) & Session 08 (Netlify Drop / Vercel Live Publishing & Basic SEO).",
+      descriptionBn:
+        "সেশন ০৭ (কোডিং ছাড়া এআই ওয়েবসাইট) ও সেশন ০৮ (Netlify Drop / Vercel লাইভ পাবলিশিং ও বেসিক SEO)-এর Zoom রেকর্ডিং ও মিটিং নোটস।",
+      url: SANJIBON_DAY4_ZOOM_RECORDING_URL,
+      notesUrl: SANJIBON_DAY4_ZOOM_NOTES_URL,
+      provider: "zoom",
+      sortOrder: 4,
+      published: true,
+      createdAt: DAY4_REC_TS,
+      updatedAt: DAY4_REC_TS,
+    },
     {
       id: "rec-sanjibon-day5-zoom",
       courseId,

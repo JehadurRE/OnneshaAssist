@@ -845,6 +845,32 @@ export function AdminLmsPanel(props: { courses: Course[]; initialCourseId?: stri
                   }}
                 />
               </label>
+              <label className="font-semibold">
+                Passcode (optional)
+                <input
+                  className="mt-1 staff-input font-mono"
+                  placeholder="e.g. f!Z7Ir3A"
+                  value={r.passcode || ""}
+                  onChange={(e) =>
+                    setRecordings((prev) =>
+                      prev.map((x) => (x.id === r.id ? { ...x, passcode: e.target.value || undefined } : x)),
+                    )
+                  }
+                />
+              </label>
+              <label className="font-semibold">
+                Meeting Notes URL (optional)
+                <input
+                  className="mt-1 staff-input font-mono"
+                  placeholder="https://docs.zoom.us/doc/..."
+                  value={r.notesUrl || ""}
+                  onChange={(e) =>
+                    setRecordings((prev) =>
+                      prev.map((x) => (x.id === r.id ? { ...x, notesUrl: e.target.value || undefined } : x)),
+                    )
+                  }
+                />
+              </label>
               <label className="inline-flex items-center gap-2 font-semibold">
                 <input
                   type="checkbox"

@@ -605,6 +605,10 @@ export interface CourseRecording {
   /** Zoom / YouTube / Drive / Vimeo / direct URL. */
   url: string;
   provider?: "zoom" | "youtube" | "drive" | "vimeo" | "other" | undefined;
+  /** Optional Zoom recording passcode when not embedded in URL. */
+  passcode?: string | undefined;
+  /** Optional companion meeting notes URL (e.g. Zoom Docs). */
+  notesUrl?: string | undefined;
   durationMin?: number | undefined;
   sortOrder: number;
   published: boolean;

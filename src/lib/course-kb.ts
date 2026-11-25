@@ -207,7 +207,7 @@ export function retrieveCourseKnowledgeContext(params: {
     const recLines = pubRecs
       .map(
         (r) =>
-          `- ${r.sessionLabel || "Class"}: ${r.titleEn}${r.titleBn ? ` (${r.titleBn})` : ""}${r.durationMin ? ` [${r.durationMin} min]` : ""}${r.url ? ` — ${r.url}` : ""}`,
+          `- ${r.sessionLabel || "Class"}: ${r.titleEn}${r.titleBn ? ` (${r.titleBn})` : ""}${r.durationMin ? ` [${r.durationMin} min]` : ""}${r.url ? ` — Recording: ${r.url}` : ""}${r.passcode ? ` (Passcode: ${r.passcode})` : ""}${r.notesUrl ? ` | Meeting Notes: ${r.notesUrl}` : ""}`,
       )
       .join("\n");
     docs.push({

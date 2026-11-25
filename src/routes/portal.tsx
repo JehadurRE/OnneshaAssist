@@ -257,6 +257,7 @@ function StudentPortalPage() {
   const [expandedMaterialId, setExpandedMaterialId] = useState<string | null>(null);
   const [expandedFilesId, setExpandedFilesId] = useState<string | null>(null);
   const [playingRecordingId, setPlayingRecordingId] = useState<string | null>(null);
+  const [copiedPasscodeId, setCopiedPasscodeId] = useState<string | null>(null);
   const [quizFilter, setQuizFilter] = useState<"all" | "passed" | "pending">("all");
 
   // AI Tutor state
@@ -2155,9 +2156,13 @@ function StudentPortalPage() {
                                       ? lang === "bn"
                                         ? "পাসকোড স্বয়ংক্রিয়ভাবে যুক্ত • ক্লিক করে দেখুন"
                                         : "Direct access link with passcode included"
-                                      : lang === "bn"
-                                        ? "ক্লিক করে Zoom-এ ভিডিও দেখুন"
-                                        : "Click to watch recording on Zoom"}
+                                      : r.passcode
+                                        ? lang === "bn"
+                                          ? `পাসকোড প্রয়োজন: ${r.passcode}`
+                                          : `Passcode required: ${r.passcode}`
+                                        : lang === "bn"
+                                          ? "ক্লিক করে Zoom-এ ভিডিও দেখুন"
+                                          : "Click to watch recording on Zoom"}
                                   </div>
                                 </div>
                               </div>
@@ -2186,7 +2191,7 @@ function StudentPortalPage() {
                           )}
 
                           <div className="p-4 flex-1 flex flex-col justify-between gap-3">
-                            <div>
+                            <div className="space-y-2">
                               <div className="flex flex-wrap items-center gap-1.5">
                                 <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
                                   {r.sessionLabel || r.provider || "Session"}
@@ -2196,39 +2201,89 @@ function StudentPortalPage() {
                                     Zoom
                                   </span>
                                 )}
+                                {r.notesUrl && (
+                                  <span className="rounded-md bg-emerald-500/12 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                                    {lang === "bn" ? "+ মিটিং নোটস" : "+ Meeting Notes"}
+                                  </span>
+                                )}
                               </div>
-                              <h3 className="mt-2 font-display text-sm font-extrabold text-foreground leading-snug">
+                              <h3 className="font-display text-sm font-extrabold text-foreground leading-snug">
                                 {lang === "bn" ? r.titleBn : r.titleEn}
                               </h3>
                               {(r.descriptionEn || r.descriptionBn) && (
-                                <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                                <p className="text-xs text-muted-foreground line-clamp-2">
                                   {lang === "bn"
                                     ? r.descriptionBn || r.descriptionEn
                                     : r.descriptionEn || r.descriptionBn}
                                 </p>
                               )}
+                              {r.passcode && (
+                                <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-1.5">
+                                  <span className="text-[11px] font-semibold text-amber-900 dark:text-amber-200">
+                                    {lang === "bn" ? "পাসকোড:" : "Passcode:"}{" "}
+                                    <code className="font-mono font-black">{r.passcode}</code>
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      navigator.clipboard?.writeText(r.passcode || "").catch(() => {});
+                                      setCopiedPasscodeId(r.id);
+                                      window.setTimeout(() => {
+                                        setCopiedPasscodeId((cur) => (cur === r.id ? null : cur));
+                                      }, 1800);
+                                    }}
+                                    className="inline-flex items-center gap-1 rounded-lg bg-background/80 px-2 py-0.5 text-[11px] font-bold text-foreground hover:bg-background transition"
+                                  >
+                                    {copiedPasscodeId === r.id ? (
+                                      <>
+                                        <Check className="h-3 w-3 text-emerald-600" />
+                                        <span>{lang === "bn" ? "কপি হয়েছে" : "Copied"}</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Copy className="h-3 w-3" />
+                                        <span>{lang === "bn" ? "কপি" : "Copy"}</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              )}
                             </div>
-                            <a
-                              href={r.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
-                                isZoom
-                                  ? "bg-sky-600 text-white hover:bg-sky-500 shadow-xs"
-                                  : "border border-primary/30 bg-primary/8 text-primary hover:bg-primary/15"
-                              }`}
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                              <span>
-                                {isZoom
-                                  ? lang === "bn"
-                                    ? "Zoom রেকর্ডিং দেখুন"
-                                    : "Watch Zoom Recording"
-                                  : lang === "bn"
-                                    ? "নতুন ট্যাবে খুলুন"
-                                    : "Open video externally"}
-                              </span>
-                            </a>
+                            <div className="flex flex-wrap items-center gap-2 pt-1">
+                              <a
+                                href={r.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
+                                  isZoom
+                                    ? "bg-sky-600 text-white hover:bg-sky-500 shadow-xs"
+                                    : "border border-primary/30 bg-primary/8 text-primary hover:bg-primary/15"
+                                }`}
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                                <span>
+                                  {isZoom
+                                    ? lang === "bn"
+                                      ? "Zoom রেকর্ডিং দেখুন"
+                                      : "Watch Recording"
+                                    : lang === "bn"
+                                      ? "নতুন ট্যাবে খুলুন"
+                                      : "Open video"}
+                                </span>
+                              </a>
+                              {r.notesUrl && (
+                                <a
+                                  href={r.notesUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold text-foreground hover:border-primary/40 hover:text-primary transition"
+                                >
+                                  <FileText className="h-3.5 w-3.5 text-primary" />
+                                  <span>{lang === "bn" ? "মিটিং নোটস" : "Meeting Notes"}</span>
+                                  <ExternalLink className="h-3 w-3 opacity-65" />
+                                </a>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );

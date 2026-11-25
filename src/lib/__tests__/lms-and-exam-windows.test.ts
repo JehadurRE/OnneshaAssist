@@ -5,6 +5,11 @@ import {
   buildSanjibonClassRecordings,
   buildSanjibonDriveKnowledgeBase,
   buildSanjibonDriveMaterials,
+  SANJIBON_DAY1_ZOOM_PASSCODE,
+  SANJIBON_DAY1_ZOOM_RECORDING_URL,
+  SANJIBON_DAY2_ZOOM_NOTES_URL,
+  SANJIBON_DAY3_ZOOM_NOTES_URL,
+  SANJIBON_DAY4_ZOOM_NOTES_URL,
   SANJIBON_DAY5_ZOOM_RECORDING_URL,
   SANJIBON_DRIVE_FILE_COUNT,
   SANJIBON_DRIVE_ROOT_URL,
@@ -19,9 +24,15 @@ describe("LMS seed + Google Drive course materials + AI context", () => {
     expect(seed.recordings.length).toBeGreaterThan(0);
     expect(seed.materials.every((m) => m.published)).toBe(true);
     expect(seed.recordings.some((r) => r.url.includes("dQw4w9WgXcQ"))).toBe(false);
-    const zoomRec = buildSanjibonClassRecordings().find((r) => r.id === "rec-sanjibon-day5-zoom");
-    expect(zoomRec?.provider).toBe("zoom");
-    expect(zoomRec?.url).toBe(SANJIBON_DAY5_ZOOM_RECORDING_URL);
+    const allRecs = buildSanjibonClassRecordings();
+    expect(allRecs.length).toBe(5);
+    expect(allRecs.every((r) => r.provider === "zoom" && r.published)).toBe(true);
+    expect(allRecs[0]?.url).toBe(SANJIBON_DAY1_ZOOM_RECORDING_URL);
+    expect(allRecs[0]?.passcode).toBe(SANJIBON_DAY1_ZOOM_PASSCODE);
+    expect(allRecs[1]?.notesUrl).toBe(SANJIBON_DAY2_ZOOM_NOTES_URL);
+    expect(allRecs[2]?.notesUrl).toBe(SANJIBON_DAY3_ZOOM_NOTES_URL);
+    expect(allRecs[3]?.notesUrl).toBe(SANJIBON_DAY4_ZOOM_NOTES_URL);
+    expect(allRecs[4]?.url).toBe(SANJIBON_DAY5_ZOOM_RECORDING_URL);
 
     const drivePacks = buildSanjibonDriveMaterials();
     expect(drivePacks.length).toBe(12);

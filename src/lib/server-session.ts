@@ -253,6 +253,7 @@ interface PersistentStoreData {
   seededCourseKbV1?: boolean | undefined;
   migratedSanjibonDriveLmsV1?: boolean | undefined;
   migratedSanjibonRecordingsV1?: boolean | undefined;
+  migratedSanjibonRecordingsV2?: boolean | undefined;
   purgedSampleData?: boolean | undefined;
   purgedUnder50Initial?: boolean | undefined;
   purgedBcsDemoCourse?: boolean | undefined;
@@ -773,6 +774,7 @@ function loadInitialStore(): PersistentStoreData {
             seededCourseKbV1: !!parsed.seededCourseKbV1,
             migratedSanjibonDriveLmsV1: !!parsed.migratedSanjibonDriveLmsV1,
             migratedSanjibonRecordingsV1: !!parsed.migratedSanjibonRecordingsV1,
+            migratedSanjibonRecordingsV2: !!parsed.migratedSanjibonRecordingsV2,
             purgedSampleData: purged,
             purgedUnder50Initial: !!parsed.purgedUnder50Initial,
             purgedBcsDemoCourse: !!parsed.purgedBcsDemoCourse,
@@ -831,6 +833,7 @@ function loadInitialStore(): PersistentStoreData {
     seededCourseKbV1: false,
     migratedSanjibonDriveLmsV1: false,
     migratedSanjibonRecordingsV1: false,
+    migratedSanjibonRecordingsV2: false,
     purgedSampleData: false,
     purgedUnder50Initial: true,
     purgedBcsDemoCourse: true,
@@ -1009,12 +1012,13 @@ function getStore(): PersistentStoreData {
         `[OnneshaServerStore] Sanjibon Google Drive LMS & KB migration v1 applied: changed=${driveChanged}`,
       );
     }
-    if (!loaded.migratedSanjibonRecordingsV1) {
+    if (!loaded.migratedSanjibonRecordingsV1 || !loaded.migratedSanjibonRecordingsV2) {
       const recChanged = ensureSanjibonRecordingsMigrated(loaded);
       loaded.migratedSanjibonRecordingsV1 = true;
+      loaded.migratedSanjibonRecordingsV2 = true;
       scheduleDiskPersist();
       console.info(
-        `[OnneshaServerStore] Sanjibon Zoom class recordings migration v1 applied: changed=${recChanged}`,
+        `[OnneshaServerStore] Sanjibon Zoom class recordings migration v2 applied: changed=${recChanged}`,
       );
     }
   }
@@ -1112,10 +1116,13 @@ export function ensureLmsContentSeeded(store: PersistentStoreData): boolean {
       ? ensureSanjibonDriveMaterialsMigrated(store)
       : false;
     if (driveChanged) store.migratedSanjibonDriveLmsV1 = true;
-    const recChanged = !store.migratedSanjibonRecordingsV1
+    const recChanged = !store.migratedSanjibonRecordingsV2
       ? ensureSanjibonRecordingsMigrated(store)
       : false;
-    if (recChanged) store.migratedSanjibonRecordingsV1 = true;
+    if (recChanged) {
+      store.migratedSanjibonRecordingsV1 = true;
+      store.migratedSanjibonRecordingsV2 = true;
+    }
     return kbChanged || driveChanged || recChanged;
   }
   const seed = buildDefaultSanjibonLmsContent();
@@ -1124,6 +1131,7 @@ export function ensureLmsContentSeeded(store: PersistentStoreData): boolean {
   store.courseAnnouncements.unshift(...seed.announcements);
   store.migratedSanjibonDriveLmsV1 = true;
   store.migratedSanjibonRecordingsV1 = true;
+  store.migratedSanjibonRecordingsV2 = true;
   return true;
 }
 
