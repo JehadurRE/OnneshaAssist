@@ -1,21 +1,21 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLanguage } from "@/lib/i18n";
 import { generateQuizWithAi, getAiCredits, getStoredLocalGeminiKey } from "@/lib/ai-generator";
+import { AI_PROVIDER_CATALOG } from "@/lib/ai-pool";
 import {
   buildCopyableAiPrompt,
   buildQuizFromParsedText,
   parseQuestionsFromText,
 } from "@/lib/question-text-parser";
 import { serverGetAiGeneratorStatus } from "@/lib/server-session";
-import { Course, Quiz } from "@/lib/types";
+import { AiProviderId, Course, Quiz } from "@/lib/types";
 import { db } from "@/lib/db";
 import { useAuth } from "@/lib/auth-context";
 import {
   Check,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
   Copy,
+  Cpu,
   FileText,
   KeyRound,
   Layers,
@@ -36,6 +36,14 @@ interface AiQuizModalProps {
   defaultCourseId?: string;
 }
 
+interface ActivePoolNodeOption {
+  id: string;
+  label: string;
+  provider: AiProviderId;
+  model: string;
+  status: string;
+}
+
 export const AiQuizModal: React.FC<AiQuizModalProps> = ({
   isOpen,
   onClose,
@@ -45,18 +53,18 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
 }) => {
   const { lang } = useLanguage();
   const { user, refreshUser } = useAuth();
+  const [mode, setMode] = useState<"ai_pool" | "paste_import">("ai_pool");
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
   const [quizNumber, setQuizNumber] = useState<number>(1);
   const [quizTitle, setQuizTitle] = useState("");
   const [mainText, setMainText] = useState("");
 
-  // UX Helpers (Copy Prompt Format, Format Guide, Collapsible Gemini AI section)
+  // UX Helpers
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [showFormatGuide, setShowFormatGuide] = useState(false);
-  const [showAiPanel, setShowAiPanel] = useState(false);
 
-  // Optional Gemini AI Generator State
+  // AI Pool Generator State
   const [questionCount, setQuestionCount] = useState(10);
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
   const [questionStyleMode, setQuestionStyleMode] = useState<"mixed_all_4" | "single_mcq">(
@@ -65,10 +73,13 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState<string>("");
   const [genError, setGenError] = useState<string | null>(null);
-  const [hasServerKey, setHasServerKey] = useState<boolean>(() => db.hasServerGeminiKey());
+  const [hasServerPool, setHasServerPool] = useState<boolean>(() => db.hasServerGeminiKey());
+  const [poolStrategy, setPoolStrategy] = useState<string>("priority_failover");
+  const [activeNodes, setActiveNodes] = useState<ActivePoolNodeOption[]>([]);
+  const [selectedNodeId, setSelectedNodeId] = useState<string>("");
   const [apiKeyInput, setApiKeyInput] = useState<string>("");
+  const [clientProvider, setClientProvider] = useState<AiProviderId>("openrouter");
   const [showKeyInput, setShowKeyInput] = useState<boolean>(false);
-  const [saveKeyServerWide, setSaveKeyServerWide] = useState<boolean>(true);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -80,7 +91,11 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
       .then((res) => {
         if (!active) return;
         const srv = Boolean(res?.hasKey);
-        setHasServerKey(srv);
+        setHasServerPool(srv);
+        if (res?.strategy) setPoolStrategy(res.strategy);
+        if (Array.isArray(res?.activeNodes)) {
+          setActiveNodes(res.activeNodes);
+        }
         if (!srv && !localKey) {
           setShowKeyInput(true);
         }
@@ -134,7 +149,7 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
   const credits = typeof user?.aiCredits === "number" ? user.aiCredits : getAiCredits();
   const activeCourse = courses.find((c) => c.id === selectedCourseId);
   const trimmedKeyInput = apiKeyInput.trim();
-  const isAiReady = hasServerKey || trimmedKeyInput.length >= 10;
+  const isAiReady = hasServerPool || trimmedKeyInput.length >= 10;
   const detectedCount = parsedPreview.stats.total;
 
   const handleCopyPromptFormat = async () => {
@@ -170,8 +185,8 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
     if (!quiz || parsed.questions.length === 0) {
       setGenError(
         lang === "bn"
-          ? 'কোনো প্রশ্ন শনাক্ত করা যায়নি। "Copy Prompt Format" দিয়ে AI থেকে ফরম্যাট নিন বা নিচে উদাহরণ দেখুন।'
-          : 'No formatted questions detected. Click "Copy Prompt Format" for an AI template or "See Format".',
+          ? 'কোনো প্রশ্ন শনাক্ত করা যায়নি। "Copy Prompt Format" দিয়ে AI থেকে ফরম্যাট নিন বা নিচে উদাহরণ দেখুন।'
+          : 'No formatted questions detected. Click "Copy Prompt Format" for an AI template or "Example".',
       );
       setShowFormatGuide(true);
       return;
@@ -187,32 +202,29 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
     onClose();
   };
 
-  const handleGenerateWithGemini = async () => {
+  const handleGenerateWithAiPool = async (openInEditor = false) => {
     const effectiveTopic = quizTitle.trim() || mainText.trim().split("\n")[0]?.slice(0, 120) || "";
     if (!effectiveTopic || isGenerating) {
       setGenError(
         lang === "bn"
-          ? "AI দিয়ে তৈরি করতে কুইজের শিরোনাম বা টেক্সট বক্সে একটি টপিক/নোট লিখুন।"
-          : "Enter a quiz title or paste a topic/notes in the text box to generate with AI.",
+          ? "AI দিয়ে তৈরি করতে কুইজের শিরোনাম বা সিলেবাস/টপিক লিখুন।"
+          : "Enter a quiz title or topic/syllabus notes to synthesize with the AI Pool.",
       );
       return;
     }
 
     setGenError(null);
     setIsGenerating(true);
+    const selectedNode = activeNodes.find((n) => n.id === selectedNodeId);
     setGenerationStep(
       lang === "bn"
-        ? "Gemini AI দিয়ে প্রশ্ন, অপশন ও ব্যাখ্যা তৈরি হচ্ছে..."
-        : "Synthesizing live bilingual questions, options, and answer explanations with Gemini...",
+        ? `AI Pool (${selectedNode ? selectedNode.label : poolStrategy}) দিয়ে ${questionCount}টি দ্বিভাষিক প্রশ্ন তৈরি হচ্ছে…`
+        : `Synthesizing ${questionCount} bilingual questions via AI Pool (${selectedNode ? `${selectedNode.label} · ${selectedNode.model}` : poolStrategy.replace("_", " ")})…`,
     );
 
     try {
       if (trimmedKeyInput.length >= 10 && typeof window !== "undefined") {
         localStorage.setItem("onnesha_gemini_key", trimmedKeyInput);
-        if (user?.role === "admin" && saveKeyServerWide) {
-          const savedRes = await db.saveServerAiKey(trimmedKeyInput);
-          if (savedRes.success) setHasServerKey(true);
-        }
       }
 
       const generated = await generateQuizWithAi({
@@ -220,7 +232,7 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
         sourceText: mainText.trim() || undefined,
         questionCount,
         difficulty,
-        category: activeCourse?.categoryEn || "BCS & Government Jobs",
+        category: activeCourse?.categoryEn || "Institutional Assessment",
         language: "both",
         courseId: activeCourse?.id,
         courseTitle: activeCourse?.titleEn,
@@ -228,21 +240,27 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
         instructorId: user?.id || "usr-instructor-1",
         instructorName: user?.name || "Course Instructor",
         questionStyleMode,
-        ...(trimmedKeyInput.length >= 10 ? { apiKey: trimmedKeyInput } : {}),
+        ...(selectedNodeId ? { preferredNodeId: selectedNodeId } : {}),
+        ...(trimmedKeyInput.length >= 10
+          ? { apiKey: trimmedKeyInput, provider: clientProvider }
+          : {}),
       });
       setIsGenerating(false);
       void refreshUser();
-      onQuizGenerated(generated);
+      if (openInEditor && onLoadIntoEditor) {
+        onLoadIntoEditor(generated);
+      } else {
+        onQuizGenerated(generated);
+      }
       onClose();
     } catch (err) {
-      console.error("Quiz generation error:", err);
+      console.error("AI Pool quiz generation error:", err);
       const errMsg =
         err instanceof Error
           ? err.message
-          : "Failed to generate exam paper. Check Gemini API settings or try Paste Import above.";
+          : "Failed to generate exam paper. Check Admin → AI Pool or try Paste Import.";
       setGenError(errMsg);
-      if (errMsg.toLowerCase().includes("api key")) {
-        setShowAiPanel(true);
+      if (errMsg.toLowerCase().includes("api key") || errMsg.toLowerCase().includes("no ai provider")) {
         setShowKeyInput(true);
       }
       setIsGenerating(false);
@@ -251,8 +269,7 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-3 sm:p-4 animate-in fade-in">
-      <div className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-border bg-card p-5 sm:p-7 shadow-2xl max-h-[93vh] overflow-y-auto">
-        {/* Close Button */}
+      <div className="relative w-full max-w-3xl overflow-hidden rounded-3xl border border-border bg-card p-5 sm:p-7 shadow-2xl max-h-[93vh] overflow-y-auto">
         <button
           type="button"
           onClick={onClose}
@@ -262,27 +279,79 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
           <X className="h-4 w-4" />
         </button>
 
-        {/* Clean Minimal Header */}
-        <div className="flex items-center justify-between pr-9">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary shadow-sm">
-              <FileText className="h-5 w-5" />
+        {/* Studio Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pr-9">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-violet-500/20 text-primary shadow-sm">
+              <Sparkles className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="font-display text-lg font-extrabold text-foreground">
-                {lang === "bn" ? "সহজ প্রশ্ন পেস্ট ও AI ইম্পোর্ট" : "Quick Text & AI Quiz Import"}
-              </h3>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-display text-lg font-black text-foreground">
+                  {lang === "bn" ? "AI অ্যাসেসমেন্ট ও ইম্পোর্ট স্টুডিও" : "AI Assessment & Import Studio"}
+                </h3>
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[10px] font-bold ${
+                    isAiReady
+                      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                      : "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+                  }`}
+                >
+                  <Cpu className="h-3 w-3" />
+                  {activeNodes.length > 0
+                    ? `${activeNodes.length} Pool Node${activeNodes.length === 1 ? "" : "s"} Online`
+                    : isAiReady
+                      ? "Key Ready"
+                      : "No Key"}
+                </span>
+              </div>
               <p className="text-xs text-muted-foreground">
                 {lang === "bn"
-                  ? "যেকোনো AI (ChatGPT, Claude, Gemini) থেকে কপি করে নিচের বক্সে পেস্ট করলেই কুইজ তৈরি হবে"
-                  : "Copy questions from ChatGPT, Claude, Gemini, or Docs & paste directly below — zero API key required"}
+                  ? "OpenRouter, Gemini, OpenAI, Claude, Groq AI Pool দিয়ে প্রশ্ন তৈরি করুন অথবা সরাসরি পেস্ট করুন"
+                  : "Generate via Multi-Provider AI Pool (OpenRouter, Gemini, OpenAI, Claude, Groq) or paste formatted text"}
               </p>
             </div>
           </div>
+
+          <span className="inline-flex items-center gap-1 self-start sm:self-center rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+            <Zap className="h-3 w-3" />
+            {credits} Credits
+          </span>
+        </div>
+
+        {/* Mode Switcher */}
+        <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl border border-border bg-muted/30 p-1">
+          <button
+            type="button"
+            onClick={() => setMode("ai_pool")}
+            className={`flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-extrabold transition ${
+              mode === "ai_pool"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Wand2 className="h-3.5 w-3.5" />
+            <span>{lang === "bn" ? "AI Pool জেনারেটর" : "AI Pool Generator"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("paste_import")}
+            className={`flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-extrabold transition ${
+              mode === "paste_import"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <FileText className="h-3.5 w-3.5" />
+            <span>
+              {lang === "bn" ? "দ্রুত টেক্সট পেস্ট ইম্পোর্ট" : "Quick Text Paste Import"}
+              {detectedCount > 0 ? ` (${detectedCount})` : ""}
+            </span>
+          </button>
         </div>
 
         <div className="mt-4 space-y-4">
-          {/* Compact Single Row: Course, Quiz #, Title */}
+          {/* Course, Quiz #, Title Row */}
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 rounded-2xl border border-border bg-background/60 p-3">
             <div className="sm:col-span-5">
               <label className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -320,7 +389,13 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
 
             <div className="sm:col-span-5">
               <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                {lang === "bn" ? "কুইজ শিরোনাম (ঐচ্ছিক)" : "Quiz Title (Optional)"}
+                {mode === "ai_pool"
+                  ? lang === "bn"
+                    ? "টপিক / কুইজ শিরোনাম *"
+                    : "Topic / Quiz Title *"
+                  : lang === "bn"
+                    ? "কুইজ শিরোনাম (ঐচ্ছিক)"
+                    : "Quiz Title (Optional)"}
               </label>
               <input
                 type="text"
@@ -328,266 +403,125 @@ export const AiQuizModal: React.FC<AiQuizModalProps> = ({
                 value={quizTitle}
                 onChange={(e) => setQuizTitle(e.target.value)}
                 placeholder={
-                  parsedPreview.detectedTitle ||
-                  (lang === "bn" ? `কুইজ #${quizNumber}` : `Quiz #${quizNumber}`)
+                  mode === "ai_pool"
+                    ? lang === "bn"
+                      ? "যেমন: Meta Ads Targeting ও Prompt Engineering"
+                      : "e.g. Prompt Engineering & Digital Ad Analytics"
+                    : parsedPreview.detectedTitle || `Quiz #${quizNumber}`
                 }
                 className="w-full rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground outline-none focus:border-primary"
               />
             </div>
           </div>
 
-          {/* Hero Section: Best-in-Class Spacious Text Box + Prompt Format Toolbar */}
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-extrabold uppercase tracking-wider text-foreground">
-                  {lang === "bn" ? "প্রশ্ন বক্স (এখানে পেস্ট করুন)" : "Question Text Box"}
-                </span>
-                {detectedCount > 0 ? (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-0.5 font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
-                    <CheckCircle2 className="h-3 w-3" />
-                    <span>
-                      {detectedCount} Qs · {parsedPreview.stats.withAnswers} Ans ·{" "}
-                      {parsedPreview.stats.withExplanations} Exp
-                    </span>
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-semibold text-muted-foreground">
-                    {lang === "bn"
-                      ? "প্রশ্ন + উত্তর পেস্ট করুন"
-                      : "Paste formatted Qs or AI output"}
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={handleCopyPromptFormat}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/20 transition"
-                  title="Copy prompt template to paste into ChatGPT, Claude, or Gemini"
-                >
-                  {copiedPrompt ? (
-                    <>
-                      <Check className="h-3.5 w-3.5 text-emerald-500" />
-                      <span className="text-emerald-600 dark:text-emerald-400">
-                        {lang === "bn" ? "প্রম্পট কপি হয়েছে!" : "Prompt Copied!"}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3.5 w-3.5" />
-                      <span>{lang === "bn" ? "Copy AI Prompt Format" : "Copy Prompt Format"}</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowFormatGuide((v) => !v)}
-                  className="rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-bold text-muted-foreground hover:text-foreground transition"
-                >
-                  {showFormatGuide
-                    ? lang === "bn"
-                      ? "উদাহরণ লুকান"
-                      : "Hide Example"
-                    : lang === "bn"
-                      ? "উদাহরণ"
-                      : "Example"}
-                </button>
-              </div>
-            </div>
-
-            {showFormatGuide && (
-              <div className="rounded-2xl border border-primary/30 bg-primary/5 p-3.5 text-xs space-y-2 animate-in fade-in">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-foreground">
-                    {lang === "bn"
-                      ? "সমর্থিত সহজ ফরম্যাট (বাংলা/ইংরেজি, নিচে উত্তর টেবিলও চলবে):"
-                      : "Supported Clean Format (inline Ans/Exp or bottom Answer Key table):"}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMainText(
-                        lang === "bn"
-                          ? `প্রশ্ন 1\nবাংলাদেশের সংবিধান কত তারিখে কার্যকর হয়?\nA. ১৬ ডিসেম্বর ১৯৭১\nB. ১৬ ডিসেম্বর ১৯৭২\nC. ২৬ মার্চ ১৯৭১\nD. ৪ নভেম্বর ১৯৭২\nউত্তর: B\nব্যাখ্যা: ১৯৭২ সালের ১৬ ডিসেম্বর বাংলাদেশের সংবিধান কার্যকর হয়।\n\nপ্রশ্ন 2\nGoogle AI Studio ব্যবহার করে বাংলা উচ্চারণ ঠিক করার সেরা উপায় কোনটি?\nA. স্পিড বাড়ানো\nB. ধ্বনিগতভাবে বা উচ্চারণ অনুযায়ী বানান ভেঙে লেখা\nC. ভয়েস মডেল পরিবর্তন করা\nD. অডিও ট্রানজিশন দেওয়া\nউত্তর: B\nব্যাখ্যা: নির্দিষ্ট শব্দের ধ্বনিগত বানান দিলে TTS উচ্চারণ নির্ভুল হয়।`
-                          : `1. When did the Constitution of Bangladesh take effect?\nA. 16 December 1971\nB. 16 December 1972\nC. 26 March 1971\nD. 4 November 1972\nAnswer: B\nExplanation: The Constitution of Bangladesh came into effect on 16 December 1972.\n\n2. Which approach maintains product visual consistency across multiple scenes?\nA. Separate text-to-video per scene\nB. Reusing the last frame of each clip as the next scene's Start Frame\nC. Increasing playback speed\nD. Removing lighting prompts\nAnswer: B\nExplanation: Chaining the prior scene's end frame preserves product geometry and color.`,
-                      );
-                      setShowFormatGuide(false);
-                    }}
-                    className="rounded-lg bg-primary px-2.5 py-1 text-[11px] font-bold text-primary-foreground hover:bg-primary/90"
+          {mode === "ai_pool" ? (
+            <div className="space-y-4">
+              {/* AI Pool Controls Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">
+                    {lang === "bn" ? "প্রশ্ন সংখ্যা" : "Questions"}
+                  </label>
+                  <select
+                    disabled={isGenerating}
+                    value={questionCount}
+                    onChange={(e) => setQuestionCount(Number(e.target.value))}
+                    className="w-full rounded-xl border border-border bg-card p-2 text-xs font-bold text-foreground outline-none"
                   >
-                    {lang === "bn" ? "স্যাম্পল পেস্ট করুন" : "Insert Sample"}
-                  </button>
+                    <option value={5}>5 Questions</option>
+                    <option value={10}>10 Questions</option>
+                    <option value={15}>15 Questions</option>
+                    <option value={20}>20 Questions</option>
+                  </select>
                 </div>
-                <pre className="overflow-x-auto rounded-xl bg-card p-2.5 font-mono text-[11px] text-muted-foreground border border-border/80">
-                  {`1. Question text here...
-A. Option one
-B. Option two
-C. Option three
-D. Option four
-Answer: B
-Explanation: Short reason why B is correct.`}
-                </pre>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">
+                    {lang === "bn" ? "প্রশ্নের ধরন" : "Style"}
+                  </label>
+                  <select
+                    disabled={isGenerating}
+                    value={questionStyleMode}
+                    onChange={(e) =>
+                      setQuestionStyleMode(e.target.value as "mixed_all_4" | "single_mcq")
+                    }
+                    className="w-full rounded-xl border border-border bg-card p-2 text-xs font-bold text-foreground outline-none"
+                  >
+                    <option value="single_mcq">Single MCQ Only</option>
+                    <option value="mixed_all_4">Mixed (MCQ, T/F, Written)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">
+                    {lang === "bn" ? "কঠিনতা" : "Difficulty"}
+                  </label>
+                  <select
+                    disabled={isGenerating}
+                    value={difficulty}
+                    onChange={(e) => setDifficulty(e.target.value as "easy" | "medium" | "hard")}
+                    className="w-full rounded-xl border border-border bg-card p-2 text-xs font-bold text-foreground outline-none"
+                  >
+                    <option value="easy">Easy</option>
+                    <option value="medium">Medium</option>
+                    <option value="hard">Hard</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">
+                    {lang === "bn" ? "AI Pool রুট" : "AI Pool Route"}
+                  </label>
+                  <select
+                    disabled={isGenerating}
+                    value={selectedNodeId}
+                    onChange={(e) => setSelectedNodeId(e.target.value)}
+                    className="w-full rounded-xl border border-border bg-card p-2 text-xs font-bold text-foreground outline-none"
+                  >
+                    <option value="">
+                      Auto ({poolStrategy.replace("_", " ")})
+                    </option>
+                    {activeNodes.map((n) => (
+                      <option key={n.id} value={n.id}>
+                        {AI_PROVIDER_CATALOG[n.provider]?.shortName}: {n.model.slice(0, 20)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-            )}
 
-            <textarea
-              rows={10}
-              autoFocus
-              disabled={isGenerating}
-              value={mainText}
-              onChange={(e) => setMainText(e.target.value)}
-              placeholder={
-                lang === "bn"
-                  ? `এখানে সরাসরি প্রশ্ন পেস্ট করুন (ChatGPT / Claude / Gemini / Docs থেকে)...\n\nযেমন:\nপ্রশ্ন 1\nপ্রশ্নের লেখা এখানে...\nA. অপশন ১\nB. অপশন ২\nC. অপশন ৩\nD. অপশন ৪\nউত্তর: B\nব্যাখ্যা: সংক্ষিপ্ত ব্যাখ্যা এখানে...\n\n(অথবা শেষে | ১ | B | ১১ | D | টেবিল দিলেও অটো কাজ করবে!)`
-                  : `Paste questions directly here (from ChatGPT, Claude, Gemini, or Docs)...\n\n1. Your question text?\nA. Option 1\nB. Option 2\nC. Option 3\nD. Option 4\nAnswer: B\nExplanation: Brief rationale...\n\n(Also supports Bangla প্রশ্ন ১, Markdown tables | 1 | B |, True/False, Written & JSON!)`
-              }
-              className="min-h-[240px] w-full resize-y rounded-2xl border-2 border-border bg-background p-4 text-sm leading-relaxed text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-50"
-            />
-          </div>
-
-          {genError && (
-            <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-3 text-xs font-semibold text-destructive">
-              {genError}
-            </div>
-          )}
-
-          {isGenerating && (
-            <div className="rounded-2xl border border-primary/30 bg-primary/10 p-3.5 flex items-center gap-3 animate-in fade-in">
-              <Loader2 className="h-5 w-5 text-primary animate-spin shrink-0" />
-              <div className="text-xs font-semibold text-primary">{generationStep}</div>
-            </div>
-          )}
-
-          {/* Primary Instant Import Buttons (Zero API Key Needed) */}
-          <div className="flex flex-col sm:flex-row gap-2.5">
-            <button
-              type="button"
-              disabled={isGenerating || detectedCount === 0}
-              onClick={() => handleDirectImport(false)}
-              className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3.5 text-sm font-extrabold text-primary-foreground shadow-glow hover:bg-primary/90 transition disabled:opacity-40"
-            >
-              <Upload className="h-4 w-4" />
-              <span>
-                {detectedCount > 0
-                  ? lang === "bn"
-                    ? `${detectedCount}টি প্রশ্ন ইম্পোর্ট ও সেভ করুন (Quiz #${quizNumber})`
-                    : `Import ${detectedCount} Questions & Save Quiz #${quizNumber}`
-                  : lang === "bn"
-                    ? "প্রশ্ন পেস্ট করে ইম্পোর্ট করুন"
-                    : "Paste Questions Above to Import"}
-              </span>
-            </button>
-
-            {onLoadIntoEditor && detectedCount > 0 && (
-              <button
-                type="button"
-                disabled={isGenerating}
-                onClick={() => handleDirectImport(true)}
-                className="flex items-center justify-center gap-1.5 rounded-2xl border border-border bg-background px-4 py-3.5 text-xs font-bold text-foreground hover:bg-accent transition"
-                title="Open parsed questions in Manual Editor before saving"
-              >
-                <PenTool className="h-4 w-4 text-primary" />
-                <span>{lang === "bn" ? "এডিটরে নিন" : "Edit First"}</span>
-              </button>
-            )}
-          </div>
-
-          {/* Clean Collapsible Gemini AI Generator (Optional — never clutters paste workflow) */}
-          <div className="rounded-2xl border border-border/80 bg-background/50 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setShowAiPanel((v) => !v)}
-              className="flex w-full items-center justify-between px-4 py-2.5 text-xs font-bold text-muted-foreground hover:text-foreground transition"
-            >
-              <span className="flex items-center gap-2">
-                <Sparkles className="h-3.5 w-3.5 text-primary" />
-                <span>
+              {/* Source Syllabus / Notes Textarea */}
+              <div>
+                <label className="mb-1.5 block text-xs font-extrabold text-foreground">
                   {lang === "bn"
-                    ? "অথবা Gemini AI দিয়ে স্বয়ংক্রিয় প্রশ্ন তৈরি করুন (ঐচ্ছিক)"
-                    : "Or Auto-Generate New Questions with Gemini AI (Optional)"}
-                </span>
-              </span>
-              <span className="flex items-center gap-2 font-mono text-[11px]">
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-emerald-600 dark:text-emerald-400">
-                  <Zap className="h-3 w-3" />
-                  {credits} Credits
-                </span>
-                {showAiPanel ? (
-                  <ChevronUp className="h-4 w-4" />
-                ) : (
-                  <ChevronDown className="h-4 w-4" />
-                )}
-              </span>
-            </button>
+                    ? "সিলেবাস / লেকচার নোট (ঐচ্ছিক — নির্ভুল প্রশ্নের জন্য পেস্ট করুন)"
+                    : "Source Syllabus / Lecture Notes (Optional — paste for grounded questions)"}
+                </label>
+                <textarea
+                  rows={6}
+                  disabled={isGenerating}
+                  value={mainText}
+                  onChange={(e) => setMainText(e.target.value)}
+                  placeholder={
+                    lang === "bn"
+                      ? "স্লাইড, লেকচার নোট বা অধ্যায়ের মূল পয়েন্ট এখানে পেস্ট করলে AI ঠিক এখান থেকেই প্রশ্ন ও ব্যাখ্যা তৈরি করবে…"
+                      : "Paste lecture slides, chapter outline, or key frameworks here so the AI Pool grounds every question and explanation directly in your syllabus…"
+                  }
+                  className="min-h-[150px] w-full resize-y rounded-2xl border border-border bg-background p-3.5 text-sm leading-relaxed text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-50"
+                />
+              </div>
 
-            {showAiPanel && (
-              <div className="border-t border-border/70 p-4 space-y-3 animate-in fade-in">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  <div>
-                    <label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">
-                      {lang === "bn" ? "প্রশ্ন সংখ্যা" : "Count"}
-                    </label>
-                    <select
-                      disabled={isGenerating}
-                      value={questionCount}
-                      onChange={(e) => setQuestionCount(Number(e.target.value))}
-                      className="w-full rounded-xl border border-border bg-card p-2 text-xs font-bold text-foreground outline-none"
-                    >
-                      <option value={5}>5 Questions</option>
-                      <option value={10}>10 Questions</option>
-                      <option value={15}>15 Questions</option>
-                      <option value={20}>20 Questions</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">
-                      {lang === "bn" ? "ধরন" : "Style"}
-                    </label>
-                    <select
-                      disabled={isGenerating}
-                      value={questionStyleMode}
-                      onChange={(e) =>
-                        setQuestionStyleMode(e.target.value as "mixed_all_4" | "single_mcq")
-                      }
-                      className="w-full rounded-xl border border-border bg-card p-2 text-xs font-bold text-foreground outline-none"
-                    >
-                      <option value="single_mcq">Single MCQ Only</option>
-                      <option value="mixed_all_4">Mixed (MCQ, T/F, Written)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold uppercase text-muted-foreground mb-1">
-                      {lang === "bn" ? "কঠিনতা" : "Difficulty"}
-                    </label>
-                    <select
-                      disabled={isGenerating}
-                      value={difficulty}
-                      onChange={(e) => setDifficulty(e.target.value as "easy" | "medium" | "hard")}
-                      className="w-full rounded-xl border border-border bg-card p-2 text-xs font-bold text-foreground outline-none"
-                    >
-                      <option value="easy">Easy</option>
-                      <option value="medium">Medium</option>
-                      <option value="hard">Hard</option>
-                    </select>
-                  </div>
-                </div>
-
+              {/* Optional Local Key Override */}
+              <div className="rounded-2xl border border-border/80 bg-muted/25 p-3 space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                   <span className="flex items-center gap-1.5 font-semibold text-muted-foreground">
                     <KeyRound className="h-3.5 w-3.5 text-primary" />
                     <span>
-                      {isAiReady
-                        ? lang === "bn"
-                          ? "Gemini Key সংযুক্ত আছে"
-                          : "Gemini Key Ready"
-                        : lang === "bn"
-                          ? "Gemini Key প্রয়োজন"
-                          : "Gemini API Key Required"}
+                      {activeNodes.length > 0
+                        ? `Server AI Pool active (${activeNodes.map((n) => AI_PROVIDER_CATALOG[n.provider]?.shortName).filter((v, i, a) => a.indexOf(v) === i).join(", ")})`
+                        : isAiReady
+                          ? "Local override API key ready"
+                          : "No Server AI Pool node configured — enter a key or configure Admin → AI Pool"}
                     </span>
                   </span>
                   <button
@@ -595,50 +529,207 @@ Explanation: Short reason why B is correct.`}
                     onClick={() => setShowKeyInput((v) => !v)}
                     className="font-mono text-[11px] font-bold text-primary hover:underline"
                   >
-                    {showKeyInput ? "Hide Key" : isAiReady ? "Change Key" : "Enter Key"}
+                    {showKeyInput ? "Hide Override" : "Personal Key Override"}
                   </button>
                 </div>
 
                 {(showKeyInput || !isAiReady) && (
-                  <div className="space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 pt-1">
+                    <select
+                      value={clientProvider}
+                      onChange={(e) => setClientProvider(e.target.value as AiProviderId)}
+                      className="sm:col-span-4 rounded-xl border border-border bg-card px-2.5 py-2 text-xs font-bold text-foreground outline-none"
+                    >
+                      <option value="openrouter">OpenRouter</option>
+                      <option value="gemini">Google Gemini</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="anthropic">Anthropic Claude</option>
+                      <option value="groq">Groq</option>
+                      <option value="deepseek">DeepSeek</option>
+                    </select>
                     <input
                       type="password"
                       disabled={isGenerating}
                       value={apiKeyInput}
                       onChange={(e) => setApiKeyInput(e.target.value)}
-                      placeholder="Paste Google AI Studio key (AIza...)"
-                      className="w-full rounded-xl border border-border bg-card px-3 py-2 font-mono text-xs text-foreground outline-none focus:border-primary"
+                      placeholder={AI_PROVIDER_CATALOG[clientProvider].keyPlaceholder}
+                      className="sm:col-span-8 rounded-xl border border-border bg-card px-3 py-2 font-mono text-xs text-foreground outline-none focus:border-primary"
                     />
-                    {user?.role === "admin" && (
-                      <label className="flex items-center gap-2 text-[11px] text-muted-foreground cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={saveKeyServerWide}
-                          onChange={(e) => setSaveKeyServerWide(e.target.checked)}
-                          className="rounded border-border"
-                        />
-                        <span>Save key on server for all instructors</span>
-                      </label>
-                    )}
                   </div>
                 )}
+              </div>
 
+              {genError && (
+                <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-3 text-xs font-semibold text-destructive">
+                  {genError}
+                </div>
+              )}
+
+              {isGenerating && (
+                <div className="rounded-2xl border border-primary/30 bg-primary/10 p-3.5 flex items-center gap-3 animate-in fade-in">
+                  <Loader2 className="h-5 w-5 text-primary animate-spin shrink-0" />
+                  <div className="text-xs font-semibold text-primary">{generationStep}</div>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-2.5">
                 <button
                   type="button"
                   disabled={isGenerating}
-                  onClick={handleGenerateWithGemini}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/15 py-2.5 text-xs font-extrabold text-primary hover:bg-primary/25 transition disabled:opacity-50"
+                  onClick={() => void handleGenerateWithAiPool(false)}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3.5 text-sm font-extrabold text-primary-foreground shadow-glow hover:bg-primary/90 transition disabled:opacity-40"
                 >
-                  <Wand2 className="h-3.5 w-3.5" />
+                  <Wand2 className="h-4 w-4" />
                   <span>
                     {lang === "bn"
-                      ? `Gemini AI দিয়ে Quiz #${quizNumber} তৈরি করুন (1 Credit)`
-                      : `Generate Quiz #${quizNumber} with Gemini AI (1 Credit)`}
+                      ? `AI Pool দিয়ে Quiz #${quizNumber} তৈরি ও সেভ করুন (1 Credit)`
+                      : `Generate & Save Quiz #${quizNumber} via AI Pool (1 Credit)`}
                   </span>
                 </button>
+                {onLoadIntoEditor && (
+                  <button
+                    type="button"
+                    disabled={isGenerating}
+                    onClick={() => void handleGenerateWithAiPool(true)}
+                    className="flex items-center justify-center gap-1.5 rounded-2xl border border-border bg-background px-4 py-3.5 text-xs font-bold text-foreground hover:bg-accent transition disabled:opacity-40"
+                  >
+                    <PenTool className="h-4 w-4 text-primary" />
+                    <span>{lang === "bn" ? "তৈরি করে এডিট করুন" : "Generate & Edit"}</span>
+                  </button>
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            /* QUICK TEXT PASTE IMPORT TAB */
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-foreground">
+                    {lang === "bn" ? "প্রশ্ন বক্স (এখানে পেস্ট করুন)" : "Question Text Box"}
+                  </span>
+                  {detectedCount > 0 ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-0.5 font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+                      <CheckCircle2 className="h-3 w-3" />
+                      <span>
+                        {detectedCount} Qs · {parsedPreview.stats.withAnswers} Ans ·{" "}
+                        {parsedPreview.stats.withExplanations} Exp
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                      {lang === "bn" ? "প্রশ্ন + উত্তর পেস্ট করুন" : "Paste formatted Qs or AI output"}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleCopyPromptFormat}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/20 transition"
+                  >
+                    {copiedPrompt ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 text-emerald-500" />
+                        <span className="text-emerald-600 dark:text-emerald-400">
+                          {lang === "bn" ? "প্রম্পট কপি হয়েছে!" : "Prompt Copied!"}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5" />
+                        <span>Copy Prompt Format</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowFormatGuide((v) => !v)}
+                    className="rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-bold text-muted-foreground hover:text-foreground transition"
+                  >
+                    {showFormatGuide ? "Hide Example" : "Example"}
+                  </button>
+                </div>
+              </div>
+
+              {showFormatGuide && (
+                <div className="rounded-2xl border border-primary/30 bg-primary/5 p-3.5 text-xs space-y-2 animate-in fade-in">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-foreground">
+                      Supported Clean Format (EN/BN, inline answers or bottom answer key table):
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMainText(
+                          `1. When did the Constitution of Bangladesh take effect?\nA. 16 December 1971\nB. 16 December 1972\nC. 26 March 1971\nD. 4 November 1972\nAnswer: B\nExplanation: The Constitution of Bangladesh came into effect on 16 December 1972.`,
+                        );
+                        setShowFormatGuide(false);
+                      }}
+                      className="rounded-lg bg-primary px-2.5 py-1 text-[11px] font-bold text-primary-foreground hover:bg-primary/90"
+                    >
+                      Insert Sample
+                    </button>
+                  </div>
+                  <pre className="overflow-x-auto rounded-xl bg-card p-2.5 font-mono text-[11px] text-muted-foreground border border-border/80">
+                    {`1. Question text here...
+A. Option one
+B. Option two
+C. Option three
+D. Option four
+Answer: B
+Explanation: Short reason why B is correct.`}
+                  </pre>
+                </div>
+              )}
+
+              <textarea
+                rows={9}
+                disabled={isGenerating}
+                value={mainText}
+                onChange={(e) => setMainText(e.target.value)}
+                placeholder={
+                  lang === "bn"
+                    ? `এখানে সরাসরি প্রশ্ন পেস্ট করুন (ChatGPT / Claude / Gemini / Docs থেকে)...`
+                    : `Paste questions directly here (from ChatGPT, Claude, Gemini, or Docs)...`
+                }
+                className="min-h-[210px] w-full resize-y rounded-2xl border-2 border-border bg-background p-4 text-sm leading-relaxed text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-50"
+              />
+
+              {genError && (
+                <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-3 text-xs font-semibold text-destructive">
+                  {genError}
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-2.5">
+                <button
+                  type="button"
+                  disabled={isGenerating || detectedCount === 0}
+                  onClick={() => handleDirectImport(false)}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3.5 text-sm font-extrabold text-primary-foreground shadow-glow hover:bg-primary/90 transition disabled:opacity-40"
+                >
+                  <Upload className="h-4 w-4" />
+                  <span>
+                    {detectedCount > 0
+                      ? `Import ${detectedCount} Questions & Save Quiz #${quizNumber}`
+                      : "Paste Questions Above to Import"}
+                  </span>
+                </button>
+                {onLoadIntoEditor && detectedCount > 0 && (
+                  <button
+                    type="button"
+                    disabled={isGenerating}
+                    onClick={() => handleDirectImport(true)}
+                    className="flex items-center justify-center gap-1.5 rounded-2xl border border-border bg-background px-4 py-3.5 text-xs font-bold text-foreground hover:bg-accent transition"
+                  >
+                    <PenTool className="h-4 w-4 text-primary" />
+                    <span>Edit First</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

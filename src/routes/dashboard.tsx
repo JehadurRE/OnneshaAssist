@@ -9,6 +9,7 @@ import {
   AdminPracticalPanel,
   type FinalExamDeskView,
 } from "@/components/admin/AdminPracticalPanel";
+import { AdminAiPoolPanel } from "@/components/admin/AdminAiPoolPanel";
 import { READY_MADE_PACKS, DEFAULT_REGIONS } from "@/lib/mock-data";
 import { AiQuizModal } from "@/components/dashboard/AiQuizModal";
 import { OmrSheetView } from "@/components/common/OmrSheetView";
@@ -36,7 +37,8 @@ import { computeTotalQuizMarks, isPassingScore, resolvePassThresholdPct } from "
 import { computeSessionRetakeDiagnostics } from "@/lib/retake-utils";
 import { OnneshaLogo } from "@/components/common/OnneshaLogo";
 import { gameEngine } from "@/lib/game-engine";
-import { serverGetActiveRooms } from "@/lib/server-session";
+import { serverAiAnalyzeExamSession, serverGetActiveRooms } from "@/lib/server-session";
+import type { AiExamAnalyticsReport } from "@/lib/ai-copilots";
 import { SmsGateway } from "@/lib/sms-gateway";
 import { getAiCredits } from "@/lib/ai-generator";
 import { buildCopyableAiPrompt, parseQuestionsFromText } from "@/lib/question-text-parser";
@@ -215,6 +217,9 @@ function DashboardPage() {
   const [partnerName, setPartnerName] = useState<string>("");
   const [partnerLogoUrl, setPartnerLogoUrl] = useState<string>("");
   const [settingsSavedMsg, setSettingsSavedMsg] = useState<string | null>(null);
+  const [aiAnalyticsReport, setAiAnalyticsReport] = useState<AiExamAnalyticsReport | null>(null);
+  const [aiAnalyticsBusy, setAiAnalyticsBusy] = useState(false);
+  const [aiAnalyticsError, setAiAnalyticsError] = useState<string | null>(null);
 
   // Add Region Modal State
   const [showAddRegion, setShowAddRegion] = useState(false);
@@ -2474,6 +2479,41 @@ function DashboardPage() {
                   <span>Print Gazette</span>
                 </button>
 
+                {selectedExamSession && (
+                  <button
+                    type="button"
+                    disabled={aiAnalyticsBusy}
+                    onClick={async () => {
+                      setAiAnalyticsBusy(true);
+                      setAiAnalyticsError(null);
+                      try {
+                        const res = await serverAiAnalyzeExamSession({
+                          data: { sessionId: selectedExamSession.id },
+                        });
+                        if (res.success && res.report) {
+                          setAiAnalyticsReport(res.report);
+                        } else {
+                          setAiAnalyticsError(res.error || "AI cohort diagnostic unavailable.");
+                        }
+                      } catch (err) {
+                        setAiAnalyticsError(
+                          err instanceof Error ? err.message : "AI diagnostic failed.",
+                        );
+                      } finally {
+                        setAiAnalyticsBusy(false);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-2xl border border-violet-500/40 bg-violet-500/15 px-4 py-2 text-xs font-extrabold text-violet-700 hover:bg-violet-500/25 transition disabled:opacity-50 dark:text-violet-300"
+                  >
+                    {aiAnalyticsBusy ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3.5 w-3.5" />
+                    )}
+                    <span>{aiAnalyticsBusy ? "Analyzing…" : "AI Cohort Insights"}</span>
+                  </button>
+                )}
+
                 <button
                   onClick={handleSendGuardianSms}
                   disabled={isSendingSms}
@@ -2486,6 +2526,79 @@ function DashboardPage() {
             </div>
 
             {/* Supplementary / Affected Center Retake Diagnostics & Launcher */}
+            {aiAnalyticsError && (
+              <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-3.5 text-xs font-semibold text-destructive">
+                {aiAnalyticsError}
+              </div>
+            )}
+
+            {aiAnalyticsReport && (
+              <div className="rounded-3xl border border-violet-500/35 bg-gradient-to-br from-violet-500/10 via-card to-primary/5 p-5 sm:p-6 shadow-sm space-y-4 animate-in fade-in">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/15 px-2.5 py-0.5 text-[10px] font-black uppercase text-violet-700 dark:text-violet-300">
+                        <Sparkles className="h-3 w-3" />
+                        AI Psychometric Diagnostic
+                      </span>
+                      <span className="font-mono text-[10px] font-bold text-muted-foreground">
+                        {aiAnalyticsReport.provider} · {aiAnalyticsReport.model} ·{" "}
+                        {aiAnalyticsReport.latencyMs}ms
+                      </span>
+                    </div>
+                    <h3 className="mt-1.5 font-display text-base font-black text-foreground">
+                      {lang === "bn" ? aiAnalyticsReport.headlineBn : aiAnalyticsReport.headlineEn}
+                    </h3>
+                    <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                      {lang === "bn"
+                        ? aiAnalyticsReport.executiveSummaryBn
+                        : aiAnalyticsReport.executiveSummaryEn}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAiAnalyticsReport(null)}
+                    className="rounded-xl border border-border px-2.5 py-1 text-[11px] font-bold text-muted-foreground hover:text-foreground"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                  <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/5 p-3.5 space-y-1.5">
+                    <div className="font-display font-extrabold text-emerald-700 dark:text-emerald-300">
+                      Cohort Strengths
+                    </div>
+                    <ul className="list-disc pl-4 space-y-1 text-muted-foreground">
+                      {aiAnalyticsReport.strengths.map((s, i) => (
+                        <li key={i}>{s}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="rounded-2xl border border-amber-500/25 bg-amber-500/5 p-3.5 space-y-1.5">
+                    <div className="font-display font-extrabold text-amber-800 dark:text-amber-300">
+                      Risk Areas &amp; Gaps
+                    </div>
+                    <ul className="list-disc pl-4 space-y-1 text-muted-foreground">
+                      {aiAnalyticsReport.riskAreas.map((r, i) => (
+                        <li key={i}>{r}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="rounded-2xl border border-primary/25 bg-primary/5 p-3.5 space-y-1.5">
+                    <div className="font-display font-extrabold text-primary">
+                      Remediation Action Plan
+                    </div>
+                    <ul className="list-disc pl-4 space-y-1 text-muted-foreground">
+                      {aiAnalyticsReport.remediationPlan.map((p, i) => (
+                        <li key={i}>{p}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {selectedExamSession && selectedSessionRetakeDiag ? (
               <div className="rounded-3xl border border-amber-300 dark:border-amber-500/40 bg-amber-50/70 dark:bg-amber-950/20 p-5 shadow-sm space-y-4">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -3167,6 +3280,14 @@ function DashboardPage() {
                 {settingsSavedMsg}
               </div>
             )}
+
+            {/* Industrial Multi-Provider AI Pool Hub (Full Admin Control / Instructor Live Telemetry) */}
+            <AdminAiPoolPanel
+              readOnly={!isSuperAdmin}
+              onConfigUpdated={() => {
+                void db.syncFromServerStore().then(refreshDbState);
+              }}
+            />
 
             <form onSubmit={handleSaveSettings} className="staff-panel space-y-6">
               <div className="space-y-4">

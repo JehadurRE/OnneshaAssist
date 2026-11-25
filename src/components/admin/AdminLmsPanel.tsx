@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  serverAiDraftLmsContent,
   serverDeleteCourseMaterial,
   serverDeleteCourseRecording,
   serverGetBootstrapData,
@@ -15,7 +16,7 @@ import type {
   CourseMaterialType,
   CourseRecording,
 } from "@/lib/types";
-import { BookOpen, Film, Loader2, Megaphone, Plus, Save, Trash2 } from "lucide-react";
+import { BookOpen, Film, Loader2, Megaphone, Plus, Save, Sparkles, Trash2, Wand2 } from "lucide-react";
 
 export function AdminLmsPanel(props: { courses: Course[]; initialCourseId?: string | undefined }) {
   const [courseId, setCourseId] = useState(
@@ -27,6 +28,76 @@ export function AdminLmsPanel(props: { courses: Course[]; initialCourseId?: stri
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  // AI Bilingual LMS Authoring Copilot
+  const [aiKind, setAiKind] = useState<"material" | "announcement">("material");
+  const [aiTopic, setAiTopic] = useState("");
+  const [aiSessionLabel, setAiSessionLabel] = useState("Session");
+  const [aiExtraNotes, setAiExtraNotes] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
+
+  const handleAiDraftAndSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aiTopic.trim() || aiBusy) return;
+    setAiBusy(true);
+    setNotice(null);
+    try {
+      const res = await serverAiDraftLmsContent({
+        data: {
+          courseId,
+          kind: aiKind,
+          topic: aiTopic.trim(),
+          sessionLabel: aiKind === "material" ? aiSessionLabel.trim() || "Session" : undefined,
+          extraNotes: aiExtraNotes.trim() || undefined,
+        },
+      });
+      if (!res.success || !res.draft) {
+        setNotice(res.error || "AI drafting failed. Check Admin → AI Pool.");
+        return;
+      }
+      const now = new Date().toISOString();
+      if (aiKind === "material") {
+        const mat: CourseMaterial = {
+          id: newLmsId("mat"),
+          courseId,
+          sessionLabel: aiSessionLabel.trim() || "Session",
+          titleEn: res.draft.titleEn,
+          titleBn: res.draft.titleBn,
+          type: "note",
+          bodyEn: res.draft.bodyEn,
+          bodyBn: res.draft.bodyBn,
+          sortOrder: courseMats.length + 1,
+          published: true,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await serverSaveCourseMaterial({ data: { material: mat } });
+      } else {
+        const ann: CourseAnnouncement = {
+          id: newLmsId("ann"),
+          courseId,
+          titleEn: res.draft.titleEn,
+          titleBn: res.draft.titleBn,
+          bodyEn: res.draft.bodyEn,
+          bodyBn: res.draft.bodyBn,
+          published: true,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await serverSaveCourseAnnouncement({ data: { announcement: ann } });
+      }
+      setAiTopic("");
+      setAiExtraNotes("");
+      setNotice(
+        `AI drafted & published bilingual ${aiKind} via ${res.draft.nodeLabel} (${res.draft.model}, ${res.draft.latencyMs}ms).`,
+      );
+      await refresh();
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "AI LMS authoring failed.");
+    } finally {
+      setAiBusy(false);
+    }
+  };
 
   const courseMats = useMemo(
     () => materials.filter((m) => m.courseId === courseId).sort((a, b) => a.sortOrder - b.sortOrder),
@@ -132,6 +203,92 @@ export function AdminLmsPanel(props: { courses: Course[]; initialCourseId?: stri
       {notice && (
         <div className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm">{notice}</div>
       )}
+
+      {/* AI Bilingual LMS Authoring Copilot */}
+      <form
+        onSubmit={handleAiDraftAndSave}
+        className="rounded-2xl border border-violet-500/30 bg-gradient-to-br from-violet-500/10 via-card to-primary/5 p-4 space-y-3"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-500/15 text-violet-600 dark:text-violet-300">
+              <Sparkles className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="font-display text-sm font-extrabold text-foreground">
+                AI Bilingual LMS Authoring Copilot
+              </h3>
+              <p className="text-[11px] text-muted-foreground">
+                Generate structured English + Bengali study notes or notices via the AI Pool (also
+                grounds the Student AI Tutor).
+              </p>
+            </div>
+          </div>
+          <div className="flex rounded-xl border border-border bg-background p-0.5 text-[11px] font-bold">
+            <button
+              type="button"
+              onClick={() => setAiKind("material")}
+              className={`rounded-lg px-2.5 py-1 transition ${
+                aiKind === "material"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Study Material
+            </button>
+            <button
+              type="button"
+              onClick={() => setAiKind("announcement")}
+              className={`rounded-lg px-2.5 py-1 transition ${
+                aiKind === "announcement"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Announcement
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+          {aiKind === "material" && (
+            <input
+              type="text"
+              value={aiSessionLabel}
+              onChange={(e) => setAiSessionLabel(e.target.value)}
+              placeholder="Session 06"
+              className="sm:col-span-2 staff-input text-xs font-semibold"
+            />
+          )}
+          <input
+            type="text"
+            required
+            value={aiTopic}
+            onChange={(e) => setAiTopic(e.target.value)}
+            placeholder={
+              aiKind === "material"
+                ? "Topic (e.g. Prompt Engineering Frameworks & Veo Video Ads Workflow)"
+                : "Notice subject (e.g. Final Exam Schedule & Capstone Submission Rules)"
+            }
+            className={`${aiKind === "material" ? "sm:col-span-5" : "sm:col-span-7"} staff-input text-xs`}
+          />
+          <input
+            type="text"
+            value={aiExtraNotes}
+            onChange={(e) => setAiExtraNotes(e.target.value)}
+            placeholder="Optional key points / deadlines…"
+            className="sm:col-span-3 staff-input text-xs"
+          />
+          <button
+            type="submit"
+            disabled={aiBusy || !aiTopic.trim()}
+            className="sm:col-span-2 staff-btn-primary text-xs !justify-center disabled:opacity-50"
+          >
+            {aiBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+            <span>{aiBusy ? "Drafting…" : "AI Draft"}</span>
+          </button>
+        </div>
+      </form>
 
       <section className="staff-row-card space-y-3">
         <div className="flex items-center justify-between gap-2">

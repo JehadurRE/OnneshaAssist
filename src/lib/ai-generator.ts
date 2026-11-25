@@ -1,5 +1,5 @@
 import { generateQuizViaGeminiRest, CoreAiQuizRequest } from "./ai-quiz-core";
-import { Quiz } from "./types";
+import { AiProviderId, Quiz } from "./types";
 import { serverGenerateQuizWithAi } from "./server-session";
 
 export interface AiGenerateParams {
@@ -16,6 +16,9 @@ export interface AiGenerateParams {
   instructorName?: string | undefined;
   questionStyleMode?: "mixed_all_4" | "single_mcq" | undefined;
   apiKey?: string | undefined;
+  preferredNodeId?: string | undefined;
+  provider?: AiProviderId | undefined;
+  model?: string | undefined;
 }
 
 export function getAiCredits(): number {
@@ -76,7 +79,7 @@ export async function generateQuizWithAi(params: AiGenerateParams): Promise<Quiz
   let serverKeyMissing = false;
   let serverError: string | undefined;
 
-  // Prefer server-side synthesis first so shared Admin/env keys stay confidential on the server
+  // Prefer server-side synthesis via AI Pool so shared Admin/env keys stay confidential on the server
   try {
     const serverRes = await serverGenerateQuizWithAi({
       data: {
@@ -89,6 +92,9 @@ export async function generateQuizWithAi(params: AiGenerateParams): Promise<Quiz
         courseTitle: params.courseTitle,
         quizNumber: params.quizNumber,
         questionStyleMode: styleMode,
+        ...(params.preferredNodeId ? { preferredNodeId: params.preferredNodeId } : {}),
+        ...(params.provider ? { clientProvider: params.provider } : {}),
+        ...(params.model ? { clientModel: params.model } : {}),
         ...(clientApiKey ? { clientApiKey } : {}),
       },
     });
@@ -99,7 +105,10 @@ export async function generateQuizWithAi(params: AiGenerateParams): Promise<Quiz
       return serverRes.quiz;
     }
     if (serverRes.error) {
-      if (serverRes.error.includes("GEMINI_API_KEY")) {
+      if (
+        serverRes.error.includes("GEMINI_API_KEY") ||
+        serverRes.error.includes("No AI provider")
+      ) {
         serverKeyMissing = true;
       } else {
         serverError = serverRes.error;
@@ -129,6 +138,6 @@ export async function generateQuizWithAi(params: AiGenerateParams): Promise<Quiz
   }
 
   throw new Error(
-    "No Google Gemini API key is configured. Enter your Google AI Studio key (AIza...) below or configure GEMINI_API_KEY on the server — off-topic dummy fallback is disabled.",
+    "No AI provider or Google Gemini API key is configured. Add OpenRouter, Gemini, OpenAI, Claude, Groq, or another provider in Admin → AI Pool (or paste an API key below) — off-topic dummy fallback is disabled.",
   );
 }

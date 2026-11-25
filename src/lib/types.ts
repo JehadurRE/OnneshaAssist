@@ -689,3 +689,122 @@ export interface BrandingSettings {
   portalAuthChannel?: "email" | "mobile" | undefined;
   updatedAt?: number | undefined;
 }
+
+// ============================================================================
+// MULTI-PROVIDER AI POOL & ORCHESTRATION TYPES
+// ============================================================================
+
+export type AiProviderId =
+  | "openrouter"
+  | "gemini"
+  | "openai"
+  | "anthropic"
+  | "groq"
+  | "deepseek"
+  | "mistral"
+  | "xai"
+  | "together"
+  | "custom";
+
+export type AiPoolRoutingStrategy =
+  | "priority_failover"
+  | "round_robin"
+  | "weighted_random"
+  | "fastest_latency";
+
+export type AiTaskCapability =
+  | "quiz_generation"
+  | "course_tutor"
+  | "practical_grading"
+  | "lms_authoring"
+  | "exam_analytics";
+
+export type AiNodeHealthStatus = "healthy" | "degraded" | "cooldown" | "error" | "untested";
+
+export interface AiPoolNode {
+  id: string;
+  label: string;
+  provider: AiProviderId;
+  apiKey: string;
+  baseUrl?: string | undefined;
+  model: string;
+  fallbackModels?: string[] | undefined;
+  enabled: boolean;
+  priority: number;
+  weight: number;
+  capabilities?: AiTaskCapability[] | undefined;
+  temperature?: number | undefined;
+  maxTokens?: number | undefined;
+  timeoutMs?: number | undefined;
+  notes?: string | undefined;
+  status: AiNodeHealthStatus;
+  cooldownUntil?: number | undefined;
+  lastLatencyMs?: number | undefined;
+  avgLatencyMs?: number | undefined;
+  totalRequests: number;
+  totalFailures: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  lastSuccessAt?: string | undefined;
+  lastErrorAt?: string | undefined;
+  lastError?: string | undefined;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SanitizedAiPoolNode extends Omit<AiPoolNode, "apiKey"> {
+  hasApiKey: boolean;
+  apiKeyMasked: string;
+  source: "pool" | "env" | "legacy_gemini";
+  readOnly?: boolean | undefined;
+}
+
+export interface AiPoolExecutionLog {
+  id: string;
+  timestamp: string;
+  task: AiTaskCapability;
+  nodeId: string;
+  nodeLabel: string;
+  provider: AiProviderId;
+  model: string;
+  success: boolean;
+  latencyMs: number;
+  failoverAttempts: number;
+  inputTokens?: number | undefined;
+  outputTokens?: number | undefined;
+  error?: string | undefined;
+  actorName?: string | undefined;
+}
+
+export interface AiPoolConfig {
+  strategy: AiPoolRoutingStrategy;
+  cooldownSeconds: number;
+  maxFailoverAttempts: number;
+  defaultTimeoutMs: number;
+  taskPreferredNodeIds?: Partial<Record<AiTaskCapability, string>> | undefined;
+  nodes: AiPoolNode[];
+  logs: AiPoolExecutionLog[];
+  updatedAt?: string | undefined;
+}
+
+export interface SanitizedAiPoolConfig {
+  strategy: AiPoolRoutingStrategy;
+  cooldownSeconds: number;
+  maxFailoverAttempts: number;
+  defaultTimeoutMs: number;
+  taskPreferredNodeIds: Partial<Record<AiTaskCapability, string>>;
+  nodes: SanitizedAiPoolNode[];
+  logs: AiPoolExecutionLog[];
+  summary: {
+    totalNodes: number;
+    enabledNodes: number;
+    healthyNodes: number;
+    cooldownNodes: number;
+    totalRequests: number;
+    totalFailures: number;
+    successRatePct: number;
+    avgLatencyMs: number;
+    providersActive: AiProviderId[];
+  };
+  updatedAt?: string | undefined;
+}

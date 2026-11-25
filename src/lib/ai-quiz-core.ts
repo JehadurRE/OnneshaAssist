@@ -1,4 +1,5 @@
-import { Question, QuestionType, Quiz } from "./types";
+import { AiPoolConfig, AiProviderId, Question, QuestionType, Quiz } from "./types";
+import { executeAiPoolRequest, extractJsonFromAiText } from "./ai-pool";
 
 export interface CoreAiQuizRequest {
   topic: string;
@@ -270,4 +271,74 @@ export async function generateQuizViaGeminiRest(
   }
 
   throw new Error(lastError);
+}
+
+export async function generateQuizViaAiPool(
+  pool: AiPoolConfig,
+  data: CoreAiQuizRequest,
+  options?: {
+    legacyServerGeminiKey?: string | undefined;
+    preferredNodeId?: string | undefined;
+    clientOverrideKey?: string | undefined;
+    clientOverrideProvider?: AiProviderId | undefined;
+    clientOverrideModel?: string | undefined;
+    actorName?: string | undefined;
+    onMutate?: () => void;
+  },
+): Promise<{
+  quiz: Quiz;
+  provider: AiProviderId;
+  model: string;
+  nodeLabel: string;
+  latencyMs: number;
+  failoverAttempts: number;
+}> {
+  const count = Math.min(20, Math.max(3, data.questionCount || 5));
+  const prompt = buildGeminiQuizPrompt(data, count);
+
+  const res = await executeAiPoolRequest(
+    pool,
+    {
+      task: "quiz_generation",
+      systemPrompt:
+        "You are a senior academic & technical assessment author in Bangladesh. Always respond with strict valid JSON only — no markdown fences or commentary.",
+      messages: [{ role: "user", content: prompt }],
+      jsonMode: true,
+      temperature: 0.3,
+      maxTokens: Math.min(8192, Math.max(2500, count * 420)),
+      preferredNodeId: options?.preferredNodeId,
+      clientOverrideKey: options?.clientOverrideKey,
+      clientOverrideProvider: options?.clientOverrideProvider,
+      clientOverrideModel: options?.clientOverrideModel,
+      actorName: options?.actorName,
+    },
+    {
+      legacyServerGeminiKey: options?.legacyServerGeminiKey,
+      onMutate: options?.onMutate,
+    },
+  );
+
+  const cleanJson = extractJsonFromAiText(res.text);
+  let parsed: RawGeminiQuizPayload;
+  try {
+    parsed = JSON.parse(cleanJson) as RawGeminiQuizPayload;
+  } catch {
+    throw new Error(
+      `AI provider (${res.nodeLabel} · ${res.model}) returned malformed JSON. Try again or switch model.`,
+    );
+  }
+
+  const quiz = normalizeGeneratedQuizPayload(parsed, data);
+  quiz.tags = Array.from(new Set([`AI · ${res.provider}`, res.model, ...(quiz.tags || [])])).slice(
+    0,
+    6,
+  );
+  return {
+    quiz,
+    provider: res.provider,
+    model: res.model,
+    nodeLabel: res.nodeLabel,
+    latencyMs: res.latencyMs,
+    failoverAttempts: res.failoverAttempts,
+  };
 }

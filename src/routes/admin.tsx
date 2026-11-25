@@ -8,6 +8,7 @@ import {
   type FinalExamDeskView,
 } from "@/components/admin/AdminPracticalPanel";
 import { AdminLmsPanel } from "@/components/admin/AdminLmsPanel";
+import { AdminAiPoolPanel } from "@/components/admin/AdminAiPoolPanel";
 import { CertificateDesignerStudio } from "@/components/admin/CertificateDesignerStudio";
 import { CertificateView } from "@/components/common/CertificateView";
 import { useAuth } from "@/lib/auth-context";
@@ -46,6 +47,7 @@ import {
   Check,
   CheckCircle2,
   ClipboardList,
+  Cpu,
   Download,
   ExternalLink,
   Eye,
@@ -125,6 +127,7 @@ type AdminTab =
   | "instructors"
   | "roster"
   | "certificates"
+  | "ai_pool"
   | "settings"
   | "sales_billing";
 
@@ -980,6 +983,7 @@ function SuperAdminPage() {
     { id: "instructors", label: "Instructors & Accounts", shortLabel: "Faculty", icon: GraduationCap, badge: users.length, group: "People" },
     { id: "roster", label: "Regions & Roster", shortLabel: "Roster", icon: MapPin, badge: roster.length, group: "People" },
     { id: "certificates", label: "Issued Certificates", shortLabel: "Certificates", icon: Award, badge: certificates.length, group: "Credentials" },
+    { id: "ai_pool", label: "AI Pool & Integrations", shortLabel: "AI Pool", icon: Cpu, group: "System" },
     { id: "settings", label: "Anti-Cheat, Branding & Backup", shortLabel: "Settings", icon: Settings, group: "System" },
     { id: "sales_billing", label: "Sales Leads & Billing", shortLabel: "Billing", icon: Receipt, badge: salesLeads.length + transactions.length, group: "System" },
   ] as const;
@@ -1157,6 +1161,14 @@ function SuperAdminPage() {
               }
             />
           </div>
+        )}
+
+        {activeTab === "ai_pool" && (
+          <AdminAiPoolPanel
+            onConfigUpdated={() => {
+              void db.syncFromServerStore();
+            }}
+          />
         )}
 
         {activeTab === "courses" && (

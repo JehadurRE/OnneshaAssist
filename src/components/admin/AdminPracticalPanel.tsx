@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
+  serverAiSuggestPracticalGrade,
   serverBulkIssueCourseCertificates,
   serverCloseFinalExamWindow,
   serverDownloadPracticalFile,
@@ -63,6 +64,7 @@ import {
   RotateCcw,
   Save,
   Settings2,
+  Sparkles,
   Square,
   Timer,
   Trash2,
@@ -134,6 +136,10 @@ export function AdminPracticalPanel(props: {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [marksBySubTask, setMarksBySubTask] = useState<Record<string, string>>({});
   const [feedbackBySub, setFeedbackBySub] = useState<Record<string, string>>({});
+  const [aiGradingSubId, setAiGradingSubId] = useState<string | null>(null);
+  const [aiDraftMetaBySub, setAiDraftMetaBySub] = useState<
+    Record<string, { summary: string; model: string; provider: string; latencyMs: number }>
+  >({});
   const [windowHours, setWindowHours] = useState(3);
   const [windowOpen, setWindowOpen] = useState(false);
   const [deskView, setDeskView] = useState<FinalExamDeskView>(props.desk || "live");
@@ -397,6 +403,50 @@ export function AdminPracticalPanel(props: {
       await db.syncFromServerStore();
     } catch {
       // best-effort; Issued Certificates tab refreshes via db.subscribe
+    }
+  };
+
+  const suggestGradeWithAi = async (sub: PracticalSubmission) => {
+    setAiGradingSubId(sub.id);
+    setNotice(null);
+    try {
+      const res = await serverAiSuggestPracticalGrade({
+        data: { submissionId: sub.id },
+      });
+      if (!res.success || !res.suggestion) {
+        setNotice(res.error || "AI grading copilot unavailable.");
+        return;
+      }
+      const { suggestion } = res;
+      setMarksBySubTask((prev) => {
+        const next = { ...prev };
+        for (const g of suggestion.grades) {
+          next[markKey(sub.id, g.taskId)] = String(g.marks);
+          if (g.comment) {
+            next[markKey(sub.id, `${g.taskId}::comment`)] = g.comment;
+          }
+        }
+        return next;
+      });
+      if (suggestion.overallFeedback) {
+        setFeedbackBySub((prev) => ({ ...prev, [sub.id]: suggestion.overallFeedback }));
+      }
+      setAiDraftMetaBySub((prev) => ({
+        ...prev,
+        [sub.id]: {
+          summary: suggestion.rationaleSummary,
+          model: suggestion.model,
+          provider: suggestion.provider,
+          latencyMs: suggestion.latencyMs,
+        },
+      }));
+      setNotice(
+        `AI drafted rubric marks & bilingual remarks via ${suggestion.nodeLabel} (${suggestion.model}, ${suggestion.latencyMs}ms). Review before clicking Save grade.`,
+      );
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "AI grading suggestion failed.");
+    } finally {
+      setAiGradingSubId(null);
     }
   };
 
@@ -2320,7 +2370,36 @@ export function AdminPracticalPanel(props: {
                   </div>
 
                   <aside className="assess-grade-rail">
-                    <h4>Marks</h4>
+                    <div className="flex items-center justify-between gap-2">
+                      <h4>Marks</h4>
+                      {exam && canGrade(sub.status) && (
+                        <button
+                          type="button"
+                          disabled={aiGradingSubId === sub.id}
+                          onClick={() => void suggestGradeWithAi(sub)}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-violet-500/40 bg-violet-500/10 px-2.5 py-1.5 text-[11px] font-extrabold text-violet-700 hover:bg-violet-500/20 transition disabled:opacity-50 dark:text-violet-300"
+                          title="Draft rubric scores & bilingual EN/BN remarks with AI Pool"
+                        >
+                          {aiGradingSubId === sub.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-3.5 w-3.5" />
+                          )}
+                          <span>{aiGradingSubId === sub.id ? "Drafting…" : "AI Suggest"}</span>
+                        </button>
+                      )}
+                    </div>
+                    {aiDraftMetaBySub[sub.id] && (
+                      <div className="rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-[11px] text-violet-900 dark:text-violet-200 space-y-0.5">
+                        <div className="font-extrabold flex items-center justify-between gap-2">
+                          <span>AI Draft Ready — Review &amp; Save</span>
+                          <span className="font-mono text-[10px] opacity-80">
+                            {aiDraftMetaBySub[sub.id]!.provider} · {aiDraftMetaBySub[sub.id]!.latencyMs}ms
+                          </span>
+                        </div>
+                        <p className="opacity-90 leading-snug">{aiDraftMetaBySub[sub.id]!.summary}</p>
+                      </div>
+                    )}
                     {exam && canGrade(sub.status) ? (
                       <>
                         <div className="space-y-3">

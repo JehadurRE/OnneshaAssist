@@ -1,5 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import {
+  AiPoolConfig,
+  AiPoolNode,
+  AiPoolRoutingStrategy,
+  AiProviderId,
+  AiTaskCapability,
   BrandingSettings,
   CertificateData,
   Course,
@@ -32,13 +37,34 @@ import {
   mergeBrandingSettings,
 } from "./branding";
 import { purgeUnderThresholdExamsInStore, type PurgeExamSummary } from "./exam-purge";
-import { generateQuizViaGeminiRest, resolveEnvGeminiApiKey } from "./ai-quiz-core";
+import {
+  generateQuizViaAiPool,
+  resolveEnvGeminiApiKey,
+} from "./ai-quiz-core";
+import {
+  AI_PROVIDER_CATALOG,
+  buildEffectivePoolNodes,
+  createDefaultAiPoolConfig,
+  hasAnyConfiguredAiProvider,
+  normalizeAiPoolConfig,
+  pingAiPoolNode,
+  sanitizeAiPoolConfig,
+} from "./ai-pool";
 import {
   buildAiTutorContext,
   buildDefaultSanjibonLmsContent,
   newLmsId,
 } from "./lms-content";
-import { askCourseTutorViaGemini } from "./ai-tutor-core";
+import {
+  askCourseTutorViaAiPool,
+  type TutorHistoryTurn,
+  type TutorStudyMode,
+} from "./ai-tutor-core";
+import {
+  analyzeExamSessionViaAiPool,
+  draftLmsContentViaAiPool,
+  suggestPracticalGradeViaAiPool,
+} from "./ai-copilots";
 import {
   buildCourseCertificateEmail,
   buildQuizCertificateEmail,
@@ -223,6 +249,7 @@ interface PersistentStoreData {
   staffPasswordsResetV1?: boolean | undefined;
   autoIssueQuizCertificates?: boolean | undefined;
   serverGeminiApiKey?: string | undefined;
+  aiPool?: AiPoolConfig | undefined;
   ledgerCheckpoints: LedgerOtsCheckpoint[];
   transactions: ServerTransactionRecord[];
   smsLogs: ServerSmsLogRecord[];
@@ -584,6 +611,15 @@ export function clearDeletedQuizTokensInStore<T extends { deletedQuizIds?: strin
   );
 }
 
+export function ensureStoreAiPool(store: PersistentStoreData): AiPoolConfig {
+  if (!store.aiPool) {
+    store.aiPool = createDefaultAiPoolConfig();
+  } else if (!Array.isArray(store.aiPool.nodes) || !Array.isArray(store.aiPool.logs)) {
+    store.aiPool = normalizeAiPoolConfig(store.aiPool);
+  }
+  return store.aiPool;
+}
+
 export function resolveServerGeminiApiKey(
   store: Pick<PersistentStoreData, "serverGeminiApiKey">,
   clientOverride?: string,
@@ -726,6 +762,7 @@ function loadInitialStore(): PersistentStoreData {
             staffPasswordsResetV1: !!parsed.staffPasswordsResetV1,
             autoIssueQuizCertificates: false,
             serverGeminiApiKey: parsed.serverGeminiApiKey,
+            aiPool: normalizeAiPoolConfig(parsed.aiPool),
             ledgerCheckpoints: parsed.ledgerCheckpoints || [],
             transactions: parsed.transactions || [],
             smsLogs: parsed.smsLogs || [],
@@ -778,6 +815,7 @@ function loadInitialStore(): PersistentStoreData {
     migratedSanjibonS05V4: true,
     staffPasswordsResetV1: false,
     autoIssueQuizCertificates: false,
+    aiPool: createDefaultAiPoolConfig(),
     ledgerCheckpoints: [],
     transactions: [],
     smsLogs: [],
@@ -2124,7 +2162,9 @@ export const serverGetBootstrapData = createServerFn({ method: "GET" }).handler(
     deletedRegionIds: store.deletedRegionIds || [],
     deletedCourseIds: store.deletedCourseIds || [],
     purgedSampleData: !!store.purgedSampleData,
-    hasServerGeminiKey: isStaff ? resolveServerGeminiApiKey(store).source !== "none" : false,
+    hasServerGeminiKey: isStaff
+      ? hasAnyConfiguredAiProvider(ensureStoreAiPool(store), store.serverGeminiApiKey)
+      : false,
     examSessions: isStaff ? store.examSessions : [],
     examResults: isStaff ? store.examResults : [],
     certificates: isStaff ? store.certificates : [],
@@ -2857,13 +2897,43 @@ export const serverSendGuardianSms = createServerFn({ method: "POST" })
 export const serverGetAiGeneratorStatus = createServerFn({ method: "GET" }).handler(async () => {
   const actor = await getActorFromRequest();
   if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
-    return { hasKey: false, source: "none" as const };
+    return {
+      hasKey: false,
+      source: "none" as const,
+      activeNodes: [] as Array<{
+        id: string;
+        label: string;
+        provider: AiProviderId;
+        model: string;
+        status: string;
+      }>,
+      strategy: "priority_failover" as AiPoolRoutingStrategy,
+    };
   }
   const store = getStore();
+  const pool = ensureStoreAiPool(store);
+  const sanitized = sanitizeAiPoolConfig(pool, store.serverGeminiApiKey);
+  const enabledNodes = sanitized.nodes.filter((n) => n.enabled && n.hasApiKey);
   const resolved = resolveServerGeminiApiKey(store);
+  const hasAny = enabledNodes.length > 0;
   return {
-    hasKey: resolved.source !== "none",
-    source: resolved.source === "client" ? ("none" as const) : resolved.source,
+    hasKey: hasAny,
+    source:
+      pool.nodes.some((n) => n.enabled && n.apiKey.trim().length > 0)
+        ? ("server" as const)
+        : resolved.source === "client"
+          ? hasAny
+            ? ("env" as const)
+            : ("none" as const)
+          : resolved.source,
+    strategy: sanitized.strategy,
+    activeNodes: enabledNodes.map((n) => ({
+      id: n.id,
+      label: n.label,
+      provider: n.provider,
+      model: n.model,
+      status: n.status,
+    })),
   };
 });
 
@@ -2879,7 +2949,10 @@ export const serverGenerateQuizWithAi = createServerFn({ method: "POST" })
       courseTitle?: string | undefined;
       quizNumber?: number | undefined;
       questionStyleMode?: "mixed_all_4" | "single_mcq" | undefined;
+      preferredNodeId?: string | undefined;
       clientApiKey?: string | undefined;
+      clientProvider?: AiProviderId | undefined;
+      clientModel?: string | undefined;
     }) => data,
   )
   .handler(async ({ data }) => {
@@ -2889,9 +2962,16 @@ export const serverGenerateQuizWithAi = createServerFn({ method: "POST" })
     }
 
     const store = getStore();
-    const { apiKey } = resolveServerGeminiApiKey(store, data.clientApiKey);
-    if (!apiKey) {
-      return { success: false, quiz: null, error: "GEMINI_API_KEY not configured on server" };
+    const pool = ensureStoreAiPool(store);
+    const hasProvider =
+      hasAnyConfiguredAiProvider(pool, store.serverGeminiApiKey) ||
+      Boolean(data.clientApiKey && data.clientApiKey.trim().length >= 8);
+    if (!hasProvider) {
+      return {
+        success: false,
+        quiz: null,
+        error: "GEMINI_API_KEY not configured on server (no AI Pool providers configured)",
+      };
     }
 
     const userIdx = store.users.findIndex((u) => u.id === actor.id);
@@ -2923,30 +3003,46 @@ export const serverGenerateQuizWithAi = createServerFn({ method: "POST" })
     };
 
     try {
-      const quiz = await generateQuizViaGeminiRest(apiKey, {
-        topic: data.topic,
-        sourceText: data.sourceText,
-        questionCount: data.questionCount,
-        difficulty: data.difficulty,
-        category: data.category,
-        courseId: data.courseId,
-        courseTitle: data.courseTitle,
-        quizNumber: data.quizNumber,
-        instructorId: actor.id,
-        instructorName: actor.name,
-        questionStyleMode: data.questionStyleMode,
-      });
-      quiz.author = actor.name;
+      const result = await generateQuizViaAiPool(
+        pool,
+        {
+          topic: data.topic,
+          sourceText: data.sourceText,
+          questionCount: data.questionCount,
+          difficulty: data.difficulty,
+          category: data.category,
+          courseId: data.courseId,
+          courseTitle: data.courseTitle,
+          quizNumber: data.quizNumber,
+          instructorId: actor.id,
+          instructorName: actor.name,
+          questionStyleMode: data.questionStyleMode,
+        },
+        {
+          legacyServerGeminiKey: store.serverGeminiApiKey,
+          preferredNodeId: data.preferredNodeId,
+          clientOverrideKey: data.clientApiKey,
+          clientOverrideProvider: data.clientProvider,
+          clientOverrideModel: data.clientModel,
+          actorName: actor.name,
+          onMutate: () => scheduleDiskPersist(),
+        },
+      );
+      result.quiz.author = actor.name;
 
       return {
         success: true,
-        quiz,
+        quiz: result.quiz,
         remainingCredits: nextCredits,
+        provider: result.provider,
+        model: result.model,
+        nodeLabel: result.nodeLabel,
+        latencyMs: result.latencyMs,
       };
     } catch (err) {
       refundReservedCredit();
       const message =
-        err instanceof Error && err.message ? err.message : "Gemini synthesis failed.";
+        err instanceof Error && err.message ? err.message : "AI Pool quiz synthesis failed.";
       return { success: false, quiz: null, error: message };
     }
   });
@@ -3954,7 +4050,10 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
       deletedRegionIds: store.deletedRegionIds || [],
       deletedCourseIds: store.deletedCourseIds || [],
       purgedSampleData: !!store.purgedSampleData,
-      hasServerGeminiKey: resolveServerGeminiApiKey(store).source !== "none",
+      hasServerGeminiKey: hasAnyConfiguredAiProvider(
+        ensureStoreAiPool(store),
+        store.serverGeminiApiKey,
+      ),
       branding: store.branding,
       salesLeads: actor?.role === "admin" ? store.salesLeads : [],
       transactions: actor?.role === "admin" ? store.transactions : [],
@@ -7002,7 +7101,10 @@ export const serverGetStudentPortal = createServerFn({ method: "POST" })
             endsAt: finalAttempt.endsAt,
           }
         : null,
-      hasAiTutor: resolveServerGeminiApiKey(store).source !== "none",
+      hasAiTutor: hasAnyConfiguredAiProvider(
+        ensureStoreAiPool(store),
+        store.serverGeminiApiKey,
+      ),
       courseCertificate: courseCert
         ? {
             ...courseCert,
@@ -7897,16 +7999,19 @@ export const serverAskCourseTutor = createServerFn({ method: "POST" })
       question: string;
       rollNumber?: string | undefined;
       lang?: "en" | "bn" | undefined;
+      mode?: TutorStudyMode | undefined;
+      history?: TutorHistoryTurn[] | undefined;
     }) => data,
   )
   .handler(async ({ data }) => {
     const store = getStore();
     ensureLmsContentSeeded(store);
-    const { apiKey, source } = resolveServerGeminiApiKey(store);
-    if (!apiKey || source === "none") {
+    const pool = ensureStoreAiPool(store);
+    if (!hasAnyConfiguredAiProvider(pool, store.serverGeminiApiKey)) {
       return {
         success: false as const,
-        error: "AI Tutor is offline. Admin must set a Gemini API key in Settings.",
+        error:
+          "AI Tutor is offline. Admin must add an AI provider (OpenRouter, Gemini, OpenAI, Claude, Groq, etc.) in Admin → AI Pool.",
       };
     }
     const course = store.courses.find((c) => c.id === data.courseId);
@@ -7918,17 +8023,486 @@ export const serverAskCourseTutor = createServerFn({ method: "POST" })
       courseTitle: course?.titleEn,
     });
     try {
-      const res = await askCourseTutorViaGemini({
-        apiKey,
-        question: data.question,
-        context,
-        lang: data.lang,
-      });
-      return { success: true as const, answer: res.answer, model: res.model };
+      const res = await askCourseTutorViaAiPool(
+        pool,
+        {
+          question: data.question,
+          context,
+          lang: data.lang,
+          mode: data.mode,
+          history: data.history,
+          actorName: data.rollNumber ? `Student ${data.rollNumber}` : "Student Portal",
+        },
+        {
+          legacyServerGeminiKey: store.serverGeminiApiKey,
+          onMutate: () => scheduleDiskPersist(),
+        },
+      );
+      return {
+        success: true as const,
+        answer: res.answer,
+        model: res.model,
+        provider: res.provider,
+        nodeLabel: res.nodeLabel,
+        latencyMs: res.latencyMs,
+      };
     } catch (err) {
       return {
         success: false as const,
         error: err instanceof Error ? err.message : "AI tutor failed.",
+      };
+    }
+  });
+
+// ============================================================================
+// MULTI-PROVIDER AI POOL MANAGEMENT & INSTITUTIONAL AI COPILOTS
+// ============================================================================
+
+export const serverGetAiPoolConfig = createServerFn({ method: "GET" }).handler(async () => {
+  const actor = await getActorFromRequest();
+  if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+    return { success: false as const, error: "Staff authentication required." };
+  }
+  const store = getStore();
+  const pool = ensureStoreAiPool(store);
+  return {
+    success: true as const,
+    role: actor.role,
+    config: sanitizeAiPoolConfig(pool, store.serverGeminiApiKey),
+  };
+});
+
+export const serverSaveAiPoolPolicy = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      strategy?: AiPoolRoutingStrategy | undefined;
+      cooldownSeconds?: number | undefined;
+      maxFailoverAttempts?: number | undefined;
+      defaultTimeoutMs?: number | undefined;
+      taskPreferredNodeIds?: Partial<Record<AiTaskCapability, string>> | undefined;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || actor.role !== "admin") {
+      return { success: false as const, error: "Super Admin access required." };
+    }
+    const store = getStore();
+    const pool = ensureStoreAiPool(store);
+    if (data.strategy) pool.strategy = data.strategy;
+    if (typeof data.cooldownSeconds === "number" && Number.isFinite(data.cooldownSeconds)) {
+      pool.cooldownSeconds = Math.min(600, Math.max(10, Math.round(data.cooldownSeconds)));
+    }
+    if (
+      typeof data.maxFailoverAttempts === "number" &&
+      Number.isFinite(data.maxFailoverAttempts)
+    ) {
+      pool.maxFailoverAttempts = Math.min(12, Math.max(1, Math.round(data.maxFailoverAttempts)));
+    }
+    if (typeof data.defaultTimeoutMs === "number" && Number.isFinite(data.defaultTimeoutMs)) {
+      pool.defaultTimeoutMs = Math.min(120_000, Math.max(5_000, Math.round(data.defaultTimeoutMs)));
+    }
+    if (data.taskPreferredNodeIds && typeof data.taskPreferredNodeIds === "object") {
+      const cleaned: Partial<Record<AiTaskCapability, string>> = {};
+      for (const [k, v] of Object.entries(data.taskPreferredNodeIds)) {
+        if (v && typeof v === "string" && v.trim()) {
+          cleaned[k as AiTaskCapability] = v.trim();
+        }
+      }
+      pool.taskPreferredNodeIds = cleaned;
+    }
+    pool.updatedAt = new Date().toISOString();
+    scheduleDiskPersist();
+    return {
+      success: true as const,
+      config: sanitizeAiPoolConfig(pool, store.serverGeminiApiKey),
+    };
+  });
+
+export const serverUpsertAiPoolNode = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      id?: string | undefined;
+      label: string;
+      provider: AiProviderId;
+      apiKey?: string | undefined;
+      baseUrl?: string | undefined;
+      model: string;
+      fallbackModels?: string[] | undefined;
+      enabled?: boolean | undefined;
+      priority?: number | undefined;
+      weight?: number | undefined;
+      capabilities?: AiTaskCapability[] | undefined;
+      temperature?: number | undefined;
+      maxTokens?: number | undefined;
+      timeoutMs?: number | undefined;
+      notes?: string | undefined;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || actor.role !== "admin") {
+      return { success: false as const, error: "Super Admin access required." };
+    }
+    const store = getStore();
+    const pool = ensureStoreAiPool(store);
+    const provider: AiProviderId =
+      data.provider in AI_PROVIDER_CATALOG ? data.provider : "openrouter";
+    const preset = AI_PROVIDER_CATALOG[provider];
+    const nowIso = new Date().toISOString();
+
+    const existingIdx = data.id ? pool.nodes.findIndex((n) => n.id === data.id) : -1;
+    const existing = existingIdx >= 0 ? pool.nodes[existingIdx] : undefined;
+
+    const incomingKey = (data.apiKey || "").trim();
+    const resolvedKey = incomingKey || existing?.apiKey || "";
+    if (!resolvedKey && !preset.supportsKeyless) {
+      return {
+        success: false as const,
+        error: `An API key is required for ${preset.name}.`,
+      };
+    }
+
+    const cleanModel = (data.model || preset.defaultModel).trim();
+    if (!cleanModel) {
+      return { success: false as const, error: "Model ID is required." };
+    }
+
+    const nextNode: AiPoolNode = {
+      id: existing?.id || `ainode-${provider}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      label: (data.label || `${preset.name} (${cleanModel})`).trim(),
+      provider,
+      apiKey: resolvedKey,
+      baseUrl: (data.baseUrl || preset.defaultBaseUrl).trim(),
+      model: cleanModel,
+      fallbackModels: Array.isArray(data.fallbackModels)
+        ? data.fallbackModels.map((m) => m.trim()).filter(Boolean)
+        : existing?.fallbackModels,
+      enabled: data.enabled !== undefined ? Boolean(data.enabled) : existing?.enabled ?? true,
+      priority:
+        typeof data.priority === "number" && Number.isFinite(data.priority)
+          ? Math.max(1, Math.round(data.priority))
+          : existing?.priority ?? pool.nodes.length + 1,
+      weight:
+        typeof data.weight === "number" && Number.isFinite(data.weight)
+          ? Math.min(100, Math.max(1, Math.round(data.weight)))
+          : existing?.weight ?? 10,
+      capabilities:
+        Array.isArray(data.capabilities) && data.capabilities.length > 0
+          ? data.capabilities
+          : undefined,
+      temperature: typeof data.temperature === "number" ? data.temperature : existing?.temperature,
+      maxTokens: typeof data.maxTokens === "number" ? data.maxTokens : existing?.maxTokens,
+      timeoutMs: typeof data.timeoutMs === "number" ? data.timeoutMs : existing?.timeoutMs,
+      notes: data.notes !== undefined ? data.notes.trim() || undefined : existing?.notes,
+      status: incomingKey ? "untested" : existing?.status || "untested",
+      cooldownUntil: incomingKey ? undefined : existing?.cooldownUntil,
+      lastLatencyMs: existing?.lastLatencyMs,
+      avgLatencyMs: existing?.avgLatencyMs,
+      totalRequests: existing?.totalRequests || 0,
+      totalFailures: existing?.totalFailures || 0,
+      totalInputTokens: existing?.totalInputTokens || 0,
+      totalOutputTokens: existing?.totalOutputTokens || 0,
+      lastSuccessAt: existing?.lastSuccessAt,
+      lastErrorAt: existing?.lastErrorAt,
+      lastError: incomingKey ? undefined : existing?.lastError,
+      createdAt: existing?.createdAt || nowIso,
+      updatedAt: nowIso,
+    };
+
+    if (existingIdx >= 0) {
+      pool.nodes[existingIdx] = nextNode;
+    } else {
+      pool.nodes.push(nextNode);
+    }
+    pool.nodes.sort((a, b) => a.priority - b.priority || a.createdAt.localeCompare(b.createdAt));
+    pool.updatedAt = nowIso;
+    scheduleDiskPersist();
+
+    return {
+      success: true as const,
+      nodeId: nextNode.id,
+      config: sanitizeAiPoolConfig(pool, store.serverGeminiApiKey),
+    };
+  });
+
+export const serverDeleteAiPoolNode = createServerFn({ method: "POST" })
+  .validator((data: { id: string }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || actor.role !== "admin") {
+      return { success: false as const, error: "Super Admin access required." };
+    }
+    const store = getStore();
+    const pool = ensureStoreAiPool(store);
+    pool.nodes = pool.nodes.filter((n) => n.id !== data.id);
+    if (pool.taskPreferredNodeIds) {
+      for (const [k, v] of Object.entries(pool.taskPreferredNodeIds)) {
+        if (v === data.id) {
+          delete pool.taskPreferredNodeIds[k as AiTaskCapability];
+        }
+      }
+    }
+    pool.updatedAt = new Date().toISOString();
+    scheduleDiskPersist();
+    return {
+      success: true as const,
+      config: sanitizeAiPoolConfig(pool, store.serverGeminiApiKey),
+    };
+  });
+
+export const serverTestAiPoolNode = createServerFn({ method: "POST" })
+  .validator((data: { nodeId?: string | undefined; testAll?: boolean | undefined }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    const pool = ensureStoreAiPool(store);
+    const effective = buildEffectivePoolNodes(pool, store.serverGeminiApiKey);
+    const targets = data.testAll
+      ? effective.filter((n) => n.enabled)
+      : effective.filter((n) => n.id === data.nodeId);
+
+    if (targets.length === 0) {
+      return { success: false as const, error: "No matching AI pool node found to test." };
+    }
+
+    const results: Array<{
+      nodeId: string;
+      label: string;
+      provider: AiProviderId;
+      model: string;
+      ok: boolean;
+      latencyMs: number;
+      reply?: string | undefined;
+      error?: string | undefined;
+    }> = [];
+
+    for (const target of targets) {
+      const ping = await pingAiPoolNode(target);
+      const persisted = pool.nodes.find((n) => n.id === target.id);
+      if (persisted) {
+        persisted.lastLatencyMs = ping.latencyMs;
+        if (ping.ok) {
+          persisted.status = "healthy";
+          persisted.cooldownUntil = undefined;
+          persisted.lastSuccessAt = new Date().toISOString();
+          persisted.lastError = undefined;
+          persisted.avgLatencyMs = persisted.avgLatencyMs
+            ? Math.round(persisted.avgLatencyMs * 0.6 + ping.latencyMs * 0.4)
+            : ping.latencyMs;
+        } else {
+          persisted.status = "error";
+          persisted.lastErrorAt = new Date().toISOString();
+          persisted.lastError = ping.error || "Health check failed";
+        }
+        persisted.updatedAt = new Date().toISOString();
+      }
+      results.push({
+        nodeId: target.id,
+        label: target.label,
+        provider: target.provider,
+        model: ping.model,
+        ok: ping.ok,
+        latencyMs: ping.latencyMs,
+        reply: ping.reply,
+        error: ping.error,
+      });
+    }
+
+    scheduleDiskPersist();
+    return {
+      success: true as const,
+      results,
+      config: sanitizeAiPoolConfig(pool, store.serverGeminiApiKey),
+    };
+  });
+
+export const serverResetAiPoolTelemetry = createServerFn({ method: "POST" }).handler(async () => {
+  const actor = await getActorFromRequest();
+  if (!actor || actor.role !== "admin") {
+    return { success: false as const, error: "Super Admin access required." };
+  }
+  const store = getStore();
+  const pool = ensureStoreAiPool(store);
+  for (const node of pool.nodes) {
+    node.cooldownUntil = undefined;
+    if (node.status === "cooldown" || node.status === "error") {
+      node.status = "untested";
+    }
+    node.lastError = undefined;
+    node.totalRequests = 0;
+    node.totalFailures = 0;
+    node.totalInputTokens = 0;
+    node.totalOutputTokens = 0;
+  }
+  pool.logs = [];
+  pool.updatedAt = new Date().toISOString();
+  scheduleDiskPersist();
+  return {
+    success: true as const,
+    config: sanitizeAiPoolConfig(pool, store.serverGeminiApiKey),
+  };
+});
+
+export const serverAiSuggestPracticalGrade = createServerFn({ method: "POST" })
+  .validator(
+    (data: { submissionId: string; preferredNodeId?: string | undefined }) => data,
+  )
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    const pool = ensureStoreAiPool(store);
+    if (!hasAnyConfiguredAiProvider(pool, store.serverGeminiApiKey)) {
+      return {
+        success: false as const,
+        error: "No AI provider configured. Add OpenRouter, Gemini, OpenAI, or Claude in Admin → AI Pool.",
+      };
+    }
+    const submission = (store.practicalSubmissions || []).find((s) => s.id === data.submissionId);
+    if (!submission) {
+      return { success: false as const, error: "Practical submission not found." };
+    }
+    const exam = (store.practicalExams || []).find((e) => e.id === submission.practicalExamId);
+    if (!exam) {
+      return { success: false as const, error: "Associated practical exam not found." };
+    }
+    try {
+      const suggestion = await suggestPracticalGradeViaAiPool(
+        pool,
+        {
+          exam,
+          submission,
+          preferredNodeId: data.preferredNodeId,
+          actorName: actor.name,
+        },
+        {
+          legacyServerGeminiKey: store.serverGeminiApiKey,
+          onMutate: () => scheduleDiskPersist(),
+        },
+      );
+      return { success: true as const, suggestion };
+    } catch (err) {
+      return {
+        success: false as const,
+        error: err instanceof Error ? err.message : "AI practical grading suggestion failed.",
+      };
+    }
+  });
+
+export const serverAiDraftLmsContent = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      courseId: string;
+      kind: "material" | "announcement";
+      topic: string;
+      sessionLabel?: string | undefined;
+      extraNotes?: string | undefined;
+      preferredNodeId?: string | undefined;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    const pool = ensureStoreAiPool(store);
+    if (!hasAnyConfiguredAiProvider(pool, store.serverGeminiApiKey)) {
+      return {
+        success: false as const,
+        error: "No AI provider configured. Add OpenRouter, Gemini, OpenAI, or Claude in Admin → AI Pool.",
+      };
+    }
+    const course = store.courses.find((c) => c.id === data.courseId);
+    try {
+      const draft = await draftLmsContentViaAiPool(
+        pool,
+        {
+          kind: data.kind,
+          topic: data.topic,
+          courseTitle: course?.titleEn,
+          sessionLabel: data.sessionLabel,
+          extraNotes: data.extraNotes,
+          preferredNodeId: data.preferredNodeId,
+          actorName: actor.name,
+        },
+        {
+          legacyServerGeminiKey: store.serverGeminiApiKey,
+          onMutate: () => scheduleDiskPersist(),
+        },
+      );
+      return { success: true as const, draft };
+    } catch (err) {
+      return {
+        success: false as const,
+        error: err instanceof Error ? err.message : "AI LMS drafting failed.",
+      };
+    }
+  });
+
+export const serverAiAnalyzeExamSession = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      sessionId: string;
+      preferredNodeId?: string | undefined;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    const pool = ensureStoreAiPool(store);
+    if (!hasAnyConfiguredAiProvider(pool, store.serverGeminiApiKey)) {
+      return {
+        success: false as const,
+        error: "No AI provider configured. Add OpenRouter, Gemini, OpenAI, or Claude in Admin → AI Pool.",
+      };
+    }
+    const session = store.examSessions.find(
+      (s) => s.id === data.sessionId || s.pin === data.sessionId,
+    );
+    if (!session) {
+      return { success: false as const, error: "Exam session not found." };
+    }
+    const results = store.examResults.filter(
+      (r) => r.sessionId === session.id || r.pin === session.pin,
+    );
+    if (results.length === 0) {
+      return {
+        success: false as const,
+        error: "This session has no candidate results yet to analyze.",
+      };
+    }
+    const passThresholdPct =
+      session.passThresholdPct ?? store.branding.defaultPassThresholdPct ?? 40;
+    try {
+      const report = await analyzeExamSessionViaAiPool(
+        pool,
+        {
+          session,
+          results,
+          passThresholdPct,
+          preferredNodeId: data.preferredNodeId,
+          actorName: actor.name,
+        },
+        {
+          legacyServerGeminiKey: store.serverGeminiApiKey,
+          onMutate: () => scheduleDiskPersist(),
+        },
+      );
+      return { success: true as const, report };
+    } catch (err) {
+      return {
+        success: false as const,
+        error: err instanceof Error ? err.message : "AI cohort diagnostic failed.",
       };
     }
   });

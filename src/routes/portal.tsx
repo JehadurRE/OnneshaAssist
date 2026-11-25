@@ -29,8 +29,11 @@ import {
 import {
   Award,
   BookOpen,
+  Bot,
+  Check,
   CheckCircle2,
   ClipboardList,
+  Copy,
   ExternalLink,
   Film,
   Loader2,
@@ -39,12 +42,15 @@ import {
   Mail,
   MessageCircle,
   Phone,
+  Send,
   ShieldCheck,
   Sparkles,
   Timer,
+  Trash2,
   Upload,
   User,
 } from "lucide-react";
+import type { TutorStudyMode } from "@/lib/ai-tutor-core";
 
 function localizeMissing(code: string, lang: string): string {
   const mapBn: Record<string, string> = {
@@ -130,7 +136,19 @@ function StudentPortalPage() {
   >("overview");
   const [switchingCourse, setSwitchingCourse] = useState(false);
   const [tutorQ, setTutorQ] = useState("");
-  const [tutorA, setTutorA] = useState<string | null>(null);
+  const [tutorMode, setTutorMode] = useState<TutorStudyMode>("explain");
+  const [tutorMessages, setTutorMessages] = useState<
+    Array<{
+      id: string;
+      role: "user" | "assistant";
+      content: string;
+      provider?: string;
+      model?: string;
+      latencyMs?: number;
+      error?: boolean;
+    }>
+  >([]);
+  const [copiedTutorMsgId, setCopiedTutorMsgId] = useState<string | null>(null);
   const [tutorBusy, setTutorBusy] = useState(false);
 
   const [drafts, setDrafts] = useState<Record<string, TaskDraft>>({});
@@ -244,7 +262,7 @@ function StudentPortalPage() {
         res.practicalExam as PracticalExam | undefined,
         res.submission as PracticalSubmission | undefined,
       );
-      setTutorA(null);
+      setTutorMessages([]);
       setTutorQ("");
     } catch (err) {
       setNoticeTone("err");
@@ -310,26 +328,69 @@ function StudentPortalPage() {
     }
   };
 
-  const askTutor = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!portal?.success || !portal.course?.id) return;
+  const sendTutorQuestion = async (questionText: string) => {
+    const cleanQ = questionText.trim();
+    if (!cleanQ || !portal?.success || !portal.course?.id || tutorBusy) return;
+    const userMsgId = `u-${Date.now()}`;
+    const historySnapshot = tutorMessages
+      .filter((m) => !m.error)
+      .slice(-6)
+      .map((m) => ({ role: m.role, content: m.content }));
+    setTutorMessages((prev) => [...prev, { id: userMsgId, role: "user", content: cleanQ }]);
+    setTutorQ("");
     setTutorBusy(true);
-    setTutorA(null);
     try {
       const res = await serverAskCourseTutor({
         data: {
           courseId: portal.course.id,
-          question: tutorQ,
+          question: cleanQ,
           rollNumber: portal.student?.rollNumber,
           lang: lang === "bn" ? "bn" : "en",
+          mode: tutorMode,
+          history: historySnapshot,
         },
       });
-      setTutorA(res.success ? res.answer : res.error || "Tutor unavailable.");
+      if (res.success) {
+        setTutorMessages((prev) => [
+          ...prev,
+          {
+            id: `a-${Date.now()}`,
+            role: "assistant",
+            content: res.answer,
+            provider: res.provider,
+            model: res.model,
+            latencyMs: res.latencyMs,
+          },
+        ]);
+      } else {
+        setTutorMessages((prev) => [
+          ...prev,
+          {
+            id: `e-${Date.now()}`,
+            role: "assistant",
+            content: res.error || "Tutor unavailable.",
+            error: true,
+          },
+        ]);
+      }
     } catch (err) {
-      setTutorA(err instanceof Error ? err.message : "Tutor failed.");
+      setTutorMessages((prev) => [
+        ...prev,
+        {
+          id: `e-${Date.now()}`,
+          role: "assistant",
+          content: err instanceof Error ? err.message : "Tutor failed.",
+          error: true,
+        },
+      ]);
     } finally {
       setTutorBusy(false);
     }
+  };
+
+  const askTutor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await sendTutorQuestion(tutorQ);
   };
 
   const onFile = async (task: PracticalTask, file: File | null) => {
@@ -979,43 +1040,228 @@ function StudentPortalPage() {
             )}
 
             {portalTab === "tutor" && (
-              <section className="staff-panel space-y-3">
-                <h2 className="font-bold flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-amber-500" />
-                  {lang === "bn" ? "AI কোর্স টিউটর" : "AI course tutor"}
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  {lang === "bn"
-                    ? "প্রকাশিত ম্যাটেরিয়ালের উপর ভিত্তি করে প্রশ্ন করুন। পরীক্ষার আগে রিভিশনে কাজে লাগে।"
-                    : "Ask questions grounded in published materials — great for pre-exam revision."}
-                </p>
+              <section className="staff-panel space-y-4 overflow-hidden">
+                {/* Modern Tutor Header */}
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/70 pb-3.5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-violet-500/20 text-primary shadow-xs">
+                      <Bot className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="font-display text-base font-extrabold text-foreground">
+                          {lang === "bn" ? "AI কোর্স টিউটর" : "AI Course Tutor"}
+                        </h2>
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase ${
+                            portal.hasAiTutor
+                              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                              : "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+                          }`}
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${
+                              portal.hasAiTutor ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
+                            }`}
+                          />
+                          {portal.hasAiTutor ? "AI Pool Online" : "Offline"}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {lang === "bn"
+                          ? "প্রকাশিত কোর্স ম্যাটেরিয়ালের ওপর ভিত্তি করে তাৎক্ষণিক ব্যাখ্যা, প্র্যাকটিস প্রশ্ন ও রিভিশন সহায়তা।"
+                          : "Multi-turn assistant strictly grounded in your course materials for fast revision & exam prep."}
+                      </p>
+                    </div>
+                  </div>
+
+                  {tutorMessages.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setTutorMessages([])}
+                      className="inline-flex items-center gap-1 rounded-xl border border-border px-2.5 py-1.5 text-[11px] font-bold text-muted-foreground hover:text-foreground hover:bg-accent transition"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>{lang === "bn" ? "চ্যাট মুছুন" : "Clear chat"}</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Study Mode Selector Pills */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {(
+                    [
+                      ["explain", lang === "bn" ? "সহজ ব্যাখ্যা" : "Explain Concept"],
+                      ["practice", lang === "bn" ? "পরীক্ষার প্র্যাকটিস" : "Exam Practice Q&A"],
+                      ["capstone", lang === "bn" ? "ক্যাপস্টোন গাইড" : "Capstone Checklist"],
+                      ["summary", lang === "bn" ? "দ্রুত রিভিশন" : "Rapid Summary"],
+                    ] as Array<[TutorStudyMode, string]>
+                  ).map(([modeId, label]) => (
+                    <button
+                      key={modeId}
+                      type="button"
+                      onClick={() => setTutorMode(modeId)}
+                      className={`rounded-xl border px-3 py-1.5 text-xs font-bold transition ${
+                        tutorMode === modeId
+                          ? "border-primary bg-primary text-primary-foreground shadow-xs"
+                          : "border-border bg-background text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
                 {!portal.hasAiTutor && (
-                  <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-800 dark:text-amber-200">
-                    AI Tutor needs a Gemini key in Admin → Settings.
+                  <p className="rounded-2xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-xs font-semibold text-amber-800 dark:text-amber-200">
+                    AI Tutor needs at least one active provider (OpenRouter, Gemini, OpenAI, Claude,
+                    or Groq) in Admin → AI Pool.
                   </p>
                 )}
-                <form onSubmit={askTutor} className="space-y-2">
-                  <textarea
-                    className="staff-input min-h-[88px]"
+
+                {/* Chat Thread */}
+                <div className="min-h-[240px] max-h-[460px] overflow-y-auto rounded-2xl border border-border/80 bg-muted/20 p-4 space-y-3.5">
+                  {tutorMessages.length === 0 ? (
+                    <div className="py-6 text-center space-y-4">
+                      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                        <Sparkles className="h-6 w-6" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="font-display text-sm font-bold text-foreground">
+                          {lang === "bn"
+                            ? "যেকোনো সেশন বা ফাইনাল পরীক্ষা নিয়ে প্রশ্ন করুন"
+                            : "Ask anything about your course sessions or Final Exam"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {lang === "bn"
+                            ? "নিচের যেকোনো দ্রুত প্রশ্ন বেছে নিন বা নিজে লিখুন:"
+                            : "Try a quick starter prompt or type your own question below:"}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap justify-center gap-2 max-w-xl mx-auto">
+                        {(lang === "bn"
+                          ? [
+                              "ফাইনাল ক্যাপস্টোনে কী কী জমা দিতে হবে?",
+                              "গুরুত্বপূর্ণ টপিকগুলোর দ্রুত রিভিশন সামারি দাও",
+                              "আমাকে ৩টি প্র্যাকটিস MCQ প্রশ্ন করো",
+                            ]
+                          : [
+                              "What deliverables are required for the final capstone?",
+                              "Give me a rapid revision summary of the key exam topics",
+                              "Quiz me with 3 practice exam questions from our materials",
+                            ]
+                        ).map((starter) => (
+                          <button
+                            key={starter}
+                            type="button"
+                            disabled={!portal.hasAiTutor || tutorBusy}
+                            onClick={() => void sendTutorQuestion(starter)}
+                            className="rounded-xl border border-primary/25 bg-card px-3 py-2 text-xs font-semibold text-foreground hover:border-primary/60 hover:bg-primary/5 transition disabled:opacity-50"
+                          >
+                            {starter}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    tutorMessages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`flex gap-2.5 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                      >
+                        {msg.role === "assistant" && (
+                          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                            <Bot className="h-4 w-4" />
+                          </div>
+                        )}
+                        <div
+                          className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap shadow-xs ${
+                            msg.role === "user"
+                              ? "bg-primary text-primary-foreground rounded-tr-sm"
+                              : msg.error
+                                ? "border border-destructive/35 bg-destructive/10 text-destructive rounded-tl-sm"
+                                : "border border-border bg-card text-foreground rounded-tl-sm"
+                          }`}
+                        >
+                          <div>{msg.content}</div>
+                          {msg.role === "assistant" && !msg.error && (
+                            <div className="mt-2.5 pt-2 border-t border-border/60 flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted-foreground font-mono">
+                              <span>
+                                {msg.provider ? `${msg.provider} · ` : ""}
+                                {msg.model || "AI Pool"}
+                                {msg.latencyMs ? ` · ${msg.latencyMs}ms` : ""}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await navigator.clipboard.writeText(msg.content);
+                                    setCopiedTutorMsgId(msg.id);
+                                    window.setTimeout(() => setCopiedTutorMsgId(null), 1800);
+                                  } catch {
+                                    // ignore clipboard errors
+                                  }
+                                }}
+                                className="inline-flex items-center gap-1 font-sans font-bold text-primary hover:underline"
+                              >
+                                {copiedTutorMsgId === msg.id ? (
+                                  <>
+                                    <Check className="h-3 w-3" /> Copied
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="h-3 w-3" /> Copy
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  {tutorBusy && (
+                    <div className="flex items-center gap-2.5 text-xs font-semibold text-primary">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-primary/15">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      </div>
+                      <span>
+                        {lang === "bn"
+                          ? "কোর্স ম্যাটেরিয়াল যাচাই করে উত্তর তৈরি হচ্ছে…"
+                          : "Synthesizing grounded answer from course materials…"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Input Composer */}
+                <form onSubmit={askTutor} className="flex flex-col sm:flex-row gap-2.5">
+                  <input
+                    type="text"
+                    className="staff-input flex-1 text-sm"
                     value={tutorQ}
+                    disabled={tutorBusy || !portal.hasAiTutor}
                     onChange={(e) => setTutorQ(e.target.value)}
                     placeholder={
                       lang === "bn"
-                        ? "যেমন: ফাইনাল ক্যাপস্টোনে কী কী জমা দিতে হবে?"
-                        : "e.g. What must I submit in the final capstone?"
+                        ? "আপনার প্রশ্ন লিখুন (যেমন: ফাইনাল ক্যাপস্টোন সাবমিশনের ধাপ কী কী?)…"
+                        : "Ask your course question (e.g. How should I structure my capstone deliverables?)…"
                     }
                     required
                   />
-                  <button type="submit" disabled={tutorBusy} className="staff-btn-primary">
-                    {tutorBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
-                    {lang === "bn" ? "জিজ্ঞাসা করুন" : "Ask tutor"}
+                  <button
+                    type="submit"
+                    disabled={tutorBusy || !tutorQ.trim() || !portal.hasAiTutor}
+                    className="staff-btn-primary !justify-center sm:px-5 disabled:opacity-50"
+                  >
+                    {tutorBusy ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
+                    <span>{lang === "bn" ? "পাঠান" : "Send"}</span>
                   </button>
                 </form>
-                {tutorA && (
-                  <div className="rounded-2xl border border-border bg-muted/30 px-4 py-3 text-sm whitespace-pre-wrap">
-                    {tutorA}
-                  </div>
-                )}
               </section>
             )}
 
