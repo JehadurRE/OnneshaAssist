@@ -4,7 +4,7 @@
  * Contains all 102 Drive files, 22 subfolders, and 11 Canva Editable/View decks
  * structured into 12 clean session packs (Master Pack + Session 00 to Session 10).
  */
-import type { CourseKnowledgeEntry, CourseMaterial } from "./types";
+import type { CourseKnowledgeEntry, CourseMaterial, CourseRecording } from "./types";
 import { SANJIBON_COURSE } from "./sanjibon-seed-data";
 
 export const SANJIBON_DRIVE_ROOT_URL =
@@ -14,7 +14,35 @@ export const SANJIBON_CANVA_ROOT_URL = "https://www.canva.com/folder/FAHavzClUOM
 
 export const SANJIBON_DRIVE_FILE_COUNT = 102;
 
+export const SANJIBON_DAY5_ZOOM_RECORDING_URL =
+  "https://us06web.zoom.us/rec/share/9kRo5Zw_xG9AibcUa86yZKj07joxcKPyzYkvWAspopy8x3W5w2USTGAV2e8DpA0.UnlpR8cWcerO6gCV?pwd=DBrftVeUT3LKxUCWjQAAIAAAAFlsun4CqByjHJ-r5L1MuyF50Qy37W1mpyQ1O-4OTuibwvkPwjiTWdNP4tChDWf_jTAwMDAwNA";
+
 const DRIVE_SEED_TS = "2026-11-15T00:00:00.000Z";
+const ZOOM_REC_TS = "2026-11-20T04:39:00.000Z";
+
+export function buildSanjibonClassRecordings(
+  courseId: string = SANJIBON_COURSE.id,
+): CourseRecording[] {
+  return [
+    {
+      id: "rec-sanjibon-day5-zoom",
+      courseId,
+      sessionLabel: "Day 5 · Sessions 09 & 10",
+      titleEn: "Day 5 — Live Class Recording (24/7 AI Chatbot, Make.com Automation & Capstone)",
+      titleBn: "দিন ৫ — লাইভ ক্লাস রেকর্ডিং (এআই চ্যাটবট, Make.com অটোমেশন ও ক্যাপস্টোন)",
+      descriptionEn:
+        "Official Zoom cloud recording from Day 5 (20 Nov 2026) covering Voiceflow AI Chatbot, Make.com webhook lead automation, Final Exam briefing, and Capstone Defense.",
+      descriptionBn:
+        "দিন ৫-এর (২০ নভেম্বর ২০২৬) অফিশিয়াল Zoom ক্লাউড রেকর্ডিং — Voiceflow এআই চ্যাটবট, Make.com ওয়েবহুক অটোমেশন, ফাইনাল পরীক্ষা ও ক্যাপস্টোন ডিফেন্স।",
+      url: SANJIBON_DAY5_ZOOM_RECORDING_URL,
+      provider: "zoom",
+      sortOrder: 5,
+      published: true,
+      createdAt: ZOOM_REC_TS,
+      updatedAt: ZOOM_REC_TS,
+    },
+  ];
+}
 
 export function buildSanjibonDriveMaterials(
   courseId: string = SANJIBON_COURSE.id,

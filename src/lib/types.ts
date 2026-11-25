@@ -602,9 +602,9 @@ export interface CourseRecording {
   titleBn: string;
   descriptionEn?: string | undefined;
   descriptionBn?: string | undefined;
-  /** YouTube / Drive / Vimeo / direct URL. */
+  /** Zoom / YouTube / Drive / Vimeo / direct URL. */
   url: string;
-  provider?: "youtube" | "drive" | "vimeo" | "other" | undefined;
+  provider?: "zoom" | "youtube" | "drive" | "vimeo" | "other" | undefined;
   durationMin?: number | undefined;
   sortOrder: number;
   published: boolean;

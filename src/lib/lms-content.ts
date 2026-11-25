@@ -8,6 +8,7 @@ import type {
 } from "./types";
 import { SANJIBON_COURSE } from "./sanjibon-seed-data";
 import {
+  buildSanjibonClassRecordings,
   buildSanjibonDriveMaterials,
   SANJIBON_DRIVE_ROOT_URL,
 } from "./sanjibon-drive-materials";
@@ -79,24 +80,7 @@ export function buildDefaultSanjibonLmsContent(): {
     },
   ];
 
-  const recordings: CourseRecording[] = [
-    {
-      id: "rec-sanjibon-welcome",
-      courseId,
-      sessionLabel: "Session 01",
-      titleEn: "Welcome & course walkthrough (replace with your recording)",
-      titleBn: "স্বাগতম ও কোর্স ওয়াকথ্রু (আপনার রেকর্ডিং দিয়ে বদলান)",
-      descriptionEn: "Paste your YouTube/Drive class recording URL in Admin → Learning Content.",
-      descriptionBn: "Admin → Learning Content এ YouTube/Drive ক্লাস রেকর্ডিং URL দিন।",
-      url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-      provider: "youtube",
-      durationMin: 15,
-      sortOrder: 1,
-      published: true,
-      createdAt: now,
-      updatedAt: now,
-    },
-  ];
+  const recordings: CourseRecording[] = buildSanjibonClassRecordings(courseId);
 
   const announcements: CourseAnnouncement[] = [
     {

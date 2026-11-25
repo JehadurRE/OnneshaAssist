@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { buildAiTutorContext, buildDefaultSanjibonLmsContent } from "../lms-content";
 import { buildDefaultSanjibonKnowledgeBase, retrieveCourseKnowledgeContext } from "../course-kb";
 import {
+  buildSanjibonClassRecordings,
   buildSanjibonDriveKnowledgeBase,
   buildSanjibonDriveMaterials,
+  SANJIBON_DAY5_ZOOM_RECORDING_URL,
   SANJIBON_DRIVE_FILE_COUNT,
   SANJIBON_DRIVE_ROOT_URL,
 } from "../sanjibon-drive-materials";
@@ -16,6 +18,10 @@ describe("LMS seed + Google Drive course materials + AI context", () => {
     expect(seed.materials.length).toBeGreaterThanOrEqual(15);
     expect(seed.recordings.length).toBeGreaterThan(0);
     expect(seed.materials.every((m) => m.published)).toBe(true);
+    expect(seed.recordings.some((r) => r.url.includes("dQw4w9WgXcQ"))).toBe(false);
+    const zoomRec = buildSanjibonClassRecordings().find((r) => r.id === "rec-sanjibon-day5-zoom");
+    expect(zoomRec?.provider).toBe("zoom");
+    expect(zoomRec?.url).toBe(SANJIBON_DAY5_ZOOM_RECORDING_URL);
 
     const drivePacks = buildSanjibonDriveMaterials();
     expect(drivePacks.length).toBe(12);

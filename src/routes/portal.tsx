@@ -2077,8 +2077,8 @@ function StudentPortalPage() {
                   </h2>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {lang === "bn"
-                      ? "যেকোনো সময় আপনার ক্লাস ভিডিও রিভিশন করুন।"
-                      : "Watch recorded sessions directly here or open in YouTube / Google Drive."}
+                      ? "Zoom ক্লাউড রেকর্ডিং ও ক্লাস ভিডিও যেকোনো সময় রিভিশন করুন।"
+                      : "Watch recorded sessions directly here or open in Zoom, YouTube, or Google Drive."}
                   </p>
                 </div>
 
@@ -2093,6 +2093,8 @@ function StudentPortalPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {recordings.map((r) => {
                       const ytId = extractYouTubeId(r.url);
+                      const isZoom = r.provider === "zoom" || r.url.toLowerCase().includes("zoom.us");
+                      const hasAutoPasscode = isZoom && r.url.includes("pwd=");
                       const isPlaying = playingRecordingId === r.id;
                       return (
                         <div
@@ -2133,6 +2135,38 @@ function StudentPortalPage() {
                                 )}
                               </button>
                             )
+                          ) : isZoom ? (
+                            <a
+                              href={r.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="group relative flex items-center justify-between gap-4 bg-gradient-to-br from-sky-600/15 via-blue-600/10 to-card px-5 py-6 border-b border-border/60 hover:from-sky-600/20 transition"
+                            >
+                              <div className="flex items-center gap-3.5">
+                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-sky-600 text-white shadow-md group-hover:scale-105 transition-transform">
+                                  <Play className="h-5 w-5 fill-current ml-0.5" />
+                                </div>
+                                <div>
+                                  <div className="text-xs font-extrabold text-sky-700 dark:text-sky-300">
+                                    Zoom Cloud Recording
+                                  </div>
+                                  <div className="mt-0.5 text-[11px] text-muted-foreground">
+                                    {hasAutoPasscode
+                                      ? lang === "bn"
+                                        ? "পাসকোড স্বয়ংক্রিয়ভাবে যুক্ত • ক্লিক করে দেখুন"
+                                        : "Direct access link with passcode included"
+                                      : lang === "bn"
+                                        ? "ক্লিক করে Zoom-এ ভিডিও দেখুন"
+                                        : "Click to watch recording on Zoom"}
+                                  </div>
+                                </div>
+                              </div>
+                              {r.durationMin && (
+                                <span className="rounded-lg bg-card border border-border px-2.5 py-1 font-mono text-xs font-bold shrink-0">
+                                  {r.durationMin} min
+                                </span>
+                              )}
+                            </a>
                           ) : (
                             <div className="flex items-center justify-between bg-muted/40 px-5 py-6 border-b border-border/60">
                               <div className="flex items-center gap-3">
@@ -2153,9 +2187,16 @@ function StudentPortalPage() {
 
                           <div className="p-4 flex-1 flex flex-col justify-between gap-3">
                             <div>
-                              <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
-                                {r.sessionLabel || r.provider || "Session"}
-                              </span>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
+                                  {r.sessionLabel || r.provider || "Session"}
+                                </span>
+                                {isZoom && (
+                                  <span className="rounded-md bg-sky-500/12 px-2 py-0.5 text-[10px] font-bold text-sky-700 dark:text-sky-300">
+                                    Zoom
+                                  </span>
+                                )}
+                              </div>
                               <h3 className="mt-2 font-display text-sm font-extrabold text-foreground leading-snug">
                                 {lang === "bn" ? r.titleBn : r.titleEn}
                               </h3>
@@ -2171,10 +2212,22 @@ function StudentPortalPage() {
                               href={r.url}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:underline"
+                              className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
+                                isZoom
+                                  ? "bg-sky-600 text-white hover:bg-sky-500 shadow-xs"
+                                  : "border border-primary/30 bg-primary/8 text-primary hover:bg-primary/15"
+                              }`}
                             >
                               <ExternalLink className="h-3.5 w-3.5" />
-                              <span>{lang === "bn" ? "নতুন ট্যাবে খুলুন" : "Open video externally"}</span>
+                              <span>
+                                {isZoom
+                                  ? lang === "bn"
+                                    ? "Zoom রেকর্ডিং দেখুন"
+                                    : "Watch Zoom Recording"
+                                  : lang === "bn"
+                                    ? "নতুন ট্যাবে খুলুন"
+                                    : "Open video externally"}
+                              </span>
                             </a>
                           </div>
                         </div>

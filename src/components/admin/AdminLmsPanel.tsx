@@ -821,15 +821,28 @@ export function AdminLmsPanel(props: { courses: Course[]; initialCourseId?: stri
                 />
               </label>
               <label className="font-semibold sm:col-span-2">
-                URL (YouTube / Drive)
+                URL (Zoom / YouTube / Drive)
                 <input
                   className="mt-1 staff-input font-mono"
                   value={r.url}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const nextUrl = e.target.value;
+                    const lower = nextUrl.toLowerCase();
+                    const detectedProvider: CourseRecording["provider"] = lower.includes("zoom.us")
+                      ? "zoom"
+                      : lower.includes("youtube.com") || lower.includes("youtu.be")
+                        ? "youtube"
+                        : lower.includes("drive.google.com")
+                          ? "drive"
+                          : lower.includes("vimeo.com")
+                            ? "vimeo"
+                            : r.provider || "other";
                     setRecordings((prev) =>
-                      prev.map((x) => (x.id === r.id ? { ...x, url: e.target.value } : x)),
-                    )
-                  }
+                      prev.map((x) =>
+                        x.id === r.id ? { ...x, url: nextUrl, provider: detectedProvider } : x,
+                      ),
+                    );
+                  }}
                 />
               </label>
               <label className="inline-flex items-center gap-2 font-semibold">
