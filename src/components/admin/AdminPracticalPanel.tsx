@@ -875,6 +875,41 @@ export function AdminPracticalPanel(props: {
     patchRequirement({ requiredQuizIds: Array.from(current) });
   };
 
+  const loadGradeSheet = async () => {
+    if (!course) return;
+    setSheetLoading(true);
+    setNotice(null);
+    try {
+      const res = await serverGetFinalGradeSheet({ data: { courseId: course.id } });
+      if (!res.success) {
+        setNotice(res.error || "Could not load gradesheet.");
+        setSheetRows([]);
+        setSheetMeta(null);
+        return;
+      }
+      setSheetRows(res.rows);
+      setSheetMeta({
+        courseTitle: res.courseTitle,
+        examTitle: res.examTitle,
+        courseCode: res.courseCode,
+        generatedAt: res.generatedAt,
+        counts: res.counts,
+        quizMaxMarks: res.quizMaxMarks,
+        practicalMaxMarks: res.practicalMaxMarks,
+        totalMaxMarks: res.totalMaxMarks,
+      });
+    } finally {
+      setSheetLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!loading && deskView === "sheet" && course) {
+      void loadGradeSheet();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when desk/course/load changes
+  }, [loading, deskView, courseId]);
+
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground p-6">
@@ -989,41 +1024,6 @@ export function AdminPracticalPanel(props: {
       setBusyId(null);
     }
   };
-
-  const loadGradeSheet = async () => {
-    if (!course) return;
-    setSheetLoading(true);
-    setNotice(null);
-    try {
-      const res = await serverGetFinalGradeSheet({ data: { courseId: course.id } });
-      if (!res.success) {
-        setNotice(res.error || "Could not load gradesheet.");
-        setSheetRows([]);
-        setSheetMeta(null);
-        return;
-      }
-      setSheetRows(res.rows);
-      setSheetMeta({
-        courseTitle: res.courseTitle,
-        examTitle: res.examTitle,
-        courseCode: res.courseCode,
-        generatedAt: res.generatedAt,
-        counts: res.counts,
-        quizMaxMarks: res.quizMaxMarks,
-        practicalMaxMarks: res.practicalMaxMarks,
-        totalMaxMarks: res.totalMaxMarks,
-      });
-    } finally {
-      setSheetLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (deskView === "sheet" && course) {
-      void loadGradeSheet();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when desk/course changes
-  }, [deskView, courseId]);
 
   const exportGradeSheetCsv = () => {
     if (!sheetRows.length || !sheetMeta) {
