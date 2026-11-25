@@ -63,6 +63,10 @@ import {
   retrieveCourseKnowledgeContext,
 } from "./course-kb";
 import {
+  buildSanjibonDriveKnowledgeBase,
+  buildSanjibonDriveMaterials,
+} from "./sanjibon-drive-materials";
+import {
   askCourseTutorViaAiPool,
   type TutorHistoryTurn,
   type TutorStudyMode,
@@ -246,6 +250,7 @@ interface PersistentStoreData {
   courseRequirements?: CourseCompletionRequirement[] | undefined;
   seededLmsContentV1?: boolean | undefined;
   seededCourseKbV1?: boolean | undefined;
+  migratedSanjibonDriveLmsV1?: boolean | undefined;
   purgedSampleData?: boolean | undefined;
   purgedUnder50Initial?: boolean | undefined;
   purgedBcsDemoCourse?: boolean | undefined;
@@ -764,6 +769,7 @@ function loadInitialStore(): PersistentStoreData {
             courseRequirements: parsed.courseRequirements || [],
             seededLmsContentV1: !!parsed.seededLmsContentV1,
             seededCourseKbV1: !!parsed.seededCourseKbV1,
+            migratedSanjibonDriveLmsV1: !!parsed.migratedSanjibonDriveLmsV1,
             purgedSampleData: purged,
             purgedUnder50Initial: !!parsed.purgedUnder50Initial,
             purgedBcsDemoCourse: !!parsed.purgedBcsDemoCourse,
@@ -820,6 +826,7 @@ function loadInitialStore(): PersistentStoreData {
     courseRequirements: [],
     seededLmsContentV1: false,
     seededCourseKbV1: false,
+    migratedSanjibonDriveLmsV1: false,
     purgedSampleData: false,
     purgedUnder50Initial: true,
     purgedBcsDemoCourse: true,
@@ -987,10 +994,55 @@ function getStore(): PersistentStoreData {
       scheduleDiskPersist();
       console.info("[OnneshaServerStore] LMS learning content seed applied");
     } else {
-      ensureLmsContentSeeded(loaded);
+      const lmsChanged = ensureLmsContentSeeded(loaded);
+      if (lmsChanged) scheduleDiskPersist();
+    }
+    if (!loaded.migratedSanjibonDriveLmsV1) {
+      const driveChanged = ensureSanjibonDriveMaterialsMigrated(loaded);
+      loaded.migratedSanjibonDriveLmsV1 = true;
+      scheduleDiskPersist();
+      console.info(
+        `[OnneshaServerStore] Sanjibon Google Drive LMS & KB migration v1 applied: changed=${driveChanged}`,
+      );
     }
   }
   return globalStore.__onneshaStore;
+}
+
+export function ensureSanjibonDriveMaterialsMigrated(store: PersistentStoreData): boolean {
+  if (!store.courseMaterials) store.courseMaterials = [];
+  if (!store.courseKnowledgeBase) store.courseKnowledgeBase = [];
+  const courseId = SANJIBON_COURSE.id;
+  let changed = false;
+
+  const existingMatIds = new Set(store.courseMaterials.map((m) => m.id));
+  const driveMaterials = buildSanjibonDriveMaterials(courseId);
+  const missingMats = driveMaterials.filter((m) => !existingMatIds.has(m.id));
+  if (missingMats.length > 0) {
+    // Shift legacy default seed cards down so Master Pack + Sessions 00..10 appear first in order.
+    for (const m of store.courseMaterials) {
+      if (m.courseId === courseId && m.id === "mat-sanjibon-overview" && m.sortOrder < 12) {
+        m.sortOrder = 12;
+      } else if (m.courseId === courseId && m.id === "mat-sanjibon-final-brief" && m.sortOrder < 13) {
+        m.sortOrder = 13;
+      } else if (m.courseId === courseId && m.id === "mat-sanjibon-tools" && m.sortOrder < 14) {
+        m.sortOrder = 14;
+      }
+    }
+    store.courseMaterials.push(...missingMats);
+    store.courseMaterials.sort((a, b) => a.sortOrder - b.sortOrder);
+    changed = true;
+  }
+
+  const existingKbIds = new Set(store.courseKnowledgeBase.map((k) => k.id));
+  const driveKb = buildSanjibonDriveKnowledgeBase(courseId);
+  const missingKb = driveKb.filter((k) => !existingKbIds.has(k.id));
+  if (missingKb.length > 0) {
+    store.courseKnowledgeBase.push(...missingKb);
+    changed = true;
+  }
+
+  return changed;
 }
 
 export function ensureCourseKbSeeded(store: PersistentStoreData): boolean {
@@ -1014,11 +1066,18 @@ export function ensureLmsContentSeeded(store: PersistentStoreData): boolean {
   const kbChanged = ensureCourseKbSeeded(store);
   const courseId = SANJIBON_COURSE.id;
   const hasMat = store.courseMaterials.some((m) => m.courseId === courseId);
-  if (hasMat) return kbChanged;
+  if (hasMat) {
+    const driveChanged = !store.migratedSanjibonDriveLmsV1
+      ? ensureSanjibonDriveMaterialsMigrated(store)
+      : false;
+    if (driveChanged) store.migratedSanjibonDriveLmsV1 = true;
+    return kbChanged || driveChanged;
+  }
   const seed = buildDefaultSanjibonLmsContent();
   store.courseMaterials.unshift(...seed.materials);
   store.courseRecordings.unshift(...seed.recordings);
   store.courseAnnouncements.unshift(...seed.announcements);
+  store.migratedSanjibonDriveLmsV1 = true;
   return true;
 }
 
@@ -7946,8 +8005,13 @@ export const serverSaveCourseMaterial = createServerFn({ method: "POST" })
       createdAt: data.material.createdAt || now,
     };
     const idx = store.courseMaterials.findIndex((m) => m.id === incoming.id);
-    if (idx >= 0) store.courseMaterials[idx] = incoming;
-    else store.courseMaterials.unshift(incoming);
+    if (idx >= 0) {
+      const existing = store.courseMaterials[idx]!;
+      store.courseMaterials[idx] = {
+        ...incoming,
+        resources: incoming.resources !== undefined ? incoming.resources : existing.resources,
+      };
+    } else store.courseMaterials.unshift(incoming);
     scheduleDiskPersist();
     return { success: true as const, material: incoming };
   });

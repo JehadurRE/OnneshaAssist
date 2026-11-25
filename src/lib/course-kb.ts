@@ -8,6 +8,7 @@ import type {
   PracticalExam,
 } from "./types";
 import { SANJIBON_COURSE } from "./sanjibon-seed-data";
+import { buildSanjibonDriveKnowledgeBase } from "./sanjibon-drive-materials";
 
 export const COURSE_KB_CATEGORIES: Array<{
   id: CourseKnowledgeCategory;
@@ -98,6 +99,7 @@ Submission Tip: Always double-check that Google Drive / Canva / live landing URL
       createdAt: SEED_TS,
       updatedAt: SEED_TS,
     },
+    ...buildSanjibonDriveKnowledgeBase(courseId),
   ];
 }
 
@@ -166,7 +168,10 @@ export function retrieveCourseKnowledgeContext(params: {
   // 2. Published LMS Materials
   for (const m of params.materials) {
     if (!m.published) continue;
-    const body = [m.titleEn, m.titleBn, m.descriptionEn, m.descriptionBn, m.bodyEn, m.bodyBn, m.url]
+    const resLine = m.resources?.length
+      ? `Attached Files/Links: ${m.resources.map((r) => `${r.labelEn} (${r.url})`).join("; ")}`
+      : "";
+    const body = [m.titleEn, m.titleBn, m.descriptionEn, m.descriptionBn, m.bodyEn, m.bodyBn, m.url, resLine]
       .filter(Boolean)
       .join("\n");
     if (!body.trim()) continue;

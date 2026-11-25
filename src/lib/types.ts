@@ -551,6 +551,27 @@ export interface PracticalSubmission {
 /** Course learning material (PDF / link / note / slide) for the student portal LMS. */
 export type CourseMaterialType = "pdf" | "link" | "note" | "slide" | "other";
 
+export type CourseMaterialResourceKind =
+  | "pdf"
+  | "pptx"
+  | "docx"
+  | "md"
+  | "canva_edit"
+  | "canva_view"
+  | "canva_folder"
+  | "image"
+  | "folder"
+  | "txt"
+  | "link";
+
+export interface CourseMaterialResource {
+  labelEn: string;
+  labelBn?: string | undefined;
+  kind: CourseMaterialResourceKind;
+  url: string;
+  fileName?: string | undefined;
+}
+
 export interface CourseMaterial {
   id: string;
   courseId: string;
@@ -565,6 +586,8 @@ export interface CourseMaterial {
   /** Inline note body (used as AI tutor grounding too). */
   bodyEn?: string | undefined;
   bodyBn?: string | undefined;
+  /** Optional multi-file resource attachments (Slides PDF/PPTX, DOCX/MD notes, Canva links, Visuals, Drive folder). */
+  resources?: CourseMaterialResource[] | undefined;
   sortOrder: number;
   published: boolean;
   createdAt: string;

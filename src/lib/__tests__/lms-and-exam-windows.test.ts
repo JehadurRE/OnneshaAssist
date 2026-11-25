@@ -1,20 +1,56 @@
 import { describe, expect, it } from "vitest";
 import { buildAiTutorContext, buildDefaultSanjibonLmsContent } from "../lms-content";
+import { buildDefaultSanjibonKnowledgeBase, retrieveCourseKnowledgeContext } from "../course-kb";
+import {
+  buildSanjibonDriveKnowledgeBase,
+  buildSanjibonDriveMaterials,
+  SANJIBON_DRIVE_FILE_COUNT,
+  SANJIBON_DRIVE_ROOT_URL,
+} from "../sanjibon-drive-materials";
 import { isPracticalWindowOpen } from "../practical-exam";
 import type { PracticalExam } from "../types";
 
-describe("LMS seed + AI context", () => {
-  it("seeds published Sanjibon materials and recordings", () => {
+describe("LMS seed + Google Drive course materials + AI context", () => {
+  it("seeds published Sanjibon materials including all 102 Drive files across 12 session packs", () => {
     const seed = buildDefaultSanjibonLmsContent();
-    expect(seed.materials.length).toBeGreaterThan(0);
+    expect(seed.materials.length).toBeGreaterThanOrEqual(15);
     expect(seed.recordings.length).toBeGreaterThan(0);
     expect(seed.materials.every((m) => m.published)).toBe(true);
+
+    const drivePacks = buildSanjibonDriveMaterials();
+    expect(drivePacks.length).toBe(12);
+    expect(SANJIBON_DRIVE_FILE_COUNT).toBe(102);
+
+    const driveFileLinks = drivePacks.flatMap((m) =>
+      (m.resources || []).filter((r) => r.url.startsWith("https://drive.google.com/file/d/")),
+    );
+    expect(driveFileLinks.length).toBe(102);
+    expect(drivePacks[0]?.url).toBe(SANJIBON_DRIVE_ROOT_URL);
+
     const ctx = buildAiTutorContext({
       materials: seed.materials,
       courseTitle: "AI-DM-04",
+      maxChars: 24000,
     });
     expect(ctx).toContain("AI-DM-04");
     expect(ctx.toLowerCase()).toContain("final");
+    expect(ctx).toContain("Session 00");
+  });
+
+  it("indexes all Drive session handbooks in the dedicated course Knowledge Base", () => {
+    const kb = buildDefaultSanjibonKnowledgeBase();
+    const driveKb = buildSanjibonDriveKnowledgeBase();
+    expect(driveKb.length).toBe(12);
+    expect(kb.length).toBeGreaterThanOrEqual(15);
+
+    const retrieved = retrieveCourseKnowledgeContext({
+      kbEntries: kb,
+      materials: buildSanjibonDriveMaterials(),
+      query: "SLABC product photography formula session 03",
+    });
+    expect(retrieved.totalIndexedDocs).toBeGreaterThanOrEqual(24);
+    expect(retrieved.context.toLowerCase()).toContain("slabc");
+    expect(retrieved.sourcesUsed.length).toBeGreaterThan(0);
   });
 });
 
