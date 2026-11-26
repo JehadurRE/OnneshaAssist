@@ -1,4 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 118" width="256" height="118"><g>
-				<polygon fill="#77C1D2" points="199.111112 0 256 56.6393762 199.111112 113.278752 142.222222 56.6393762"></polygon>
-				<polygon fill="#2D3441" points="56.8888888 0 174.826667 117.420507 61.0488889 117.420507 0 56.6393762"></polygon>
-    </g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="118" viewBox="0 0 256 118"><g><polygon fill="#77C1D2" points="199.111 0 256 56.639 199.111 113.279 142.222 56.639"/><polygon fill="#2D3441" points="56.889 0 174.827 117.421 61.049 117.421 0 56.639"/></g></svg>
