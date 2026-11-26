@@ -3596,7 +3596,14 @@ export const serverGetEmailTemplatePreview = createServerFn({ method: "POST" })
 
 /** Staff test-send of any branded email template to verify inbox rendering & provider delivery. */
 export const serverSendTestEmail = createServerFn({ method: "POST" })
-  .validator((data: { to: string; templateId: EmailTemplateId }) => data)
+  .validator(
+    (data: {
+      to: string;
+      templateId: EmailTemplateId;
+      courseId?: string | undefined;
+      rollNumber?: string | undefined;
+    }) => data,
+  )
   .handler(async ({ data }) => {
     const actor = await getActorFromRequest();
     if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
@@ -3607,9 +3614,106 @@ export const serverSendTestEmail = createServerFn({ method: "POST" })
       return { success: false as const, error: "Enter a valid destination email address." };
     }
     const store = getStore();
+    ensureFinalPracticalSeeded(store);
     const origin = resolvePublicOrigin();
     const brand = buildEmailBrandContext(store.branding, origin);
-    const rendered = buildSampleEmailTemplate(data.templateId, brand);
+    const portalUrl = `${origin}/portal`;
+    const today = new Date().toISOString().slice(0, 10);
+
+    let rendered = buildSampleEmailTemplate(data.templateId, brand);
+
+    if (data.templateId === "course_certificate" && data.courseId) {
+      const course = store.courses.find((c) => c.id === data.courseId);
+      if (course) {
+        const design = getCertificateDesignProfile(store.branding, "course_completion");
+        const roll = (data.rollNumber || "").trim();
+        if (roll) {
+          const rollTok = normalizeRollToken(roll);
+          const rosterStudent = store.roster.find(
+            (s) => normalizeRollToken(s.rollNumber) === rollTok,
+          );
+          const submission = (store.practicalSubmissions || []).find(
+            (s) =>
+              s.courseId === course.id &&
+              normalizeRollToken(s.rollNumber) === rollTok,
+          );
+          const existingCert = store.certificates.find(
+            (c) =>
+              c.kind === "course_completion" &&
+              c.courseId === course.id &&
+              normalizeRollToken(c.studentRoll || "") === rollTok,
+          );
+          const practicalExam = (store.practicalExams || []).find((p) => p.courseId === course.id);
+          const requirement =
+            (store.courseRequirements || []).find((r) => r.courseId === course.id) ||
+            buildDefaultCourseRequirement(course.id);
+          const quizResult = resolveQuizResultForStudent(
+            store,
+            roll,
+            practicalExam?.linkedQuizId || requirement.requiredQuizIds?.[0],
+            requirement.requiredQuizIds,
+            {
+              phone: submission?.phone || rosterStudent?.phone,
+              studentName: submission?.studentName || rosterStudent?.name,
+              regionId: submission?.regionId || rosterStudent?.regionId,
+            },
+          );
+          const snap = evaluateCourseCompletion({
+            course,
+            requirement,
+            practicalExam,
+            submission,
+            quizResult,
+          });
+          const certNo =
+            existingCert?.certificateNumber ||
+            makeCourseCertificateNumber(course.code, rosterStudent?.rollNumber || roll);
+          const scoreVal =
+            existingCert?.combinedScorePct ??
+            existingCert?.accuracyPercent ??
+            (snap.combinedPct > 0 ? snap.combinedPct : undefined);
+          rendered = buildCourseCertificateEmail({
+            studentName:
+              existingCert?.studentName ||
+              submission?.studentName ||
+              rosterStudent?.name ||
+              roll,
+            studentRoll: rosterStudent?.rollNumber || submission?.rollNumber || roll,
+            regionName:
+              existingCert?.regionName ||
+              submission?.regionName ||
+              rosterStudent?.regionName ||
+              "",
+            courseTitle: course.titleEn,
+            courseCode: course.code,
+            certificateNumber: certNo,
+            combinedScorePct: scoreVal,
+            issueDate: existingCert?.issueDate || today,
+            verifyUrl: `${origin}/verify/${certNo}`,
+            portalUrl,
+            badgeTitle: design.certBadgeTitle,
+            brand,
+          });
+        } else {
+          const sampleCertNo = makeCourseCertificateNumber(course.code, "GZP-01");
+          rendered = buildCourseCertificateEmail({
+            studentName: "Md. Sifatul Islam Bhuiya",
+            studentRoll: "GZP-01",
+            regionName: "Gazipur Training Centre",
+            courseTitle: course.titleEn,
+            courseCode: course.code,
+            certificateNumber: sampleCertNo,
+            combinedScorePct: 92,
+            issueDate: today,
+            verifyUrl: `${origin}/verify/${sampleCertNo}`,
+            portalUrl,
+            badgeTitle: design.certBadgeTitle,
+            brand,
+          });
+        }
+      }
+    }
+
     const sent = await sendTransactionalEmail({
       to,
       subject: `[Test] ${rendered.subject}`,
@@ -7228,7 +7332,7 @@ export const serverGetStudentFinalQuizRecord = createServerFn({ method: "POST" }
     };
   });
 
-/** Staff: full Final Exam gradesheet (quiz /30 + practical /40 + total /70) for all submissions. */
+/** Staff: full Final Exam gradesheet (quiz /30 + practical /40 + total /70) for all enrolled & submitted students. */
 export const serverGetFinalGradeSheet = createServerFn({ method: "POST" })
   .validator((data: { courseId?: string | undefined }) => data)
   .handler(async ({ data }) => {
@@ -7241,53 +7345,155 @@ export const serverGetFinalGradeSheet = createServerFn({ method: "POST" })
     const courseId = data.courseId || "course-sanjibon-ai-dm";
     const exam = (store.practicalExams || []).find((p) => p.courseId === courseId);
     if (!exam) return { success: false as const, error: "Final exam not found." };
-    const course = (store.courses || []).find((c) => c.id === courseId);
-    const requirement = (store.courseRequirements || []).find((r) => r.courseId === courseId);
+    const course =
+      (store.courses || []).find((c) => c.id === courseId) ||
+      SANJIBON_COURSE;
+    const requirement =
+      (store.courseRequirements || []).find((r) => r.courseId === courseId) ||
+      buildDefaultCourseRequirement(courseId);
     const submissions = (store.practicalSubmissions || []).filter(
       (s) => s.practicalExamId === exam.id || s.courseId === courseId,
     );
+    const roster = store.roster || [];
+    const rosterByRoll = new Map<string, RosterStudent>();
+    const rosterByPhone = new Map<string, RosterStudent>();
+    for (const st of roster) {
+      const rTok = normalizeRollToken(st.rollNumber);
+      if (rTok && !rosterByRoll.has(rTok)) rosterByRoll.set(rTok, st);
+      const pTok = normalizeBdPhone(st.phone || "");
+      if (pTok.length >= 10 && !rosterByPhone.has(pTok)) rosterByPhone.set(pTok, st);
+    }
+
     const quizByRoll = new Map<string, { accuracyPct: number; found: boolean }>();
+    const eligibilityByRoll = new Map<string, { eligible: boolean; missing: string[] }>();
+
     for (const sub of submissions) {
       const tok = normalizeRollToken(sub.rollNumber);
-      if (quizByRoll.has(tok)) continue;
+      const subPhone = normalizeBdPhone(sub.phone || "");
+      const rosterMatch =
+        (tok ? rosterByRoll.get(tok) : undefined) ||
+        (subPhone.length >= 10 ? rosterByPhone.get(subPhone) : undefined);
       const match = resolveQuizResultMatchForStudent(
         store,
         sub.rollNumber,
         exam.linkedQuizId,
-        requirement?.requiredQuizIds,
+        requirement.requiredQuizIds,
         {
-          phone: sub.phone,
-          studentName: sub.studentName,
-          regionId: sub.regionId,
+          phone: sub.phone || rosterMatch?.phone,
+          studentName: sub.studentName || rosterMatch?.name,
+          regionId: sub.regionId || rosterMatch?.regionId,
+        },
+      );
+      if (tok && !quizByRoll.has(tok)) {
+        quizByRoll.set(tok, {
+          accuracyPct: match?.result.accuracyPct ?? 0,
+          found: !!match,
+        });
+      }
+      const snap = evaluateCourseCompletion({
+        course,
+        requirement,
+        practicalExam: exam,
+        submission: sub,
+        quizResult: match?.result,
+      });
+      if (tok) {
+        eligibilityByRoll.set(tok, {
+          eligible: snap.eligibleForCourseCertificate,
+          missing: snap.missing,
+        });
+      }
+      if (rosterMatch) {
+        const rTok = normalizeRollToken(rosterMatch.rollNumber);
+        if (rTok && !quizByRoll.has(rTok)) {
+          quizByRoll.set(rTok, {
+            accuracyPct: match?.result.accuracyPct ?? 0,
+            found: !!match,
+          });
+        }
+        if (rTok && !eligibilityByRoll.has(rTok)) {
+          eligibilityByRoll.set(rTok, {
+            eligible: snap.eligibleForCourseCertificate,
+            missing: snap.missing,
+          });
+        }
+      }
+    }
+
+    for (const st of roster) {
+      const tok = normalizeRollToken(st.rollNumber);
+      if (!tok || quizByRoll.has(tok)) continue;
+      const match = resolveQuizResultMatchForStudent(
+        store,
+        st.rollNumber,
+        exam.linkedQuizId,
+        requirement.requiredQuizIds,
+        {
+          phone: st.phone,
+          studentName: st.name,
+          regionId: st.regionId,
         },
       );
       quizByRoll.set(tok, {
         accuracyPct: match?.result.accuracyPct ?? 0,
         found: !!match,
       });
+      const snap = evaluateCourseCompletion({
+        course,
+        requirement,
+        practicalExam: exam,
+        submission: undefined,
+        quizResult: match?.result,
+      });
+      eligibilityByRoll.set(tok, {
+        eligible: snap.eligibleForCourseCertificate,
+        missing: snap.missing,
+      });
     }
+
+    const courseCertificates = (store.certificates || []).filter(
+      (c) => c.kind === "course_completion" && c.courseId === courseId,
+    );
+
     const rows: FinalGradeSheetRow[] = buildFinalGradeSheetRows({
       exam,
       submissions,
+      roster,
+      certificates: courseCertificates,
       quizByRoll,
+      eligibilityByRoll,
       normalizeRoll: normalizeRollToken,
     });
+    const participated = rows.filter((r) => r.participated).length;
+    const notParticipated = rows.length - participated;
     const graded = rows.filter((r) => r.practicalGraded).length;
     const withQuiz = rows.filter((r) => r.quizFound).length;
+    const certified = rows.filter((r) => !!r.certificateNumber).length;
+    const emailed = rows.filter((r) => !!r.certificateEmailedAt).length;
     return {
       success: true as const,
       courseId,
-      courseCode: course?.code || "",
-      courseTitle: course?.titleEn || exam.titleEn,
+      courseCode: course.code || "",
+      courseTitle: course.titleEn || exam.titleEn,
       examTitle: exam.titleEn,
       quizMaxMarks: exam.quizMaxMarks || FINAL_QUIZ_MARKS,
       practicalMaxMarks: exam.practicalMaxMarks || FINAL_PRACTICAL_MARKS,
       totalMaxMarks: exam.totalMaxMarks || FINAL_TOTAL_MARKS,
       generatedAt: new Date().toISOString(),
+      emailStatus: {
+        configured: isPortalEmailConfigured(),
+        resend: !!resolveResendApiKey(),
+        brevo: !!resolveBrevoApiKey(),
+        fromEmail: resolvePortalOtpFromEmail(),
+      },
       counts: {
         total: rows.length,
+        participated,
+        notParticipated,
         graded,
         withQuiz,
+        certified,
+        emailed,
       },
       rows,
     };
@@ -7776,6 +7982,8 @@ function issueCourseCertificateInStore(params: {
   courseId: string;
   rollNumber: string;
   instructorName: string;
+  /** Staff override to issue a course certificate even when automated requirements are incomplete. */
+  force?: boolean | undefined;
 }): {
   success: boolean;
   certificate?: CertificateData;
@@ -7791,16 +7999,28 @@ function issueCourseCertificateInStore(params: {
     (store.courseRequirements || []).find((r) => r.courseId === course.id) ||
     buildDefaultCourseRequirement(course.id);
   const practicalExam = (store.practicalExams || []).find((p) => p.courseId === course.id);
+  const rollTok = normalizeRollToken(params.rollNumber);
   const submission = (store.practicalSubmissions || []).find(
     (s) =>
       s.courseId === course.id &&
-      normalizeRollToken(s.rollNumber) === normalizeRollToken(params.rollNumber),
+      normalizeRollToken(s.rollNumber) === rollTok,
   );
+  const subPhone = normalizeBdPhone(submission?.phone || "");
+  const rosterStudent =
+    store.roster.find((s) => normalizeRollToken(s.rollNumber) === rollTok) ||
+    (subPhone.length >= 10
+      ? store.roster.find((s) => normalizeBdPhone(s.phone || "") === subPhone)
+      : undefined);
   const quizResult = resolveQuizResultForStudent(
     store,
     params.rollNumber,
     practicalExam?.linkedQuizId || requirement.requiredQuizIds?.[0],
     requirement.requiredQuizIds,
+    {
+      phone: submission?.phone || rosterStudent?.phone,
+      studentName: submission?.studentName || rosterStudent?.name,
+      regionId: submission?.regionId || rosterStudent?.regionId,
+    },
   );
   const snap = evaluateCourseCompletion({
     course,
@@ -7809,7 +8029,7 @@ function issueCourseCertificateInStore(params: {
     submission,
     quizResult,
   });
-  if (!snap.eligibleForCourseCertificate) {
+  if (!snap.eligibleForCourseCertificate && !params.force) {
     return {
       success: false,
       error: `Not eligible for course certificate. Missing: ${snap.missing.join(", ")}`,
@@ -7817,7 +8037,17 @@ function issueCourseCertificateInStore(params: {
     };
   }
 
-  const certNo = makeCourseCertificateNumber(course.code, snap.rollNumber);
+  const resolvedRoll =
+    snap.rollNumber || rosterStudent?.rollNumber || params.rollNumber.trim();
+  const resolvedName =
+    snap.studentName || rosterStudent?.name || resolvedRoll;
+  const resolvedRegion =
+    submission?.regionName || quizResult?.regionName || rosterStudent?.regionName || "";
+  if (!resolvedRoll) {
+    return { success: false, error: "Student roll number not found." };
+  }
+
+  const certNo = makeCourseCertificateNumber(course.code, resolvedRoll);
   const existing = store.certificates.find(
     (c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase(),
   );
@@ -7826,16 +8056,17 @@ function issueCourseCertificateInStore(params: {
   }
 
   const titleEn = requirement.certificateTitleEn || "Certificate of Course Completion";
+  const hasCombinedScore = snap.combinedPct > 0;
   const unsigned: CertificateData = {
-    id: `cert-course-${course.id}-${normalizeRollToken(snap.rollNumber)}`,
+    id: `cert-course-${course.id}-${normalizeRollToken(resolvedRoll)}`,
     certificateNumber: certNo,
     kind: "course_completion",
     courseId: course.id,
     courseCode: course.code,
     courseTitle: course.titleEn,
-    studentName: snap.studentName,
-    studentRoll: snap.rollNumber,
-    regionName: submission?.regionName || quizResult?.regionName || "",
+    studentName: resolvedName,
+    studentRoll: resolvedRoll,
+    regionName: resolvedRegion,
     quizTitle: course.titleEn || `${course.code} — ${titleEn}`,
     quizAccuracyPct: snap.quizAccuracyPct,
     practicalScorePct: snap.practicalScorePct,
@@ -7854,8 +8085,12 @@ function issueCourseCertificateInStore(params: {
     instructorName: params.instructorName || "Chief Assessment Officer",
     verificationUrl: `/verify/${certNo}`,
     verified: true,
-    credentialStatementEn: `This certifies that the learner has successfully completed the full course ${course.titleEn} (${course.code}), including the Final Quiz and Final Practical Examination, with a combined score of ${snap.combinedPct}%.`,
-    credentialStatementBn: `এই সনদপত্র দ্বারা প্রত্যয়িত হচ্ছে যে শিক্ষার্থী ${course.titleBn} (${course.code}) কোর্সের চূড়ান্ত কুইজ ও প্রায়োগিক পরীক্ষা সম্পন্ন করে সম্মিলিত ${snap.combinedPct}% নম্বর অর্জন করেছেন।`,
+    credentialStatementEn: hasCombinedScore
+      ? `This certifies that the learner has successfully completed the full course ${course.titleEn} (${course.code}), including the Final Quiz and Final Practical Examination, with a combined score of ${snap.combinedPct}%.`
+      : `This certifies that the learner has completed the course ${course.titleEn} (${course.code}).`,
+    credentialStatementBn: hasCombinedScore
+      ? `এই সনদপত্র দ্বারা প্রত্যয়িত হচ্ছে যে শিক্ষার্থী ${course.titleBn} (${course.code}) কোর্সের চূড়ান্ত কুইজ ও প্রায়োগিক পরীক্ষা সম্পন্ন করে সম্মিলিত ${snap.combinedPct}% নম্বর অর্জন করেছেন।`
+      : `এই সনদপত্র দ্বারা প্রত্যয়িত হচ্ছে যে শিক্ষার্থী ${course.titleBn} (${course.code}) কোর্স সম্পন্ন করেছেন।`,
   };
   const sealed = sealCertificateWithLedger(unsigned, store.certificates, getStorePaths().dataDir);
   store.certificates = [
@@ -7893,11 +8128,18 @@ function findRosterEmailForRoll(
 async function emailCertificateToStudent(params: {
   store: PersistentStoreData;
   certificate: CertificateData;
+  overrideTo?: string | undefined;
 }): Promise<
-  | { emailed: true; to: string; provider: string }
+  | { emailed: true; to: string; provider: string; emailedAt: string }
   | { emailed: false; reason: string }
 > {
-  const to = findRosterEmailForRoll(params.store, params.certificate.studentRoll || "");
+  const overrideClean = params.overrideTo ? normalizePortalEmail(params.overrideTo) : "";
+  if (overrideClean && !isValidPortalEmail(overrideClean)) {
+    return { emailed: false, reason: "Invalid destination email address." };
+  }
+  const to =
+    overrideClean ||
+    findRosterEmailForRoll(params.store, params.certificate.studentRoll || "");
   if (!to) {
     return {
       emailed: false,
@@ -7925,7 +8167,9 @@ async function emailCertificateToStudent(params: {
           courseCode: params.certificate.courseCode || "",
           certificateNumber: certNo,
           combinedScorePct:
-            params.certificate.combinedScorePct ?? params.certificate.accuracyPercent,
+            (params.certificate.combinedScorePct ?? params.certificate.accuracyPercent ?? 0) > 0
+              ? params.certificate.combinedScorePct ?? params.certificate.accuracyPercent
+              : undefined,
           issueDate: params.certificate.issueDate,
           verifyUrl: verifyPath,
           portalUrl,
@@ -7956,15 +8200,30 @@ async function emailCertificateToStudent(params: {
     html: content.html,
   });
   if (!sent.ok) return { emailed: false, reason: sent.error };
-  return { emailed: true, to, provider: sent.provider };
+
+  const emailedAt = new Date().toISOString();
+  const certIdx = params.store.certificates.findIndex(
+    (c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase(),
+  );
+  if (certIdx >= 0 && params.store.certificates[certIdx]) {
+    params.store.certificates[certIdx] = {
+      ...params.store.certificates[certIdx]!,
+      emailedAt,
+      emailedTo: to,
+      emailedProvider: sent.provider,
+    };
+    scheduleDiskPersist();
+  }
+  return { emailed: true, to, provider: sent.provider, emailedAt };
 }
 
 /** @deprecated Prefer emailCertificateToStudent — kept for call-site clarity. */
 async function emailCourseCertificateToStudent(params: {
   store: PersistentStoreData;
   certificate: CertificateData;
+  overrideTo?: string | undefined;
 }): Promise<
-  | { emailed: true; to: string; provider: string }
+  | { emailed: true; to: string; provider: string; emailedAt: string }
   | { emailed: false; reason: string }
 > {
   return emailCertificateToStudent(params);
@@ -7977,6 +8236,10 @@ export const serverIssueCourseCertificate = createServerFn({ method: "POST" })
       rollNumber: string;
       /** Default true — email certificate when roster email exists. */
       sendEmail?: boolean | undefined;
+      /** Staff override to issue even when automated requirements are incomplete. */
+      force?: boolean | undefined;
+      /** Optional destination email override (when student has no roster email). */
+      toEmail?: string | undefined;
     }) => data,
   )
   .handler(async ({ data }) => {
@@ -7990,6 +8253,7 @@ export const serverIssueCourseCertificate = createServerFn({ method: "POST" })
       courseId: data.courseId,
       rollNumber: data.rollNumber,
       instructorName: actor.name || "Chief Assessment Officer",
+      force: data.force,
     });
     if (!res.success || !res.certificate) return res;
     const wantEmail = data.sendEmail !== false;
@@ -7997,6 +8261,7 @@ export const serverIssueCourseCertificate = createServerFn({ method: "POST" })
     const email = await emailCourseCertificateToStudent({
       store,
       certificate: res.certificate,
+      overrideTo: data.toEmail,
     });
     return { ...res, email };
   });
@@ -8079,7 +8344,9 @@ export const serverBulkIssueCourseCertificates = createServerFn({ method: "POST"
  * Picks quiz vs course template from `certificate.kind`.
  */
 export const serverSendCertificateEmail = createServerFn({ method: "POST" })
-  .validator((data: { certificateNumber: string }) => data)
+  .validator(
+    (data: { certificateNumber: string; toEmail?: string | undefined }) => data,
+  )
   .handler(async ({ data }) => {
     const actor = await getActorFromRequest();
     if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
@@ -8091,19 +8358,26 @@ export const serverSendCertificateEmail = createServerFn({ method: "POST" })
       (c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase(),
     );
     if (!certificate) return { success: false as const, error: "Certificate not found." };
-    const mail = await emailCertificateToStudent({ store, certificate });
+    const mail = await emailCertificateToStudent({
+      store,
+      certificate,
+      overrideTo: data.toEmail,
+    });
     if (!mail.emailed) return { success: false as const, error: mail.reason };
     return {
       success: true as const,
       to: mail.to,
       provider: mail.provider,
+      emailedAt: mail.emailedAt,
       kind: certificate.kind === "course_completion" ? "course_completion" : "quiz_session",
     };
   });
 
 /** Resend course-completion certificate email for an already-issued cert. */
 export const serverSendCourseCertificateEmail = createServerFn({ method: "POST" })
-  .validator((data: { certificateNumber: string }) => data)
+  .validator(
+    (data: { certificateNumber: string; toEmail?: string | undefined }) => data,
+  )
   .handler(async ({ data }) => {
     const actor = await getActorFromRequest();
     if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
@@ -8115,9 +8389,18 @@ export const serverSendCourseCertificateEmail = createServerFn({ method: "POST" 
       (c) => c.certificateNumber.toLowerCase() === certNo.toLowerCase(),
     );
     if (!certificate) return { success: false as const, error: "Certificate not found." };
-    const mail = await emailCertificateToStudent({ store, certificate });
+    const mail = await emailCertificateToStudent({
+      store,
+      certificate,
+      overrideTo: data.toEmail,
+    });
     if (!mail.emailed) return { success: false as const, error: mail.reason };
-    return { success: true as const, to: mail.to, provider: mail.provider };
+    return {
+      success: true as const,
+      to: mail.to,
+      provider: mail.provider,
+      emailedAt: mail.emailedAt,
+    };
   });
 
 export const serverGetStudentPortal = createServerFn({ method: "POST" })

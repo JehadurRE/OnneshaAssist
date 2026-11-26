@@ -21,8 +21,10 @@ import {
   serverSaveCourseRequirement,
   serverSavePracticalExam,
   serverSendCourseCertificateEmail,
+  serverSendTestEmail,
   serverSetAutoIssueQuizCertificates,
 } from "@/lib/server-session";
+import { EMAIL_TEMPLATE_CATALOG, type EmailTemplateId } from "@/lib/email-templates";
 import { db } from "@/lib/db";
 import type {
   Course,
@@ -43,11 +45,13 @@ import {
 } from "@/lib/practical-exam";
 import {
   finalGradeSheetCsv,
+  formatPracticalStatusLabel,
   type FinalGradeSheetRow,
 } from "@/lib/final-gradesheet";
 import { downloadFinalGradeSheetPdf } from "@/lib/pdf-generator";
 import {
   Award,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
@@ -63,12 +67,15 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
+  Search,
+  Send,
   Settings2,
   Sparkles,
   Square,
   Timer,
   Trash2,
   Users,
+  X,
 } from "lucide-react";
 
 export type FinalExamDeskView = "live" | "grade" | "setup" | "certs" | "sheet";
@@ -83,6 +90,25 @@ function escapeCsvCell(value: string | number | undefined | null): string {
   return s;
 }
 
+function formatMissingRequirement(code: string): string {
+  switch (code) {
+    case "final_quiz_result":
+      return "Final quiz attempt";
+    case "final_quiz_pass":
+      return "Final quiz pass mark";
+    case "practical_submission":
+      return "Practical submission";
+    case "practical_grading":
+      return "Practical grading";
+    case "practical_pass":
+      return "Practical pass mark";
+    case "combined_pass":
+      return "Combined pass threshold";
+    default:
+      return code;
+  }
+}
+
 function StatusPill({
   status,
 }: {
@@ -91,16 +117,18 @@ function StatusPill({
   const tone =
     status === "open" || status === "graded"
       ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-      : status === "late" || status === "returned" || status === "scheduled"
+      : status === "late" || status === "returned" || status === "scheduled" || status === "quiz_only"
         ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
-        : status === "closed" || status === "archived" || status === "draft"
-          ? "bg-muted text-muted-foreground"
-          : "bg-sky-500/15 text-sky-800 dark:text-sky-300";
+        : status === "not_participated"
+          ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
+          : status === "closed" || status === "archived" || status === "draft"
+            ? "bg-muted text-muted-foreground"
+            : "bg-sky-500/15 text-sky-800 dark:text-sky-300";
   return (
     <span
-      className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${tone}`}
+      className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${tone}`}
     >
-      {status}
+      {formatPracticalStatusLabel(status)}
     </span>
   );
 }
@@ -109,6 +137,8 @@ export function AdminPracticalPanel(props: {
   courses: Course[];
   quizzes: Quiz[];
   initialCourseId?: string | undefined;
+  /** Default destination email prefilled in the Test Mail checker. */
+  defaultTestEmail?: string | undefined;
   /** Controlled desk section from the URL (?desk=). */
   desk?: FinalExamDeskView | undefined;
   /** Controlled submission id from the URL (?sub=) — one student per page. */
@@ -163,12 +193,44 @@ export function AdminPracticalPanel(props: {
     examTitle: string;
     courseCode: string;
     generatedAt: string;
-    counts: { total: number; graded: number; withQuiz: number };
+    counts: {
+      total: number;
+      participated: number;
+      notParticipated: number;
+      graded: number;
+      withQuiz: number;
+      certified: number;
+      emailed: number;
+    };
+    emailStatus?:
+      | {
+          configured: boolean;
+          resend: boolean;
+          brevo: boolean;
+          fromEmail: string;
+        }
+      | undefined;
     quizMaxMarks: number;
     practicalMaxMarks: number;
     totalMaxMarks: number;
   } | null>(null);
   const [sheetLoading, setSheetLoading] = useState(false);
+  const [sheetTab, setSheetTab] = useState<"all" | "participated" | "not_participated">("all");
+  const [sheetSearch, setSheetSearch] = useState("");
+  const [sheetRegion, setSheetRegion] = useState("all");
+  const [rowSendResult, setRowSendResult] = useState<
+    Record<string, { tone: "ok" | "err"; text: string }>
+  >({});
+  const [showTestMailPanel, setShowTestMailPanel] = useState(false);
+  const [testMailTo, setTestMailTo] = useState(props.defaultTestEmail || "");
+  const [testMailTemplate, setTestMailTemplate] =
+    useState<EmailTemplateId>("course_certificate");
+  const [testMailRoll, setTestMailRoll] = useState("");
+  const [testMailBusy, setTestMailBusy] = useState(false);
+  const [testMailFeedback, setTestMailFeedback] = useState<{
+    tone: "ok" | "err";
+    text: string;
+  } | null>(null);
 
   const goDesk = (patch: {
     courseId?: string;
@@ -894,6 +956,7 @@ export function AdminPracticalPanel(props: {
         courseCode: res.courseCode,
         generatedAt: res.generatedAt,
         counts: res.counts,
+        emailStatus: res.emailStatus,
         quizMaxMarks: res.quizMaxMarks,
         practicalMaxMarks: res.practicalMaxMarks,
         totalMaxMarks: res.totalMaxMarks,
@@ -909,6 +972,53 @@ export function AdminPracticalPanel(props: {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when desk/course/load changes
   }, [loading, deskView, courseId]);
+
+  useEffect(() => {
+    if (props.defaultTestEmail && !testMailTo) {
+      setTestMailTo(props.defaultTestEmail);
+    }
+  }, [props.defaultTestEmail, testMailTo]);
+
+  const sheetCounts = useMemo(() => {
+    const total = sheetRows.length;
+    const participated = sheetRows.filter((r) => r.participated).length;
+    const notParticipated = total - participated;
+    const graded = sheetRows.filter((r) => r.practicalGraded).length;
+    const withQuiz = sheetRows.filter((r) => r.quizFound).length;
+    const certified = sheetRows.filter((r) => !!r.certificateNumber).length;
+    const emailed = sheetRows.filter((r) => !!r.certificateEmailedAt).length;
+    return {
+      total,
+      participated,
+      notParticipated,
+      graded,
+      withQuiz,
+      certified,
+      emailed,
+    };
+  }, [sheetRows]);
+
+  const sheetRegions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of sheetRows) {
+      if (r.regionName?.trim()) set.add(r.regionName.trim());
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [sheetRows]);
+
+  const filteredSheetRows = useMemo(() => {
+    const q = sheetSearch.trim().toLowerCase();
+    return sheetRows.filter((r) => {
+      if (sheetTab === "participated" && !r.participated) return false;
+      if (sheetTab === "not_participated" && r.participated) return false;
+      if (sheetRegion !== "all" && (r.regionName || "").trim() !== sheetRegion) return false;
+      if (q) {
+        const hay = `${r.rollNumber} ${r.studentName} ${r.regionName} ${r.email || ""} ${r.phone || ""} ${r.certificateNumber || ""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [sheetRows, sheetTab, sheetRegion, sheetSearch]);
 
   if (loading) {
     return (
@@ -1025,25 +1135,203 @@ export function AdminPracticalPanel(props: {
     }
   };
 
-  const exportGradeSheetCsv = () => {
-    if (!sheetRows.length || !sheetMeta) {
-      setNotice("Load the gradesheet first.");
+  const sendCertFromSheet = async (row: FinalGradeSheetRow) => {
+    if (!course) return;
+    const rowKey = row.rollNumber;
+    let overrideEmail: string | undefined;
+
+    if (row.certificateNumber) {
+      if (!row.email) {
+        const entered = window.prompt(
+          `No email on roster for ${row.studentName} (${row.rollNumber}).\nEnter recipient email to send certificate ${row.certificateNumber}:`,
+        );
+        if (!entered || !entered.trim()) return;
+        overrideEmail = entered.trim();
+      }
+      setBusyId(`sheet-cert-${rowKey}`);
+      setNotice(null);
+      try {
+        const res = await serverSendCourseCertificateEmail({
+          data: {
+            certificateNumber: row.certificateNumber,
+            ...(overrideEmail ? { toEmail: overrideEmail } : {}),
+          },
+        });
+        if (res.success) {
+          const emailedAt = res.emailedAt || new Date().toISOString();
+          setSheetRows((prev) =>
+            prev.map((r) =>
+              r.rollNumber === row.rollNumber
+                ? { ...r, certificateEmailedAt: emailedAt, certificateEmailedTo: res.to }
+                : r,
+            ),
+          );
+          setRowSendResult((prev) => ({
+            ...prev,
+            [rowKey]: { tone: "ok", text: `Sent via ${res.provider}` },
+          }));
+          setNotice(
+            `Certificate ${row.certificateNumber} sent to ${res.to} via ${res.provider}.`,
+          );
+        } else {
+          const errMsg = res.error || "Certificate email failed.";
+          setRowSendResult((prev) => ({ ...prev, [rowKey]: { tone: "err", text: errMsg } }));
+          setNotice(`${row.rollNumber}: ${errMsg}`);
+        }
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : "Certificate email failed.";
+        setRowSendResult((prev) => ({ ...prev, [rowKey]: { tone: "err", text: errMsg } }));
+        setNotice(`${row.rollNumber}: ${errMsg}`);
+      } finally {
+        setBusyId(null);
+      }
       return;
     }
-    const csv = finalGradeSheetCsv(sheetRows);
+
+    // Not yet issued — confirm if student hasn't met automated requirements
+    const needsForce = row.eligibleForCertificate === false;
+    if (needsForce) {
+      const missingList = (row.missingRequirements || [])
+        .map(formatMissingRequirement)
+        .join(", ");
+      const targetEmailHint = row.email || "an email you enter next";
+      const ok = window.confirm(
+        `${row.studentName} (${row.rollNumber}) has not met all automatic eligibility criteria${
+          missingList ? ` (missing: ${missingList})` : ""
+        }.\n\nIssue the Course Completion Certificate anyway and send it to ${targetEmailHint}?`,
+      );
+      if (!ok) return;
+    }
+
+    if (!row.email) {
+      const entered = window.prompt(
+        `No email on roster for ${row.studentName} (${row.rollNumber}).\nEnter recipient email to send their certificate:`,
+      );
+      if (!entered || !entered.trim()) return;
+      overrideEmail = entered.trim();
+    }
+
+    setBusyId(`sheet-cert-${rowKey}`);
+    setNotice(null);
+    try {
+      const res = await serverIssueCourseCertificate({
+        data: {
+          courseId: course.id,
+          rollNumber: row.rollNumber,
+          sendEmail: true,
+          force: needsForce,
+          ...(overrideEmail ? { toEmail: overrideEmail } : {}),
+        },
+      });
+      if (!res.success || !res.certificate) {
+        const errMsg = res.error || "Could not issue certificate.";
+        setRowSendResult((prev) => ({ ...prev, [rowKey]: { tone: "err", text: errMsg } }));
+        setNotice(`${row.rollNumber}: ${errMsg}`);
+        return;
+      }
+      const cert = res.certificate;
+      const mail = "email" in res ? res.email : undefined;
+      setSheetRows((prev) =>
+        prev.map((r) =>
+          r.rollNumber === row.rollNumber
+            ? {
+                ...r,
+                certificateNumber: cert.certificateNumber,
+                certificateIssuedAt: cert.signedAt || cert.issueDate,
+                ...(mail?.emailed
+                  ? {
+                      certificateEmailedAt:
+                        ("emailedAt" in mail && mail.emailedAt) || new Date().toISOString(),
+                      certificateEmailedTo: mail.to,
+                    }
+                  : {}),
+              }
+            : r,
+        ),
+      );
+      if (mail?.emailed) {
+        setRowSendResult((prev) => ({
+          ...prev,
+          [rowKey]: { tone: "ok", text: `Sent via ${mail.provider}` },
+        }));
+        setNotice(
+          `Issued ${cert.certificateNumber} & emailed ${mail.to} via ${mail.provider}.`,
+        );
+      } else {
+        const reason = mail && "reason" in mail ? mail.reason : "Email not sent";
+        setRowSendResult((prev) => ({
+          ...prev,
+          [rowKey]: { tone: "err", text: `Issued · ${reason}` },
+        }));
+        setNotice(`Issued ${cert.certificateNumber}, but email failed: ${reason}`);
+      }
+      await syncCertsIntoAdmin();
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : "Certificate send failed.";
+      setRowSendResult((prev) => ({ ...prev, [rowKey]: { tone: "err", text: errMsg } }));
+      setNotice(`${row.rollNumber}: ${errMsg}`);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleSendTestMail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const to = testMailTo.trim();
+    if (!to || testMailBusy) return;
+    setTestMailBusy(true);
+    setTestMailFeedback(null);
+    try {
+      const res = await serverSendTestEmail({
+        data: {
+          to,
+          templateId: testMailTemplate,
+          ...(testMailTemplate === "course_certificate" && course
+            ? {
+                courseId: course.id,
+                ...(testMailRoll ? { rollNumber: testMailRoll } : {}),
+              }
+            : {}),
+        },
+      });
+      if (res.success) {
+        const msg = `Test email delivered to ${res.to} via ${res.provider} · Subject: ${res.subject}`;
+        setTestMailFeedback({ tone: "ok", text: msg });
+        setNotice(msg);
+      } else {
+        const errMsg = res.error || "Test email failed.";
+        setTestMailFeedback({ tone: "err", text: errMsg });
+      }
+    } catch (err) {
+      setTestMailFeedback({
+        tone: "err",
+        text: err instanceof Error ? err.message : "Test email failed.",
+      });
+    } finally {
+      setTestMailBusy(false);
+    }
+  };
+
+  const exportGradeSheetCsv = () => {
+    if (!filteredSheetRows.length || !sheetMeta) {
+      setNotice("No rows in the current view to export.");
+      return;
+    }
+    const csv = finalGradeSheetCsv(filteredSheetRows);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `Onnesha-Final-Gradesheet-${sheetMeta.courseCode || "final"}-${new Date().toISOString().slice(0, 10)}.csv`;
+    const tabSuffix = sheetTab === "all" ? "" : `-${sheetTab}`;
+    a.download = `Onnesha-Final-Gradesheet-${sheetMeta.courseCode || "final"}${tabSuffix}-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    setNotice(`Downloaded CSV (${sheetRows.length} students).`);
+    setNotice(`Downloaded CSV (${filteredSheetRows.length} students).`);
   };
 
   const exportGradeSheetPdf = async () => {
-    if (!sheetRows.length || !sheetMeta) {
-      setNotice("Load the gradesheet first.");
+    if (!filteredSheetRows.length || !sheetMeta) {
+      setNotice("No rows in the current view to export.");
       return;
     }
     setBusyId("sheet-pdf");
@@ -1053,11 +1341,11 @@ export function AdminPracticalPanel(props: {
         courseTitle: sheetMeta.courseTitle,
         examTitle: sheetMeta.examTitle,
         courseCode: sheetMeta.courseCode,
-        rows: sheetRows,
+        rows: filteredSheetRows,
         branding: db.getBranding(),
         generatedAt: sheetMeta.generatedAt,
       });
-      setNotice(`Downloaded PDF gradesheet (${sheetRows.length} students).`);
+      setNotice(`Downloaded PDF gradesheet (${filteredSheetRows.length} students).`);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "PDF export failed.");
     } finally {
@@ -1758,12 +2046,27 @@ export function AdminPracticalPanel(props: {
             <div className="min-w-0 space-y-1">
               <h3 className="text-base font-black tracking-tight">Final Exam gradesheet</h3>
               <p className="text-xs text-muted-foreground">
-                All students — quiz /{sheetMeta?.quizMaxMarks ?? 30}, practical /
-                {sheetMeta?.practicalMaxMarks ?? 40}, total /{sheetMeta?.totalMaxMarks ?? 70}. Export
-                CSV or PDF for review and gazette.
+                Full roster &amp; exam results — quiz /{sheetMeta?.quizMaxMarks ?? 30}, practical /
+                {sheetMeta?.practicalMaxMarks ?? 40}, total /{sheetMeta?.totalMaxMarks ?? 70}.
+                Issue or resend certificates per student, or run a test mail check.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTestMailPanel((prev) => !prev);
+                  setTestMailFeedback(null);
+                }}
+                className={
+                  showTestMailPanel
+                    ? "inline-flex items-center gap-1.5 rounded-xl border border-primary/50 bg-primary/10 px-3 py-2 text-xs font-bold text-primary transition-colors"
+                    : "staff-btn-ghost"
+                }
+              >
+                <Send className="h-3.5 w-3.5" />
+                {showTestMailPanel ? "Hide mail test" : "Test mail / cert"}
+              </button>
               <button
                 type="button"
                 onClick={() => void loadGradeSheet()}
@@ -1776,15 +2079,15 @@ export function AdminPracticalPanel(props: {
               <button
                 type="button"
                 onClick={exportGradeSheetCsv}
-                disabled={!sheetRows.length}
+                disabled={!filteredSheetRows.length}
                 className="staff-btn-ghost"
               >
-                <Download className="h-3.5 w-3.5" /> CSV
+                <Download className="h-3.5 w-3.5" /> CSV ({filteredSheetRows.length})
               </button>
               <button
                 type="button"
                 onClick={() => void exportGradeSheetPdf()}
-                disabled={!sheetRows.length || busyId === "sheet-pdf"}
+                disabled={!filteredSheetRows.length || busyId === "sheet-pdf"}
                 className="staff-btn-primary"
               >
                 {busyId === "sheet-pdf" ? (
@@ -1797,17 +2100,260 @@ export function AdminPracticalPanel(props: {
             </div>
           </div>
 
+          {showTestMailPanel && (
+            <form
+              onSubmit={handleSendTestMail}
+              className="rounded-2xl border border-primary/30 bg-card p-4 shadow-xs space-y-3"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-1.5 text-sm font-black tracking-tight">
+                    <Mail className="h-4 w-4 text-primary" />
+                    <span>Test Mail &amp; Certificate Delivery Check</span>
+                  </div>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    Enter any email address to verify mail delivery and inspect how a certificate or
+                    transactional email renders in a real inbox (does not email students or issue
+                    real certificates).
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-bold">
+                  {sheetMeta?.emailStatus && (
+                    <>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 ${
+                          sheetMeta.emailStatus.resend
+                            ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                            : "border-border bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            sheetMeta.emailStatus.resend
+                              ? "bg-emerald-500"
+                              : "bg-muted-foreground"
+                          }`}
+                        />
+                        Resend {sheetMeta.emailStatus.resend ? "Ready" : "Off"}
+                      </span>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 ${
+                          sheetMeta.emailStatus.brevo
+                            ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                            : "border-border bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            sheetMeta.emailStatus.brevo
+                              ? "bg-emerald-500"
+                              : "bg-muted-foreground"
+                          }`}
+                        />
+                        Brevo {sheetMeta.emailStatus.brevo ? "Ready" : "Off"}
+                      </span>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowTestMailPanel(false)}
+                    className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label="Close test mail panel"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-12 items-end">
+                <label className="staff-field lg:col-span-4">
+                  <span className="staff-label">Test recipient email</span>
+                  <input
+                    type="email"
+                    required
+                    value={testMailTo}
+                    onChange={(e) => setTestMailTo(e.target.value)}
+                    placeholder="any-email@example.com"
+                    className="staff-input text-xs"
+                  />
+                </label>
+
+                <label className="staff-field lg:col-span-3">
+                  <span className="staff-label">Email template</span>
+                  <select
+                    value={testMailTemplate}
+                    onChange={(e) => setTestMailTemplate(e.target.value as EmailTemplateId)}
+                    className="staff-input text-xs"
+                  >
+                    {EMAIL_TEMPLATE_CATALOG.map((tpl) => (
+                      <option key={tpl.id} value={tpl.id}>
+                        {tpl.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {testMailTemplate === "course_certificate" && (
+                  <label className="staff-field lg:col-span-3">
+                    <span className="staff-label">Preview student data (optional)</span>
+                    <select
+                      value={testMailRoll}
+                      onChange={(e) => setTestMailRoll(e.target.value)}
+                      className="staff-input text-xs"
+                    >
+                      <option value="">Sample student (preview)</option>
+                      {sheetRows.map((r) => (
+                        <option key={r.rollNumber} value={r.rollNumber}>
+                          {r.rollNumber} — {r.studentName}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                <div
+                  className={
+                    testMailTemplate === "course_certificate"
+                      ? "lg:col-span-2"
+                      : "lg:col-span-5"
+                  }
+                >
+                  <button
+                    type="submit"
+                    disabled={testMailBusy || !testMailTo.trim()}
+                    className="staff-btn-primary w-full !justify-center disabled:opacity-50"
+                  >
+                    {testMailBusy ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Send className="h-3.5 w-3.5" />
+                    )}
+                    {testMailBusy ? "Sending…" : "Send test"}
+                  </button>
+                </div>
+              </div>
+
+              {sheetMeta?.emailStatus?.fromEmail && (
+                <div className="text-[10px] font-mono text-muted-foreground">
+                  Sender: {sheetMeta.emailStatus.fromEmail}
+                </div>
+              )}
+
+              {testMailFeedback && (
+                <div
+                  className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${
+                    testMailFeedback.tone === "ok"
+                      ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                      : "border-destructive/35 bg-destructive/10 text-destructive"
+                  }`}
+                >
+                  {testMailFeedback.tone === "ok" && (
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  )}
+                  <span>{testMailFeedback.text}</span>
+                </div>
+              )}
+            </form>
+          )}
+
           {sheetMeta && (
-            <div className="flex flex-wrap gap-3 text-[11px] font-semibold text-muted-foreground">
-              <span>
-                {sheetMeta.counts.total} students · {sheetMeta.counts.graded} graded ·{" "}
-                {sheetMeta.counts.withQuiz} with quiz
-              </span>
-              <span className="font-mono">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-semibold text-muted-foreground">
+              <div className="flex flex-wrap gap-x-3 gap-y-1">
+                <span>{sheetCounts.total} total students</span>
+                <span>· {sheetCounts.participated} participated</span>
+                <span>· {sheetCounts.notParticipated} did not participate</span>
+                <span>· {sheetCounts.graded} graded</span>
+                <span>· {sheetCounts.withQuiz} with quiz</span>
+                <span>· {sheetCounts.certified} certs issued</span>
+                <span>· {sheetCounts.emailed} emailed</span>
+              </div>
+              <span className="font-mono text-[10px]">
                 Generated {new Date(sheetMeta.generatedAt).toLocaleString()}
               </span>
             </div>
           )}
+
+          {/* Participation Tabs + Search/Region Filter */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div
+              className="flex flex-wrap gap-1 rounded-2xl border border-border/80 bg-muted/30 p-1"
+              role="tablist"
+              aria-label="Gradesheet student filter tabs"
+            >
+              {(
+                [
+                  { id: "all" as const, label: "All Students", count: sheetCounts.total },
+                  {
+                    id: "participated" as const,
+                    label: "Participated",
+                    count: sheetCounts.participated,
+                  },
+                  {
+                    id: "not_participated" as const,
+                    label: "Did Not Participate",
+                    count: sheetCounts.notParticipated,
+                  },
+                ] as const
+              ).map((t) => {
+                const active = sheetTab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setSheetTab(t.id)}
+                    className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-colors ${
+                      active
+                        ? "bg-card text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <span>{t.label}</span>
+                    <span
+                      className={`inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+                        t.id === "not_participated"
+                          ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
+                          : t.id === "participated"
+                            ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                            : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {t.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={sheetSearch}
+                  onChange={(e) => setSheetSearch(e.target.value)}
+                  placeholder="Search roll, name, email…"
+                  className="staff-input !py-1.5 !pl-8 !pr-3 text-xs w-52"
+                />
+              </div>
+              {sheetRegions.length > 0 && (
+                <select
+                  value={sheetRegion}
+                  onChange={(e) => setSheetRegion(e.target.value)}
+                  className="staff-input !py-1.5 text-xs w-auto max-w-[200px]"
+                  aria-label="Filter by region"
+                >
+                  <option value="all">All regions</option>
+                  {sheetRegions.map((reg) => (
+                    <option key={reg} value={reg}>
+                      {reg}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
 
           {sheetLoading && !sheetRows.length ? (
             <div className="rounded-2xl border border-border/80 bg-card p-8 text-center text-sm text-muted-foreground">
@@ -1815,53 +2361,146 @@ export function AdminPracticalPanel(props: {
             </div>
           ) : sheetRows.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-8 text-center text-sm text-muted-foreground">
-              No practical submissions yet for this course.
+              No students or practical submissions found for this course yet.
+            </div>
+          ) : filteredSheetRows.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-8 text-center text-sm text-muted-foreground">
+              No students match the current tab or search filter.
             </div>
           ) : (
             <div className="overflow-x-auto rounded-2xl border border-border/80 bg-card">
-              <table className="w-full min-w-[720px] text-left text-xs">
+              <table className="w-full min-w-[920px] text-left text-xs">
                 <thead className="border-b border-border bg-muted/40 text-[10px] font-black uppercase tracking-wide text-muted-foreground">
                   <tr>
                     <th className="px-3 py-2.5">#</th>
                     <th className="px-3 py-2.5">Roll</th>
-                    <th className="px-3 py-2.5">Name</th>
+                    <th className="px-3 py-2.5">Student</th>
                     <th className="px-3 py-2.5">Region</th>
                     <th className="px-3 py-2.5 text-right">Quiz</th>
                     <th className="px-3 py-2.5 text-right">Practical</th>
                     <th className="px-3 py-2.5 text-right">Total</th>
                     <th className="px-3 py-2.5 text-right">Combined %</th>
                     <th className="px-3 py-2.5">Status</th>
+                    <th className="px-3 py-2.5 text-right">Certificate</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sheetRows.map((r) => (
-                    <tr
-                      key={r.submissionId || `${r.rollNumber}-${r.rank}`}
-                      className="border-b border-border/60 last:border-0 hover:bg-muted/30"
-                    >
-                      <td className="px-3 py-2 font-mono text-muted-foreground">{r.rank}</td>
-                      <td className="px-3 py-2 font-mono font-semibold">{r.rollNumber}</td>
-                      <td className="px-3 py-2 font-semibold">{r.studentName}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{r.regionName || "—"}</td>
-                      <td className="px-3 py-2 text-right font-mono">
-                        {r.quizFound || r.quizAccuracyPct > 0
-                          ? `${r.quizMarks}/${r.quizMaxMarks}`
-                          : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono">
-                        {r.practicalGraded || r.practicalScorePct > 0
-                          ? `${r.practicalMarks}/${r.practicalMaxMarks}`
-                          : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono font-bold">
-                        {r.totalMarks}/{r.maxTotal}
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono">{r.combinedPct}%</td>
-                      <td className="px-3 py-2">
-                        <StatusPill status={r.practicalStatus} />
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredSheetRows.map((r) => {
+                    const rowBusy = busyId === `sheet-cert-${r.rollNumber}`;
+                    const rowFeedback = rowSendResult[r.rollNumber];
+                    const hasCert = !!r.certificateNumber;
+                    const wasEmailed = !!r.certificateEmailedAt;
+                    const missingHint = (r.missingRequirements || [])
+                      .map(formatMissingRequirement)
+                      .join(", ");
+                    return (
+                      <tr
+                        key={r.submissionId || `${r.rollNumber}-${r.rank}`}
+                        className="border-b border-border/60 last:border-0 hover:bg-muted/30"
+                      >
+                        <td className="px-3 py-2 font-mono text-muted-foreground">
+                          {r.rank > 0 ? r.rank : "—"}
+                        </td>
+                        <td className="px-3 py-2 font-mono font-semibold whitespace-nowrap">
+                          {r.rollNumber}
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="font-semibold text-foreground">{r.studentName}</div>
+                          {r.email ? (
+                            <div className="font-mono text-[10px] text-muted-foreground truncate max-w-[220px]">
+                              {r.email}
+                            </div>
+                          ) : (
+                            <div className="text-[10px] italic text-amber-700 dark:text-amber-300">
+                              No email on roster
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground">{r.regionName || "—"}</td>
+                        <td className="px-3 py-2 text-right font-mono">
+                          {r.quizFound || r.quizAccuracyPct > 0
+                            ? `${r.quizMarks}/${r.quizMaxMarks}`
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono">
+                          {r.practicalGraded || r.practicalScorePct > 0
+                            ? `${r.practicalMarks}/${r.practicalMaxMarks}`
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono font-bold">
+                          {r.participated ? `${r.totalMarks}/${r.maxTotal}` : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono">
+                          {r.participated ? `${r.combinedPct}%` : "—"}
+                        </td>
+                        <td className="px-3 py-2">
+                          <StatusPill status={r.practicalStatus} />
+                        </td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">
+                          <div className="inline-flex flex-col items-end gap-1">
+                            <div className="inline-flex items-center gap-1.5">
+                              {hasCert && (
+                                <Link
+                                  to="/verify/$certId"
+                                  params={{ certId: r.certificateNumber! }}
+                                  target="_blank"
+                                  className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 font-mono text-[10px] font-bold text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
+                                  title={`View certificate ${r.certificateNumber}`}
+                                >
+                                  <Award className="h-3 w-3" />
+                                  {wasEmailed ? "Emailed" : "Issued"}
+                                </Link>
+                              )}
+                              <button
+                                type="button"
+                                disabled={rowBusy}
+                                onClick={() => void sendCertFromSheet(r)}
+                                title={
+                                  hasCert
+                                    ? `Resend certificate ${r.certificateNumber} to ${r.email || "email"}`
+                                    : r.eligibleForCertificate === false
+                                      ? `Not yet eligible (${missingHint || "requirements incomplete"}). Click to override & send certificate.`
+                                      : `Issue & send certificate to ${r.email || "email"}`
+                                }
+                                className={`inline-flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition-colors disabled:opacity-50 ${
+                                  hasCert
+                                    ? "border-border bg-background text-foreground hover:bg-accent"
+                                    : r.eligibleForCertificate === false
+                                      ? "border-border/80 bg-muted/40 text-muted-foreground hover:bg-accent hover:text-foreground"
+                                      : "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 hover:bg-emerald-500/20 dark:text-emerald-200"
+                                }`}
+                              >
+                                {rowBusy ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Mail className="h-3 w-3" />
+                                )}
+                                <span>
+                                  {rowBusy
+                                    ? "Sending…"
+                                    : hasCert
+                                      ? "Resend Cert"
+                                      : "Send Certificate"}
+                                </span>
+                              </button>
+                            </div>
+                            {rowFeedback && (
+                              <span
+                                className={`max-w-[200px] truncate text-[10px] font-semibold ${
+                                  rowFeedback.tone === "ok"
+                                    ? "text-emerald-700 dark:text-emerald-300"
+                                    : "text-destructive"
+                                }`}
+                                title={rowFeedback.text}
+                              >
+                                {rowFeedback.text}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

@@ -348,6 +348,10 @@ export interface CertificateData {
   otsCalendarUrl?: string | undefined;
   otsSubmittedAt?: string | undefined;
   otsBitcoinBlockHeight?: number | undefined;
+  /** Last successful certificate email delivery metadata (non-hashed operational telemetry) */
+  emailedAt?: string | undefined;
+  emailedTo?: string | undefined;
+  emailedProvider?: string | undefined;
 }
 
 export interface LedgerOtsCheckpoint {

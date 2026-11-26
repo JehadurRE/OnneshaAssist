@@ -2735,7 +2735,7 @@ export async function downloadFinalGradeSheetPdf(params: {
       ctx.textBaseline = "middle";
       const cy = y + rowH / 2;
       ctx.textAlign = "left";
-      ctx.fillText(String(r.rank), colX.rank + 6, cy);
+      ctx.fillText(r.rank > 0 ? String(r.rank) : "—", colX.rank + 6, cy);
       ctx.font = "600 13px ui-monospace, monospace";
       ctx.fillText(r.rollNumber.slice(0, 14), colX.roll, cy);
       ctx.font = "13px system-ui, sans-serif";
@@ -2760,12 +2760,24 @@ export async function downloadFinalGradeSheetPdf(params: {
         cy,
       );
       ctx.font = "bold 13px system-ui, sans-serif";
-      ctx.fillText(`${r.totalMarks}/${r.maxTotal}`, colX.total + 100, cy);
+      const isAbsent = r.practicalStatus === "not_participated";
+      ctx.fillText(isAbsent ? "—" : `${r.totalMarks}/${r.maxTotal}`, colX.total + 100, cy);
       ctx.font = "13px system-ui, sans-serif";
-      ctx.fillText(`${r.combinedPct}%`, colX.pct + 90, cy);
+      ctx.fillText(isAbsent ? "—" : `${r.combinedPct}%`, colX.pct + 90, cy);
       ctx.textAlign = "left";
-      ctx.fillStyle = r.practicalStatus === "graded" ? "#166534" : "#64748b";
-      ctx.fillText(r.practicalStatus || "—", colX.status, cy);
+      ctx.fillStyle =
+        r.practicalStatus === "graded"
+          ? "#166534"
+          : r.practicalStatus === "not_participated"
+            ? "#9f1239"
+            : "#64748b";
+      const statusText =
+        r.practicalStatus === "not_participated"
+          ? "Not participated"
+          : r.practicalStatus === "quiz_only"
+            ? "Quiz only"
+            : r.practicalStatus || "—";
+      ctx.fillText(statusText, colX.status, cy);
       y += rowH;
     });
 

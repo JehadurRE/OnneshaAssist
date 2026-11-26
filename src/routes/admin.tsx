@@ -1406,6 +1406,7 @@ function SuperAdminPage() {
             <AdminPracticalPanel
               courses={courses}
               quizzes={quizzes}
+              defaultTestEmail={user?.email}
               initialCourseId={
                 search.courseId ||
                 courses.find((c) => c.id === "course-sanjibon-ai-dm")?.id ||
