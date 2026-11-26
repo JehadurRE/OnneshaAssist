@@ -35,8 +35,10 @@ import {
 } from "./types";
 import {
   DEFAULT_BRANDING_SETTINGS,
+  DEFAULT_COURSE_CERTIFICATE_SIGNATORIES,
   getCertificateDesignProfile,
   mergeBrandingSettings,
+  ONNESHA_MAIN_LOGO_URL,
 } from "./branding";
 import { purgeUnderThresholdExamsInStore, type PurgeExamSummary } from "./exam-purge";
 import {
@@ -254,6 +256,8 @@ interface PersistentStoreData {
   migratedSanjibonDriveLmsV1?: boolean | undefined;
   migratedSanjibonRecordingsV1?: boolean | undefined;
   migratedSanjibonRecordingsV2?: boolean | undefined;
+  migratedCourseCertSignatoriesV1?: boolean | undefined;
+  migratedCourseCertSignatoriesV2?: boolean | undefined;
   purgedSampleData?: boolean | undefined;
   purgedUnder50Initial?: boolean | undefined;
   purgedBcsDemoCourse?: boolean | undefined;
@@ -775,6 +779,8 @@ function loadInitialStore(): PersistentStoreData {
             migratedSanjibonDriveLmsV1: !!parsed.migratedSanjibonDriveLmsV1,
             migratedSanjibonRecordingsV1: !!parsed.migratedSanjibonRecordingsV1,
             migratedSanjibonRecordingsV2: !!parsed.migratedSanjibonRecordingsV2,
+            migratedCourseCertSignatoriesV1: !!parsed.migratedCourseCertSignatoriesV1,
+            migratedCourseCertSignatoriesV2: !!parsed.migratedCourseCertSignatoriesV2,
             purgedSampleData: purged,
             purgedUnder50Initial: !!parsed.purgedUnder50Initial,
             purgedBcsDemoCourse: !!parsed.purgedBcsDemoCourse,
@@ -834,6 +840,8 @@ function loadInitialStore(): PersistentStoreData {
     migratedSanjibonDriveLmsV1: false,
     migratedSanjibonRecordingsV1: false,
     migratedSanjibonRecordingsV2: false,
+    migratedCourseCertSignatoriesV1: true,
+    migratedCourseCertSignatoriesV2: true,
     purgedSampleData: false,
     purgedUnder50Initial: true,
     purgedBcsDemoCourse: true,
@@ -1021,8 +1029,36 @@ function getStore(): PersistentStoreData {
         `[OnneshaServerStore] Sanjibon Zoom class recordings migration v2 applied: changed=${recChanged}`,
       );
     }
+    if (!loaded.migratedCourseCertSignatoriesV1 || !loaded.migratedCourseCertSignatoriesV2) {
+      const certChanged = ensureCourseCertBrandingMigrated(loaded);
+      loaded.migratedCourseCertSignatoriesV1 = true;
+      loaded.migratedCourseCertSignatoriesV2 = true;
+      scheduleDiskPersist();
+      console.info(
+        `[OnneshaServerStore] Course completion certificate signatories & Onnesha main logo migration v2 applied: changed=${certChanged}`,
+      );
+    }
   }
   return globalStore.__onneshaStore;
+}
+
+export function ensureCourseCertBrandingMigrated(store: PersistentStoreData): boolean {
+  const current = mergeBrandingSettings(store.branding, DEFAULT_BRANDING);
+  const existingCourse = getCertificateDesignProfile(current, "course_completion");
+  const nextSignatories = DEFAULT_COURSE_CERTIFICATE_SIGNATORIES.map((s) => ({ ...s }));
+  const nextBranding = mergeBrandingSettings(
+    {
+      leftLogoUrl: ONNESHA_MAIN_LOGO_URL,
+      courseCertificate: {
+        ...existingCourse,
+        certSignatories: nextSignatories,
+      },
+      updatedAt: Date.now(),
+    },
+    current,
+  );
+  store.branding = nextBranding;
+  return true;
 }
 
 export function ensureSanjibonRecordingsMigrated(store: PersistentStoreData): boolean {

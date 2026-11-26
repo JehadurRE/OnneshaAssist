@@ -10,7 +10,10 @@ import {
 import {
   brandingWithCertificateProfile,
   CertificateThemePalette,
+  DEFAULT_BRANDING_SETTINGS,
   DEFAULT_CERTIFICATE_SIGNATORIES,
+  DEFAULT_COURSE_CERTIFICATE_SIGNATORIES,
+  ONNESHA_MAIN_LOGO_URL,
   resolveCertificateTheme,
 } from "./branding";
 import { computeParticipantAccuracyPct, isPassingScore, resolvePassThresholdPct } from "./scoring";
@@ -636,7 +639,7 @@ function drawSignatoryColumn(
   const lineHalf = Math.min(220, colW * 0.41);
 
   if (sigImg) {
-    drawContainedImage(ctx, sigImg, centerX - lineHalf, lineY - 98, lineHalf * 2, 86, "center");
+    drawContainedImage(ctx, sigImg, centerX - lineHalf, lineY - 108, lineHalf * 2, 98, "center");
   } else {
     ctx.save();
     ctx.textAlign = "center";
@@ -692,18 +695,41 @@ function drawSignatoryColumn(
   ctx.fillStyle = theme.textPrimary;
   fillTextAutoFit(ctx, resolvedName, centerX, lineY + 34, colW - 24, 24, 15, "bold", "sans-serif");
 
-  ctx.fillStyle = theme.textMuted;
-  fillTextAutoFit(
-    ctx,
-    sig.title || "Authorized Official",
-    centerX,
-    lineY + 62,
-    colW - 20,
-    18,
-    13,
-    "600",
-    "sans-serif",
-  );
+  const rawTitle = (sig.title || "Authorized Official").trim();
+  const titleLines = rawTitle
+    .split(/\s*(?:\n|\||•)\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (titleLines.length >= 2) {
+    ctx.fillStyle = theme.textSecondary;
+    fillTextAutoFit(
+      ctx,
+      titleLines[0]!,
+      centerX,
+      lineY + 60,
+      colW - 20,
+      18,
+      13,
+      "600",
+      "sans-serif",
+    );
+    ctx.fillStyle = theme.textMuted;
+    fillTextAutoFit(
+      ctx,
+      titleLines.slice(1).join(" · "),
+      centerX,
+      lineY + 84,
+      colW - 20,
+      17,
+      12,
+      "500",
+      "sans-serif",
+    );
+  } else {
+    ctx.fillStyle = theme.textMuted;
+    fillTextAutoFit(ctx, rawTitle, centerX, lineY + 62, colW - 20, 18, 13, "600", "sans-serif");
+  }
 }
 
 export interface CertificateRenderAssets {
@@ -732,7 +758,7 @@ export function drawCertificateOnCanvas(
 
   const certKind = certificate.kind === "course_completion" ? "course_completion" : "quiz_session";
   // Overlay quiz/course design profile onto top-level cert* fields for this render.
-  branding = branding ? brandingWithCertificateProfile(branding, certKind) : branding;
+  branding = brandingWithCertificateProfile(branding ?? DEFAULT_BRANDING_SETTINGS, certKind);
   const theme = resolveCertificateTheme(branding, certKind);
   const verifyUrl =
     typeof window !== "undefined"
@@ -1131,10 +1157,14 @@ export function drawCertificateOnCanvas(
   });
 
   // 10. Dynamic Multi-Signatory Row (1 to 4 Signatories)
+  const fallbackSignatories =
+    certKind === "course_completion"
+      ? DEFAULT_COURSE_CERTIFICATE_SIGNATORIES
+      : DEFAULT_CERTIFICATE_SIGNATORIES;
   const configuredSignatories =
     Array.isArray(branding?.certSignatories) && branding.certSignatories.length > 0
       ? branding.certSignatories.slice(0, 4)
-      : DEFAULT_CERTIFICATE_SIGNATORIES;
+      : fallbackSignatories;
 
   const sigRowLeft = 170;
   const sigRowWidth = W - 340;
@@ -1262,19 +1292,23 @@ export async function populateCertificateCanvas(
   branding?: BrandingSettings,
 ): Promise<void> {
   const certKind = certificate.kind === "course_completion" ? "course_completion" : "quiz_session";
-  branding = branding ? brandingWithCertificateProfile(branding, certKind) : branding;
+  branding = brandingWithCertificateProfile(branding ?? DEFAULT_BRANDING_SETTINGS, certKind);
 
   // 1. Immediate synchronous draw (even better: reuse cached images immediately if already preloaded!)
-  const leftSrc = (branding?.leftLogoUrl || "").trim() || onnesha.url;
+  const leftSrc = (branding?.leftLogoUrl || "").trim() || ONNESHA_MAIN_LOGO_URL || onnesha.url;
   const rightSrc =
     (branding?.rightLogoUrl || "").trim() ||
     (branding?.showPartnerLogo && branding?.partnerLogoUrl ? branding.partnerLogoUrl.trim() : "");
   const customBgSrc = (branding?.certCustomBgUrl || "").trim();
   const partners = resolveEffectivePartners(branding);
+  const fallbackSignatories =
+    certKind === "course_completion"
+      ? DEFAULT_COURSE_CERTIFICATE_SIGNATORIES
+      : DEFAULT_CERTIFICATE_SIGNATORIES;
   const signatories =
     Array.isArray(branding?.certSignatories) && branding.certSignatories.length > 0
       ? branding.certSignatories.slice(0, 4)
-      : DEFAULT_CERTIFICATE_SIGNATORIES;
+      : fallbackSignatories;
 
   const cachedPartnerImgs: Record<string, HTMLImageElement | null> = {};
   partners.forEach((p) => {

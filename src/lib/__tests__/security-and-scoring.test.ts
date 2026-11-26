@@ -43,7 +43,10 @@ import { coercePinSearchParam, coerceSearchString } from "../utils";
 import {
   CERTIFICATE_THEME_PRESETS,
   DEFAULT_BRANDING_SETTINGS,
+  DEFAULT_COURSE_CERTIFICATE_SIGNATORIES,
+  getCertificateDesignProfile,
   mergeBrandingSettings,
+  ONNESHA_MAIN_LOGO_URL,
   resolveCertificateTheme,
 } from "../branding";
 import {
@@ -732,6 +735,35 @@ describe("certificate designer branding, themes, Bangladesh map & multi-signator
     expect(customDarkTheme.textPrimary).toBe("#f8fafc");
     expect(customDarkTheme.borderOuter).toBe("#f59e0b");
     expect(customDarkTheme.accentColor).toBe("#5bc0be");
+  });
+
+  it("seeds course completion certificate signatories from the official design (excluding Learning Bangladesh) and defaults to the updated Onnesha main logo", () => {
+    expect(DEFAULT_BRANDING_SETTINGS.leftLogoUrl).toBe(ONNESHA_MAIN_LOGO_URL);
+    expect(ONNESHA_MAIN_LOGO_URL).toBe("/assets/onnesha-mark.png");
+
+    const courseProfile = getCertificateDesignProfile(
+      DEFAULT_BRANDING_SETTINGS,
+      "course_completion",
+    );
+    expect(courseProfile.certSignatories).toHaveLength(2);
+    expect(courseProfile.certSignatories).toEqual(DEFAULT_COURSE_CERTIFICATE_SIGNATORIES);
+
+    const [first, second] = courseProfile.certSignatories || [];
+    expect(first?.name).toBe("Brigadier General Tamjidul Haque Chowdhury");
+    expect(first?.title).toContain("Managing Director");
+    expect(first?.title).toContain("Cloud Connect AI Limited");
+    expect(first?.signatureImageUrl).toBe("/assets/sig-tamjidul-haque-chowdhury.png");
+
+    expect(second?.name).toBe("Md Mainul Islam");
+    expect(second?.title).toContain("Director (Project-Training)");
+    expect(second?.title).toContain("Bangladesh Ansar & VDP Headquarters");
+    expect(second?.signatureImageUrl).toBe("/assets/sig-md-mainul-islam.png");
+
+    expect(
+      (courseProfile.certSignatories || []).some((s) =>
+        `${s.name} ${s.title}`.toLowerCase().includes("learning bangladesh"),
+      ),
+    ).toBe(false);
   });
 });
 

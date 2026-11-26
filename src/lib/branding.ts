@@ -149,6 +149,8 @@ export const CERTIFICATE_THEME_PRESETS: Record<CertificateThemePreset, Certifica
   },
 };
 
+export const ONNESHA_MAIN_LOGO_URL = "/assets/onnesha-mark.png";
+
 export const DEFAULT_CERTIFICATE_SIGNATORIES: CertificateSignatory[] = [
   {
     id: "sig-examiner",
@@ -165,6 +167,25 @@ export const DEFAULT_CERTIFICATE_SIGNATORIES: CertificateSignatory[] = [
     signatureText: "Controller of Examinations",
     signatureImageUrl: "",
     signatureStyle: "formal",
+  },
+];
+
+export const DEFAULT_COURSE_CERTIFICATE_SIGNATORIES: CertificateSignatory[] = [
+  {
+    id: "sig-ccai-md",
+    name: "Brigadier General Tamjidul Haque Chowdhury",
+    title: "Managing Director • Cloud Connect AI Limited",
+    signatureText: "Tamjidul Haque Chowdhury",
+    signatureImageUrl: "/assets/sig-tamjidul-haque-chowdhury.png",
+    signatureStyle: "script",
+  },
+  {
+    id: "sig-ansar-director",
+    name: "Md Mainul Islam",
+    title: "Director (Project-Training) • Bangladesh Ansar & VDP Headquarters",
+    signatureText: "Md Mainul Islam",
+    signatureImageUrl: "/assets/sig-md-mainul-islam.png",
+    signatureStyle: "script",
   },
 ];
 
@@ -197,7 +218,7 @@ const DEFAULT_COURSE_CERTIFICATE_PROFILE: CertificateDesignProfile = {
   certBadgeTitle: "CERTIFICATE OF COURSE COMPLETION",
   certAuthoritySubtitle:
     "Final Examination Authority — Full Course Credential & Practical Assessment Board",
-  certSignatories: DEFAULT_CERTIFICATE_SIGNATORIES.map((s) => ({ ...s })),
+  certSignatories: DEFAULT_COURSE_CERTIFICATE_SIGNATORIES.map((s) => ({ ...s })),
 };
 
 export const DEFAULT_BRANDING_SETTINGS: BrandingSettings = {
@@ -205,7 +226,7 @@ export const DEFAULT_BRANDING_SETTINGS: BrandingSettings = {
   partnerName: "",
   partnerLogoUrl: "",
   institutionTitle: "Onnesha Assessment Arena",
-  leftLogoUrl: "",
+  leftLogoUrl: ONNESHA_MAIN_LOGO_URL,
   leftLogoLabel: "",
   rightLogoUrl: "",
   rightLogoLabel: "",

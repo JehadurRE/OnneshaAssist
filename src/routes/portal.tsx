@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { CertificateView } from "@/components/common/CertificateView";
+import { useBranding } from "@/hooks/use-branding";
 import { useLanguage } from "@/lib/i18n";
 import { downloadCertificatePdf } from "@/lib/pdf-generator";
 import {
@@ -237,6 +238,7 @@ function ProgressRing({ pct, size = 68 }: { pct: number; size?: number }) {
 
 function StudentPortalPage() {
   const { lang } = useLanguage();
+  const branding = useBranding();
   const [authChannel, setAuthChannel] = useState<"email" | "mobile">("email");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -756,7 +758,7 @@ function StudentPortalPage() {
     }
     setDownloadingPdf(true);
     try {
-      await downloadCertificatePdf(portal.courseCertificate as CertificateData);
+      await downloadCertificatePdf(portal.courseCertificate as CertificateData, branding);
     } catch (err) {
       setNoticeTone("err");
       setNotice(err instanceof Error ? err.message : "Could not generate PDF.");

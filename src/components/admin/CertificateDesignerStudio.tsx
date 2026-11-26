@@ -4,7 +4,9 @@ import {
   CERTIFICATE_THEME_PRESETS,
   DEFAULT_BRANDING_SETTINGS,
   DEFAULT_CERTIFICATE_SIGNATORIES,
+  DEFAULT_COURSE_CERTIFICATE_SIGNATORIES,
   getCertificateDesignProfile,
+  ONNESHA_MAIN_LOGO_URL,
 } from "@/lib/branding";
 import { downloadCertificatePdf, populateCertificateCanvas } from "@/lib/pdf-generator";
 import type {
@@ -265,10 +267,15 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
     });
   };
 
+  const defaultProfileSignatories =
+    designProfile === "course"
+      ? DEFAULT_COURSE_CERTIFICATE_SIGNATORIES
+      : DEFAULT_CERTIFICATE_SIGNATORIES;
+
   const signatories: CertificateSignatory[] =
     Array.isArray(activeProfile.certSignatories) && activeProfile.certSignatories.length > 0
       ? activeProfile.certSignatories
-      : DEFAULT_CERTIFICATE_SIGNATORIES;
+      : defaultProfileSignatories;
 
   const partnerLogos: CertificatePartnerLogo[] = Array.isArray(branding.partnerLogos)
     ? branding.partnerLogos
@@ -300,7 +307,7 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
       return;
     }
     const presetTemplates: CertificateSignatory[] = [
-      ...DEFAULT_CERTIFICATE_SIGNATORIES,
+      ...defaultProfileSignatories,
       {
         id: "sig-director",
         name: "Director of AI Research",
@@ -775,10 +782,15 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
                   <div className="space-y-2">
                     <ImageFieldInput
                       label="Left Side Logo"
-                      value={branding.leftLogoUrl || ""}
-                      placeholder="Default: Onnesha Crest"
-                      hint="Leave empty to use default Onnesha crest."
-                      onChange={(val) => onChange({ ...branding, leftLogoUrl: val })}
+                      value={branding.leftLogoUrl || ONNESHA_MAIN_LOGO_URL}
+                      placeholder={`Default: ${ONNESHA_MAIN_LOGO_URL}`}
+                      hint="Uses the updated Onnesha main logo by default."
+                      onChange={(val) =>
+                        onChange({
+                          ...branding,
+                          leftLogoUrl: val.trim() ? val : ONNESHA_MAIN_LOGO_URL,
+                        })
+                      }
                     />
                     <input
                       type="text"
