@@ -1,12 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="420" height="150" viewBox="0 0 420 150" fill="none" role="img" aria-label="Signature of Md. Jehad">
-  <!-- Executive blue-ink calligraphic signature for Lead Training Instructor Md. Jehad -->
-  <g stroke="#182296" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <!-- Flowing calligraphic initial M / J entry -->
-    <path d="M 38 96 C 54 64, 72 34, 84 32 C 92 31, 88 64, 96 74 C 103 82, 118 42, 130 34 C 138 29, 136 62, 128 84 C 122 101, 110 120, 96 124 C 84 127, 80 116, 92 104 C 108 88, 138 76, 162 72" stroke-width="3.6" />
-    <!-- Sweeping cursive 'Jehad' body with tall h-loop and d-ascender -->
-    <path d="M 156 75 C 166 64, 178 60, 181 66 C 184 72, 170 84, 178 86 C 187 88, 206 58, 218 32 C 224 19, 232 20, 227 36 C 221 56, 208 79, 205 87 C 209 78, 222 65, 229 67 C 236 69, 228 86, 237 86 C 246 86, 258 66, 267 66 C 274 66, 268 78, 260 83 C 254 87, 263 87, 274 82 C 286 76, 300 54, 314 30 C 319 21, 325 22, 321 36 C 316 54, 304 74, 301 83 C 299 89, 308 87, 322 81 C 338 74, 356 68, 376 66" stroke-width="3.4" />
-    <!-- Subtle dot after Md. and dynamic finishing underline swoosh -->
-    <circle cx="144" cy="84" r="2.6" fill="#182296" stroke="none" />
-    <path d="M 118 112 C 188 102, 268 94, 356 89 C 368 88, 378 89, 384 91" stroke-width="2.4" opacity="0.92" />
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="150" fill="none" aria-label="Signature of Md. Jehad" role="img" viewBox="0 0 420 150"><g fill="none" stroke="#182296" stroke-linecap="round" stroke-linejoin="round"><path stroke-width="3.6" d="M 38 96 C 54 64, 72 34, 84 32 C 92 31, 88 64, 96 74 C 103 82, 118 42, 130 34 C 138 29, 136 62, 128 84 C 122 101, 110 120, 96 124 C 84 127, 80 116, 92 104 C 108 88, 138 76, 162 72"/><path stroke-width="3.4" d="M 156 75 C 166 64, 178 60, 181 66 C 184 72, 170 84, 178 86 C 187 88, 206 58, 218 32 C 224 19, 232 20, 227 36 C 221 56, 208 79, 205 87 C 209 78, 222 65, 229 67 C 236 69, 228 86, 237 86 C 246 86, 258 66, 267 66 C 274 66, 268 78, 260 83 C 254 87, 263 87, 274 82 C 286 76, 300 54, 314 30 C 319 21, 325 22, 321 36 C 316 54, 304 74, 301 83 C 299 89, 308 87, 322 81 C 338 74, 356 68, 376 66"/><circle cx="144" cy="84" r="2.6" fill="#182296" stroke="none"/><path stroke-width="2.4" d="M 118 112 C 188 102, 268 94, 356 89 C 368 88, 378 89, 384 91" opacity=".92"/></g></svg>
