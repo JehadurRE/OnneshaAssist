@@ -5,7 +5,6 @@ import {
   serverBulkIssueCourseCertificates,
   serverCloseFinalExamWindow,
   serverDownloadPracticalFile,
-  serverExportPracticalSubmissions,
   serverExtendFinalExamAttempt,
   serverGetBootstrapData,
   serverGetFinalExamDesk,
@@ -731,30 +730,6 @@ export function AdminPracticalPanel(props: {
       );
       await syncCertsIntoAdmin();
       await refresh();
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const exportSubmissionsJson = async () => {
-    if (!course) return;
-    setBusyId("export-subs-json");
-    setNotice(null);
-    try {
-      const res = await serverExportPracticalSubmissions({ data: { courseId: course.id } });
-      if (!res.success) {
-        setNotice(res.error || "Could not export submissions JSON.");
-        return;
-      }
-      const json = JSON.stringify(res, null, 2);
-      const blob = new Blob([json], { type: "application/json;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `practical-submissions-${res.courseCode || course.code || "course"}-${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      setNotice(`Exported ${res.count} submissions with full answers & quiz scores to JSON.`);
     } finally {
       setBusyId(null);
     }
@@ -2856,15 +2831,23 @@ export function AdminPracticalPanel(props: {
                 >
                   {busyId === "gform" ? "Importing…" : "Import Google Form (33)"}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => void exportSubmissionsJson()}
-                  disabled={!!busyId || !course || courseSubs.length === 0}
-                  className="staff-btn-ghost disabled:opacity-50"
+                <a
+                  href={
+                    course
+                      ? `/api/admin/practical-submissions-export?courseId=${encodeURIComponent(course.id)}`
+                      : undefined
+                  }
+                  download
+                  onClick={() => {
+                    if (course) {
+                      setNotice(`Downloading ${courseSubs.length} submissions JSON…`);
+                    }
+                  }}
+                  className={`staff-btn-ghost ${!course || courseSubs.length === 0 ? "opacity-50 pointer-events-none" : ""}`}
                 >
                   <Download className="h-3.5 w-3.5" />
-                  {busyId === "export-subs-json" ? "Exporting…" : `Export Submissions JSON (${courseSubs.length})`}
-                </button>
+                  <span>Export Submissions JSON ({courseSubs.length})</span>
+                </a>
                 <label
                   className={`staff-btn-ghost cursor-pointer ${!!busyId || !course ? "opacity-50 pointer-events-none" : ""}`}
                 >

@@ -109,6 +109,14 @@ export default {
         }
       }
 
+      if (pathname === "/api/admin/practical-submissions-export") {
+        const { handleStaffDownloadEndpoint } = await import("./lib/server-session");
+        const downloadResponse = await handleStaffDownloadEndpoint(request);
+        if (downloadResponse) {
+          return withSecurityHeaders(request, downloadResponse);
+        }
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       const normalized = await normalizeCatastrophicSsrResponse(response);

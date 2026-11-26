@@ -7569,6 +7569,149 @@ type ReviewedPracticalGradeRow = {
   instructorFeedback?: string;
 };
 
+function buildPracticalSubmissionsExportPayload(
+  store: PersistentStoreData,
+  courseIdRaw?: string | undefined,
+) {
+  ensureFinalPracticalSeeded(store);
+  const courseId = courseIdRaw || "course-sanjibon-ai-dm";
+  const exam = (store.practicalExams || []).find((p) => p.courseId === courseId);
+  if (!exam) return null;
+  const course = (store.courses || []).find((c) => c.id === courseId);
+  const requirement = (store.courseRequirements || []).find((r) => r.courseId === courseId);
+  const submissions = (store.practicalSubmissions || []).filter(
+    (s) => s.practicalExamId === exam.id || s.courseId === courseId,
+  );
+  const quizMax = exam.quizMaxMarks || FINAL_QUIZ_MARKS;
+  const practicalMax = exam.practicalMaxMarks || FINAL_PRACTICAL_MARKS;
+  const totalMax = exam.totalMaxMarks || quizMax + practicalMax || FINAL_TOTAL_MARKS;
+  const weights = normalizeExamWeights(exam);
+
+  const rows = submissions.map((sub) => {
+    const match = resolveQuizResultMatchForStudent(
+      store,
+      sub.rollNumber,
+      exam.linkedQuizId,
+      requirement?.requiredQuizIds,
+      {
+        phone: sub.phone,
+        studentName: sub.studentName,
+        regionId: sub.regionId,
+      },
+    );
+    const quizAccuracyPct = match?.result.accuracyPct ?? sub.quizAccuracyPct ?? 0;
+    const quizFound = !!(
+      match || (typeof sub.quizAccuracyPct === "number" && sub.quizAccuracyPct > 0)
+    );
+    const quizMarks = quizFound ? marksFromPct(quizAccuracyPct, quizMax) : 0;
+    return {
+      id: sub.id,
+      rollNumber: sub.rollNumber,
+      studentName: sub.studentName,
+      regionName: sub.regionName || "",
+      phone: sub.phone || "",
+      status: sub.status,
+      submittedAt: sub.submittedAt || sub.createdAt,
+      updatedAt: sub.updatedAt,
+      quizFound,
+      quizAccuracyPct,
+      quizMarks,
+      quizMatchedVia: match?.matchedVia || null,
+      practicalScorePct: sub.practicalScorePct ?? null,
+      combinedPct: sub.combinedPct ?? null,
+      answers: (sub.answers || []).map((a) => ({
+        taskId: a.taskId,
+        textAnswer: a.textAnswer || "",
+        linkUrl: a.linkUrl || "",
+        fileName: a.fileName || "",
+        fileMime: a.fileMime || "",
+        fileSizeBytes: a.fileSizeBytes ?? null,
+        hasFile: Boolean(a.fileRelPath || a.fileName),
+      })),
+      grades: sub.grades || [],
+      instructorFeedback: sub.instructorFeedback || "",
+    };
+  });
+
+  return {
+    success: true as const,
+    courseId,
+    courseCode: course?.code || "",
+    courseTitle: course?.titleEn || exam.titleEn,
+    examId: exam.id,
+    examTitle: exam.titleEn,
+    quizMaxMarks: quizMax,
+    practicalMaxMarks: practicalMax,
+    totalMaxMarks: totalMax,
+    quizWeightPct: weights.quizWeightPct,
+    practicalWeightPct: weights.practicalWeightPct,
+    passThresholdPct: exam.passThresholdPct ?? 50,
+    tasks: exam.tasks.map((t) => ({
+      id: t.id,
+      titleEn: t.titleEn,
+      maxMarks: t.maxMarks,
+    })),
+    count: rows.length,
+    exportedAt: new Date().toISOString(),
+    submissions: rows,
+  };
+}
+
+function getActorFromCookieHeader(request: Request): ManagedUser | null {
+  try {
+    const cookieHeader = request.headers.get("cookie") || "";
+    if (!cookieHeader) return null;
+    const prefix = `${AUTH_COOKIE_NAME}=`;
+    let token = "";
+    for (const part of cookieHeader.split(";")) {
+      const trimmed = part.trim();
+      if (trimmed.startsWith(prefix)) {
+        token = decodeURIComponent(trimmed.slice(prefix.length));
+        break;
+      }
+    }
+    if (!token) return null;
+    const { dataDir } = getStorePaths();
+    const secret = getServerSessionSecret(dataDir);
+    const verified = verifySessionToken(token, secret);
+    if (!verified) return null;
+    const store = getStore();
+    const user = store.users.find((u) => u.id === verified.uid);
+    if (!user || user.status === "suspended") return null;
+    return user;
+  } catch {
+    return null;
+  }
+}
+
+/** Authenticated staff HTTP download endpoint for /api/admin/practical-submissions-export */
+export async function handleStaffDownloadEndpoint(request: Request): Promise<Response | null> {
+  if (request.method !== "GET") return null;
+  const url = new URL(request.url);
+  if (url.pathname !== "/api/admin/practical-submissions-export") return null;
+  const actor = getActorFromCookieHeader(request);
+  if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+    return Response.json({ error: "Staff authentication required." }, { status: 401 });
+  }
+  const store = getStore();
+  const courseId = url.searchParams.get("courseId") || undefined;
+  const payload = buildPracticalSubmissionsExportPayload(store, courseId);
+  if (!payload) {
+    return Response.json({ error: "Final practical exam not found for course." }, { status: 404 });
+  }
+  const code = (payload.courseCode || "course").replace(/[^a-zA-Z0-9_-]/g, "");
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const filename = `practical-submissions-${code}-${dateStr}.json`;
+  return new Response(JSON.stringify(payload, null, 2), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 /**
  * Staff: export all practical submissions for a course (full answers, links, file metadata,
  * resolved Final Quiz accuracy/marks, and current grades) for thorough manual review/auditing.
@@ -7581,88 +7724,11 @@ export const serverExportPracticalSubmissions = createServerFn({ method: "POST" 
       return { success: false as const, error: "Staff authentication required." };
     }
     const store = getStore();
-    ensureFinalPracticalSeeded(store);
-    const courseId = data.courseId || "course-sanjibon-ai-dm";
-    const exam = (store.practicalExams || []).find((p) => p.courseId === courseId);
-    if (!exam) {
+    const payload = buildPracticalSubmissionsExportPayload(store, data.courseId);
+    if (!payload) {
       return { success: false as const, error: "Final practical exam not found for course." };
     }
-    const course = (store.courses || []).find((c) => c.id === courseId);
-    const requirement = (store.courseRequirements || []).find((r) => r.courseId === courseId);
-    const submissions = (store.practicalSubmissions || []).filter(
-      (s) => s.practicalExamId === exam.id || s.courseId === courseId,
-    );
-    const quizMax = exam.quizMaxMarks || FINAL_QUIZ_MARKS;
-    const practicalMax = exam.practicalMaxMarks || FINAL_PRACTICAL_MARKS;
-    const totalMax = exam.totalMaxMarks || quizMax + practicalMax || FINAL_TOTAL_MARKS;
-    const weights = normalizeExamWeights(exam);
-
-    const rows = submissions.map((sub) => {
-      const match = resolveQuizResultMatchForStudent(
-        store,
-        sub.rollNumber,
-        exam.linkedQuizId,
-        requirement?.requiredQuizIds,
-        {
-          phone: sub.phone,
-          studentName: sub.studentName,
-          regionId: sub.regionId,
-        },
-      );
-      const quizAccuracyPct = match?.result.accuracyPct ?? sub.quizAccuracyPct ?? 0;
-      const quizFound = !!(match || (typeof sub.quizAccuracyPct === "number" && sub.quizAccuracyPct > 0));
-      const quizMarks = quizFound ? marksFromPct(quizAccuracyPct, quizMax) : 0;
-      return {
-        id: sub.id,
-        rollNumber: sub.rollNumber,
-        studentName: sub.studentName,
-        regionName: sub.regionName || "",
-        phone: sub.phone || "",
-        status: sub.status,
-        submittedAt: sub.submittedAt || sub.createdAt,
-        updatedAt: sub.updatedAt,
-        quizFound,
-        quizAccuracyPct,
-        quizMarks,
-        quizMatchedVia: match?.matchedVia || null,
-        practicalScorePct: sub.practicalScorePct ?? null,
-        combinedPct: sub.combinedPct ?? null,
-        answers: (sub.answers || []).map((a) => ({
-          taskId: a.taskId,
-          textAnswer: a.textAnswer || "",
-          linkUrl: a.linkUrl || "",
-          fileName: a.fileName || "",
-          fileMime: a.fileMime || "",
-          fileSizeBytes: a.fileSizeBytes ?? null,
-          hasFile: Boolean(a.fileRelPath || a.fileName),
-        })),
-        grades: sub.grades || [],
-        instructorFeedback: sub.instructorFeedback || "",
-      };
-    });
-
-    return {
-      success: true as const,
-      courseId,
-      courseCode: course?.code || "",
-      courseTitle: course?.titleEn || exam.titleEn,
-      examId: exam.id,
-      examTitle: exam.titleEn,
-      quizMaxMarks: quizMax,
-      practicalMaxMarks: practicalMax,
-      totalMaxMarks: totalMax,
-      quizWeightPct: weights.quizWeightPct,
-      practicalWeightPct: weights.practicalWeightPct,
-      passThresholdPct: exam.passThresholdPct ?? 50,
-      tasks: exam.tasks.map((t) => ({
-        id: t.id,
-        titleEn: t.titleEn,
-        maxMarks: t.maxMarks,
-      })),
-      count: rows.length,
-      exportedAt: new Date().toISOString(),
-      submissions: rows,
-    };
+    return payload;
   });
 
 /**
