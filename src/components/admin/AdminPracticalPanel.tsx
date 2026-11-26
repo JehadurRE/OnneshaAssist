@@ -48,8 +48,20 @@ import {
   formatPracticalStatusLabel,
   type FinalGradeSheetRow,
 } from "@/lib/final-gradesheet";
+import {
+  GRADE_QUEUE_SORT_OPTIONS,
+  enrichGradingQueue,
+  filterAndSortGradingQueue,
+  getFlipSortTarget,
+  type GradeQueueScoreFilter,
+  type GradeQueueSortBy,
+  type GradeQueueStatusFilter,
+} from "@/lib/grading-queue";
 import { downloadFinalGradeSheetPdf } from "@/lib/pdf-generator";
 import {
+  ArrowDownWideNarrow,
+  ArrowUpDown,
+  ArrowUpNarrowWide,
   Award,
   CheckCircle2,
   ChevronLeft,
@@ -59,6 +71,7 @@ import {
   ExternalLink,
   FileSpreadsheet,
   FileText,
+  Filter,
   KeyRound,
   Loader2,
   Mail,
@@ -74,7 +87,9 @@ import {
   Square,
   Timer,
   Trash2,
+  Trophy,
   Users,
+  Wrench,
   X,
 } from "lucide-react";
 
@@ -174,7 +189,12 @@ export function AdminPracticalPanel(props: {
   const [windowOpen, setWindowOpen] = useState(false);
   const [deskView, setDeskView] = useState<FinalExamDeskView>(props.desk || "live");
   const [activeSubId, setActiveSubId] = useState<string | null>(props.subId || null);
-  const [queueFilter, setQueueFilter] = useState<"needs" | "graded" | "all">("needs");
+  const [queueFilter, setQueueFilter] = useState<GradeQueueStatusFilter>("all");
+  const [queueScoreFilter, setQueueScoreFilter] = useState<GradeQueueScoreFilter>("all");
+  const [queueRegion, setQueueRegion] = useState<string>("all");
+  const [queueSearch, setQueueSearch] = useState<string>("");
+  const [queueSort, setQueueSort] = useState<GradeQueueSortBy>("total_desc");
+  const [showBatchTools, setShowBatchTools] = useState(false);
   const [quizRecord, setQuizRecord] = useState<FinalQuizRecordSnapshot | null>(null);
   const [quizRecordMeta, setQuizRecordMeta] = useState<{
     combinedPct?: number;
@@ -405,25 +425,64 @@ export function AdminPracticalPanel(props: {
     return created;
   };
 
-  const courseSubs = subs
-    .filter((s) => s.courseId === courseId)
-    .sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
-
-  const pendingGradeCount = useMemo(
-    () =>
-      courseSubs.filter(
-        (s) => s.status === "submitted" || s.status === "late" || s.status === "returned",
-      ).length,
-    [courseSubs],
+  const courseSubs = useMemo(
+    () => subs.filter((s) => s.courseId === courseId),
+    [subs, courseId],
   );
 
-  const filteredQueue = useMemo(() => {
-    if (queueFilter === "all") return courseSubs;
-    if (queueFilter === "graded") return courseSubs.filter((s) => s.status === "graded");
-    return courseSubs.filter(
-      (s) => s.status === "submitted" || s.status === "late" || s.status === "returned",
-    );
-  }, [courseSubs, queueFilter]);
+  const { items: enrichedQueue, stats: queueStats } = useMemo(
+    () => enrichGradingQueue(courseSubs, exam),
+    [courseSubs, exam],
+  );
+
+  const pendingGradeCount = queueStats.needs;
+
+  const queueRegions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of courseSubs) {
+      const reg = (s.regionName || "").trim();
+      if (!reg) continue;
+      counts.set(reg, (counts.get(reg) || 0) + 1);
+    }
+    return Array.from(counts.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [courseSubs]);
+
+  const filteredQueueItems = useMemo(
+    () =>
+      filterAndSortGradingQueue(enrichedQueue, {
+        statusFilter: queueFilter,
+        scoreFilter: queueScoreFilter,
+        region: queueRegion,
+        search: queueSearch,
+        sortBy: queueSort,
+      }),
+    [enrichedQueue, queueFilter, queueScoreFilter, queueRegion, queueSearch, queueSort],
+  );
+
+  const filteredQueue = useMemo(
+    () => filteredQueueItems.map((it) => it.sub),
+    [filteredQueueItems],
+  );
+
+  const activeSortMeta = useMemo(
+    () => GRADE_QUEUE_SORT_OPTIONS.find((o) => o.id === queueSort) || GRADE_QUEUE_SORT_OPTIONS[0]!,
+    [queueSort],
+  );
+
+  const hasActiveQueueFilters =
+    queueFilter !== "all" ||
+    queueScoreFilter !== "all" ||
+    queueRegion !== "all" ||
+    queueSearch.trim() !== "" ||
+    queueSort !== "total_desc";
+
+  const resetQueueFilters = () => {
+    setQueueFilter("all");
+    setQueueScoreFilter("all");
+    setQueueRegion("all");
+    setQueueSearch("");
+    setQueueSort("total_desc");
+  };
 
   const activeSub = useMemo(() => {
     if (!activeSubId) return undefined;
@@ -2611,117 +2670,442 @@ export function AdminPracticalPanel(props: {
 
       {deskView === "grade" && !activeSub && (
         <section className="space-y-4">
+          {/* Header */}
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div className="min-w-0 space-y-1">
               <h3 className="text-base font-black tracking-tight">Grading queue</h3>
               <p className="text-xs text-muted-foreground">
-                Open one student at a time. Mark, save, then move to the next.
+                Filter and sort by rank, marks, quiz, practical, or centre. Prev / Next inside a
+                student follows your active order.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => void refreshQuizScores()}
-                disabled={!!busyId || !course}
-                className="staff-btn-ghost disabled:opacity-50"
+                onClick={() => setShowBatchTools((v) => !v)}
+                className={
+                  showBatchTools
+                    ? "inline-flex items-center gap-1.5 rounded-xl border border-primary/50 bg-primary/10 px-3 py-2 text-xs font-bold text-primary transition-colors"
+                    : "staff-btn-ghost"
+                }
               >
-                {busyId === "quiz-refresh" ? "Refreshing…" : "Refresh quiz scores"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void applyReviewedGrades(true)}
-                disabled={!!busyId || !course}
-                className="staff-btn-ghost disabled:opacity-50"
-              >
-                {busyId === "revgrade-dry" ? "Checking…" : "Preview reviewed marks"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void applyReviewedGrades(false)}
-                disabled={!!busyId || !course || pendingGradeCount === 0}
-                className="staff-btn-ghost disabled:opacity-50"
-              >
-                {busyId === "revgrade"
-                  ? "Applying…"
-                  : `Apply reviewed marks (${pendingGradeCount})`}
-              </button>
-              <button
-                type="button"
-                onClick={() => void applyReviewedGrades(false, true)}
-                disabled={!!busyId || !course}
-                className="staff-btn-ghost disabled:opacity-50"
-              >
-                {busyId === "revgrade-restore" ? "Restoring…" : "Restore comments"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void mergeQuiz17IntoFinal(true)}
-                disabled={!!busyId || !course}
-                className="staff-btn-ghost disabled:opacity-50"
-              >
-                {busyId === "q17-dry" ? "Checking…" : "Preview Quiz 17 → Final"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void mergeQuiz17IntoFinal(false)}
-                disabled={!!busyId || !course}
-                className="staff-btn-ghost disabled:opacity-50"
-              >
-                {busyId === "q17-merge" ? "Merging…" : "Merge Quiz 17 → Final"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void importGoogleFormBackups(true)}
-                disabled={!!busyId || !course}
-                className="staff-btn-ghost disabled:opacity-50"
-              >
-                {busyId === "gform-dry" ? "Checking…" : "Preview Google Form import"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void importGoogleFormBackups(false)}
-                disabled={!!busyId || !course}
-                className="staff-btn-ghost disabled:opacity-50"
-              >
-                {busyId === "gform" ? "Importing…" : "Import Google Form (33)"}
+                <Wrench className="h-3.5 w-3.5" />
+                <span>{showBatchTools ? "Hide batch tools" : "Batch & import tools"}</span>
               </button>
               <button
                 type="button"
                 onClick={() => void bulkIssue()}
                 disabled={busyId === "bulk" || !course || courseSubs.length === 0}
-                className="staff-btn-ghost disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-800 transition-colors hover:bg-emerald-500/20 disabled:opacity-50 dark:text-emerald-200"
               >
-                <Award className="h-3.5 w-3.5" /> Issue all eligible
+                <Award className="h-3.5 w-3.5" />
+                <span>{busyId === "bulk" ? "Issuing…" : "Issue all eligible"}</span>
               </button>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-1 rounded-2xl border border-border/80 bg-muted/30 p-1">
-            {(
-              [
-                { id: "needs" as const, label: `Needs grade (${pendingGradeCount})` },
-                {
-                  id: "graded" as const,
-                  label: `Graded (${courseSubs.filter((s) => s.status === "graded").length})`,
-                },
-                { id: "all" as const, label: `All (${courseSubs.length})` },
-              ] as const
-            ).map((f) => (
+          {/* Collapsible Batch & Import Tools */}
+          {showBatchTools && (
+            <div className="rounded-2xl border border-border/80 bg-muted/25 p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground">
+                  Batch sync, reviewed grades &amp; imports
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowBatchTools(false)}
+                  className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  aria-label="Close batch tools"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void refreshQuizScores()}
+                  disabled={!!busyId || !course}
+                  className="staff-btn-ghost disabled:opacity-50"
+                >
+                  {busyId === "quiz-refresh" ? "Refreshing…" : "Refresh quiz scores"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void applyReviewedGrades(true)}
+                  disabled={!!busyId || !course}
+                  className="staff-btn-ghost disabled:opacity-50"
+                >
+                  {busyId === "revgrade-dry" ? "Checking…" : "Preview reviewed marks"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void applyReviewedGrades(false)}
+                  disabled={!!busyId || !course || pendingGradeCount === 0}
+                  className="staff-btn-ghost disabled:opacity-50"
+                >
+                  {busyId === "revgrade"
+                    ? "Applying…"
+                    : `Apply reviewed marks (${pendingGradeCount})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void applyReviewedGrades(false, true)}
+                  disabled={!!busyId || !course}
+                  className="staff-btn-ghost disabled:opacity-50"
+                >
+                  {busyId === "revgrade-restore" ? "Restoring…" : "Restore comments"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void mergeQuiz17IntoFinal(true)}
+                  disabled={!!busyId || !course}
+                  className="staff-btn-ghost disabled:opacity-50"
+                >
+                  {busyId === "q17-dry" ? "Checking…" : "Preview Quiz 17 → Final"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void mergeQuiz17IntoFinal(false)}
+                  disabled={!!busyId || !course}
+                  className="staff-btn-ghost disabled:opacity-50"
+                >
+                  {busyId === "q17-merge" ? "Merging…" : "Merge Quiz 17 → Final"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void importGoogleFormBackups(true)}
+                  disabled={!!busyId || !course}
+                  className="staff-btn-ghost disabled:opacity-50"
+                >
+                  {busyId === "gform-dry" ? "Checking…" : "Preview Google Form import"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void importGoogleFormBackups(false)}
+                  disabled={!!busyId || !course}
+                  className="staff-btn-ghost disabled:opacity-50"
+                >
+                  {busyId === "gform" ? "Importing…" : "Import Google Form (33)"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Interactive Summary Metrics */}
+          {courseSubs.length > 0 && (
+            <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
               <button
-                key={f.id}
                 type="button"
-                onClick={() => setQueueFilter(f.id)}
-                className={`rounded-xl px-3 py-1.5 text-[11px] font-bold transition-colors ${
-                  queueFilter === f.id
-                    ? "bg-card text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setQueueFilter("all");
+                  setQueueScoreFilter("all");
+                }}
+                className={`staff-metric staff-metric-clickable text-left ${
+                  queueFilter === "all" && queueScoreFilter === "all"
+                    ? "ring-2 ring-primary/40 border-primary/50"
+                    : ""
                 }`}
               >
-                {f.label}
+                <div className="staff-metric-label">Total submissions</div>
+                <div className="staff-metric-value">{queueStats.total}</div>
+                <div className="staff-metric-hint">
+                  {queueStats.avgTotalMarks !== null
+                    ? `Avg ${queueStats.avgTotalMarks}/${exam?.totalMaxMarks ?? 70} (${queueStats.avgCombinedPct}%)`
+                    : `${queueStats.withQuiz} with quiz linked`}
+                </div>
               </button>
-            ))}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setQueueFilter("needs");
+                  setQueueScoreFilter("all");
+                }}
+                className={`staff-metric staff-metric-amber staff-metric-clickable text-left ${
+                  queueFilter === "needs" ? "ring-2 ring-amber-500/40 border-amber-500/50" : ""
+                }`}
+              >
+                <div className="staff-metric-label">Needs grading</div>
+                <div className="staff-metric-value">{queueStats.needs}</div>
+                <div className="staff-metric-hint">
+                  {queueStats.late} late · {queueStats.returned} returned
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setQueueFilter("graded");
+                  setQueueScoreFilter("all");
+                }}
+                className={`staff-metric staff-metric-emerald staff-metric-clickable text-left ${
+                  queueFilter === "graded" && queueScoreFilter === "all"
+                    ? "ring-2 ring-emerald-500/40 border-emerald-500/50"
+                    : ""
+                }`}
+              >
+                <div className="staff-metric-label">Graded</div>
+                <div className="staff-metric-value">{queueStats.graded}</div>
+                <div className="staff-metric-hint">
+                  {queueStats.passing} passing · {queueStats.topPerformers} top 80%+
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setQueueFilter("all");
+                  setQueueScoreFilter(queueStats.failing > 0 ? "failing" : "missing_quiz");
+                  if (queueStats.failing > 0) setQueueSort("total_asc");
+                }}
+                className={`staff-metric staff-metric-rose staff-metric-clickable text-left ${
+                  queueScoreFilter === "failing" || queueScoreFilter === "missing_quiz"
+                    ? "ring-2 ring-rose-500/40 border-rose-500/50"
+                    : ""
+                }`}
+              >
+                <div className="staff-metric-label">Below pass (&lt;{queueStats.passThresholdPct}%)</div>
+                <div className="staff-metric-value">{queueStats.failing}</div>
+                <div className="staff-metric-hint">
+                  {queueStats.missingQuiz} missing quiz score
+                </div>
+              </button>
+            </div>
+          )}
+
+          {/* Filter & Sorting Control Bar */}
+          <div className="rounded-2xl border border-border/80 bg-card p-3 space-y-3 shadow-xs">
+            {/* Row 1: Status Tabs + 1-Click Quick Sort Chips */}
+            <div className="flex flex-wrap items-center justify-between gap-2.5">
+              <div
+                className="flex flex-wrap gap-1 rounded-xl border border-border/80 bg-muted/35 p-1"
+                role="tablist"
+                aria-label="Grading status filter"
+              >
+                {(
+                  [
+                    { id: "all" as const, label: "All", count: queueStats.total },
+                    { id: "needs" as const, label: "Needs grade", count: queueStats.needs },
+                    { id: "graded" as const, label: "Graded", count: queueStats.graded },
+                    ...(queueStats.late > 0
+                      ? [{ id: "late" as const, label: "Late", count: queueStats.late }]
+                      : []),
+                    ...(queueStats.returned > 0
+                      ? [{ id: "returned" as const, label: "Returned", count: queueStats.returned }]
+                      : []),
+                  ] as const
+                ).map((f) => {
+                  const active = queueFilter === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setQueueFilter(f.id)}
+                      className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
+                        active
+                          ? "bg-card text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <span>{f.label}</span>
+                      <span
+                        className={`inline-flex min-w-[1.2rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+                          f.id === "needs" && f.count > 0
+                            ? "bg-amber-500/20 text-amber-800 dark:text-amber-200"
+                            : f.id === "graded"
+                              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                              : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {f.count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* 1-Click Quick Sort Pills */}
+              <div className="flex flex-wrap items-center gap-1.5" aria-label="Quick sort options">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mr-0.5">
+                  Quick sort:
+                </span>
+                {(
+                  [
+                    {
+                      label: "Rank (High → Low)",
+                      active: queueSort === "total_desc",
+                      onClick: () => setQueueSort("total_desc"),
+                      icon: <ArrowDownWideNarrow className="h-3 w-3" />,
+                    },
+                    {
+                      label: "Low → High",
+                      active: queueSort === "total_asc",
+                      onClick: () => setQueueSort("total_asc"),
+                      icon: <ArrowUpNarrowWide className="h-3 w-3" />,
+                    },
+                    {
+                      label:
+                        queueSort === "practical_asc"
+                          ? "Practical ↑"
+                          : queueSort === "practical_desc"
+                            ? "Practical ↓"
+                            : "Practical",
+                      active: queueSort === "practical_desc" || queueSort === "practical_asc",
+                      onClick: () =>
+                        setQueueSort(
+                          queueSort === "practical_desc" ? "practical_asc" : "practical_desc",
+                        ),
+                    },
+                    {
+                      label:
+                        queueSort === "quiz_asc"
+                          ? "Quiz ↑"
+                          : queueSort === "quiz_desc"
+                            ? "Quiz ↓"
+                            : "Quiz",
+                      active: queueSort === "quiz_desc" || queueSort === "quiz_asc",
+                      onClick: () =>
+                        setQueueSort(queueSort === "quiz_desc" ? "quiz_asc" : "quiz_desc"),
+                    },
+                    {
+                      label: queueSort === "roll_desc" ? "Roll Z–A" : "Roll A–Z",
+                      active: queueSort === "roll_asc" || queueSort === "roll_desc",
+                      onClick: () =>
+                        setQueueSort(queueSort === "roll_asc" ? "roll_desc" : "roll_asc"),
+                    },
+                  ] as const
+                ).map((chip) => (
+                  <button
+                    key={chip.label}
+                    type="button"
+                    onClick={chip.onClick}
+                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                      chip.active
+                        ? "border-primary/50 bg-primary/12 text-primary shadow-2xs"
+                        : "border-border bg-background/70 text-muted-foreground hover:bg-accent hover:text-foreground"
+                    }`}
+                  >
+                    {"icon" in chip ? chip.icon : null}
+                    <span>{chip.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Row 2: Search, Region, Score Band, Full Sort Selector + Flip Direction */}
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-12">
+              <div className="relative lg:col-span-4">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={queueSearch}
+                  onChange={(e) => setQueueSearch(e.target.value)}
+                  placeholder="Search roll, student name, region, phone…"
+                  className="staff-input !py-1.5 !pl-8 !pr-7 text-xs"
+                />
+                {queueSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setQueueSearch("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                    aria-label="Clear search"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+
+              <div className="lg:col-span-2">
+                <select
+                  value={queueRegion}
+                  onChange={(e) => setQueueRegion(e.target.value)}
+                  className="staff-input !py-1.5 text-xs"
+                  aria-label="Filter by region"
+                >
+                  <option value="all">All regions ({queueRegions.length})</option>
+                  {queueRegions.map(([reg, count]) => (
+                    <option key={reg} value={reg}>
+                      {reg} ({count})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="lg:col-span-3">
+                <select
+                  value={queueScoreFilter}
+                  onChange={(e) => setQueueScoreFilter(e.target.value as GradeQueueScoreFilter)}
+                  className="staff-input !py-1.5 text-xs"
+                  aria-label="Filter by score band"
+                >
+                  <option value="all">All scores &amp; results</option>
+                  <option value="top">Top performers 80%+ ({queueStats.topPerformers})</option>
+                  <option value="passing">
+                    Passing ≥{queueStats.passThresholdPct}% ({queueStats.passing})
+                  </option>
+                  <option value="failing">
+                    Below pass &lt;{queueStats.passThresholdPct}% ({queueStats.failing})
+                  </option>
+                  <option value="missing_quiz">
+                    Missing quiz score ({queueStats.missingQuiz})
+                  </option>
+                  <option value="has_quiz">Has quiz score ({queueStats.withQuiz})</option>
+                  <option value="ungraded_practical">
+                    Ungraded practical ({queueStats.total - queueStats.graded})
+                  </option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5 lg:col-span-3">
+                <select
+                  value={queueSort}
+                  onChange={(e) => setQueueSort(e.target.value as GradeQueueSortBy)}
+                  className="staff-input !py-1.5 text-xs flex-1"
+                  aria-label="Sort submissions"
+                >
+                  {GRADE_QUEUE_SORT_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setQueueSort(getFlipSortTarget(queueSort))}
+                  title="Flip sort direction (High ↔ Low / A ↔ Z)"
+                  aria-label="Flip sort direction"
+                  className="inline-flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-xl border border-border bg-background text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <ArrowUpDown className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Active Filter Summary */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Filter className="h-3 w-3 text-primary" />
+                <span>
+                  Showing <strong className="text-foreground">{filteredQueueItems.length}</strong>{" "}
+                  of <strong className="text-foreground">{courseSubs.length}</strong> submissions ·{" "}
+                  Sorted by <strong className="text-foreground">{activeSortMeta.label}</strong>
+                </span>
+              </div>
+              {hasActiveQueueFilters && (
+                <button
+                  type="button"
+                  onClick={resetQueueFilters}
+                  className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-bold text-primary hover:bg-primary/10"
+                >
+                  <RotateCcw className="h-3 w-3" /> Reset filters
+                </button>
+              )}
+            </div>
           </div>
 
+          {/* Queue List */}
           {courseSubs.length === 0 ? (
             <div className="staff-empty">
               <p className="staff-empty-title">No submissions yet</p>
@@ -2729,45 +3113,171 @@ export function AdminPracticalPanel(props: {
                 Students submit practical work from the portal after the final quiz unlocks.
               </p>
             </div>
-          ) : filteredQueue.length === 0 ? (
-            <div className="staff-empty">
-              <p className="staff-empty-title">Nothing in this filter</p>
-              <p className="staff-empty-desc">Try Graded or All.</p>
+          ) : filteredQueueItems.length === 0 ? (
+            <div className="staff-empty space-y-2">
+              <p className="staff-empty-title">No submissions match these filters</p>
+              <p className="staff-empty-desc">
+                Try clearing the search query, region, or score band filter.
+              </p>
+              {hasActiveQueueFilters && (
+                <button
+                  type="button"
+                  onClick={resetQueueFilters}
+                  className="staff-btn-ghost mx-auto !py-1.5 text-xs"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" /> Reset all filters
+                </button>
+              )}
             </div>
           ) : (
-            <ul className="divide-y divide-border/70 overflow-hidden rounded-3xl border border-border/80 bg-card">
-              {filteredQueue.map((sub, idx) => (
-                <li key={sub.id}>
-                  <button
-                    type="button"
-                    onClick={() => goDesk({ desk: "grade", subId: sub.id })}
-                    className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/40"
-                  >
-                    <span className="w-7 shrink-0 font-mono text-[11px] font-bold text-muted-foreground">
-                      {idx + 1}
-                    </span>
-                    <div className="assess-avatar !h-9 !w-9 !text-[11px]" aria-hidden>
-                      {studentInitials(sub.studentName)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-bold">{sub.studentName}</div>
-                      <div className="truncate font-mono text-[11px] text-muted-foreground">
-                        {sub.rollNumber}
-                        {sub.regionName ? ` · ${sub.regionName}` : ""}
+            <ul className="divide-y divide-border/70 overflow-hidden rounded-2xl border border-border/80 bg-card shadow-xs">
+              {filteredQueueItems.map((item, idx) => {
+                const { sub } = item;
+                const pctBar = Math.max(
+                  0,
+                  Math.min(100, Math.round((item.totalMarks / Math.max(1, item.maxTotal)) * 100)),
+                );
+                const barTone =
+                  item.combinedPct === null
+                    ? "bg-muted-foreground/30"
+                    : item.combinedPct >= 80
+                      ? "bg-emerald-500"
+                      : item.isPassing
+                        ? "bg-sky-500"
+                        : "bg-rose-500";
+                const scoreTextTone =
+                  item.combinedPct === null
+                    ? "text-muted-foreground"
+                    : item.combinedPct >= 80
+                      ? "text-emerald-700 dark:text-emerald-300"
+                      : item.isPassing
+                        ? "text-foreground"
+                        : "text-rose-700 dark:text-rose-300";
+                const rankBadgeTone =
+                  item.meritRank === 1
+                    ? "border-amber-500/45 bg-amber-500/15 text-amber-800 dark:text-amber-200"
+                    : item.meritRank === 2
+                      ? "border-slate-400/45 bg-slate-400/15 text-slate-700 dark:text-slate-200"
+                      : item.meritRank === 3
+                        ? "border-orange-500/40 bg-orange-500/15 text-orange-800 dark:text-orange-200"
+                        : "border-border bg-muted/50 text-muted-foreground";
+                return (
+                  <li key={sub.id}>
+                    <button
+                      type="button"
+                      onClick={() => goDesk({ desk: "grade", subId: sub.id })}
+                      className="flex w-full flex-wrap items-center gap-x-3 gap-y-2.5 px-4 py-3 text-left transition-colors hover:bg-muted/40 sm:flex-nowrap"
+                    >
+                      {/* Row Position & Avatar */}
+                      <span className="w-6 shrink-0 font-mono text-[11px] font-bold text-muted-foreground">
+                        {idx + 1}
+                      </span>
+                      <div className="assess-avatar !h-9 !w-9 !text-[11px] shrink-0" aria-hidden>
+                        {studentInitials(sub.studentName)}
                       </div>
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1">
-                      <StatusPill status={sub.status} />
-                      {typeof sub.quizAccuracyPct === "number" && (
-                        <span className="font-mono text-[10px] text-muted-foreground">
-                          quiz {sub.quizAccuracyPct}%
-                        </span>
-                      )}
-                    </div>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  </button>
-                </li>
-              ))}
+
+                      {/* Identity & Meta */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="truncate text-sm font-bold text-foreground">
+                            {sub.studentName}
+                          </span>
+                          {item.meritRank !== null && (
+                            <span
+                              className={`inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 font-mono text-[10px] font-black ${rankBadgeTone}`}
+                              title={`Course merit rank #${item.meritRank}`}
+                            >
+                              {item.meritRank <= 3 && <Trophy className="h-2.5 w-2.5" />}
+                              #{item.meritRank}
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] text-muted-foreground">
+                          <span className="font-semibold text-foreground/80">{sub.rollNumber}</span>
+                          {sub.regionName && <span>· {sub.regionName}</span>}
+                          {item.totalTaskCount > 0 && (
+                            <span className="text-[10px]">
+                              · {item.answeredTaskCount}/{item.totalTaskCount} tasks
+                            </span>
+                          )}
+                          {item.fileCount > 0 && (
+                            <span className="text-[10px]">
+                              · {item.fileCount} file{item.fileCount === 1 ? "" : "s"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Score Breakdown Pills */}
+                      <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+                        <div className="hidden md:flex items-center gap-1.5 font-mono text-[11px]">
+                          <span
+                            className={`rounded-lg border px-2 py-1 ${
+                              item.hasQuiz
+                                ? "border-border/80 bg-muted/35 text-foreground"
+                                : "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300"
+                            }`}
+                            title={
+                              item.hasQuiz
+                                ? `Final Quiz: ${item.quizMarks}/${item.quizMaxMarks} (${item.quizPct}%)`
+                                : "No Final Quiz score linked yet"
+                            }
+                          >
+                            <span className="text-[9px] font-sans font-bold uppercase text-muted-foreground mr-1">
+                              Q
+                            </span>
+                            {item.hasQuiz ? `${item.quizMarks}/${item.quizMaxMarks}` : "—"}
+                          </span>
+                          <span
+                            className={`rounded-lg border px-2 py-1 ${
+                              item.hasPracticalScore
+                                ? "border-border/80 bg-muted/35 text-foreground"
+                                : "border-border/60 bg-muted/20 text-muted-foreground"
+                            }`}
+                            title={
+                              item.hasPracticalScore
+                                ? `Practical: ${item.practicalMarks}/${item.practicalMaxMarks} (${item.practicalPct}%)`
+                                : "Practical not graded yet"
+                            }
+                          >
+                            <span className="text-[9px] font-sans font-bold uppercase text-muted-foreground mr-1">
+                              P
+                            </span>
+                            {item.hasPracticalScore
+                              ? `${item.practicalMarks}/${item.practicalMaxMarks}`
+                              : "—"}
+                          </span>
+                        </div>
+
+                        {/* Total Score + Micro Bar */}
+                        <div className="min-w-[82px] text-right">
+                          <div className={`font-mono text-xs font-black ${scoreTextTone}`}>
+                            {item.combinedPct !== null
+                              ? `${item.totalMarks}/${item.maxTotal}`
+                              : "—"}
+                            {item.combinedPct !== null && (
+                              <span className="ml-1 text-[10px] font-semibold text-muted-foreground">
+                                {item.combinedPct}%
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-1 ml-auto h-1.5 w-16 overflow-hidden rounded-full bg-muted">
+                            <div
+                              className={`h-full rounded-full transition-all ${barTone}`}
+                              style={{ width: `${pctBar}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="w-[74px] flex justify-end">
+                          <StatusPill status={sub.status} />
+                        </div>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
@@ -2783,8 +3293,13 @@ export function AdminPracticalPanel(props: {
             >
               <ChevronLeft className="h-3.5 w-3.5" /> Queue
             </button>
-            <div className="font-mono text-[11px] font-bold text-muted-foreground">
-              {activeSubIndex + 1} / {navQueue.length}
+            <div className="flex items-center gap-2 font-mono text-[11px] font-bold text-muted-foreground">
+              <span>
+                {activeSubIndex + 1} / {navQueue.length}
+              </span>
+              <span className="hidden sm:inline font-sans text-[10px] font-semibold opacity-80">
+                · {activeSortMeta.shortLabel}
+              </span>
             </div>
             <div className="flex gap-1.5">
               <button
