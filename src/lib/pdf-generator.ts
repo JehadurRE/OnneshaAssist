@@ -1248,6 +1248,40 @@ export function drawCertificateOnCanvas(
       ? `${merit.sub}  ·  COURSE CODE: ${certificate.courseCode}`
       : merit.sub;
     fillTextAutoFit(ctx, subLine, W / 2, by + 132, bannerW - 80, 18, 13, "600", "sans-serif");
+  } else if (scoreMode === "pure_percentage") {
+    const cardW = 760;
+    const cardH = 152;
+    const bx = W / 2 - cardW / 2;
+    const by = cardY + 6;
+    drawRoundedRect(ctx, bx, by, cardW, cardH, 24);
+    ctx.fillStyle = theme.cardBg;
+    ctx.fill();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = theme.cardBorder;
+    ctx.stroke();
+
+    drawRoundedRect(ctx, bx + 40, by + 12, cardW - 80, 6, 3);
+    ctx.fillStyle = theme.accentColor;
+    ctx.fill();
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = theme.textMuted;
+    ctx.font = "bold 17px sans-serif";
+    ctx.fillText(
+      isCourseCert ? "OVERALL ACHIEVEMENT" : "VERIFIED GRADE",
+      W / 2,
+      by + 46,
+    );
+
+    ctx.fillStyle = theme.textPrimary;
+    ctx.font = "900 58px monospace";
+    ctx.fillText(`${effectivePct}%`, W / 2, by + 106);
+
+    ctx.fillStyle = theme.textSecondary;
+    const subLine = certificate.courseCode
+      ? `Course ${certificate.courseCode} · Verified Credential`
+      : "Verified Assessment Achievement";
+    fillTextAutoFit(ctx, subLine, W / 2, by + 138, cardW - 60, 17, 12, "600", "sans-serif");
   } else if (scoreMode === "percentage_only") {
     const cardW = 680;
     const cardH = 166;

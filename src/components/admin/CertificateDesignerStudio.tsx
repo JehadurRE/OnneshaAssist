@@ -828,8 +828,13 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
                         desc: "Coursera-style distinction tier — hides raw marks & percentages",
                       },
                       {
+                        id: "pure_percentage",
+                        label: "Percentage Only",
+                        desc: "Shows only the overall percentage grade — no merit tier or raw marks",
+                      },
+                      {
                         id: "percentage_only",
-                        label: "Merit + Percentage Only",
+                        label: "Merit + Percentage",
                         desc: "Shows distinction tier & overall grade % without raw breakdown",
                       },
                       {

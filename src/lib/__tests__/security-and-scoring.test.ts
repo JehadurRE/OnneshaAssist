@@ -778,6 +778,13 @@ describe("certificate designer branding, themes, Bangladesh map & multi-signator
         `${s.name} ${s.title}`.toLowerCase().includes("learning bangladesh"),
       ),
     ).toBe(false);
+
+    const purePctBranding = mergeBrandingSettings({
+      courseCertificate: { certScoreDisplayMode: "pure_percentage" },
+    });
+    expect(
+      getCertificateDesignProfile(purePctBranding, "course_completion").certScoreDisplayMode,
+    ).toBe("pure_percentage");
   });
 });
 

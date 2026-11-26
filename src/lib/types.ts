@@ -686,6 +686,7 @@ export interface CertificateSignatory {
 
 export type CertificateScoreDisplayMode =
   | "merit_only"
+  | "pure_percentage"
   | "percentage_only"
   | "full_scores"
   | "none";

@@ -327,6 +327,7 @@ function sanitizeScoreDisplayMode(
 ): CertificateScoreDisplayMode {
   if (
     value === "merit_only" ||
+    value === "pure_percentage" ||
     value === "percentage_only" ||
     value === "full_scores" ||
     value === "none"
