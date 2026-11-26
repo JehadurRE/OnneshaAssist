@@ -684,6 +684,12 @@ export interface CertificateSignatory {
   signatureStyle?: "script" | "formal" | "mono" | undefined;
 }
 
+export type CertificateScoreDisplayMode =
+  | "merit_only"
+  | "percentage_only"
+  | "full_scores"
+  | "none";
+
 /** Per-kind certificate visual design (quiz session vs course completion). */
 export interface CertificateDesignProfile {
   certThemePreset?: CertificateThemePreset;
@@ -697,6 +703,7 @@ export interface CertificateDesignProfile {
   certCustomBgOpacity?: number;
   certBadgeTitle?: string;
   certAuthoritySubtitle?: string;
+  certScoreDisplayMode?: CertificateScoreDisplayMode;
   certSignatories?: CertificateSignatory[];
 }
 
@@ -709,6 +716,8 @@ export interface BrandingSettings {
   leftLogoLabel?: string | undefined;
   rightLogoUrl?: string | undefined;
   rightLogoLabel?: string | undefined;
+  rightSecondaryLogoUrl?: string | undefined;
+  rightSecondaryLogoLabel?: string | undefined;
   partnerLogos?: CertificatePartnerLogo[] | undefined;
   /** @deprecated Legacy quiz-certificate fields — prefer quizCertificate. Used as quiz fallback. */
   certThemePreset?: CertificateThemePreset | undefined;
@@ -722,6 +731,7 @@ export interface BrandingSettings {
   certCustomBgOpacity?: number | undefined;
   certBadgeTitle?: string | undefined;
   certAuthoritySubtitle?: string | undefined;
+  certScoreDisplayMode?: CertificateScoreDisplayMode | undefined;
   certSignatories?: CertificateSignatory[] | undefined;
   /** Design for normal quiz-session certificates. Falls back to top-level cert* when unset. */
   quizCertificate?: CertificateDesignProfile | undefined;

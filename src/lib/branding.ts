@@ -3,6 +3,7 @@ import type {
   CertificateDesignProfile,
   CertificateKind,
   CertificatePartnerLogo,
+  CertificateScoreDisplayMode,
   CertificateSignatory,
   CertificateThemePreset,
 } from "./types";
@@ -150,6 +151,8 @@ export const CERTIFICATE_THEME_PRESETS: Record<CertificateThemePreset, Certifica
 };
 
 export const ONNESHA_MAIN_LOGO_URL = "/assets/onnesha-mark.png";
+export const ANSAR_VDP_LOGO_URL = "/assets/ansar.svg";
+export const CCAI_LOGO_URL = "/assets/ccai.png";
 
 export const DEFAULT_CERTIFICATE_SIGNATORIES: CertificateSignatory[] = [
   {
@@ -187,6 +190,15 @@ export const DEFAULT_COURSE_CERTIFICATE_SIGNATORIES: CertificateSignatory[] = [
     signatureImageUrl: "/assets/sig-md-mainul-islam.png",
     signatureStyle: "script",
   },
+  {
+    id: "sig-lead-instructor",
+    name: "Md. Jehad",
+    title:
+      "Lead Training Instructor | Certified Google AI Professional · ITEE FE (Level 2) Passer | Cloud Connect AI Limited",
+    signatureText: "Md. Jehad",
+    signatureImageUrl: "/assets/sig-md-jehad.svg",
+    signatureStyle: "script",
+  },
 ];
 
 const DEFAULT_QUIZ_CERTIFICATE_PROFILE: CertificateDesignProfile = {
@@ -202,6 +214,7 @@ const DEFAULT_QUIZ_CERTIFICATE_PROFILE: CertificateDesignProfile = {
   certBadgeTitle: "CERTIFICATE OF MERIT & EXCELLENCE",
   certAuthoritySubtitle:
     "National Training, Merit Evaluation & Cryptographic Examination Authority",
+  certScoreDisplayMode: "full_scores",
   certSignatories: DEFAULT_CERTIFICATE_SIGNATORIES.map((s) => ({ ...s })),
 };
 
@@ -218,6 +231,7 @@ const DEFAULT_COURSE_CERTIFICATE_PROFILE: CertificateDesignProfile = {
   certBadgeTitle: "CERTIFICATE OF COURSE COMPLETION",
   certAuthoritySubtitle:
     "Final Examination Authority — Full Course Credential & Practical Assessment Board",
+  certScoreDisplayMode: "merit_only",
   certSignatories: DEFAULT_COURSE_CERTIFICATE_SIGNATORIES.map((s) => ({ ...s })),
 };
 
@@ -228,8 +242,10 @@ export const DEFAULT_BRANDING_SETTINGS: BrandingSettings = {
   institutionTitle: "Onnesha Assessment Arena",
   leftLogoUrl: ONNESHA_MAIN_LOGO_URL,
   leftLogoLabel: "",
-  rightLogoUrl: "",
-  rightLogoLabel: "",
+  rightLogoUrl: ANSAR_VDP_LOGO_URL,
+  rightLogoLabel: "Bangladesh Ansar & VDP",
+  rightSecondaryLogoUrl: CCAI_LOGO_URL,
+  rightSecondaryLogoLabel: "Cloud Connect AI Limited",
   partnerLogos: [],
   certThemePreset: DEFAULT_QUIZ_CERTIFICATE_PROFILE.certThemePreset,
   certShowBangladeshAiMap: DEFAULT_QUIZ_CERTIFICATE_PROFILE.certShowBangladeshAiMap,
@@ -242,6 +258,7 @@ export const DEFAULT_BRANDING_SETTINGS: BrandingSettings = {
   certCustomBgOpacity: DEFAULT_QUIZ_CERTIFICATE_PROFILE.certCustomBgOpacity,
   certBadgeTitle: DEFAULT_QUIZ_CERTIFICATE_PROFILE.certBadgeTitle,
   certAuthoritySubtitle: DEFAULT_QUIZ_CERTIFICATE_PROFILE.certAuthoritySubtitle,
+  certScoreDisplayMode: DEFAULT_QUIZ_CERTIFICATE_PROFILE.certScoreDisplayMode,
   certSignatories: DEFAULT_CERTIFICATE_SIGNATORIES.map((s) => ({ ...s })),
   quizCertificate: { ...DEFAULT_QUIZ_CERTIFICATE_PROFILE },
   courseCertificate: { ...DEFAULT_COURSE_CERTIFICATE_PROFILE },
@@ -301,6 +318,21 @@ function sanitizeThemePreset(
   fallback: CertificateThemePreset,
 ): CertificateThemePreset {
   if (value && value in CERTIFICATE_THEME_PRESETS) return value;
+  return fallback;
+}
+
+function sanitizeScoreDisplayMode(
+  value: CertificateScoreDisplayMode | undefined,
+  fallback: CertificateScoreDisplayMode,
+): CertificateScoreDisplayMode {
+  if (
+    value === "merit_only" ||
+    value === "percentage_only" ||
+    value === "full_scores" ||
+    value === "none"
+  ) {
+    return value;
+  }
   return fallback;
 }
 
@@ -368,6 +400,10 @@ export function mergeCertificateDesignProfile(
       fallback.certBadgeTitle ||
       "CERTIFICATE OF MERIT & EXCELLENCE",
     certAuthoritySubtitle: authoritySubtitle,
+    certScoreDisplayMode: sanitizeScoreDisplayMode(
+      next.certScoreDisplayMode ?? base.certScoreDisplayMode,
+      fallback.certScoreDisplayMode || "full_scores",
+    ),
     certSignatories: sanitizeSignatories(
       next.certSignatories !== undefined ? next.certSignatories : base.certSignatories,
       fallbackSignatories,
@@ -401,6 +437,9 @@ function legacyProfileFromBranding(
   if (branding.certAuthoritySubtitle !== undefined) {
     out.certAuthoritySubtitle = branding.certAuthoritySubtitle;
   }
+  if (branding.certScoreDisplayMode !== undefined) {
+    out.certScoreDisplayMode = branding.certScoreDisplayMode;
+  }
   if (branding.certSignatories !== undefined) out.certSignatories = branding.certSignatories;
   return out;
 }
@@ -422,6 +461,7 @@ function applyProfileToBrandingTopLevel(
     certCustomBgOpacity: profile.certCustomBgOpacity,
     certBadgeTitle: profile.certBadgeTitle,
     certAuthoritySubtitle: profile.certAuthoritySubtitle,
+    certScoreDisplayMode: profile.certScoreDisplayMode,
     certSignatories: profile.certSignatories?.map((s) => ({ ...s })),
   };
 }
@@ -508,7 +548,8 @@ export function mergeBrandingSettings(
           next.certBorderColor !== undefined ||
           next.certCustomBgUrl !== undefined ||
           next.certCustomBgOpacity !== undefined ||
-          next.certAuthoritySubtitle !== undefined
+          next.certAuthoritySubtitle !== undefined ||
+          next.certScoreDisplayMode !== undefined
         ? legacyProfileFromBranding(next)
         : undefined,
     base.quizCertificate ?? legacyProfileFromBranding(base),
@@ -544,6 +585,12 @@ export function mergeBrandingSettings(
     leftLogoLabel: (next.leftLogoLabel ?? base.leftLogoLabel ?? "").trim(),
     rightLogoUrl: (next.rightLogoUrl ?? base.rightLogoUrl ?? "").trim(),
     rightLogoLabel: (next.rightLogoLabel ?? base.rightLogoLabel ?? "").trim(),
+    rightSecondaryLogoUrl: (next.rightSecondaryLogoUrl ?? base.rightSecondaryLogoUrl ?? "").trim(),
+    rightSecondaryLogoLabel: (
+      next.rightSecondaryLogoLabel ??
+      base.rightSecondaryLogoLabel ??
+      ""
+    ).trim(),
     partnerLogos: sanitizePartnerLogos(
       next.partnerLogos !== undefined ? next.partnerLogos : base.partnerLogos,
     ),
@@ -558,6 +605,7 @@ export function mergeBrandingSettings(
     certCustomBgOpacity: quizCertificate.certCustomBgOpacity,
     certBadgeTitle: quizCertificate.certBadgeTitle,
     certAuthoritySubtitle: quizCertificate.certAuthoritySubtitle,
+    certScoreDisplayMode: quizCertificate.certScoreDisplayMode,
     certSignatories: sanitizeSignatories(
       quizCertificate.certSignatories !== undefined
         ? quizCertificate.certSignatories

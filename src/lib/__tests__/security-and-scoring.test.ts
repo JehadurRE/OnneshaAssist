@@ -41,6 +41,8 @@ import {
 } from "../retake-utils";
 import { coercePinSearchParam, coerceSearchString } from "../utils";
 import {
+  ANSAR_VDP_LOGO_URL,
+  CCAI_LOGO_URL,
   CERTIFICATE_THEME_PRESETS,
   DEFAULT_BRANDING_SETTINGS,
   DEFAULT_COURSE_CERTIFICATE_SIGNATORIES,
@@ -737,18 +739,24 @@ describe("certificate designer branding, themes, Bangladesh map & multi-signator
     expect(customDarkTheme.accentColor).toBe("#5bc0be");
   });
 
-  it("seeds course completion certificate signatories from the official design (excluding Learning Bangladesh) and defaults to the updated Onnesha main logo", () => {
+  it("seeds course completion certificate signatories (excluding Learning Bangladesh), dual right logos, merit-only mode, and updated Onnesha main logo", () => {
     expect(DEFAULT_BRANDING_SETTINGS.leftLogoUrl).toBe(ONNESHA_MAIN_LOGO_URL);
     expect(ONNESHA_MAIN_LOGO_URL).toBe("/assets/onnesha-mark.png");
+    expect(DEFAULT_BRANDING_SETTINGS.rightLogoUrl).toBe(ANSAR_VDP_LOGO_URL);
+    expect(DEFAULT_BRANDING_SETTINGS.rightSecondaryLogoUrl).toBe(CCAI_LOGO_URL);
+
+    const quizProfile = getCertificateDesignProfile(DEFAULT_BRANDING_SETTINGS, "quiz_session");
+    expect(quizProfile.certScoreDisplayMode).toBe("full_scores");
 
     const courseProfile = getCertificateDesignProfile(
       DEFAULT_BRANDING_SETTINGS,
       "course_completion",
     );
-    expect(courseProfile.certSignatories).toHaveLength(2);
+    expect(courseProfile.certScoreDisplayMode).toBe("merit_only");
+    expect(courseProfile.certSignatories).toHaveLength(3);
     expect(courseProfile.certSignatories).toEqual(DEFAULT_COURSE_CERTIFICATE_SIGNATORIES);
 
-    const [first, second] = courseProfile.certSignatories || [];
+    const [first, second, third] = courseProfile.certSignatories || [];
     expect(first?.name).toBe("Brigadier General Tamjidul Haque Chowdhury");
     expect(first?.title).toContain("Managing Director");
     expect(first?.title).toContain("Cloud Connect AI Limited");
@@ -758,6 +766,12 @@ describe("certificate designer branding, themes, Bangladesh map & multi-signator
     expect(second?.title).toContain("Director (Project-Training)");
     expect(second?.title).toContain("Bangladesh Ansar & VDP Headquarters");
     expect(second?.signatureImageUrl).toBe("/assets/sig-md-mainul-islam.png");
+
+    expect(third?.name).toBe("Md. Jehad");
+    expect(third?.title).toContain("Lead Training Instructor");
+    expect(third?.title).toContain("Google AI Professional");
+    expect(third?.title).toContain("ITEE");
+    expect(third?.signatureImageUrl).toBe("/assets/sig-md-jehad.svg");
 
     expect(
       (courseProfile.certSignatories || []).some((s) =>

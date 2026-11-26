@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
+  ANSAR_VDP_LOGO_URL,
   brandingWithCertificateProfile,
+  CCAI_LOGO_URL,
   CERTIFICATE_THEME_PRESETS,
   DEFAULT_BRANDING_SETTINGS,
   DEFAULT_CERTIFICATE_SIGNATORIES,
@@ -9,14 +11,17 @@ import {
   ONNESHA_MAIN_LOGO_URL,
 } from "@/lib/branding";
 import { downloadCertificatePdf, populateCertificateCanvas } from "@/lib/pdf-generator";
+import { SANJIBON_COURSE } from "@/lib/sanjibon-seed-data";
 import type {
   BrandingSettings,
   CertificateData,
   CertificateDesignProfile,
   CertificateKind,
   CertificatePartnerLogo,
+  CertificateScoreDisplayMode,
   CertificateSignatory,
   CertificateThemePreset,
+  Course,
 } from "@/lib/types";
 import {
   Award,
@@ -35,13 +40,19 @@ import {
   Upload,
 } from "lucide-react";
 
+export type DesignerCertProfile = "quiz" | "course";
+export type DesignerStudioTab = "theme" | "logos" | "signatories";
+
 interface CertificateDesignerStudioProps {
   branding: BrandingSettings;
   onChange: (next: BrandingSettings) => void;
   onSave: () => void;
+  designProfile?: DesignerCertProfile | undefined;
+  onDesignProfileChange?: ((next: DesignerCertProfile) => void) | undefined;
+  studioTab?: DesignerStudioTab | undefined;
+  onStudioTabChange?: ((next: DesignerStudioTab) => void) | undefined;
+  previewCourse?: Course | undefined;
 }
-
-type DesignerCertProfile = "quiz" | "course";
 
 function profileToKind(profile: DesignerCertProfile): CertificateKind {
   return profile === "course" ? "course_completion" : "quiz_session";
@@ -79,16 +90,16 @@ const PREVIEW_SAMPLE_QUIZ: CertificateData = {
 const PREVIEW_SAMPLE_COURSE: CertificateData = {
   ...PREVIEW_SAMPLE_QUIZ,
   id: "preview-sample-course-cert",
-  certificateNumber: "ONN-COURSE-SB04-OLL001",
+  certificateNumber: "ONN-COURSE-AIDM04-OLL001",
   kind: "course_completion",
-  courseId: "course-sanjibon-ai-dm",
-  courseCode: "SB-AI-DM",
-  courseTitle: "Sanjibon AI for Disaster Management",
-  quizTitle: "SB-AI-DM — Certificate of Course Completion",
+  courseId: SANJIBON_COURSE.id,
+  courseCode: SANJIBON_COURSE.code,
+  courseTitle: SANJIBON_COURSE.titleEn,
+  quizTitle: SANJIBON_COURSE.titleEn,
   combinedScorePct: 92,
   quizAccuracyPct: 94,
   practicalScorePct: 90,
-  verificationUrl: "https://arena.onnesha.courses/verify/ONN-COURSE-SB04-OLL001",
+  verificationUrl: "https://arena.onnesha.courses/verify/ONN-COURSE-AIDM04-OLL001",
 };
 
 async function readImageFileAsDataUrl(
@@ -229,15 +240,42 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
   branding,
   onChange,
   onSave,
+  designProfile: controlledProfile,
+  onDesignProfileChange,
+  studioTab: controlledStudioTab,
+  onStudioTabChange,
+  previewCourse,
 }) => {
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [studioTab, setStudioTab] = useState<"theme" | "logos" | "signatories">("theme");
-  const [designProfile, setDesignProfile] = useState<DesignerCertProfile>("quiz");
+  const [localStudioTab, setLocalStudioTab] = useState<DesignerStudioTab>("theme");
+  const [localDesignProfile, setLocalDesignProfile] = useState<DesignerCertProfile>("course");
   const [isDownloadingSample, setIsDownloadingSample] = useState(false);
+
+  const designProfile = controlledProfile ?? localDesignProfile;
+  const studioTab = controlledStudioTab ?? localStudioTab;
+
+  const setDesignProfile = (next: DesignerCertProfile) => {
+    setLocalDesignProfile(next);
+    onDesignProfileChange?.(next);
+  };
+
+  const setStudioTab = (next: DesignerStudioTab) => {
+    setLocalStudioTab(next);
+    onStudioTabChange?.(next);
+  };
 
   const certKind = profileToKind(designProfile);
   const activeProfile = getCertificateDesignProfile(branding, certKind);
-  const previewSample = designProfile === "course" ? PREVIEW_SAMPLE_COURSE : PREVIEW_SAMPLE_QUIZ;
+  const coursePreviewData: CertificateData = previewCourse
+    ? {
+        ...PREVIEW_SAMPLE_COURSE,
+        courseId: previewCourse.id,
+        courseCode: previewCourse.code,
+        courseTitle: previewCourse.titleEn,
+        quizTitle: previewCourse.titleEn,
+      }
+    : PREVIEW_SAMPLE_COURSE;
+  const previewSample = designProfile === "course" ? coursePreviewData : PREVIEW_SAMPLE_QUIZ;
 
   /** Patch the selected design profile only; preserve the other. Quiz also syncs legacy top-level. */
   const patchActiveProfile = (patch: Partial<CertificateDesignProfile>) => {
@@ -263,6 +301,7 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
       certCustomBgOpacity: nextProfile.certCustomBgOpacity,
       certBadgeTitle: nextProfile.certBadgeTitle,
       certAuthoritySubtitle: nextProfile.certAuthoritySubtitle,
+      certScoreDisplayMode: nextProfile.certScoreDisplayMode,
       certSignatories: nextProfile.certSignatories,
     });
   };
@@ -284,7 +323,7 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
   useEffect(() => {
     const timer = setTimeout(() => {
       if (previewCanvasRef.current) {
-        const sample = designProfile === "course" ? PREVIEW_SAMPLE_COURSE : PREVIEW_SAMPLE_QUIZ;
+        const sample = designProfile === "course" ? coursePreviewData : PREVIEW_SAMPLE_QUIZ;
         const previewCert: CertificateData = {
           ...sample,
           organizationName:
@@ -297,7 +336,7 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
       }
     }, 60);
     return () => clearTimeout(timer);
-  }, [branding, designProfile]);
+  }, [branding, designProfile, previewCourse]);
 
   const handleSetSignatoryCount = (count: number) => {
     const target = Math.max(1, Math.min(4, count));
@@ -768,6 +807,71 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
                   />
                 </div>
               </div>
+
+              {/* Score & Merit Display Mode (Coursera / Executive) */}
+              <div className="rounded-xl border border-border bg-card p-3.5 space-y-2.5">
+                <div>
+                  <div className="text-[11px] font-black uppercase tracking-wider text-primary">
+                    Score &amp; Merit Display Mode (Coursera / Executive)
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Choose whether to display only the Merit distinction tier, a percentage summary,
+                    full numeric marks, or a clean Coursera-style credential with no scores.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {(
+                    [
+                      {
+                        id: "merit_only",
+                        label: "Merit Standing Only",
+                        desc: "Coursera-style distinction tier — hides raw marks & percentages",
+                      },
+                      {
+                        id: "percentage_only",
+                        label: "Merit + Percentage Only",
+                        desc: "Shows distinction tier & overall grade % without raw breakdown",
+                      },
+                      {
+                        id: "full_scores",
+                        label: "Full Marks & Breakdown",
+                        desc: "Shows all 3 numeric score cards (marks, quiz, practical/rank)",
+                      },
+                      {
+                        id: "none",
+                        label: "Hide All Scores",
+                        desc: "Pure executive completion credential with zero score display",
+                      },
+                    ] as Array<{
+                      id: CertificateScoreDisplayMode;
+                      label: string;
+                      desc: string;
+                    }>
+                  ).map((opt) => {
+                    const activeMode =
+                      activeProfile.certScoreDisplayMode ||
+                      (designProfile === "course" ? "merit_only" : "full_scores");
+                    const isSelected = activeMode === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => patchActiveProfile({ certScoreDisplayMode: opt.id })}
+                        className={`rounded-xl border p-2.5 text-left transition cursor-pointer ${
+                          isSelected
+                            ? "border-primary bg-primary/10 ring-1 ring-primary"
+                            : "border-border bg-background hover:bg-accent/50"
+                        }`}
+                      >
+                        <div className="text-xs font-extrabold text-foreground">{opt.label}</div>
+                        <p className="mt-0.5 text-[10px] text-muted-foreground leading-snug">
+                          {opt.desc}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
 
@@ -802,17 +906,35 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
                   </div>
                   <div className="space-y-2">
                     <ImageFieldInput
-                      label="Right Side Logo"
+                      label="Right Side Logo #1 (Ansar & VDP)"
                       value={branding.rightLogoUrl || ""}
-                      placeholder="Default: Verified Metallic Seal"
-                      hint="Leave empty for embossed Official Seal badge."
+                      placeholder={`Default: ${ANSAR_VDP_LOGO_URL}`}
+                      hint="Shown on top-right header (leave both right logos empty for Official Seal)."
                       onChange={(val) => onChange({ ...branding, rightLogoUrl: val })}
                     />
                     <input
                       type="text"
                       value={branding.rightLogoLabel || ""}
                       onChange={(e) => onChange({ ...branding, rightLogoLabel: e.target.value })}
-                      placeholder="Optional caption under right logo"
+                      placeholder="Bangladesh Ansar & VDP"
+                      className="w-full rounded-xl border border-border bg-background px-3 py-1.5 text-[11px]"
+                    />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <ImageFieldInput
+                      label="Right Side Co-Logo #2 (Cloud Connect AI)"
+                      value={branding.rightSecondaryLogoUrl || ""}
+                      placeholder={`Default: ${CCAI_LOGO_URL}`}
+                      hint="Paired side-by-side alongside Right Side Logo #1 in the top-right header."
+                      onChange={(val) => onChange({ ...branding, rightSecondaryLogoUrl: val })}
+                    />
+                    <input
+                      type="text"
+                      value={branding.rightSecondaryLogoLabel || ""}
+                      onChange={(e) =>
+                        onChange({ ...branding, rightSecondaryLogoLabel: e.target.value })
+                      }
+                      placeholder="Cloud Connect AI Limited"
                       className="w-full rounded-xl border border-border bg-background px-3 py-1.5 text-[11px]"
                     />
                   </div>

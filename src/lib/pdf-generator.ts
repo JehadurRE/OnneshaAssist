@@ -693,7 +693,7 @@ function drawSignatoryColumn(
 
   ctx.textAlign = "center";
   ctx.fillStyle = theme.textPrimary;
-  fillTextAutoFit(ctx, resolvedName, centerX, lineY + 34, colW - 24, 24, 15, "bold", "sans-serif");
+  fillTextAutoFit(ctx, resolvedName, centerX, lineY + 32, colW - 24, 22, 14, "bold", "sans-serif");
 
   const rawTitle = (sig.title || "Authorized Official").trim();
   const titleLines = rawTitle
@@ -701,13 +701,49 @@ function drawSignatoryColumn(
     .map((part) => part.trim())
     .filter(Boolean);
 
-  if (titleLines.length >= 2) {
+  if (titleLines.length >= 3) {
     ctx.fillStyle = theme.textSecondary;
     fillTextAutoFit(
       ctx,
       titleLines[0]!,
       centerX,
-      lineY + 60,
+      lineY + 56,
+      colW - 20,
+      17,
+      12,
+      "700",
+      "sans-serif",
+    );
+    ctx.fillStyle = theme.textMuted;
+    fillTextAutoFit(
+      ctx,
+      titleLines[1]!,
+      centerX,
+      lineY + 79,
+      colW - 18,
+      15,
+      11,
+      "600",
+      "sans-serif",
+    );
+    fillTextAutoFit(
+      ctx,
+      titleLines.slice(2).join(" · "),
+      centerX,
+      lineY + 101,
+      colW - 20,
+      15,
+      11,
+      "500",
+      "sans-serif",
+    );
+  } else if (titleLines.length === 2) {
+    ctx.fillStyle = theme.textSecondary;
+    fillTextAutoFit(
+      ctx,
+      titleLines[0]!,
+      centerX,
+      lineY + 58,
       colW - 20,
       18,
       13,
@@ -717,9 +753,9 @@ function drawSignatoryColumn(
     ctx.fillStyle = theme.textMuted;
     fillTextAutoFit(
       ctx,
-      titleLines.slice(1).join(" · "),
+      titleLines[1]!,
       centerX,
-      lineY + 84,
+      lineY + 82,
       colW - 20,
       17,
       12,
@@ -728,13 +764,59 @@ function drawSignatoryColumn(
     );
   } else {
     ctx.fillStyle = theme.textMuted;
-    fillTextAutoFit(ctx, rawTitle, centerX, lineY + 62, colW - 20, 18, 13, "600", "sans-serif");
+    fillTextAutoFit(ctx, rawTitle, centerX, lineY + 60, colW - 20, 18, 13, "600", "sans-serif");
   }
+}
+
+function resolveMeritStanding(scorePct: number): { badge: string; sub: string } {
+  if (scorePct >= 90) {
+    return {
+      badge: "WITH HIGHEST DISTINCTION",
+      sub: "Outstanding Mastery & Executive Merit Honors",
+    };
+  }
+  if (scorePct >= 80) {
+    return {
+      badge: "WITH DISTINCTION",
+      sub: "Distinguished Academic & Practical Achievement",
+    };
+  }
+  if (scorePct >= 70) {
+    return {
+      badge: "WITH MERIT",
+      sub: "Meritorious Programme Completion",
+    };
+  }
+  return {
+    badge: "VERIFIED COMPLETION",
+    sub: "Successfully Fulfilled All Programme Requirements",
+  };
+}
+
+function splitBalancedTwoLines(text: string, maxCharsPerLine = 54): string[] {
+  const clean = text.trim();
+  if (clean.length <= maxCharsPerLine) return [clean];
+  const words = clean.split(/\s+/);
+  if (words.length <= 2) return [clean];
+  const half = clean.length / 2;
+  let bestSplit = Math.ceil(words.length / 2);
+  let bestDiff = Infinity;
+  let acc = 0;
+  for (let i = 1; i < words.length; i++) {
+    acc += words[i - 1]!.length + (i > 1 ? 1 : 0);
+    const diff = Math.abs(acc - half);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      bestSplit = i;
+    }
+  }
+  return [words.slice(0, bestSplit).join(" "), words.slice(bestSplit).join(" ")];
 }
 
 export interface CertificateRenderAssets {
   leftLogoImg?: HTMLImageElement | null;
   rightLogoImg?: HTMLImageElement | null;
+  rightSecondaryLogoImg?: HTMLImageElement | null;
   customBgImg?: HTMLImageElement | null;
   partnerImgs?: Record<string, HTMLImageElement | null>;
   signatureImgs?: Record<string, HTMLImageElement | null>;
@@ -768,6 +850,7 @@ export function drawCertificateOnCanvas(
 
   const leftLogoImg = assets?.leftLogoImg ?? assets?.onneshaImg ?? null;
   const rightLogoImg = assets?.rightLogoImg ?? assets?.partnerImg ?? null;
+  const rightSecondaryLogoImg = assets?.rightSecondaryLogoImg ?? null;
   const customBgImg = assets?.customBgImg ?? null;
   const partners = resolveEffectivePartners(branding);
 
@@ -827,50 +910,75 @@ export function drawCertificateOnCanvas(
   ];
   cornerCoords.forEach(([cx, cy, dx, dy]) => drawCornerOrnament(ctx, cx, cy, dx, dy, theme));
 
-  // 4. Header Section (Changeable Left Logo, Center Authority, Changeable Right Logo / Official Seal)
+  // 4. Header Section (Changeable Left Logo, Center Authority, Changeable Right Logo(s) / Official Seal)
   if (leftLogoImg) {
-    drawContainedImage(ctx, leftLogoImg, 138, 122, 260, 116, "left");
+    drawContainedImage(ctx, leftLogoImg, 138, 122, 220, 112, "left");
   } else {
-    drawRoundedRect(ctx, 138, 132, 230, 96, 18);
+    drawRoundedRect(ctx, 138, 132, 220, 96, 18);
     ctx.fillStyle = theme.borderOuter;
     ctx.fill();
     ctx.fillStyle = "#ffffff";
     ctx.textAlign = "center";
     ctx.font = "900 28px sans-serif";
-    ctx.fillText("ONNESHA", 253, 190);
+    ctx.fillText("ONNESHA", 248, 190);
   }
   if (branding?.leftLogoLabel) {
     ctx.textAlign = "center";
     ctx.fillStyle = theme.textMuted;
-    fillTextAutoFit(ctx, branding.leftLogoLabel, 253, 258, 250, 15, 11, "bold", "sans-serif");
+    fillTextAutoFit(ctx, branding.leftLogoLabel, 248, 254, 240, 15, 11, "bold", "sans-serif");
   }
 
-  if (rightLogoImg) {
-    drawContainedImage(ctx, rightLogoImg, W - 398, 122, 260, 116, "right");
+  const hasDualRightLogos = Boolean(rightLogoImg && rightSecondaryLogoImg);
+  if (hasDualRightLogos && rightLogoImg && rightSecondaryLogoImg) {
+    // Dual co-host right-side logos (e.g., Bangladesh Ansar & VDP + Cloud Connect AI Limited)
+    drawContainedImage(ctx, rightLogoImg, W - 576, 122, 122, 102, "center");
+    ctx.beginPath();
+    ctx.moveTo(W - 438, 134);
+    ctx.lineTo(W - 438, 218);
+    ctx.strokeStyle = theme.dockBorder;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    drawContainedImage(ctx, rightSecondaryLogoImg, W - 422, 122, 286, 102, "center");
+
     if (branding?.rightLogoLabel) {
+      ctx.textAlign = "center";
+      ctx.fillStyle = theme.textMuted;
+      fillTextAutoFit(ctx, branding.rightLogoLabel, W - 515, 246, 152, 13, 10, "bold", "sans-serif");
+    }
+    if (branding?.rightSecondaryLogoLabel) {
       ctx.textAlign = "center";
       ctx.fillStyle = theme.textMuted;
       fillTextAutoFit(
         ctx,
-        branding.rightLogoLabel,
-        W - 268,
-        258,
-        250,
-        15,
-        11,
+        branding.rightSecondaryLogoLabel,
+        W - 279,
+        246,
+        280,
+        13,
+        10,
         "bold",
         "sans-serif",
       );
+    }
+  } else if (rightLogoImg || rightSecondaryLogoImg) {
+    const singleRight = rightLogoImg ?? rightSecondaryLogoImg!;
+    const singleLabel = rightLogoImg ? branding?.rightLogoLabel : branding?.rightSecondaryLogoLabel;
+    drawContainedImage(ctx, singleRight, W - 398, 122, 260, 112, "right");
+    if (singleLabel) {
+      ctx.textAlign = "center";
+      ctx.fillStyle = theme.textMuted;
+      fillTextAutoFit(ctx, singleLabel, W - 268, 254, 250, 15, 11, "bold", "sans-serif");
     }
   } else {
     drawMetallicSeal(ctx, W - 210, 180, 62, theme);
   }
 
   // Center Institution Stack
+  const centerHeaderMaxW = hasDualRightLogos ? 1100 : 1320;
   ctx.textAlign = "center";
   ctx.fillStyle = theme.accentColor;
   const instEyebrow = (branding?.institutionTitle || "ONNESHA ASSESSMENT ARENA").toUpperCase();
-  fillTextAutoFit(ctx, instEyebrow, W / 2, 156, 1320, 23, 15, "bold", "sans-serif");
+  fillTextAutoFit(ctx, instEyebrow, W / 2, 156, centerHeaderMaxW, 23, 15, "bold", "sans-serif");
 
   ctx.fillStyle = theme.textPrimary;
   fillTextAutoFit(
@@ -878,7 +986,7 @@ export function drawCertificateOnCanvas(
     certificate.organizationName || branding?.institutionTitle || "Onnesha Assessment Arena",
     W / 2,
     210,
-    1340,
+    centerHeaderMaxW,
     46,
     26,
     "900",
@@ -892,7 +1000,7 @@ export function drawCertificateOnCanvas(
       "National Training, Merit Evaluation & Cryptographic Examination Authority",
     W / 2,
     248,
-    1360,
+    centerHeaderMaxW + 40,
     21,
     14,
     "600",
@@ -1053,108 +1161,267 @@ export function drawCertificateOnCanvas(
     ctx.fillText(rollMeta, W / 2, 602 + yShift);
   }
 
-  // 8. Achievement Citation & Assessment Title
+  // 8. Achievement Citation & Actual Course / Assessment Title
   const isCourseCert = certificate.kind === "course_completion";
   ctx.fillStyle = theme.textSecondary;
-  ctx.font = "500 26px sans-serif";
+  ctx.font = "500 25px sans-serif";
   ctx.fillText(
     isCourseCert
-      ? "for successfully completing the full course programme, including Final Quiz and Practical:"
+      ? "for successfully completing the full course programme, including Final Assessment and Practical:"
       : "for successfully completing and demonstrating outstanding proficiency in the assessment:",
     W / 2,
-    658 + yShift,
+    654 + yShift,
   );
 
   ctx.fillStyle = theme.accentColor;
-  const quizTitle =
-    certificate.quizTitle ||
-    (isCourseCert
-      ? `${certificate.courseCode || ""} — Certificate of Course Completion`.trim()
-      : "Institutional Merit Assessment");
-  fillTextAutoFit(ctx, quizTitle, W / 2, 718 + yShift, 1950, 42, 24, "bold", "sans-serif");
+  const displayTitle = isCourseCert
+    ? (
+        certificate.courseTitle ||
+        certificate.quizTitle ||
+        "Applied Artificial Intelligence & Autonomous Workflows for Digital Marketing Freelancers"
+      ).trim()
+    : (certificate.quizTitle || "Institutional Merit Assessment").trim();
 
-  // 9. Three Metric Stat Cards
-  const cardW = 540;
-  const cardH = 185;
-  const gap = 50;
-  const startX = (W - (cardW * 3 + gap * 2)) / 2;
-  const cardY = 768 + yShift;
+  const titleLines = splitBalancedTwoLines(displayTitle, 54);
+  if (titleLines.length >= 2) {
+    fillTextAutoFit(ctx, titleLines[0]!, W / 2, 704 + yShift, 1960, 36, 22, "bold", "sans-serif");
+    fillTextAutoFit(ctx, titleLines[1]!, W / 2, 746 + yShift, 1960, 36, 22, "bold", "sans-serif");
+  } else {
+    fillTextAutoFit(ctx, titleLines[0]!, W / 2, 718 + yShift, 1950, 42, 24, "bold", "sans-serif");
+  }
+
+  // 9. Configurable Score / Merit Display (Merit Only · Percentage · Full Scores · Clean Coursera)
+  const scoreMode =
+    branding?.certScoreDisplayMode || (isCourseCert ? "merit_only" : "full_scores");
+  const cardY = (titleLines.length >= 2 ? 784 : 768) + yShift;
 
   const totalMarks = certificate.totalMarks ?? certificate.totalPoints ?? 100;
   const accuracy = certificate.accuracyPercent ?? certificate.scorePct ?? 100;
+  const effectivePct = isCourseCert ? (certificate.combinedScorePct ?? accuracy) : accuracy;
   const rawScoreVal = certificate.marksObtained ?? certificate.score ?? 0;
   const rawMarks =
     rawScoreVal > 0 ? rawScoreVal : accuracy > 0 ? Math.round((accuracy / 100) * totalMarks) : 0;
+  const merit = resolveMeritStanding(effectivePct);
 
-  const cards = isCourseCert
-    ? [
-        {
-          label: "COMBINED SCORE",
-          value: `${certificate.combinedScorePct ?? accuracy}%`,
-          sub: "Quiz + Practical Weighted",
-          accent: theme.borderOuter,
-        },
-        {
-          label: "FINAL QUIZ",
-          value: `${certificate.quizAccuracyPct ?? 0}%`,
-          sub: "Part A Accuracy",
-          accent: theme.accentColor,
-        },
-        {
-          label: "PRACTICAL",
-          value: `${certificate.practicalScorePct ?? 0}%`,
-          sub: "Part B Instructor Mark",
-          accent: theme.borderInner,
-        },
-      ]
-    : [
-        {
-          label: "MERIT STANDING",
-          value: `#${certificate.rank || 1}`,
-          sub: `Out of ${certificate.totalParticipants || 1} Candidates`,
-          accent: theme.borderOuter,
-        },
-        {
-          label: "RAW MARKS OBTAINED",
-          value: `${rawMarks}`,
-          sub: `Out of ${totalMarks} Total Points`,
-          accent: theme.accentColor,
-        },
-        {
-          label: "ACCURACY VELOCITY",
-          value: `${accuracy}%`,
-          sub: "Verified Precision Index",
-          accent: theme.borderInner,
-        },
-      ];
-
-  cards.forEach((c, idx) => {
-    const x = startX + idx * (cardW + gap);
-    drawRoundedRect(ctx, x, cardY, cardW, cardH, 22);
+  if (scoreMode === "merit_only") {
+    const bannerW = 1280;
+    const bannerH = 148;
+    const bx = W / 2 - bannerW / 2;
+    const by = cardY + 8;
+    drawRoundedRect(ctx, bx, by, bannerW, bannerH, 24);
     ctx.fillStyle = theme.cardBg;
     ctx.fill();
     ctx.lineWidth = 2.5;
-    ctx.strokeStyle = theme.cardBorder;
+    ctx.strokeStyle = theme.borderInner;
     ctx.stroke();
 
-    // Sleek Top Accent Bar inside Card
-    drawRoundedRect(ctx, x + 28, cardY + 12, cardW - 56, 6, 3);
-    ctx.fillStyle = c.accent;
+    drawRoundedRect(ctx, bx + 48, by + 12, bannerW - 96, 6, 3);
+    ctx.fillStyle = theme.accentColor;
     ctx.fill();
 
     ctx.textAlign = "center";
     ctx.fillStyle = theme.textMuted;
-    ctx.font = "bold 18px sans-serif";
-    ctx.fillText(c.label, x + cardW / 2, cardY + 50);
+    ctx.font = "bold 17px sans-serif";
+    ctx.fillText(
+      isCourseCert
+        ? "ACADEMIC & PRACTICAL MERIT STANDING"
+        : "OFFICIAL ASSESSMENT MERIT STANDING",
+      W / 2,
+      by + 48,
+    );
 
-    ctx.fillStyle = theme.textPrimary;
-    ctx.font = "900 58px monospace";
-    ctx.fillText(c.value, x + cardW / 2, cardY + 120);
+    ctx.fillStyle = theme.accentColor;
+    fillTextAutoFit(
+      ctx,
+      `★  ${merit.badge}  ★`,
+      W / 2,
+      by + 98,
+      bannerW - 96,
+      40,
+      24,
+      "900",
+      "Georgia, serif",
+    );
 
     ctx.fillStyle = theme.textSecondary;
-    ctx.font = "600 18px sans-serif";
-    ctx.fillText(c.sub, x + cardW / 2, cardY + 158);
-  });
+    const subLine = certificate.courseCode
+      ? `${merit.sub}  ·  COURSE CODE: ${certificate.courseCode}`
+      : merit.sub;
+    fillTextAutoFit(ctx, subLine, W / 2, by + 132, bannerW - 80, 18, 13, "600", "sans-serif");
+  } else if (scoreMode === "percentage_only") {
+    const cardW = 680;
+    const cardH = 166;
+    const gap = 64;
+    const startX = (W - (cardW * 2 + gap)) / 2;
+    const twoCards = [
+      {
+        label: "MERIT STANDING",
+        value: merit.badge,
+        sub: merit.sub,
+        accent: theme.borderOuter,
+        isTextValue: true,
+      },
+      {
+        label: isCourseCert ? "OVERALL ACHIEVEMENT" : "VERIFIED GRADE",
+        value: `${effectivePct}%`,
+        sub: certificate.courseCode
+          ? `Course ${certificate.courseCode} · Verified Credential`
+          : "Verified Assessment Achievement",
+        accent: theme.accentColor,
+        isTextValue: false,
+      },
+    ];
+    twoCards.forEach((c, idx) => {
+      const x = startX + idx * (cardW + gap);
+      drawRoundedRect(ctx, x, cardY, cardW, cardH, 22);
+      ctx.fillStyle = theme.cardBg;
+      ctx.fill();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = theme.cardBorder;
+      ctx.stroke();
+
+      drawRoundedRect(ctx, x + 28, cardY + 12, cardW - 56, 6, 3);
+      ctx.fillStyle = c.accent;
+      ctx.fill();
+
+      ctx.textAlign = "center";
+      ctx.fillStyle = theme.textMuted;
+      ctx.font = "bold 17px sans-serif";
+      ctx.fillText(c.label, x + cardW / 2, cardY + 48);
+
+      ctx.fillStyle = theme.textPrimary;
+      if (c.isTextValue) {
+        fillTextAutoFit(
+          ctx,
+          c.value,
+          x + cardW / 2,
+          cardY + 106,
+          cardW - 56,
+          34,
+          20,
+          "900",
+          "Georgia, serif",
+        );
+      } else {
+        ctx.font = "900 54px monospace";
+        ctx.fillText(c.value, x + cardW / 2, cardY + 112);
+      }
+
+      ctx.fillStyle = theme.textSecondary;
+      fillTextAutoFit(ctx, c.sub, x + cardW / 2, cardY + 146, cardW - 44, 17, 12, "600", "sans-serif");
+    });
+  } else if (scoreMode === "none") {
+    const midY = cardY + 72;
+    const ruleGrad = ctx.createLinearGradient(W / 2 - 420, 0, W / 2 + 420, 0);
+    ruleGrad.addColorStop(0, "transparent");
+    ruleGrad.addColorStop(0.25, theme.borderInner);
+    ruleGrad.addColorStop(0.5, theme.accentColor);
+    ruleGrad.addColorStop(0.75, theme.borderInner);
+    ruleGrad.addColorStop(1, "transparent");
+    ctx.strokeStyle = ruleGrad;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(W / 2 - 420, midY - 26);
+    ctx.lineTo(W / 2 + 420, midY - 26);
+    ctx.stroke();
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = theme.textSecondary;
+    fillTextAutoFit(
+      ctx,
+      certificate.courseCode
+        ? `OFFICIAL VERIFIED CREDENTIAL  ·  COURSE CODE: ${certificate.courseCode}  ·  ALL REQUIREMENTS MET`
+        : "OFFICIAL VERIFIED CREDENTIAL  ·  ALL PROGRAMME REQUIREMENTS SUCCESSFULLY MET",
+      W / 2,
+      midY + 14,
+      1600,
+      20,
+      14,
+      "bold",
+      "sans-serif",
+    );
+
+    ctx.beginPath();
+    ctx.moveTo(W / 2 - 420, midY + 40);
+    ctx.lineTo(W / 2 + 420, midY + 40);
+    ctx.stroke();
+  } else {
+    // full_scores (default for Quiz Sessions)
+    const cardW = 540;
+    const cardH = 172;
+    const gap = 50;
+    const startX = (W - (cardW * 3 + gap * 2)) / 2;
+
+    const cards = isCourseCert
+      ? [
+          {
+            label: "COMBINED SCORE",
+            value: `${certificate.combinedScorePct ?? accuracy}%`,
+            sub: "Quiz + Practical Weighted",
+            accent: theme.borderOuter,
+          },
+          {
+            label: "FINAL QUIZ",
+            value: `${certificate.quizAccuracyPct ?? 0}%`,
+            sub: "Part A Accuracy",
+            accent: theme.accentColor,
+          },
+          {
+            label: "PRACTICAL",
+            value: `${certificate.practicalScorePct ?? 0}%`,
+            sub: "Part B Instructor Mark",
+            accent: theme.borderInner,
+          },
+        ]
+      : [
+          {
+            label: "MERIT STANDING",
+            value: `#${certificate.rank || 1}`,
+            sub: `Out of ${certificate.totalParticipants || 1} Candidates`,
+            accent: theme.borderOuter,
+          },
+          {
+            label: "RAW MARKS OBTAINED",
+            value: `${rawMarks}`,
+            sub: `Out of ${totalMarks} Total Points`,
+            accent: theme.accentColor,
+          },
+          {
+            label: "ACCURACY VELOCITY",
+            value: `${accuracy}%`,
+            sub: "Verified Precision Index",
+            accent: theme.borderInner,
+          },
+        ];
+
+    cards.forEach((c, idx) => {
+      const x = startX + idx * (cardW + gap);
+      drawRoundedRect(ctx, x, cardY, cardW, cardH, 22);
+      ctx.fillStyle = theme.cardBg;
+      ctx.fill();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = theme.cardBorder;
+      ctx.stroke();
+
+      // Sleek Top Accent Bar inside Card
+      drawRoundedRect(ctx, x + 28, cardY + 12, cardW - 56, 6, 3);
+      ctx.fillStyle = c.accent;
+      ctx.fill();
+
+      ctx.textAlign = "center";
+      ctx.fillStyle = theme.textMuted;
+      ctx.font = "bold 18px sans-serif";
+      ctx.fillText(c.label, x + cardW / 2, cardY + 48);
+
+      ctx.fillStyle = theme.textPrimary;
+      ctx.font = "900 54px monospace";
+      ctx.fillText(c.value, x + cardW / 2, cardY + 112);
+
+      ctx.fillStyle = theme.textSecondary;
+      ctx.font = "600 18px sans-serif";
+      ctx.fillText(c.sub, x + cardW / 2, cardY + 148);
+    });
+  }
 
   // 10. Dynamic Multi-Signatory Row (1 to 4 Signatories)
   const fallbackSignatories =
@@ -1166,10 +1433,10 @@ export function drawCertificateOnCanvas(
       ? branding.certSignatories.slice(0, 4)
       : fallbackSignatories;
 
-  const sigRowLeft = 170;
-  const sigRowWidth = W - 340;
+  const sigRowLeft = 140;
+  const sigRowWidth = W - 280;
   const sigColW = sigRowWidth / configuredSignatories.length;
-  const sigLineY = 1148;
+  const sigLineY = 1138;
   const instructorFallback = certificate.instructorName || "Chief Assessment Officer";
 
   configuredSignatories.forEach((sig, idx) => {
@@ -1299,6 +1566,7 @@ export async function populateCertificateCanvas(
   const rightSrc =
     (branding?.rightLogoUrl || "").trim() ||
     (branding?.showPartnerLogo && branding?.partnerLogoUrl ? branding.partnerLogoUrl.trim() : "");
+  const rightSecondarySrc = (branding?.rightSecondaryLogoUrl || "").trim();
   const customBgSrc = (branding?.certCustomBgUrl || "").trim();
   const partners = resolveEffectivePartners(branding);
   const fallbackSignatories =
@@ -1325,15 +1593,24 @@ export async function populateCertificateCanvas(
   drawCertificateOnCanvas(canvas, certificate, branding, {
     leftLogoImg: imageCache.get(leftSrc) ?? null,
     rightLogoImg: rightSrc ? (imageCache.get(rightSrc) ?? null) : null,
+    rightSecondaryLogoImg: rightSecondarySrc ? (imageCache.get(rightSecondarySrc) ?? null) : null,
     customBgImg: customBgSrc ? (imageCache.get(customBgSrc) ?? null) : null,
     partnerImgs: cachedPartnerImgs,
     signatureImgs: cachedSigImgs,
   });
 
   // 2. Load any uncached images in parallel and redraw once ready
-  const [leftLogoImg, rightLogoImg, customBgImg, partnerEntries, sigEntries] = await Promise.all([
+  const [
+    leftLogoImg,
+    rightLogoImg,
+    rightSecondaryLogoImg,
+    customBgImg,
+    partnerEntries,
+    sigEntries,
+  ] = await Promise.all([
     loadImageSafe(leftSrc),
     rightSrc ? loadImageSafe(rightSrc) : Promise.resolve(null),
+    rightSecondarySrc ? loadImageSafe(rightSecondarySrc) : Promise.resolve(null),
     customBgSrc ? loadImageSafe(customBgSrc) : Promise.resolve(null),
     Promise.all(partners.map(async (p) => [p.id, await loadImageSafe(p.logoUrl)] as const)),
     Promise.all(
@@ -1354,6 +1631,7 @@ export async function populateCertificateCanvas(
   drawCertificateOnCanvas(canvas, certificate, branding, {
     leftLogoImg,
     rightLogoImg,
+    rightSecondaryLogoImg,
     customBgImg,
     partnerImgs,
     signatureImgs,

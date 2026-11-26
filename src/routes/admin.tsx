@@ -98,6 +98,8 @@ interface AdminSearch {
   courseId?: string | undefined;
   desk?: string | undefined;
   sub?: string | undefined;
+  cert?: "quiz" | "course" | undefined;
+  studio?: "theme" | "logos" | "signatories" | undefined;
 }
 
 export const Route = createFileRoute("/admin")({
@@ -106,6 +108,13 @@ export const Route = createFileRoute("/admin")({
     courseId: typeof search["courseId"] === "string" ? search["courseId"] : undefined,
     desk: typeof search["desk"] === "string" ? search["desk"] : undefined,
     sub: typeof search["sub"] === "string" ? search["sub"] : undefined,
+    cert: search["cert"] === "quiz" || search["cert"] === "course" ? search["cert"] : undefined,
+    studio:
+      search["studio"] === "theme" ||
+      search["studio"] === "logos" ||
+      search["studio"] === "signatories"
+        ? search["studio"]
+        : undefined,
   }),
   head: () => ({
     meta: [
@@ -297,6 +306,8 @@ function SuperAdminPage() {
     courseId?: string | undefined;
     desk?: FinalExamDeskView | undefined;
     sub?: string | null | undefined;
+    cert?: "quiz" | "course" | undefined;
+    studio?: "theme" | "logos" | "signatories" | undefined;
   }) => {
     if (patch.tab) setActiveTab(patch.tab);
     void navigate({
@@ -306,9 +317,15 @@ function SuperAdminPage() {
         if (patch.courseId !== undefined) next.courseId = patch.courseId || undefined;
         if (patch.desk !== undefined) next.desk = patch.desk;
         if (patch.sub !== undefined) next.sub = patch.sub || undefined;
+        if (patch.cert !== undefined) next.cert = patch.cert;
+        if (patch.studio !== undefined) next.studio = patch.studio;
         if (patch.tab && patch.tab !== "practical") {
           next.desk = undefined;
           next.sub = undefined;
+        }
+        if (patch.tab && patch.tab !== "settings") {
+          next.cert = undefined;
+          next.studio = undefined;
         }
         return next;
       },
@@ -2175,6 +2192,23 @@ function SuperAdminPage() {
             <CertificateDesignerStudio
               branding={branding}
               onChange={setBranding}
+              designProfile={search.cert || "course"}
+              onDesignProfileChange={(nextProfile) =>
+                goAdmin({
+                  tab: "settings",
+                  cert: nextProfile,
+                  studio: search.studio || "theme",
+                })
+              }
+              studioTab={search.studio || "theme"}
+              onStudioTabChange={(nextStudio) =>
+                goAdmin({
+                  tab: "settings",
+                  cert: search.cert || "course",
+                  studio: nextStudio,
+                })
+              }
+              previewCourse={courses[0]}
               onSave={() => {
                 db.saveBranding(branding);
                 showNotice(
