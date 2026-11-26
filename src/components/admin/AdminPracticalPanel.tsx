@@ -5,6 +5,7 @@ import {
   serverBulkIssueCourseCertificates,
   serverCloseFinalExamWindow,
   serverDownloadPracticalFile,
+  serverExportPracticalSubmissions,
   serverExtendFinalExamAttempt,
   serverGetBootstrapData,
   serverGetFinalExamDesk,
@@ -88,6 +89,7 @@ import {
   Timer,
   Trash2,
   Trophy,
+  Upload,
   Users,
   Wrench,
   X,
@@ -729,6 +731,73 @@ export function AdminPracticalPanel(props: {
       );
       await syncCertsIntoAdmin();
       await refresh();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const exportSubmissionsJson = async () => {
+    if (!course) return;
+    setBusyId("export-subs-json");
+    setNotice(null);
+    try {
+      const res = await serverExportPracticalSubmissions({ data: { courseId: course.id } });
+      if (!res.success) {
+        setNotice(res.error || "Could not export submissions JSON.");
+        return;
+      }
+      const json = JSON.stringify(res, null, 2);
+      const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `practical-submissions-${res.courseCode || course.code || "course"}-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setNotice(`Exported ${res.count} submissions with full answers & quiz scores to JSON.`);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const importReviewedGradesFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !course) return;
+    setBusyId("import-reviewed-json");
+    setNotice(null);
+    try {
+      const raw = await file.text();
+      const parsed = JSON.parse(raw) as
+        | { rows?: Array<{ submissionId: string; grades: Array<{ taskId: string; marks: number; maxMarks: number; comment?: string }>; instructorFeedback?: string }> }
+        | Array<{ submissionId: string; grades: Array<{ taskId: string; marks: number; maxMarks: number; comment?: string }>; instructorFeedback?: string }>;
+      const rows = Array.isArray(parsed) ? parsed : parsed.rows || [];
+      if (!rows.length) {
+        setNotice("No grade rows found in the uploaded JSON file.");
+        return;
+      }
+      if (
+        !window.confirm(
+          `Apply ${rows.length} reviewed grade rows from "${file.name}" to ${course.code}?\n\nThis overwrites marks, task comments, and feedback for matching submissions.`,
+        )
+      ) {
+        return;
+      }
+      const res = await serverApplyReviewedPracticalGrades({
+        data: { courseId: course.id, dryRun: false, regrade: true, rows },
+      });
+      if (!res.success) {
+        setNotice(res.error || "Failed to apply uploaded grades.");
+        return;
+      }
+      setMarksBySubTask({});
+      setFeedbackBySub({});
+      setNotice(
+        `Applied ${res.applied || 0} grades from ${file.name} (missing: ${res.missing || 0}).`,
+      );
+      await refresh({ soft: true });
+    } catch (err) {
+      setNotice(err instanceof Error ? `Invalid JSON file: ${err.message}` : "Invalid JSON file.");
     } finally {
       setBusyId(null);
     }
@@ -2787,6 +2856,28 @@ export function AdminPracticalPanel(props: {
                 >
                   {busyId === "gform" ? "Importing…" : "Import Google Form (33)"}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => void exportSubmissionsJson()}
+                  disabled={!!busyId || !course || courseSubs.length === 0}
+                  className="staff-btn-ghost disabled:opacity-50"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  {busyId === "export-subs-json" ? "Exporting…" : `Export Submissions JSON (${courseSubs.length})`}
+                </button>
+                <label
+                  className={`staff-btn-ghost cursor-pointer ${!!busyId || !course ? "opacity-50 pointer-events-none" : ""}`}
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                  <span>{busyId === "import-reviewed-json" ? "Applying…" : "Import Reviewed Grades JSON"}</span>
+                  <input
+                    type="file"
+                    accept=".json,application/json"
+                    className="sr-only"
+                    disabled={!!busyId || !course}
+                    onChange={(e) => void importReviewedGradesFile(e)}
+                  />
+                </label>
               </div>
             </div>
           )}

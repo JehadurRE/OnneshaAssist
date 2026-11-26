@@ -7570,6 +7570,102 @@ type ReviewedPracticalGradeRow = {
 };
 
 /**
+ * Staff: export all practical submissions for a course (full answers, links, file metadata,
+ * resolved Final Quiz accuracy/marks, and current grades) for thorough manual review/auditing.
+ */
+export const serverExportPracticalSubmissions = createServerFn({ method: "POST" })
+  .validator((data: { courseId?: string | undefined }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    ensureFinalPracticalSeeded(store);
+    const courseId = data.courseId || "course-sanjibon-ai-dm";
+    const exam = (store.practicalExams || []).find((p) => p.courseId === courseId);
+    if (!exam) {
+      return { success: false as const, error: "Final practical exam not found for course." };
+    }
+    const course = (store.courses || []).find((c) => c.id === courseId);
+    const requirement = (store.courseRequirements || []).find((r) => r.courseId === courseId);
+    const submissions = (store.practicalSubmissions || []).filter(
+      (s) => s.practicalExamId === exam.id || s.courseId === courseId,
+    );
+    const quizMax = exam.quizMaxMarks || FINAL_QUIZ_MARKS;
+    const practicalMax = exam.practicalMaxMarks || FINAL_PRACTICAL_MARKS;
+    const totalMax = exam.totalMaxMarks || quizMax + practicalMax || FINAL_TOTAL_MARKS;
+    const weights = normalizeExamWeights(exam);
+
+    const rows = submissions.map((sub) => {
+      const match = resolveQuizResultMatchForStudent(
+        store,
+        sub.rollNumber,
+        exam.linkedQuizId,
+        requirement?.requiredQuizIds,
+        {
+          phone: sub.phone,
+          studentName: sub.studentName,
+          regionId: sub.regionId,
+        },
+      );
+      const quizAccuracyPct = match?.result.accuracyPct ?? sub.quizAccuracyPct ?? 0;
+      const quizFound = !!(match || (typeof sub.quizAccuracyPct === "number" && sub.quizAccuracyPct > 0));
+      const quizMarks = quizFound ? marksFromPct(quizAccuracyPct, quizMax) : 0;
+      return {
+        id: sub.id,
+        rollNumber: sub.rollNumber,
+        studentName: sub.studentName,
+        regionName: sub.regionName || "",
+        phone: sub.phone || "",
+        status: sub.status,
+        submittedAt: sub.submittedAt || sub.createdAt,
+        updatedAt: sub.updatedAt,
+        quizFound,
+        quizAccuracyPct,
+        quizMarks,
+        quizMatchedVia: match?.matchedVia || null,
+        practicalScorePct: sub.practicalScorePct ?? null,
+        combinedPct: sub.combinedPct ?? null,
+        answers: (sub.answers || []).map((a) => ({
+          taskId: a.taskId,
+          textAnswer: a.textAnswer || "",
+          linkUrl: a.linkUrl || "",
+          fileName: a.fileName || "",
+          fileMime: a.fileMime || "",
+          fileSizeBytes: a.fileSizeBytes ?? null,
+          hasFile: Boolean(a.fileRelPath || a.fileName),
+        })),
+        grades: sub.grades || [],
+        instructorFeedback: sub.instructorFeedback || "",
+      };
+    });
+
+    return {
+      success: true as const,
+      courseId,
+      courseCode: course?.code || "",
+      courseTitle: course?.titleEn || exam.titleEn,
+      examId: exam.id,
+      examTitle: exam.titleEn,
+      quizMaxMarks: quizMax,
+      practicalMaxMarks: practicalMax,
+      totalMaxMarks: totalMax,
+      quizWeightPct: weights.quizWeightPct,
+      practicalWeightPct: weights.practicalWeightPct,
+      passThresholdPct: exam.passThresholdPct ?? 50,
+      tasks: exam.tasks.map((t) => ({
+        id: t.id,
+        titleEn: t.titleEn,
+        maxMarks: t.maxMarks,
+      })),
+      count: rows.length,
+      exportedAt: new Date().toISOString(),
+      submissions: rows,
+    };
+  });
+
+/**
  * Apply a pre-reviewed practical grade sheet (bilingual EN/BN comments).
  * Loads scripts/data/practical-grades-reviewed.json when rows omitted.
  * Skips already-graded unless regrade=true. Staff can still edit marks in the desk.
