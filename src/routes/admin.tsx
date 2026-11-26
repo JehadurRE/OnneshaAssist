@@ -10,6 +10,7 @@ import {
 import { AdminLmsPanel } from "@/components/admin/AdminLmsPanel";
 import { AdminAiPoolPanel } from "@/components/admin/AdminAiPoolPanel";
 import { CertificateDesignerStudio } from "@/components/admin/CertificateDesignerStudio";
+import { EmailTemplatesStudio } from "@/components/admin/EmailTemplatesStudio";
 import { CertificateView } from "@/components/common/CertificateView";
 import { useAuth } from "@/lib/auth-context";
 import { useLanguage } from "@/lib/i18n";
@@ -24,6 +25,9 @@ import { downloadCertificatePdf } from "@/lib/pdf-generator";
 import { clampPassThresholdPct, isPassingScore, resolvePassThresholdPct } from "@/lib/scoring";
 import { gameEngine } from "@/lib/game-engine";
 import {
+  serverAdminBulkSendStudentCredentials,
+  serverAdminMutateStore,
+  serverAdminSetStudentCredentials,
   serverGetActiveRooms,
   serverResetAllStaffPasswords,
   serverSendCourseCertificateEmail,
@@ -47,6 +51,7 @@ import {
   Check,
   CheckCircle2,
   ClipboardList,
+  Copy,
   Cpu,
   Download,
   ExternalLink,
@@ -67,6 +72,7 @@ import {
   Receipt,
   RefreshCw,
   Search,
+  Send,
   Settings,
   Shield,
   ShieldAlert,
@@ -256,10 +262,46 @@ function SuperAdminPage() {
   const [stdName, setStdName] = useState("");
   const [stdPhone, setStdPhone] = useState("");
   const [stdEmail, setStdEmail] = useState("");
+  const [stdUsername, setStdUsername] = useState("");
+  const [stdPassword, setStdPassword] = useState("");
+  const [stdEmailOnEnroll, setStdEmailOnEnroll] = useState(false);
+  const [enrollingStudent, setEnrollingStudent] = useState(false);
   const [stdRegionId, setStdRegionId] = useState("reg-dhaka");
   const [stdBatch, setStdBatch] = useState("46th BCS & Cadet Batch");
   const [rosterRegionFilter, setRosterRegionFilter] = useState("all");
   const [rosterSearch, setRosterSearch] = useState("");
+
+  // Student Portal Credentials Dispatch & Edit Modal State
+  const [emailingStudentId, setEmailingStudentId] = useState<string | null>(null);
+  const [bulkOnlyUnsent, setBulkOnlyUnsent] = useState(true);
+  const [bulkBatchLimit, setBulkBatchLimit] = useState<number>(50);
+  const [bulkSendingCreds, setBulkSendingCreds] = useState(false);
+  const [bulkCredReport, setBulkCredReport] = useState<{
+    sentCount: number;
+    failedCount: number;
+    remainingEligible: number;
+    failed: Array<{ rollNumber: string; name: string; email: string; reason: string }>;
+  } | null>(null);
+  const [editingStudent, setEditingStudent] = useState<RosterStudent | null>(null);
+  const [editStdName, setEditStdName] = useState("");
+  const [editStdRoll, setEditStdRoll] = useState("");
+  const [editStdEmail, setEditStdEmail] = useState("");
+  const [editStdPhone, setEditStdPhone] = useState("");
+  const [editStdUsername, setEditStdUsername] = useState("");
+  const [editStdRegionId, setEditStdRegionId] = useState("reg-dhaka");
+  const [editStdPassword, setEditStdPassword] = useState("");
+  const [editStdForceChange, setEditStdForceChange] = useState(true);
+  const [savingStudentCreds, setSavingStudentCreds] = useState(false);
+  const [lastIssuedCreds, setLastIssuedCreds] = useState<{
+    rollNumber: string;
+    name: string;
+    email?: string | undefined;
+    username?: string | undefined;
+    password: string;
+    emailed?: boolean | undefined;
+    provider?: string | undefined;
+  } | null>(null);
+  const [copiedCredPassword, setCopiedCredPassword] = useState(false);
 
   const showNotice = (msg: string) => {
     setStatusToast(msg);
@@ -788,30 +830,247 @@ function SuperAdminPage() {
     showNotice("Added new Regional Command Center.");
   };
 
-  const handleAddStudent = (e: React.FormEvent) => {
+  const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!stdRoll.trim() || !stdName.trim()) return;
+    if (!stdRoll.trim() || !stdName.trim() || enrollingStudent) return;
     const email = stdEmail.trim().toLowerCase();
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      showNotice("Enter a valid student email for portal OTP login.");
+      showNotice("Enter a valid student email address.");
       return;
     }
-    const reg = regions.find((r) => r.id === stdRegionId);
-    db.addStudentToRoster({
-      rollNumber: stdRoll.trim(),
-      name: stdName.trim(),
-      phone: stdPhone.trim(),
-      email: email || undefined,
-      regionId: stdRegionId,
-      regionName: reg?.nameEn || "Dhaka Range",
-      batch: stdBatch.trim(),
-    });
-    setStdRoll("");
-    setStdName("");
-    setStdPhone("");
-    setStdEmail("");
-    refreshAll();
-    showNotice(`Enrolled candidate ${stdName} (${stdRoll}) into ${reg?.nameEn || "Dhaka Range"}.`);
+    const cleanPass = stdPassword.trim();
+    if (cleanPass && cleanPass.length < 6) {
+      showNotice("Initial portal password must be at least 6 characters (or leave blank to auto-generate).");
+      return;
+    }
+    if (stdEmailOnEnroll && !email) {
+      showNotice("Add an email address to send login credentials on enrollment.");
+      return;
+    }
+    setEnrollingStudent(true);
+    try {
+      const reg = regions.find((r) => r.id === stdRegionId);
+      const created = db.addStudentToRoster(
+        {
+          rollNumber: stdRoll.trim(),
+          name: stdName.trim(),
+          phone: stdPhone.trim(),
+          email: email || undefined,
+          username: stdUsername.trim() || undefined,
+          passwordHash: cleanPass || undefined,
+          mustChangePassword: cleanPass ? true : undefined,
+          regionId: stdRegionId,
+          regionName: reg?.nameEn || "Dhaka Range",
+          batch: stdBatch.trim(),
+        },
+        true,
+      );
+
+      await serverAdminMutateStore({
+        data: {
+          action: "add_student",
+          student: {
+            ...created,
+            ...(cleanPass ? { passwordHash: cleanPass, mustChangePassword: true } : {}),
+          },
+        },
+      });
+
+      let mailNote = "";
+      if (stdEmailOnEnroll && email) {
+        const mailRes = await serverAdminSetStudentCredentials({
+          data: {
+            studentId: created.id,
+            email,
+            username: stdUsername.trim() || undefined,
+            password: cleanPass || undefined,
+            generatePassword: !cleanPass,
+            sendEmail: true,
+            forceChange: true,
+          },
+        });
+        if (mailRes.success && mailRes.email?.emailed) {
+          mailNote = ` · Credentials emailed to ${mailRes.email.to} (${mailRes.email.provider})`;
+        } else if (!mailRes.success) {
+          mailNote = ` · Enrolled, but email failed: ${mailRes.error}`;
+        }
+      }
+
+      await db.syncFromServerStore();
+      setStdRoll("");
+      setStdName("");
+      setStdPhone("");
+      setStdEmail("");
+      setStdUsername("");
+      setStdPassword("");
+      setStdEmailOnEnroll(false);
+      refreshAll();
+      showNotice(
+        `Enrolled ${created.name} (${created.rollNumber}) into ${reg?.nameEn || "Dhaka Range"}${mailNote}`,
+      );
+    } catch (err) {
+      showNotice(err instanceof Error ? err.message : "Failed to enroll candidate.");
+    } finally {
+      setEnrollingStudent(false);
+    }
+  };
+
+  const openEditStudentModal = (student: RosterStudent) => {
+    setEditingStudent(student);
+    setEditStdName(student.name);
+    setEditStdRoll(student.rollNumber);
+    setEditStdEmail(student.email || "");
+    setEditStdPhone(student.phone || student.guardianPhone || "");
+    setEditStdUsername(student.username || "");
+    setEditStdRegionId(student.regionId || regions[0]?.id || "reg-dhaka");
+    setEditStdPassword("");
+    setEditStdForceChange(true);
+    setLastIssuedCreds(null);
+    setCopiedCredPassword(false);
+  };
+
+  const handleSaveStudentCredentials = async (opts: {
+    generatePassword?: boolean;
+    sendEmail?: boolean;
+  }) => {
+    if (!editingStudent || savingStudentCreds) return;
+    setSavingStudentCreds(true);
+    setCopiedCredPassword(false);
+    try {
+      const res = await serverAdminSetStudentCredentials({
+        data: {
+          studentId: editingStudent.id,
+          name: editStdName.trim(),
+          rollNumber: editStdRoll.trim(),
+          email: editStdEmail.trim(),
+          phone: editStdPhone.trim(),
+          username: editStdUsername.trim(),
+          regionId: editStdRegionId,
+          password: editStdPassword.trim() || undefined,
+          generatePassword: opts.generatePassword,
+          sendEmail: opts.sendEmail,
+          forceChange: editStdForceChange,
+        },
+      });
+      await db.syncFromServerStore();
+      refreshAll();
+      if (!res.success) {
+        showNotice(res.error || "Could not update student credentials.");
+        if ("generatedPassword" in res && res.generatedPassword && "student" in res && res.student) {
+          setLastIssuedCreds({
+            rollNumber: res.student.rollNumber,
+            name: res.student.name,
+            email: res.student.email,
+            username: res.student.username,
+            password: res.generatedPassword,
+            emailed: false,
+          });
+        }
+        return;
+      }
+      setEditingStudent(res.student);
+      setEditStdPassword("");
+      if (res.generatedPassword) {
+        setLastIssuedCreds({
+          rollNumber: res.student.rollNumber,
+          name: res.student.name,
+          email: res.student.email,
+          username: res.student.username,
+          password: res.generatedPassword,
+          emailed: Boolean(res.email?.emailed),
+          provider: res.email?.provider,
+        });
+      }
+      showNotice(
+        res.email?.emailed
+          ? `Portal credentials emailed to ${res.email.to} via ${res.email.provider}.`
+          : res.generatedPassword
+            ? `Saved new portal password for ${res.student.rollNumber}. Copy it below to share.`
+            : `Updated roster profile for ${res.student.name} (${res.student.rollNumber}).`,
+      );
+    } catch (err) {
+      showNotice(err instanceof Error ? err.message : "Failed to save student credentials.");
+    } finally {
+      setSavingStudentCreds(false);
+    }
+  };
+
+  const handleQuickMailStudentCredentials = async (student: RosterStudent) => {
+    if (emailingStudentId) return;
+    if (!student.email || !student.email.includes("@")) {
+      openEditStudentModal(student);
+      showNotice(`Add an email address for ${student.name} (${student.rollNumber}) first.`);
+      return;
+    }
+    const ok = window.confirm(
+      `Generate a fresh temporary password and email portal login credentials to ${student.name} (${student.email})?`,
+    );
+    if (!ok) return;
+    setEmailingStudentId(student.id);
+    try {
+      const res = await serverAdminSetStudentCredentials({
+        data: {
+          studentId: student.id,
+          generatePassword: true,
+          sendEmail: true,
+          forceChange: true,
+        },
+      });
+      await db.syncFromServerStore();
+      refreshAll();
+      if (res.success && res.email?.emailed) {
+        showNotice(`Credentials mailed to ${res.email.to} (${res.email.provider}).`);
+      } else if (!res.success) {
+        showNotice(res.error || "Could not send credentials email.");
+      }
+    } catch (err) {
+      showNotice(err instanceof Error ? err.message : "Failed to mail credentials.");
+    } finally {
+      setEmailingStudentId(null);
+    }
+  };
+
+  const handleBulkMailCredentials = async () => {
+    if (bulkSendingCreds) return;
+    const scopeLabel =
+      rosterRegionFilter === "all"
+        ? "All Regions"
+        : regions.find((r) => r.id === rosterRegionFilter)?.nameEn || rosterRegionFilter;
+    const limitLabel = bulkBatchLimit > 0 ? `up to ${bulkBatchLimit}` : "all matching";
+    const ok = window.confirm(
+      `Email portal login credentials (${bulkOnlyUnsent ? "unsent only" : "re-issuing fresh temporary passwords to all"}) for ${limitLabel} trainees in "${scopeLabel}"?\n\nEach recipient receives a branded credentials card with their Roll ID, email, and a clean temporary password.`,
+    );
+    if (!ok) return;
+    setBulkSendingCreds(true);
+    setBulkCredReport(null);
+    try {
+      const res = await serverAdminBulkSendStudentCredentials({
+        data: {
+          regionId: rosterRegionFilter,
+          onlyUnsent: bulkOnlyUnsent,
+          limit: bulkBatchLimit > 0 ? bulkBatchLimit : undefined,
+        },
+      });
+      await db.syncFromServerStore();
+      refreshAll();
+      if (!res.success) {
+        showNotice(res.error || "Bulk credential dispatch failed.");
+        return;
+      }
+      setBulkCredReport({
+        sentCount: res.sentCount,
+        failedCount: res.failedCount,
+        remainingEligible: res.remainingEligible,
+        failed: res.failed,
+      });
+      showNotice(
+        `Credential wave complete: ${res.sentCount} sent, ${res.failedCount} failed, ${res.remainingEligible} remaining.`,
+      );
+    } catch (err) {
+      showNotice(err instanceof Error ? err.message : "Bulk credential dispatch failed.");
+    } finally {
+      setBulkSendingCreds(false);
+    }
   };
 
   const handleSaveBrandingAndSecurity = (e: React.FormEvent) => {
@@ -989,7 +1248,8 @@ function SuperAdminPage() {
       s.name.toLowerCase().includes(q) ||
       s.rollNumber.toLowerCase().includes(q) ||
       (s.phone || "").includes(q) ||
-      (s.email || "").toLowerCase().includes(q);
+      (s.email || "").toLowerCase().includes(q) ||
+      (s.username || "").toLowerCase().includes(q);
     return regionOk && searchOk;
   });
 
@@ -2073,11 +2333,27 @@ function SuperAdminPage() {
                   </div>
                   <input
                     type="email"
-                    placeholder="Email (portal OTP login)"
+                    placeholder="Email (portal login & certificate delivery)"
                     value={stdEmail}
                     onChange={(e) => setStdEmail(e.target.value)}
                     className="staff-input text-xs font-semibold"
                   />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      placeholder="Username (optional)"
+                      value={stdUsername}
+                      onChange={(e) => setStdUsername(e.target.value)}
+                      className="staff-input text-xs font-mono"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Password (or auto)"
+                      value={stdPassword}
+                      onChange={(e) => setStdPassword(e.target.value)}
+                      className="staff-input text-xs font-mono"
+                    />
+                  </div>
                   <input
                     type="text"
                     required
@@ -2097,18 +2373,153 @@ function SuperAdminPage() {
                       </option>
                     ))}
                   </select>
+                  <label className="flex items-center gap-2 rounded-xl border border-border/80 bg-muted/30 px-3 py-2 text-[11px] font-semibold text-foreground cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={stdEmailOnEnroll}
+                      onChange={(e) => setStdEmailOnEnroll(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-border text-primary"
+                    />
+                    <span>Email portal login credentials immediately</span>
+                  </label>
                   <button
                     type="submit"
-                    className="w-full rounded-xl bg-primary py-2.5 text-xs font-bold text-primary-foreground"
+                    disabled={enrollingStudent}
+                    className="w-full rounded-xl bg-primary py-2.5 text-xs font-bold text-primary-foreground disabled:opacity-50"
                   >
-                    + Enroll Candidate
+                    {enrollingStudent ? "Enrolling..." : "+ Enroll Candidate"}
                   </button>
                 </form>
               </div>
             </div>
 
-            {/* Right: Master Candidate Roster Table */}
+            {/* Right: Master Candidate Roster & Portal Credentials Dispatch */}
             <div className="lg:col-span-8 staff-panel space-y-4">
+              {(() => {
+                const scopedStudents =
+                  rosterRegionFilter === "all"
+                    ? roster
+                    : roster.filter((s) => s.regionId === rosterRegionFilter);
+                const withEmailCount = scopedStudents.filter(
+                  (s) => s.email && s.email.includes("@"),
+                ).length;
+                const passwordSetCount = scopedStudents.filter((s) => s.hasPassword).length;
+                const mailedCount = scopedStudents.filter((s) => Boolean(s.credentialsEmailedAt)).length;
+                const unsentEligibleCount = scopedStudents.filter(
+                  (s) =>
+                    s.email &&
+                    s.email.includes("@") &&
+                    !s.credentialsEmailedAt &&
+                    !(s.hasPassword && !s.mustChangePassword),
+                ).length;
+
+                return (
+                  <div className="rounded-2xl border border-primary/25 bg-primary/5 p-4 space-y-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-primary">
+                          <Mail className="h-4 w-4" />
+                          <span>Student Portal Credentials Dispatch</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                          Send branded username/roll &amp; temporary password emails once from here
+                          instead of sending OTPs on every login. Batched with polite rate pacing to
+                          protect your Resend &amp; Brevo daily quotas.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-bold">
+                        <span className="rounded-full bg-card border border-border px-2.5 py-1 text-foreground">
+                          Email: {withEmailCount}/{scopedStudents.length}
+                        </span>
+                        <span className="rounded-full bg-emerald-500/12 border border-emerald-500/25 px-2.5 py-1 text-emerald-700 dark:text-emerald-300">
+                          Password: {passwordSetCount}
+                        </span>
+                        <span className="rounded-full bg-sky-500/12 border border-sky-500/25 px-2.5 py-1 text-sky-700 dark:text-sky-300">
+                          Mailed: {mailedCount}
+                        </span>
+                        <span className="rounded-full bg-amber-500/12 border border-amber-500/25 px-2.5 py-1 text-amber-800 dark:text-amber-300">
+                          Pending: {unsentEligibleCount}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        value={bulkOnlyUnsent ? "unsent" : "all"}
+                        onChange={(e) => setBulkOnlyUnsent(e.target.value === "unsent")}
+                        className="staff-input text-xs font-semibold"
+                      >
+                        <option value="unsent">
+                          Unsent only ({unsentEligibleCount} pending) — Recommended
+                        </option>
+                        <option value="all">
+                          All with email ({withEmailCount}) — Re-issue temp passwords
+                        </option>
+                      </select>
+
+                      <select
+                        value={String(bulkBatchLimit)}
+                        onChange={(e) => setBulkBatchLimit(Number(e.target.value))}
+                        className="staff-input text-xs font-semibold"
+                      >
+                        <option value="25">Wave: 25 emails</option>
+                        <option value="50">Wave: 50 emails</option>
+                        <option value="90">Wave: 90 emails (Resend daily safe)</option>
+                        <option value="0">All matching at once</option>
+                      </select>
+
+                      <button
+                        type="button"
+                        disabled={
+                          bulkSendingCreds ||
+                          (bulkOnlyUnsent ? unsentEligibleCount === 0 : withEmailCount === 0)
+                        }
+                        onClick={() => void handleBulkMailCredentials()}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition"
+                      >
+                        {bulkSendingCreds ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Send className="h-3.5 w-3.5" />
+                        )}
+                        <span>
+                          {bulkSendingCreds ? "Sending credentials…" : "Mail Credentials Wave"}
+                        </span>
+                      </button>
+                    </div>
+
+                    {bulkCredReport && (
+                      <div className="rounded-xl border border-border bg-card p-3 text-xs space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-bold text-foreground">
+                            Last Dispatch: {bulkCredReport.sentCount} sent ·{" "}
+                            {bulkCredReport.failedCount} failed · {bulkCredReport.remainingEligible}{" "}
+                            remaining
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setBulkCredReport(null)}
+                            className="text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                        {bulkCredReport.failed.length > 0 && (
+                          <div className="max-h-28 overflow-y-auto space-y-1 text-[11px] text-destructive">
+                            {bulkCredReport.failed.map((f) => (
+                              <div key={f.rollNumber}>
+                                <span className="font-mono font-bold">{f.rollNumber}</span> (
+                                {f.email}): {f.reason}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h3 className="staff-panel-title">
                   Master Candidate Roster ({filteredRoster.length})
@@ -2128,7 +2539,7 @@ function SuperAdminPage() {
                   </select>
                   <input
                     type="text"
-                    placeholder="Search Roll, Name or Phone..."
+                    placeholder="Search Roll, Name, Username, Email..."
                     value={rosterSearch}
                     onChange={(e) => setRosterSearch(e.target.value)}
                     className="staff-input"
@@ -2136,22 +2547,34 @@ function SuperAdminPage() {
                 </div>
               </div>
 
-              <div className="max-h-[520px] overflow-y-auto rounded-2xl border border-border">
+              <div className="max-h-[540px] overflow-y-auto rounded-2xl border border-border">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-muted/60 staff-label sticky top-0">
                     <tr>
-                      <th className="p-3">Roll ID</th>
+                      <th className="p-3">Roll / User</th>
                       <th className="p-3">Candidate Name</th>
                       <th className="p-3">Email / Mobile</th>
-                      <th className="p-3">Region Range</th>
-                      <th className="p-3 text-right">Action</th>
+                      <th className="p-3">Portal Access</th>
+                      <th className="p-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/60">
                     {filteredRoster.map((s) => (
                       <tr key={s.id} className="hover:bg-muted/30">
-                        <td className="p-3 font-mono font-bold text-primary">{s.rollNumber}</td>
-                        <td className="p-3 font-bold text-foreground">{s.name}</td>
+                        <td className="p-3">
+                          <div className="font-mono font-bold text-primary">{s.rollNumber}</div>
+                          {s.username && (
+                            <div className="font-mono text-[10px] text-muted-foreground">
+                              @{s.username}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          <div className="font-bold text-foreground">{s.name}</div>
+                          <span className="inline-block mt-0.5 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
+                            {s.regionName || "Dhaka Range"}
+                          </span>
+                        </td>
                         <td className="p-3 text-muted-foreground">
                           <div className="font-mono text-[11px]">{s.email || "—"}</div>
                           <div className="font-mono text-[10px] opacity-80">
@@ -2159,21 +2582,71 @@ function SuperAdminPage() {
                           </div>
                         </td>
                         <td className="p-3">
-                          <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold text-primary">
-                            {s.regionName || "Dhaka Range"}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-1">
+                            {s.hasPassword ? (
+                              <span
+                                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                  s.mustChangePassword
+                                    ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+                                    : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                                }`}
+                              >
+                                <Lock className="h-2.5 w-2.5" />
+                                {s.mustChangePassword ? "Temp Pass" : "Active"}
+                              </span>
+                            ) : (
+                              <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                                Not Set
+                              </span>
+                            )}
+                            {s.credentialsEmailedAt && (
+                              <span
+                                className="inline-flex items-center gap-1 rounded-full bg-sky-500/12 px-2 py-0.5 text-[10px] font-bold text-sky-700 dark:text-sky-300"
+                                title={`Emailed ${new Date(s.credentialsEmailedAt).toLocaleString()}`}
+                              >
+                                <Check className="h-2.5 w-2.5" />
+                                Mailed
+                              </span>
+                            )}
+                          </div>
                         </td>
-                        <td className="p-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              db.removeStudentFromRoster(s.id);
-                              refreshAll();
-                            }}
-                            className="text-muted-foreground hover:text-destructive"
-                          >
-                            <Trash2 className="h-3.5 w-3.5 inline" />
-                          </button>
+                        <td className="p-3 text-right whitespace-nowrap">
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              disabled={emailingStudentId === s.id}
+                              onClick={() => void handleQuickMailStudentCredentials(s)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-2 py-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+                              title="Generate temp password & email credentials"
+                            >
+                              {emailingStudentId === s.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Mail className="h-3 w-3" />
+                              )}
+                              <span>Mail</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openEditStudentModal(s)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1 text-[10px] font-bold text-foreground hover:bg-accent"
+                              title="Edit email, username, or set password"
+                            >
+                              <KeyRound className="h-3 w-3 text-primary" />
+                              <span>Access</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                db.removeStudentFromRoster(s.id);
+                                refreshAll();
+                              }}
+                              className="rounded-lg p-1 text-muted-foreground hover:text-destructive"
+                              title="Remove from roster"
+                            >
+                              <Trash2 className="h-3.5 w-3.5 inline" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -2217,6 +2690,11 @@ function SuperAdminPage() {
               }}
             />
 
+            <EmailTemplatesStudio
+              defaultTestEmail={user?.email}
+              onNotice={showNotice}
+            />
+
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               <form
                 onSubmit={handleSaveBrandingAndSecurity}
@@ -2224,44 +2702,75 @@ function SuperAdminPage() {
               >
                 <h3 className="staff-panel-title flex items-center gap-2">
                   <ShieldAlert className="h-5 w-5 text-primary" />
-                  <span>Global Anti-Cheat Screen Lock Policy</span>
+                  <span>Global Anti-Cheat &amp; Portal Auth Policy</span>
                 </h3>
 
-                <div className="staff-row-card">
-                  <div className="text-xs font-black uppercase tracking-wider text-primary">
-                    Student Portal Login (OTP)
+                <div className="staff-row-card space-y-3">
+                  <div>
+                    <div className="text-xs font-black uppercase tracking-wider text-primary">
+                      Student Portal Sign-In Mode
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Default uses Roll ID / Username / Email + Password so logins consume zero
+                      email quota. OTP is only sent when a trainee clicks Forgot Password.
+                    </p>
                   </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    Default is email OTP. Turn on mobile only when SMS (GREENWEB) is ready. Students
-                    have no password login — roster email/mobile + OTP only.
-                  </p>
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setBranding({ ...branding, portalAuthChannel: "email" })
-                      }
-                      className={`rounded-xl px-3 py-2 text-xs font-bold border ${
-                        (branding.portalAuthChannel || "email") === "email"
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-border text-muted-foreground hover:bg-muted/40"
-                      }`}
-                    >
-                      Email OTP (default)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setBranding({ ...branding, portalAuthChannel: "mobile" })
-                      }
-                      className={`rounded-xl px-3 py-2 text-xs font-bold border ${
-                        branding.portalAuthChannel === "mobile"
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-border text-muted-foreground hover:bg-muted/40"
-                      }`}
-                    >
-                      Mobile SMS OTP
-                    </button>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { id: "password" as const, label: "Username / Email & Password (Default)" },
+                      { id: "password_or_otp" as const, label: "Password + Optional OTP" },
+                      { id: "otp_only" as const, label: "OTP Only (Legacy)" },
+                    ].map((opt) => {
+                      const active = (branding.portalAuthMode || "password") === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setBranding({ ...branding, portalAuthMode: opt.id })}
+                          className={`rounded-xl px-3 py-2 text-xs font-bold border transition ${
+                            active
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border text-muted-foreground hover:bg-muted/40"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="pt-2 border-t border-border/60 space-y-2">
+                    <div className="text-[11px] font-bold text-foreground">
+                      Password Reset &amp; OTP Delivery Channel
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setBranding({ ...branding, portalAuthChannel: "email" })
+                        }
+                        className={`rounded-xl px-3 py-1.5 text-xs font-bold border ${
+                          (branding.portalAuthChannel || "email") === "email"
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border text-muted-foreground hover:bg-muted/40"
+                        }`}
+                      >
+                        Email (Resend → Brevo)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setBranding({ ...branding, portalAuthChannel: "mobile" })
+                        }
+                        className={`rounded-xl px-3 py-1.5 text-xs font-bold border ${
+                          branding.portalAuthChannel === "mobile"
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border text-muted-foreground hover:bg-muted/40"
+                        }`}
+                      >
+                        Mobile SMS (GreenWeb)
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -3491,6 +4000,201 @@ function SuperAdminPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: STUDENT PORTAL CREDENTIALS & ACCESS EDITOR */}
+        {editingStudent && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs p-4"
+            onClick={() => setEditingStudent(null)}
+          >
+            <div
+              className="w-full max-w-lg rounded-3xl border border-border bg-card p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-display text-lg font-extrabold text-foreground flex items-center gap-2">
+                    <KeyRound className="h-5 w-5 text-primary" />
+                    <span>Student Portal Access &amp; Credentials</span>
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Edit profile, set or auto-generate a password, or email login credentials directly.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingStudent(null)}
+                  className="rounded-xl p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {lastIssuedCreds && (
+                <div className="rounded-2xl border border-emerald-500/35 bg-emerald-500/10 p-4 space-y-2 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-extrabold text-emerald-800 dark:text-emerald-300">
+                      {lastIssuedCreds.emailed
+                        ? `Credentials mailed to ${lastIssuedCreds.email} (${lastIssuedCreds.provider})`
+                        : "New Portal Password Ready to Share"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const text = `Student Portal: ${window.location.origin}/portal\nRoll ID: ${lastIssuedCreds.rollNumber}${
+                          lastIssuedCreds.username ? `\nUsername: ${lastIssuedCreds.username}` : ""
+                        }${lastIssuedCreds.email ? `\nEmail: ${lastIssuedCreds.email}` : ""}\nPassword: ${lastIssuedCreds.password}`;
+                        navigator.clipboard?.writeText(text).catch(() => {});
+                        setCopiedCredPassword(true);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-emerald-800"
+                    >
+                      {copiedCredPassword ? (
+                        <Check className="h-3 w-3" />
+                      ) : (
+                        <Copy className="h-3 w-3" />
+                      )}
+                      <span>{copiedCredPassword ? "Copied!" : "Copy Login Info"}</span>
+                    </button>
+                  </div>
+                  <div className="font-mono text-sm font-black tracking-wider text-foreground">
+                    {lastIssuedCreds.password}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="staff-label mb-1 block">Roll ID</label>
+                    <input
+                      type="text"
+                      value={editStdRoll}
+                      onChange={(e) => setEditStdRoll(e.target.value)}
+                      className="staff-input font-mono text-xs font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="staff-label mb-1 block">Custom Username (Optional)</label>
+                    <input
+                      type="text"
+                      value={editStdUsername}
+                      onChange={(e) => setEditStdUsername(e.target.value)}
+                      placeholder="e.g. sifat.gzp01"
+                      className="staff-input font-mono text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="staff-label mb-1 block">Full Name</label>
+                  <input
+                    type="text"
+                    value={editStdName}
+                    onChange={(e) => setEditStdName(e.target.value)}
+                    className="staff-input text-xs font-semibold"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="staff-label mb-1 block">Registered Email</label>
+                    <input
+                      type="email"
+                      value={editStdEmail}
+                      onChange={(e) => setEditStdEmail(e.target.value)}
+                      placeholder="student@gmail.com"
+                      className="staff-input text-xs font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="staff-label mb-1 block">Mobile Number</label>
+                    <input
+                      type="tel"
+                      value={editStdPhone}
+                      onChange={(e) => setEditStdPhone(e.target.value)}
+                      placeholder="01XXXXXXXXX"
+                      className="staff-input text-xs font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="staff-label mb-1 block">Training Centre / Region</label>
+                  <select
+                    value={editStdRegionId}
+                    onChange={(e) => setEditStdRegionId(e.target.value)}
+                    className="staff-input text-xs font-semibold"
+                  >
+                    {regions.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.nameEn} ({r.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-muted/30 p-3.5 space-y-2.5">
+                  <label className="staff-label block">
+                    Set Custom Password (optional — leave blank to keep current or auto-generate)
+                  </label>
+                  <input
+                    type="text"
+                    value={editStdPassword}
+                    onChange={(e) => setEditStdPassword(e.target.value)}
+                    placeholder="Type password (min 6 chars) or use auto-generate button"
+                    className="staff-input font-mono text-xs"
+                  />
+                  <label className="flex items-center gap-2 text-[11px] font-semibold text-foreground cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editStdForceChange}
+                      onChange={(e) => setEditStdForceChange(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-border text-primary"
+                    />
+                    <span>Prompt student to set their own personal password after signing in</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border">
+                <button
+                  type="button"
+                  disabled={savingStudentCreds}
+                  onClick={() => void handleSaveStudentCredentials({ generatePassword: true, sendEmail: false })}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold text-foreground hover:bg-accent disabled:opacity-50"
+                >
+                  <RefreshCw className="h-3.5 w-3.5 text-primary" />
+                  <span>Generate Password</span>
+                </button>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={savingStudentCreds}
+                    onClick={() => void handleSaveStudentCredentials({ sendEmail: false })}
+                    className="rounded-xl border border-border px-3.5 py-2 text-xs font-bold text-foreground hover:bg-accent disabled:opacity-50"
+                  >
+                    Save Only
+                  </button>
+                  <button
+                    type="button"
+                    disabled={savingStudentCreds}
+                    onClick={() => void handleSaveStudentCredentials({ sendEmail: true })}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-extrabold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {savingStudentCreds ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Send className="h-3.5 w-3.5" />
+                    )}
+                    <span>Save &amp; Email Credentials</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

@@ -1,6 +1,6 @@
 import type * as NodeCrypto from "node:crypto";
 import type * as NodeFs from "node:fs";
-import { CertificateData, ManagedUser } from "./types";
+import { CertificateData, ManagedUser, RosterStudent } from "./types";
 
 export function getNodeCrypto(): typeof NodeCrypto | null {
   try {
@@ -88,6 +88,48 @@ export function sanitizeUserForClient(user: ManagedUser): ManagedUser {
     ...safeFields,
     institutionName: user.institutionName || user.institution,
   };
+}
+
+export function sanitizeRosterStudentForClient(student: RosterStudent): RosterStudent {
+  const { passwordHash, ...safeFields } = student;
+  return {
+    ...safeFields,
+    hasPassword: Boolean(passwordHash || student.hasPassword),
+  };
+}
+
+/**
+ * Generates an unambiguous, human-typeable temporary password (e.g. `ONN-7K4M-9P2R`).
+ * Excludes visually confusing characters (0/O, 1/I/l) so students on mobile don't mistype it.
+ */
+export function generateStudentTempPassword(): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const crypto = getNodeCrypto();
+  const pick = () => {
+    if (crypto && typeof crypto.randomInt === "function") {
+      return alphabet[crypto.randomInt(0, alphabet.length)]!;
+    }
+    return alphabet[Math.floor(Math.random() * alphabet.length)]!;
+  };
+  const partA = `${pick()}${pick()}${pick()}${pick()}`;
+  const partB = `${pick()}${pick()}${pick()}${pick()}`;
+  return `ONN-${partA}-${partB}`;
+}
+
+export function maskEmailAddress(email: string): string {
+  const clean = (email || "").trim().toLowerCase();
+  const atIdx = clean.indexOf("@");
+  if (atIdx <= 0) return clean;
+  const local = clean.slice(0, atIdx);
+  const domain = clean.slice(atIdx + 1);
+  const visible = local.length <= 2 ? local[0] || "*" : local.slice(0, 2);
+  return `${visible}***@${domain}`;
+}
+
+export function maskPhoneNumber(phone: string): string {
+  const digits = (phone || "").replace(/\D/g, "");
+  if (digits.length < 6) return digits;
+  return `${digits.slice(0, 3)}****${digits.slice(-3)}`;
 }
 
 let cachedRuntimeSecret: string | null = null;

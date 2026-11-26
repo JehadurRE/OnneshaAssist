@@ -221,6 +221,18 @@ export interface RosterStudent {
   batch?: string | undefined;
   guardianPhone?: string | undefined;
   email?: string | undefined;
+  /** Optional portal username (students may sign in with email, roll number, or username). */
+  username?: string | undefined;
+  /** Server-only salted scrypt password hash; stripped before sending roster to clients. */
+  passwordHash?: string | undefined;
+  /** Safe client metadata indicating whether a portal password is configured. */
+  hasPassword?: boolean | undefined;
+  /** True when an admin issued a temporary password that the student is prompted to change. */
+  mustChangePassword?: boolean | undefined;
+  /** ISO timestamp when login credentials were last emailed from the admin panel. */
+  credentialsEmailedAt?: string | undefined;
+  /** ISO timestamp when the student's portal password was last updated. */
+  passwordUpdatedAt?: string | undefined;
   passcode?: string | undefined;
   createdAt?: string | undefined;
 }
@@ -748,9 +760,16 @@ export interface BrandingSettings {
   blockCopyPasteDefault?: boolean | undefined;
   maxProctorViolationsDefault?: number | undefined;
   /**
-   * Student Portal OTP channel.
-   * - email (default): students sign in with email + OTP only
-   * - mobile: students sign in with mobile + SMS OTP
+   * Student Portal sign-in mode.
+   * - password (default): Roll/Username/Email + Password (OTP used only for password reset, minimal mail load)
+   * - password_or_otp: Password primary with optional one-time code tab
+   * - otp_only: Legacy passwordless OTP sign-in only
+   */
+  portalAuthMode?: "password" | "password_or_otp" | "otp_only" | undefined;
+  /**
+   * Student Portal OTP / password-reset delivery channel.
+   * - email (default): verification & reset codes sent via Resend/Brevo email
+   * - mobile: verification & reset codes sent via SMS (GREENWEB)
    */
   portalAuthChannel?: "email" | "mobile" | undefined;
   updatedAt?: number | undefined;

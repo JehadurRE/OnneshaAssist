@@ -160,6 +160,11 @@ class SQLiteEngine {
         batch TEXT,
         guardianPhone TEXT,
         email TEXT,
+        username TEXT,
+        hasPassword INTEGER DEFAULT 0,
+        mustChangePassword INTEGER DEFAULT 0,
+        credentialsEmailedAt TEXT,
+        passwordUpdatedAt TEXT,
         passcode TEXT,
         createdAt TEXT
       );
@@ -290,6 +295,11 @@ class SQLiteEngine {
       "ALTER TABLE roster_students ADD COLUMN regionId TEXT",
       "ALTER TABLE roster_students ADD COLUMN regionName TEXT",
       "ALTER TABLE roster_students ADD COLUMN passcode TEXT",
+      "ALTER TABLE roster_students ADD COLUMN username TEXT",
+      "ALTER TABLE roster_students ADD COLUMN hasPassword INTEGER DEFAULT 0",
+      "ALTER TABLE roster_students ADD COLUMN mustChangePassword INTEGER DEFAULT 0",
+      "ALTER TABLE roster_students ADD COLUMN credentialsEmailedAt TEXT",
+      "ALTER TABLE roster_students ADD COLUMN passwordUpdatedAt TEXT",
       "ALTER TABLE certificates ADD COLUMN regionName TEXT",
       "ALTER TABLE exam_sessions ADD COLUMN allowedRegionId TEXT",
       "ALTER TABLE exam_sessions ADD COLUMN allowedRegionName TEXT",

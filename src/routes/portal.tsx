@@ -9,9 +9,13 @@ import { downloadCertificatePdf } from "@/lib/pdf-generator";
 import {
   serverAskCourseTutor,
   serverClearStudentPortal,
+  serverCompleteStudentPasswordReset,
   serverGetPortalAuthConfig,
   serverGetStudentPortal,
   serverRequestPortalOtp,
+  serverRequestStudentPasswordReset,
+  serverStudentChangePassword,
+  serverStudentPasswordLogin,
   serverSubmitPracticalWork,
   serverVerifyPortalOtp,
 } from "@/lib/server-session";
@@ -48,6 +52,8 @@ import {
   Database,
   Download,
   ExternalLink,
+  Eye,
+  EyeOff,
   FileCheck2,
   FileText,
   Film,
@@ -55,6 +61,7 @@ import {
   GraduationCap,
   Home,
   Image as ImageIcon,
+  KeyRound,
   Link2,
   Loader2,
   Lock,
@@ -72,6 +79,7 @@ import {
   Timer,
   Trash2,
   Upload,
+  User,
   X,
 } from "lucide-react";
 
@@ -239,13 +247,45 @@ function ProgressRing({ pct, size = 68 }: { pct: number; size?: number }) {
 function StudentPortalPage() {
   const { lang } = useLanguage();
   const branding = useBranding();
+  const [authMode, setAuthMode] = useState<"password" | "password_or_otp" | "otp_only">("password");
   const [authChannel, setAuthChannel] = useState<"email" | "mobile">("email");
+  const [signInView, setSignInView] = useState<"password" | "otp" | "reset">("password");
+
+  // Password login state
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [needsPasswordSetup, setNeedsPasswordSetup] = useState(false);
+
+  // Forgot / Self-service Password Reset state
+  const [resetIdentifier, setResetIdentifier] = useState("");
+  const [resetOtpSent, setResetOtpSent] = useState(false);
+  const [resetMaskedTarget, setResetMaskedTarget] = useState("");
+  const [resetStudentName, setResetStudentName] = useState("");
+  const [resetOtp, setResetOtp] = useState("");
+  const [resetNewPassword, setResetNewPassword] = useState("");
+  const [resetConfirmPassword, setResetConfirmPassword] = useState("");
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [resetDevOtpHint, setResetDevOtpHint] = useState<string | null>(null);
+
+  // OTP sign-in state (used when admin enables password_or_otp or otp_only)
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [devOtpHint, setDevOtpHint] = useState<string | null>(null);
   const [rollNumber, setRollNumber] = useState("");
+
+  // Authenticated Change Password modal state
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [curPassword, setCurPassword] = useState("");
+  const [nextPassword, setNextPassword] = useState("");
+  const [confirmNextPassword, setConfirmNextPassword] = useState("");
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordModalError, setPasswordModalError] = useState<string | null>(null);
+  const [dismissTempBanner, setDismissTempBanner] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -300,6 +340,11 @@ function StudentPortalPage() {
   useEffect(() => {
     let cancelled = false;
     try {
+      const urlId = new URLSearchParams(window.location.search).get("id")?.trim();
+      if (urlId) {
+        setIdentifier(urlId);
+        if (urlId.includes("@")) setEmail(urlId);
+      }
       const raw = sessionStorage.getItem("onnesha_portal_handoff");
       if (raw) {
         const handoff = JSON.parse(raw) as {
@@ -311,6 +356,10 @@ function StudentPortalPage() {
         if (handoff.email) setEmail(handoff.email);
         if (handoff.phone) setPhone(handoff.phone);
         if (handoff.rollNumber) setRollNumber(handoff.rollNumber);
+        if (!urlId) {
+          const pref = handoff.rollNumber || handoff.email || handoff.phone;
+          if (pref) setIdentifier(pref);
+        }
       }
     } catch {
       // ignore bad handoff
@@ -318,9 +367,15 @@ function StudentPortalPage() {
     (async () => {
       try {
         const cfg = await serverGetPortalAuthConfig();
-        if (!cancelled && cfg.success) setAuthChannel(cfg.channel);
+        if (!cancelled && cfg.success) {
+          setAuthChannel(cfg.channel);
+          setAuthMode(cfg.authMode);
+          if (cfg.authMode === "otp_only") {
+            setSignInView("otp");
+          }
+        }
       } catch {
-        // default email
+        // default password + email reset channel
       }
       if (cancelled) return;
       try {
@@ -517,6 +572,161 @@ function StudentPortalPage() {
       setNotice(err instanceof Error ? err.message : "Could not switch course.");
     } finally {
       setSwitchingCourse(false);
+    }
+  };
+
+  const signInWithPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setNotice(null);
+    setNeedsPasswordSetup(false);
+    try {
+      const res = await serverStudentPasswordLogin({
+        data: { identifier: identifier.trim(), password },
+      });
+      if (!res.success) {
+        setError(res.error || "Invalid credentials.");
+        if ("needsPasswordSetup" in res && res.needsPasswordSetup) {
+          setNeedsPasswordSetup(true);
+        }
+        return;
+      }
+      setPassword("");
+      if (res.student?.phone) setPhone(res.student.phone);
+      if (res.student?.rollNumber) setRollNumber(res.student.rollNumber);
+      if (res.student?.email) setEmail(res.student.email);
+      setDismissTempBanner(false);
+      await loadPortalAfterAuth();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign-in failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const requestPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setResetDevOtpHint(null);
+    try {
+      const res = await serverRequestStudentPasswordReset({
+        data: { identifier: resetIdentifier.trim() },
+      });
+      if (!res.success) {
+        setError(res.error || "Could not send password reset code.");
+        return;
+      }
+      setResetOtpSent(true);
+      setResetMaskedTarget(res.maskedTarget || "");
+      setResetStudentName(res.studentName || "");
+      setResetOtp("");
+      if ("devOtp" in res && res.devOtp) setResetDevOtpHint(String(res.devOtp));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Reset request failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const completePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (resetNewPassword.trim().length < 6) {
+      setError(
+        lang === "bn"
+          ? "নতুন পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।"
+          : "New password must be at least 6 characters.",
+      );
+      return;
+    }
+    if (resetNewPassword !== resetConfirmPassword) {
+      setError(
+        lang === "bn"
+          ? "দুটি পাসওয়ার্ড মেলেনি। আবার যাচাই করুন।"
+          : "Passwords do not match. Please re-enter.",
+      );
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await serverCompleteStudentPasswordReset({
+        data: {
+          identifier: resetIdentifier.trim(),
+          otp: resetOtp.trim(),
+          newPassword: resetNewPassword.trim(),
+        },
+      });
+      if (!res.success) {
+        setError(res.error || "Could not reset password.");
+        return;
+      }
+      setResetOtpSent(false);
+      setResetOtp("");
+      setResetNewPassword("");
+      setResetConfirmPassword("");
+      setResetDevOtpHint(null);
+      setNoticeTone("ok");
+      setNotice(
+        lang === "bn"
+          ? "আপনার নতুন পাসওয়ার্ড সেট হয়েছে এবং আপনি সাইন ইন করেছেন।"
+          : "Your new portal password has been saved and you are now signed in.",
+      );
+      await loadPortalAfterAuth();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Password reset failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChangeOwnPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordModalError(null);
+    if (nextPassword.trim().length < 6) {
+      setPasswordModalError(
+        lang === "bn"
+          ? "নতুন পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।"
+          : "New password must be at least 6 characters.",
+      );
+      return;
+    }
+    if (nextPassword !== confirmNextPassword) {
+      setPasswordModalError(
+        lang === "bn" ? "নতুন পাসওয়ার্ড দুটি মেলেনি।" : "New passwords do not match.",
+      );
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      const res = await serverStudentChangePassword({
+        data: {
+          currentPassword: portal?.student?.hasPassword ? curPassword : undefined,
+          newPassword: nextPassword.trim(),
+        },
+      });
+      if (!res.success) {
+        setPasswordModalError(res.error || "Could not update password.");
+        return;
+      }
+      setPasswordModalOpen(false);
+      setCurPassword("");
+      setNextPassword("");
+      setConfirmNextPassword("");
+      setDismissTempBanner(true);
+      setNoticeTone("ok");
+      setNotice(
+        lang === "bn"
+          ? "আপনার পোর্টাল পাসওয়ার্ড সফলভাবে আপডেট হয়েছে।"
+          : "Your portal password has been updated securely.",
+      );
+      const refreshed = await serverGetStudentPortal({ data: { courseId: portal?.course?.id } });
+      if (refreshed.success) setPortal(refreshed);
+    } catch (err) {
+      setPasswordModalError(err instanceof Error ? err.message : "Password update failed.");
+    } finally {
+      setSavingPassword(false);
     }
   };
 
@@ -795,9 +1005,13 @@ function StudentPortalPage() {
               </h1>
 
               <p className="text-base text-muted-foreground leading-relaxed max-w-lg">
-                {lang === "bn"
-                  ? "কোনো পাসওয়ার্ড লাগবে না। আপনার নিবন্ধিত ইমেইল বা মোবাইলে পাওয়া ৬ ডিজিটের কোড দিয়ে প্রবেশ করে ক্লাস নোট, রেকর্ডিং, AI টিউটর ও ফাইনাল জমা পরিচালনা করুন।"
-                  : "No passwords to remember. Sign in with a one-time code sent to your roster contact to read notes, watch recordings, ask your course AI tutor, and submit capstone work."}
+                {authMode === "otp_only"
+                  ? lang === "bn"
+                    ? "আপনার নিবন্ধিত ইমেইল বা মোবাইলে পাওয়া ৬ ডিজিটের কোড দিয়ে প্রবেশ করে ক্লাস নোট, রেকর্ডিং, AI টিউটর ও ফাইনাল জমা পরিচালনা করুন।"
+                    : "Sign in with a one-time code sent to your roster contact to read notes, watch recordings, ask your course AI tutor, and submit capstone work."
+                  : lang === "bn"
+                    ? "আপনার রোল নম্বর, ইউজারনেম বা ইমেইল এবং পাসওয়ার্ড দিয়ে মুহূর্তেই প্রবেশ করুন — ক্লাস নোট, রেকর্ডিং, AI টিউটর ও যাচাইকৃত সনদপত্র সব এক জায়গায়।"
+                    : "Sign in instantly with your Roll ID, username, or registered email and password — read study notes, watch class recordings, ask your Course AI Tutor, and download your verified certificate."}
               </p>
 
               {/* 4 Concrete Student Capabilities */}
@@ -847,73 +1061,428 @@ function StudentPortalPage() {
               </div>
             </div>
 
-            {/* Right Column: Focused 2-Step OTP Sign-In Card */}
+            {/* Right Column: Focused Sign-In & Self-Service Recovery Card */}
             <div className="w-full max-w-md shrink-0">
-              <form
-                onSubmit={otpSent ? verifyOtp : requestOtp}
-                className="rounded-3xl border border-border bg-card p-6 sm:p-8 shadow-xl shadow-black/5 space-y-5"
-              >
-                {/* 2-Step Indicator */}
-                <div className="flex items-center gap-2 text-xs font-semibold">
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 ${
-                      !otpSent
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                    }`}
-                  >
-                    {otpSent ? <Check className="h-3.5 w-3.5" /> : "1"}
-                    <span>{lang === "bn" ? "পরিচয়" : "Verify contact"}</span>
-                  </span>
-                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 ${
-                      otpSent
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground"
-                    }`}
-                  >
-                    <span>2</span>
-                    <span>{lang === "bn" ? "কোড যাচাই" : "Enter code"}</span>
-                  </span>
-                </div>
-
-                <div>
-                  <h2 className="font-display text-xl font-extrabold text-foreground">
-                    {otpSent
-                      ? lang === "bn"
-                        ? "ভেরিফিকেশন কোড লিখুন"
-                        : "Enter your 6-digit code"
-                      : lang === "bn"
-                        ? "শিক্ষার্থী সাইন ইন"
-                        : "Sign in to your portal"}
-                  </h2>
-                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
-                    {otpSent
-                      ? authChannel === "email"
-                        ? lang === "bn"
-                          ? `${email} ঠিকানায় পাঠানো কোডটি নিচে লিখুন।`
-                          : `Enter the one-time code sent to ${email}.`
-                        : lang === "bn"
-                          ? `${phone} নম্বরে পাঠানো SMS কোডটি নিচে লিখুন।`
-                          : `Enter the SMS code sent to ${phone}.`
-                      : authChannel === "email"
-                        ? lang === "bn"
-                          ? "কোর্স রোস্টারে থাকা আপনার ইমেইল লিখুন — আমরা একটি ৬ ডিজিটের কোড পাঠাব।"
-                          : "Enter your course roster email and we will send a one-time sign-in code."
-                        : lang === "bn"
-                          ? "কোর্স রোস্টারে থাকা আপনার মোবাইল নম্বর লিখুন।"
-                          : "Enter your course roster mobile number for SMS verification."}
-                  </p>
-                </div>
+              <div className="rounded-3xl border border-border bg-card p-6 sm:p-8 shadow-xl shadow-black/5 space-y-5">
+                {/* Mode switcher when admin allows both password and OTP */}
+                {authMode === "password_or_otp" && signInView !== "reset" && !bootstrapping && (
+                  <div className="grid grid-cols-2 gap-1 rounded-2xl border border-border bg-muted/40 p-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSignInView("password");
+                        setError(null);
+                      }}
+                      className={`rounded-xl py-2 text-xs font-bold transition ${
+                        signInView === "password"
+                          ? "bg-card text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {lang === "bn" ? "পাসওয়ার্ড লগইন" : "Password"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSignInView("otp");
+                        setError(null);
+                      }}
+                      className={`rounded-xl py-2 text-xs font-bold transition ${
+                        signInView === "otp"
+                          ? "bg-card text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {lang === "bn" ? "ওয়ান-টাইম কোড" : "One-time code"}
+                    </button>
+                  </div>
+                )}
 
                 {bootstrapping ? (
-                  <div className="flex items-center justify-center gap-2 py-8 text-xs font-semibold text-muted-foreground">
+                  <div className="flex items-center justify-center gap-2 py-10 text-xs font-semibold text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin text-primary" />
                     <span>{lang === "bn" ? "সেশন যাচাই হচ্ছে…" : "Checking active session…"}</span>
                   </div>
+                ) : signInView === "reset" ? (
+                  /* ---------- SELF-SERVICE PASSWORD RESET / FIRST-TIME SETUP ---------- */
+                  <form
+                    onSubmit={resetOtpSent ? completePasswordReset : requestPasswordReset}
+                    className="space-y-4"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/12 border border-amber-500/25 px-2.5 py-1 text-[11px] font-bold text-amber-800 dark:text-amber-300">
+                        <KeyRound className="h-3.5 w-3.5" />
+                        <span>
+                          {lang === "bn" ? "পাসওয়ার্ড রিসেট / সেটআপ" : "Reset or set password"}
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSignInView("password");
+                          setResetOtpSent(false);
+                          setResetOtp("");
+                          setResetNewPassword("");
+                          setResetConfirmPassword("");
+                          setResetDevOtpHint(null);
+                          setError(null);
+                        }}
+                        className="text-xs font-bold text-muted-foreground hover:text-foreground transition"
+                      >
+                        {lang === "bn" ? "← লগইনে ফিরুন" : "← Back to sign in"}
+                      </button>
+                    </div>
+
+                    <div>
+                      <h2 className="font-display text-xl font-extrabold text-foreground">
+                        {resetOtpSent
+                          ? lang === "bn"
+                            ? "নতুন পাসওয়ার্ড সেট করুন"
+                            : "Choose a new password"
+                          : lang === "bn"
+                            ? "পাসওয়ার্ড পুনরুদ্ধার করুন"
+                            : "Reset your portal password"}
+                      </h2>
+                      <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                        {resetOtpSent
+                          ? lang === "bn"
+                            ? `${resetMaskedTarget} ঠিকানায় পাঠানো ৬ ডিজিটের কোড এবং আপনার নতুন পাসওয়ার্ড লিখুন।`
+                            : `Enter the 6-digit code sent to ${resetMaskedTarget}${
+                                resetStudentName ? ` for ${resetStudentName}` : ""
+                              }, then set your new password.`
+                          : lang === "bn"
+                            ? "আপনার রোল আইডি, ইউজারনেম বা নিবন্ধিত ইমেইল লিখুন — আমরা একটি ভেরিফিকেশন কোড পাঠাব।"
+                            : "Enter your Roll ID, username, or roster email. We will send a 6-digit verification code so you can set a new password."}
+                      </p>
+                    </div>
+
+                    <label className="block space-y-1.5">
+                      <span className="text-xs font-semibold text-foreground">
+                        {lang === "bn" ? "রোল আইডি, ইউজারনেম বা ইমেইল" : "Roll ID, username, or email"}
+                      </span>
+                      <div className="relative">
+                        <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <input
+                          value={resetIdentifier}
+                          onChange={(e) => {
+                            setResetIdentifier(e.target.value);
+                            if (resetOtpSent) {
+                              setResetOtpSent(false);
+                              setResetOtp("");
+                              setResetDevOtpHint(null);
+                            }
+                          }}
+                          className="w-full rounded-2xl border border-border bg-background py-3 pl-10 pr-4 text-sm font-medium outline-none ring-primary/20 focus:border-primary focus:ring-4 transition"
+                          placeholder="GZP-01 or student@gmail.com"
+                          autoFocus
+                          required
+                        />
+                      </div>
+                    </label>
+
+                    {resetOtpSent && (
+                      <div className="space-y-3.5 animate-in fade-in">
+                        <label className="block space-y-1.5">
+                          <span className="text-xs font-semibold text-foreground">
+                            {lang === "bn" ? "৬ ডিজিটের রিসেট কোড" : "6-digit verification code"}
+                          </span>
+                          <input
+                            value={resetOtp}
+                            onChange={(e) =>
+                              setResetOtp(e.target.value.replace(/\D/g, "").slice(0, 8))
+                            }
+                            className="w-full rounded-2xl border border-amber-500/50 bg-background py-3 px-4 text-center text-lg font-mono font-black tracking-[0.35em] outline-none ring-primary/20 focus:border-primary focus:ring-4 transition"
+                            placeholder="••••••"
+                            inputMode="numeric"
+                            autoComplete="one-time-code"
+                            autoFocus
+                            required
+                          />
+                          {resetDevOtpHint && (
+                            <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-300 font-semibold">
+                              Dev Reset Code:{" "}
+                              <code className="font-mono font-black">{resetDevOtpHint}</code>
+                            </p>
+                          )}
+                        </label>
+
+                        <label className="block space-y-1.5">
+                          <span className="text-xs font-semibold text-foreground">
+                            {lang === "bn" ? "নতুন পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)" : "New password (min 6 chars)"}
+                          </span>
+                          <div className="relative">
+                            <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            <input
+                              type={showResetPassword ? "text" : "password"}
+                              value={resetNewPassword}
+                              onChange={(e) => setResetNewPassword(e.target.value)}
+                              className="w-full rounded-2xl border border-border bg-background py-3 pl-10 pr-11 text-sm font-medium outline-none ring-primary/20 focus:border-primary focus:ring-4 transition"
+                              placeholder="••••••••"
+                              autoComplete="new-password"
+                              minLength={6}
+                              required
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowResetPassword((v) => !v)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-muted-foreground hover:text-foreground"
+                              aria-label="Toggle password visibility"
+                            >
+                              {showResetPassword ? (
+                                <EyeOff className="h-4 w-4" />
+                              ) : (
+                                <Eye className="h-4 w-4" />
+                              )}
+                            </button>
+                          </div>
+                        </label>
+
+                        <label className="block space-y-1.5">
+                          <span className="text-xs font-semibold text-foreground">
+                            {lang === "bn" ? "নতুন পাসওয়ার্ড নিশ্চিত করুন" : "Confirm new password"}
+                          </span>
+                          <div className="relative">
+                            <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            <input
+                              type={showResetPassword ? "text" : "password"}
+                              value={resetConfirmPassword}
+                              onChange={(e) => setResetConfirmPassword(e.target.value)}
+                              className="w-full rounded-2xl border border-border bg-background py-3 pl-10 pr-4 text-sm font-medium outline-none ring-primary/20 focus:border-primary focus:ring-4 transition"
+                              placeholder="••••••••"
+                              autoComplete="new-password"
+                              minLength={6}
+                              required
+                            />
+                          </div>
+                        </label>
+                      </div>
+                    )}
+
+                    {error && (
+                      <div className="flex items-start gap-2 rounded-2xl border border-destructive/30 bg-destructive/10 px-3.5 py-2.5 text-xs font-semibold text-destructive">
+                        <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                        <span>{error}</span>
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3.5 text-sm font-bold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-60 transition"
+                    >
+                      {loading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <KeyRound className="h-4 w-4" />
+                      )}
+                      <span>
+                        {resetOtpSent
+                          ? lang === "bn"
+                            ? "পাসওয়ার্ড সেট করে প্রবেশ করুন"
+                            : "Set password & sign in"
+                          : lang === "bn"
+                            ? "রিসেট কোড পাঠান"
+                            : "Send reset code"}
+                      </span>
+                    </button>
+                  </form>
+                ) : signInView === "password" ? (
+                  /* ---------- USERNAME / ROLL / EMAIL + PASSWORD SIGN-IN ---------- */
+                  <form onSubmit={signInWithPassword} className="space-y-4">
+                    <div>
+                      <div className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary mb-2">
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                        <span>
+                          {lang === "bn" ? "শিক্ষার্থী অ্যাকাউন্ট" : "Student credentials"}
+                        </span>
+                      </div>
+                      <h2 className="font-display text-xl font-extrabold text-foreground">
+                        {lang === "bn" ? "শিক্ষার্থী সাইন ইন" : "Sign in to your portal"}
+                      </h2>
+                      <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                        {lang === "bn"
+                          ? "আপনার রোল আইডি, ইউজারনেম অথবা নিবন্ধিত ইমেইল এবং পাসওয়ার্ড দিয়ে প্রবেশ করুন।"
+                          : "Use your Roll ID (e.g. GZP-01), username, or registered email with your portal password."}
+                      </p>
+                    </div>
+
+                    <label className="block space-y-1.5">
+                      <span className="text-xs font-semibold text-foreground">
+                        {lang === "bn" ? "রোল আইডি, ইউজারনেম বা ইমেইল" : "Roll ID, username, or email"}
+                      </span>
+                      <div className="relative">
+                        <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <input
+                          value={identifier}
+                          onChange={(e) => {
+                            setIdentifier(e.target.value);
+                            setNeedsPasswordSetup(false);
+                          }}
+                          className="w-full rounded-2xl border border-border bg-background py-3 pl-10 pr-4 text-sm font-medium outline-none ring-primary/20 focus:border-primary focus:ring-4 transition"
+                          placeholder="GZP-01 or student@gmail.com"
+                          autoComplete="username"
+                          autoFocus
+                          required
+                        />
+                      </div>
+                    </label>
+
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <label
+                          htmlFor="portal-password-input"
+                          className="text-xs font-semibold text-foreground"
+                        >
+                          {lang === "bn" ? "পাসওয়ার্ড" : "Password"}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setResetIdentifier(identifier.trim());
+                            setResetOtpSent(false);
+                            setResetOtp("");
+                            setResetDevOtpHint(null);
+                            setError(null);
+                            setNeedsPasswordSetup(false);
+                            setSignInView("reset");
+                          }}
+                          className="text-xs font-bold text-primary hover:underline"
+                        >
+                          {lang === "bn" ? "পাসওয়ার্ড ভুলে গেছেন?" : "Forgot / set password?"}
+                        </button>
+                      </div>
+                      <div className="relative">
+                        <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <input
+                          id="portal-password-input"
+                          type={showPassword ? "text" : "password"}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className="w-full rounded-2xl border border-border bg-background py-3 pl-10 pr-11 text-sm font-medium outline-none ring-primary/20 focus:border-primary focus:ring-4 transition"
+                          placeholder="••••••••"
+                          autoComplete="current-password"
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword((v) => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1 text-muted-foreground hover:text-foreground"
+                          aria-label={showPassword ? "Hide password" : "Show password"}
+                        >
+                          {showPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {error && (
+                      <div className="rounded-2xl border border-destructive/30 bg-destructive/10 px-3.5 py-2.5 text-xs font-semibold text-destructive space-y-2">
+                        <div className="flex items-start gap-2">
+                          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                          <span>{error}</span>
+                        </div>
+                        {needsPasswordSetup && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setResetIdentifier(identifier.trim());
+                              setResetOtpSent(false);
+                              setError(null);
+                              setNeedsPasswordSetup(false);
+                              setSignInView("reset");
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-[11px] font-bold text-primary-foreground hover:bg-primary/90 transition"
+                          >
+                            <KeyRound className="h-3.5 w-3.5" />
+                            <span>
+                              {lang === "bn"
+                                ? "ভেরিফিকেশন কোড দিয়ে পাসওয়ার্ড সেট করুন →"
+                                : "Set my password with a code →"}
+                            </span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3.5 text-sm font-bold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-60 transition"
+                    >
+                      {loading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <ShieldCheck className="h-4 w-4" />
+                      )}
+                      <span>{lang === "bn" ? "পোর্টালে প্রবেশ করুন" : "Sign in to portal"}</span>
+                    </button>
+
+                    <div className="rounded-2xl border border-border/70 bg-muted/30 px-3.5 py-2.5 text-[11.5px] text-muted-foreground leading-relaxed">
+                      {lang === "bn"
+                        ? "প্রথমবার প্রবেশ করছেন বা পাসওয়ার্ড পাননি? উপরের 'পাসওয়ার্ড ভুলে গেছেন?' বাটনে ক্লিক করে ইমেইল কোড দিয়ে নিজের পাসওয়ার্ড তৈরি করুন।"
+                        : "First time here or haven't received your credentials email? Click 'Forgot / set password?' above to create your password right away."}
+                    </div>
+                  </form>
                 ) : (
-                  <>
+                  /* ---------- LEGACY / OPTIONAL 2-STEP OTP SIGN-IN ---------- */
+                  <form onSubmit={otpSent ? verifyOtp : requestOtp} className="space-y-4">
+                    {/* 2-Step Indicator */}
+                    <div className="flex items-center gap-2 text-xs font-semibold">
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 ${
+                          !otpSent
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                        }`}
+                      >
+                        {otpSent ? <Check className="h-3.5 w-3.5" /> : "1"}
+                        <span>{lang === "bn" ? "পরিচয়" : "Verify contact"}</span>
+                      </span>
+                      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 ${
+                          otpSent
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        <span>2</span>
+                        <span>{lang === "bn" ? "কোড যাচাই" : "Enter code"}</span>
+                      </span>
+                    </div>
+
+                    <div>
+                      <h2 className="font-display text-xl font-extrabold text-foreground">
+                        {otpSent
+                          ? lang === "bn"
+                            ? "ভেরিফিকেশন কোড লিখুন"
+                            : "Enter your 6-digit code"
+                          : lang === "bn"
+                            ? "কোড দিয়ে সাইন ইন"
+                            : "Sign in with one-time code"}
+                      </h2>
+                      <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                        {otpSent
+                          ? authChannel === "email"
+                            ? lang === "bn"
+                              ? `${email} ঠিকানায় পাঠানো কোডটি নিচে লিখুন।`
+                              : `Enter the one-time code sent to ${email}.`
+                            : lang === "bn"
+                              ? `${phone} নম্বরে পাঠানো SMS কোডটি নিচে লিখুন।`
+                              : `Enter the SMS code sent to ${phone}.`
+                          : authChannel === "email"
+                            ? lang === "bn"
+                              ? "কোর্স রোস্টারে থাকা আপনার ইমেইল লিখুন — আমরা একটি ৬ ডিজিটের কোড পাঠাব।"
+                              : "Enter your course roster email and we will send a one-time sign-in code."
+                            : lang === "bn"
+                              ? "কোর্স রোস্টারে থাকা আপনার মোবাইল নম্বর লিখুন।"
+                              : "Enter your course roster mobile number for SMS verification."}
+                      </p>
+                    </div>
+
                     {authChannel === "email" ? (
                       <label className="block space-y-1.5">
                         <span className="text-xs font-semibold text-foreground">
@@ -1029,18 +1598,18 @@ function StudentPortalPage() {
                         {lang === "bn" ? "অন্য ইমেইল / নম্বর ব্যবহার করুন" : "Use a different contact"}
                       </button>
                     )}
-
-                    <div className="border-t border-border/70 pt-4 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                      <span>
-                        {lang === "bn" ? "লাইভ কুইজের PIN আছে?" : "Have a live quiz PIN?"}
-                      </span>
-                      <Link to="/play" className="font-bold text-primary hover:underline">
-                        {lang === "bn" ? "অ্যারেনায় যান →" : "Join live arena →"}
-                      </Link>
-                    </div>
-                  </>
+                  </form>
                 )}
-              </form>
+
+                <div className="border-t border-border/70 pt-4 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>
+                    {lang === "bn" ? "লাইভ কুইজের PIN আছে?" : "Have a live quiz PIN?"}
+                  </span>
+                  <Link to="/play" className="font-bold text-primary hover:underline">
+                    {lang === "bn" ? "অ্যারেনায় যান →" : "Join live arena →"}
+                  </Link>
+                </div>
+              </div>
             </div>
           </div>
         </main>
@@ -1283,6 +1852,17 @@ function StudentPortalPage() {
               </span>
               <button
                 type="button"
+                onClick={() => {
+                  setPasswordModalError(null);
+                  setPasswordModalOpen(true);
+                }}
+                className="rounded-xl border border-border p-2 text-muted-foreground hover:text-foreground"
+                title={lang === "bn" ? "পাসওয়ার্ড পরিবর্তন" : "Change password"}
+              >
+                <KeyRound className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
                 onClick={() => void signOutPortal()}
                 className="rounded-xl border border-border p-2 text-muted-foreground hover:text-foreground"
                 title={lang === "bn" ? "সাইন আউট" : "Sign out"}
@@ -1451,7 +2031,26 @@ function StudentPortalPage() {
                 );
               })}
 
-              <div className="pt-2 mt-2 border-t border-border/70 px-1">
+              <div className="pt-2 mt-2 border-t border-border/70 px-1 space-y-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPasswordModalError(null);
+                    setPasswordModalOpen(true);
+                  }}
+                  className="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition"
+                >
+                  <KeyRound className="h-4 w-4" />
+                  <span>
+                    {portal.student?.hasPassword
+                      ? lang === "bn"
+                        ? "পাসওয়ার্ড পরিবর্তন"
+                        : "Change password"
+                      : lang === "bn"
+                        ? "পাসওয়ার্ড সেট করুন"
+                        : "Set portal password"}
+                  </span>
+                </button>
                 <button
                   type="button"
                   onClick={() => void signOutPortal()}
@@ -1466,6 +2065,50 @@ function StudentPortalPage() {
 
           {/* MAIN WORKSPACE COLUMN */}
           <main className="lg:col-span-9 space-y-6 min-w-0">
+            {/* Friendly Temporary Password Security Prompt */}
+            {!dismissTempBanner &&
+              (portal.student?.mustChangePassword || !portal.student?.hasPassword) && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-xs">
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <KeyRound className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <div className="text-amber-900 dark:text-amber-200 leading-relaxed">
+                      <strong className="font-bold">
+                        {portal.student?.mustChangePassword
+                          ? lang === "bn"
+                            ? "অস্থায়ী পাসওয়ার্ড পরিবর্তন করুন:"
+                            : "Update your temporary password:"
+                          : lang === "bn"
+                            ? "নিজের পাসওয়ার্ড সেট করুন:"
+                            : "Create your personal password:"}
+                      </strong>{" "}
+                      {lang === "bn"
+                        ? "দ্রুত ও নিরাপদ লগইনের জন্য নিজের পছন্দের পাসওয়ার্ড সেট করে নিন।"
+                        : "Set a personal password so you can sign in anytime without waiting for one-time codes."}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPasswordModalError(null);
+                        setPasswordModalOpen(true);
+                      }}
+                      className="rounded-xl bg-amber-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-amber-700 transition"
+                    >
+                      {lang === "bn" ? "পাসওয়ার্ড সেট করুন" : "Set my password"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDismissTempBanner(true)}
+                      className="rounded-lg p-1 text-amber-700/70 hover:text-amber-900 dark:text-amber-300/70"
+                      aria-label="Dismiss"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
             {/* Global Notice Banner */}
             {notice && (
               <div
@@ -3286,6 +3929,148 @@ function StudentPortalPage() {
           </main>
         </div>
       </div>
+
+      {/* Change / Set Portal Password Modal */}
+      {passwordModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs p-4"
+          onClick={() => setPasswordModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-2xl space-y-4 animate-in fade-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-display text-lg font-extrabold text-foreground flex items-center gap-2">
+                  <KeyRound className="h-5 w-5 text-primary" />
+                  <span>
+                    {portal.student?.hasPassword
+                      ? lang === "bn"
+                        ? "পাসওয়ার্ড পরিবর্তন করুন"
+                        : "Change portal password"
+                      : lang === "bn"
+                        ? "পাসওয়ার্ড সেট করুন"
+                        : "Set your portal password"}
+                  </span>
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {portal.student?.rollNumber}
+                  {portal.student?.username ? ` · @${portal.student.username}` : ""}
+                  {portal.student?.email ? ` · ${portal.student.email}` : ""}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPasswordModalOpen(false)}
+                className="rounded-xl p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleChangeOwnPassword} className="space-y-3.5">
+              {portal.student?.hasPassword && (
+                <label className="block space-y-1">
+                  <span className="text-xs font-semibold text-foreground">
+                    {lang === "bn" ? "বর্তমান পাসওয়ার্ড" : "Current password"}
+                  </span>
+                  <div className="relative">
+                    <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      type={showChangePassword ? "text" : "password"}
+                      value={curPassword}
+                      onChange={(e) => setCurPassword(e.target.value)}
+                      className="w-full rounded-2xl border border-border bg-background py-2.5 pl-10 pr-10 text-sm outline-none focus:border-primary"
+                      placeholder="••••••••"
+                      autoComplete="current-password"
+                      required
+                    />
+                  </div>
+                </label>
+              )}
+
+              <label className="block space-y-1">
+                <span className="text-xs font-semibold text-foreground">
+                  {lang === "bn" ? "নতুন পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)" : "New password (min 6 characters)"}
+                </span>
+                <div className="relative">
+                  <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type={showChangePassword ? "text" : "password"}
+                    value={nextPassword}
+                    onChange={(e) => setNextPassword(e.target.value)}
+                    className="w-full rounded-2xl border border-border bg-background py-2.5 pl-10 pr-10 text-sm outline-none focus:border-primary"
+                    placeholder="••••••••"
+                    autoComplete="new-password"
+                    minLength={6}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowChangePassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showChangePassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+              </label>
+
+              <label className="block space-y-1">
+                <span className="text-xs font-semibold text-foreground">
+                  {lang === "bn" ? "নতুন পাসওয়ার্ড নিশ্চিত করুন" : "Confirm new password"}
+                </span>
+                <div className="relative">
+                  <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type={showChangePassword ? "text" : "password"}
+                    value={confirmNextPassword}
+                    onChange={(e) => setConfirmNextPassword(e.target.value)}
+                    className="w-full rounded-2xl border border-border bg-background py-2.5 pl-10 pr-4 text-sm outline-none focus:border-primary"
+                    placeholder="••••••••"
+                    autoComplete="new-password"
+                    minLength={6}
+                    required
+                  />
+                </div>
+              </label>
+
+              {passwordModalError && (
+                <div className="flex items-start gap-2 rounded-2xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive">
+                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>{passwordModalError}</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPasswordModalOpen(false)}
+                  className="rounded-xl border border-border px-4 py-2 text-xs font-bold text-foreground hover:bg-accent transition"
+                >
+                  {lang === "bn" ? "বাতিল" : "Cancel"}
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingPassword}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-60 transition"
+                >
+                  {savingPassword ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5" />
+                  )}
+                  <span>{lang === "bn" ? "পাসওয়ার্ড সংরক্ষণ করুন" : "Save password"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <Footer />
     </div>

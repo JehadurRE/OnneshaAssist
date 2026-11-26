@@ -1,11 +1,41 @@
 /**
- * Transactional email: Resend first, Brevo fallback (OTP + certificates).
+ * Transactional email: Resend first, Brevo fallback (credentials, reset OTP, login OTP & certificates).
  *
  * Env:
  *   RESEND_API_KEY
  *   BREVO_API_KEY  (or SENDINBLUE_API_KEY)
  *   PORTAL_OTP_FROM_EMAIL  e.g. Onnesha Arena <otp@onnesha.courses>
  */
+
+import {
+  buildCourseCertificateEmail,
+  buildEmailBrandContext,
+  buildPasswordChangedEmail,
+  buildPasswordResetOtpEmail,
+  buildPortalOtpEmail,
+  buildQuizCertificateEmail,
+  buildSampleEmailTemplate,
+  buildStudentCredentialsEmail,
+  EMAIL_TEMPLATE_CATALOG,
+  type EmailBrandContext,
+  type EmailTemplateId,
+  type RenderedEmailTemplate,
+} from "./email-templates";
+
+export {
+  buildCourseCertificateEmail,
+  buildEmailBrandContext,
+  buildPasswordChangedEmail,
+  buildPasswordResetOtpEmail,
+  buildPortalOtpEmail,
+  buildQuizCertificateEmail,
+  buildSampleEmailTemplate,
+  buildStudentCredentialsEmail,
+  EMAIL_TEMPLATE_CATALOG,
+  type EmailBrandContext,
+  type EmailTemplateId,
+  type RenderedEmailTemplate,
+};
 
 export type PortalEmailProvider = "resend" | "brevo";
 
@@ -216,132 +246,86 @@ export async function sendTransactionalEmail(params: {
 export async function sendPortalOtpEmail(params: {
   to: string;
   code: string;
+  studentName?: string | undefined;
+  brand?: EmailBrandContext | undefined;
 }): Promise<
   | { ok: true; provider: PortalEmailProvider }
   | { ok: false; error: string }
 > {
+  const rendered = buildPortalOtpEmail({
+    code: params.code,
+    studentName: params.studentName,
+    brand: params.brand,
+  });
   return sendTransactionalEmail({
     to: params.to,
-    subject: `${params.code} — Onnesha Arena portal login`,
-    text: `Your Onnesha Student Portal verification code is ${params.code}.\n\nValid for 5 minutes. Do not share this code.\n\n— Onnesha Arena`,
+    subject: rendered.subject,
+    text: rendered.text,
+    html: rendered.html,
   });
 }
 
-export function buildCourseCertificateEmail(params: {
+export async function sendPasswordResetOtpEmail(params: {
+  to: string;
   studentName: string;
-  courseTitle: string;
-  courseCode: string;
-  certificateNumber: string;
-  combinedScorePct?: number | undefined;
-  verifyUrl: string;
-  portalUrl: string;
-  /** Optional badge title from course design profile (used in subject). */
-  badgeTitle?: string | undefined;
-}): { subject: string; text: string; html: string } {
-  const score =
-    typeof params.combinedScorePct === "number"
-      ? ` Combined score: ${params.combinedScorePct}%.`
-      : "";
-  const badge = (params.badgeTitle || "").trim();
-  const subject = badge
-    ? `${badge} — ${params.courseCode || "Course"}`
-    : `Course completion certificate — ${params.courseCode}`;
-  const text = [
-    `Hi ${params.studentName},`,
-    "",
-    `Your course completion certificate for ${params.courseTitle} (${params.courseCode}) is ready.`,
-    `Certificate number: ${params.certificateNumber}.${score}`,
-    "",
-    `Open / verify: ${params.verifyUrl}`,
-    `Portal: ${params.portalUrl}`,
-    "",
-    "— Onnesha Arena",
-  ].join("\n");
-  const html = `<div style="font-family:Georgia,'Times New Roman',serif;line-height:1.55;color:#0f172a;max-width:560px">
-  <p style="font-size:15px">Hi <strong>${escapeHtml(params.studentName)}</strong>,</p>
-  <p style="font-size:15px">Your <strong>course completion certificate</strong> for
-    ${escapeHtml(params.courseTitle)}
-    (<code style="font-family:ui-monospace,monospace">${escapeHtml(params.courseCode)}</code>) is ready.</p>
-  <p style="font-size:14px">Certificate number: <strong>${escapeHtml(params.certificateNumber)}</strong>${
-    typeof params.combinedScorePct === "number"
-      ? `<br/>Combined score: <strong>${params.combinedScorePct}%</strong>`
-      : ""
-  }</p>
-  <p>
-    <a href="${escapeHtml(params.verifyUrl)}" style="display:inline-block;padding:12px 18px;background:#0f766e;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;font-family:system-ui,sans-serif">
-      Open certificate
-    </a>
-  </p>
-  <p style="font-size:13px;color:#64748b;font-family:system-ui,sans-serif">
-    Portal: <a href="${escapeHtml(params.portalUrl)}" style="color:#0f766e">${escapeHtml(params.portalUrl)}</a>
-  </p>
-  <p style="font-size:12px;color:#94a3b8;font-family:system-ui,sans-serif">— Onnesha Arena</p>
-</div>`;
-  return { subject, text, html };
+  rollNumber?: string | undefined;
+  code: string;
+  portalUrl?: string | undefined;
+  brand?: EmailBrandContext | undefined;
+}): Promise<
+  | { ok: true; provider: PortalEmailProvider }
+  | { ok: false; error: string }
+> {
+  const rendered = buildPasswordResetOtpEmail({
+    studentName: params.studentName,
+    rollNumber: params.rollNumber,
+    code: params.code,
+    portalUrl: params.portalUrl,
+    brand: params.brand,
+  });
+  return sendTransactionalEmail({
+    to: params.to,
+    subject: rendered.subject,
+    text: rendered.text,
+    html: rendered.html,
+  });
 }
 
-export function buildQuizCertificateEmail(params: {
+export async function sendStudentCredentialsEmail(params: {
+  to: string;
   studentName: string;
-  quizTitle: string;
-  certificateNumber: string;
-  scorePct?: number | undefined;
-  rank?: number | undefined;
-  totalParticipants?: number | undefined;
-  verifyUrl: string;
+  rollNumber: string;
+  username?: string | undefined;
+  temporaryPassword: string;
+  regionName?: string | undefined;
+  batch?: string | undefined;
+  courseTitle?: string | undefined;
   portalUrl: string;
-  badgeTitle?: string | undefined;
-}): { subject: string; text: string; html: string } {
-  const badge = (params.badgeTitle || "").trim() || "Quiz merit certificate";
-  const scoreLine =
-    typeof params.scorePct === "number" ? ` Score: ${params.scorePct}%.` : "";
-  const rankLine =
-    typeof params.rank === "number" && typeof params.totalParticipants === "number"
-      ? ` Rank: ${params.rank} of ${params.totalParticipants}.`
-      : "";
-  const subject = `${badge} — ${params.quizTitle}`;
-  const text = [
-    `Hi ${params.studentName},`,
-    "",
-    `Your quiz certificate for "${params.quizTitle}" is ready.`,
-    `Certificate number: ${params.certificateNumber}.${scoreLine}${rankLine}`,
-    "",
-    `Open / verify: ${params.verifyUrl}`,
-    `Portal: ${params.portalUrl}`,
-    "",
-    "— Onnesha Arena",
-  ].join("\n");
-  const html = `<div style="font-family:Georgia,'Times New Roman',serif;line-height:1.55;color:#0f172a;max-width:560px">
-  <p style="font-size:15px">Hi <strong>${escapeHtml(params.studentName)}</strong>,</p>
-  <p style="font-size:15px">Your <strong>quiz certificate</strong> for
-    “${escapeHtml(params.quizTitle)}” is ready.</p>
-  <p style="font-size:14px">Certificate number: <strong>${escapeHtml(params.certificateNumber)}</strong>${
-    typeof params.scorePct === "number"
-      ? `<br/>Score: <strong>${params.scorePct}%</strong>`
-      : ""
-  }${
-    typeof params.rank === "number" && typeof params.totalParticipants === "number"
-      ? `<br/>Rank: <strong>${params.rank}</strong> of ${params.totalParticipants}`
-      : ""
-  }</p>
-  <p>
-    <a href="${escapeHtml(params.verifyUrl)}" style="display:inline-block;padding:12px 18px;background:#1d4ed8;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;font-family:system-ui,sans-serif">
-      Open certificate
-    </a>
-  </p>
-  <p style="font-size:13px;color:#64748b;font-family:system-ui,sans-serif">
-    Portal: <a href="${escapeHtml(params.portalUrl)}" style="color:#1d4ed8">${escapeHtml(params.portalUrl)}</a>
-  </p>
-  <p style="font-size:12px;color:#94a3b8;font-family:system-ui,sans-serif">— Onnesha Arena</p>
-</div>`;
-  return { subject, text, html };
-}
-
-function escapeHtml(raw: string): string {
-  return (raw || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+  mustChangePassword?: boolean | undefined;
+  brand?: EmailBrandContext | undefined;
+}): Promise<
+  | { ok: true; provider: PortalEmailProvider }
+  | { ok: false; error: string }
+> {
+  const rendered = buildStudentCredentialsEmail({
+    studentName: params.studentName,
+    rollNumber: params.rollNumber,
+    email: params.to,
+    username: params.username,
+    temporaryPassword: params.temporaryPassword,
+    regionName: params.regionName,
+    batch: params.batch,
+    courseTitle: params.courseTitle,
+    portalUrl: params.portalUrl,
+    mustChangePassword: params.mustChangePassword,
+    brand: params.brand,
+  });
+  return sendTransactionalEmail({
+    to: params.to,
+    subject: rendered.subject,
+    text: rendered.text,
+    html: rendered.html,
+  });
 }
 
 export function normalizePortalEmail(raw: string): string {

@@ -258,7 +258,7 @@ class OnneshaDatabase {
           run("DELETE FROM roster_students");
           res.roster.forEach((s) => {
             run(
-              "INSERT OR REPLACE INTO roster_students (id, rollNumber, name, phone, regionId, regionName, section, batch, guardianPhone, email, passcode, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              "INSERT OR REPLACE INTO roster_students (id, rollNumber, name, phone, regionId, regionName, section, batch, guardianPhone, email, username, hasPassword, mustChangePassword, credentialsEmailedAt, passwordUpdatedAt, passcode, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
               [
                 s.id,
                 s.rollNumber,
@@ -269,7 +269,12 @@ class OnneshaDatabase {
                 s.section || "A",
                 s.batch || "46th BCS & Cadet Batch",
                 s.guardianPhone || s.phone || "",
-                s.email || `${s.rollNumber}@academy.edu.bd`,
+                s.email || "",
+                s.username || "",
+                s.hasPassword ? 1 : 0,
+                s.mustChangePassword ? 1 : 0,
+                s.credentialsEmailedAt || "",
+                s.passwordUpdatedAt || "",
                 s.passcode || "",
                 s.createdAt || new Date().toISOString(),
               ],
@@ -1400,9 +1405,33 @@ class OnneshaDatabase {
 
   // ---------------- ROSTER & STUDENTS REPOSITORY (SQLite + Server) ----------------
   getRoster(regionId?: string): RosterStudent[] {
-    let rows = sqliteEngine.query<RosterStudent>(
-      "SELECT * FROM roster_students ORDER BY rollNumber ASC",
-    );
+    let rows: RosterStudent[] = sqliteEngine
+      .query<Record<string, unknown>>(
+        "SELECT * FROM roster_students ORDER BY rollNumber ASC",
+      )
+      .map((r): RosterStudent => ({
+        id: String(r["id"] || ""),
+        rollNumber: String(r["rollNumber"] || ""),
+        name: String(r["name"] || ""),
+        phone: r["phone"] ? String(r["phone"]) : undefined,
+        regionId: r["regionId"] ? String(r["regionId"]) : undefined,
+        regionName: r["regionName"] ? String(r["regionName"]) : undefined,
+        section: r["section"] ? String(r["section"]) : undefined,
+        batch: r["batch"] ? String(r["batch"]) : undefined,
+        guardianPhone: r["guardianPhone"] ? String(r["guardianPhone"]) : undefined,
+        email: r["email"] ? String(r["email"]) : undefined,
+        username: r["username"] ? String(r["username"]) : undefined,
+        hasPassword: Boolean(r["hasPassword"]),
+        mustChangePassword: Boolean(r["mustChangePassword"]),
+        credentialsEmailedAt: r["credentialsEmailedAt"]
+          ? String(r["credentialsEmailedAt"])
+          : undefined,
+        passwordUpdatedAt: r["passwordUpdatedAt"]
+          ? String(r["passwordUpdatedAt"])
+          : undefined,
+        passcode: r["passcode"] ? String(r["passcode"]) : undefined,
+        createdAt: r["createdAt"] ? String(r["createdAt"]) : undefined,
+      }));
     if (rows.length === 0) {
       const purgedSampleData = this.getStorage<boolean>("purged_sample_data", false);
       rows = this.getStorage<RosterStudent[]>(
@@ -1429,18 +1458,20 @@ class OnneshaDatabase {
       regions[0] ||
       DEFAULT_REGIONS[0];
 
+    const { passwordHash: rawInitialPassword, ...safeStudentInput } = student;
     const newStudent: RosterStudent = {
-      ...student,
+      ...safeStudentInput,
       id,
       phone: student.phone || student.guardianPhone || "",
       regionId: matchedReg?.id || "reg-dhaka",
       regionName: matchedReg?.nameEn || "Dhaka Range",
       guardianPhone: student.guardianPhone || student.phone || "",
+      hasPassword: Boolean(rawInitialPassword || student.hasPassword),
       createdAt,
     };
 
     sqliteEngine.run(
-      "INSERT OR REPLACE INTO roster_students (id, rollNumber, name, phone, regionId, regionName, section, batch, guardianPhone, email, passcode, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT OR REPLACE INTO roster_students (id, rollNumber, name, phone, regionId, regionName, section, batch, guardianPhone, email, username, hasPassword, mustChangePassword, credentialsEmailedAt, passwordUpdatedAt, passcode, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         id,
         newStudent.rollNumber,
@@ -1452,6 +1483,11 @@ class OnneshaDatabase {
         newStudent.batch || "46th BCS & Cadet Batch",
         newStudent.guardianPhone || "",
         newStudent.email || "",
+        newStudent.username || "",
+        newStudent.hasPassword ? 1 : 0,
+        newStudent.mustChangePassword ? 1 : 0,
+        newStudent.credentialsEmailedAt || "",
+        newStudent.passwordUpdatedAt || "",
         newStudent.passcode || "",
         createdAt,
       ],
@@ -1461,9 +1497,15 @@ class OnneshaDatabase {
     this.setStorage("roster_students", roster);
 
     if (!skipServerSync) {
-      serverAdminMutateStore({ data: { action: "add_student", student: newStudent } }).catch(
-        (err) => console.warn("Student server sync notice:", err),
-      );
+      serverAdminMutateStore({
+        data: {
+          action: "add_student",
+          student: {
+            ...newStudent,
+            ...(rawInitialPassword ? { passwordHash: rawInitialPassword } : {}),
+          },
+        },
+      }).catch((err) => console.warn("Student server sync notice:", err));
       this.notifyListeners();
     }
 

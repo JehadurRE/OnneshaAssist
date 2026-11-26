@@ -83,14 +83,20 @@ import {
 } from "./ai-copilots";
 import {
   buildCourseCertificateEmail,
+  buildEmailBrandContext,
   buildQuizCertificateEmail,
+  buildSampleEmailTemplate,
   isPortalEmailConfigured,
   isValidPortalEmail,
   normalizePortalEmail,
   resolveBrevoApiKey,
+  resolvePortalOtpFromEmail,
   resolveResendApiKey,
+  sendPasswordResetOtpEmail,
   sendPortalOtpEmail,
+  sendStudentCredentialsEmail,
   sendTransactionalEmail,
+  type EmailTemplateId,
 } from "./email-otp";
 import {
   buildOriginalCompletionIndex,
@@ -150,10 +156,14 @@ import {
 import {
   canActorMutateStoreAction,
   generateHostToken,
+  generateStudentTempPassword,
   getCertificateSigningKeys,
   getNodeCrypto,
   getServerSessionSecret,
   hashPasswordScrypt,
+  maskEmailAddress,
+  maskPhoneNumber,
+  sanitizeRosterStudentForClient,
   sanitizeUserForClient,
   sealCertificateWithLedger,
   signSessionToken,
@@ -338,6 +348,8 @@ const globalStore = globalThis as unknown as {
   __onneshaShutdownHooked?: boolean;
   __onneshaPhoneOtps?: Record<string, PendingPhoneOtp>;
   __onneshaEmailOtps?: Record<string, PendingPhoneOtp>;
+  __onneshaStudentResetOtps?: Record<string, PendingPhoneOtp>;
+  __onneshaStudentLoginFailures?: Map<string, { count: number; lockedUntil: number }>;
   __onneshaAnchorCooldowns?: Record<string, number>;
   __onneshaFinalAttemptIndex?: Map<string, number>;
   __onneshaSaveDelayMs?: number | undefined;
@@ -2349,7 +2361,7 @@ export const serverGetBootstrapData = createServerFn({ method: "GET" }).handler(
   return {
     success: true,
     regions: store.regions,
-    roster: isStaff ? store.roster : [],
+    roster: isStaff ? store.roster.map(sanitizeRosterStudentForClient) : [],
     courses: isStaff ? store.courses : store.courses.filter((c) => !isCoursePrivate(c)),
     users: isStaff ? store.users.map(sanitizeUserForClient) : [],
     customQuizzes: isStaff
@@ -2660,6 +2672,130 @@ function getPortalAuthChannel(store: PersistentStoreData): "email" | "mobile" {
   return store.branding?.portalAuthChannel === "mobile" ? "mobile" : "email";
 }
 
+function getPortalAuthMode(
+  store: PersistentStoreData,
+): "password" | "password_or_otp" | "otp_only" {
+  const mode = store.branding?.portalAuthMode;
+  if (mode === "otp_only" || mode === "password_or_otp") return mode;
+  return "password";
+}
+
+/**
+ * Resolves a roster student by email, custom username, roll number (`GZP-01` / `gzp01`),
+ * or normalized Bangladeshi mobile number.
+ */
+export function findRosterStudentByIdentifier(
+  roster: RosterStudent[],
+  rawIdentifier: string,
+): RosterStudent | undefined {
+  const trimmed = (rawIdentifier || "").trim();
+  if (!trimmed) return undefined;
+  const lower = trimmed.toLowerCase();
+
+  // 1. Email
+  if (lower.includes("@")) {
+    const byEmail = roster.find((s) => (s.email || "").trim().toLowerCase() === lower);
+    if (byEmail) return byEmail;
+  }
+
+  // 2. Explicit custom username (exact case-insensitive)
+  const byUsername = roster.find(
+    (s) => s.username && s.username.trim().toLowerCase() === lower,
+  );
+  if (byUsername) return byUsername;
+
+  // 3. Roll number (ignoring case, hyphens, spaces)
+  const normRoll = normalizeRollToken(trimmed);
+  if (normRoll.length >= 2) {
+    const byRoll = roster.find((s) => normalizeRollToken(s.rollNumber) === normRoll);
+    if (byRoll) return byRoll;
+  }
+
+  // 4. Bangladeshi mobile number
+  const normPhone = normalizeBdPhone(trimmed);
+  if (/^01[3-9]\d{8}$/.test(normPhone)) {
+    const byPhone = roster.find(
+      (s) =>
+        normalizeBdPhone(s.phone || "") === normPhone ||
+        normalizeBdPhone(s.guardianPhone || "") === normPhone,
+    );
+    if (byPhone) return byPhone;
+  }
+
+  return undefined;
+}
+
+/**
+ * Pure helper for authenticating a roster student by identifier + password.
+ * Auto-upgrades legacy hashes to scrypt on valid sign-in.
+ */
+export function authenticateRosterStudentPasswordInStore(
+  store: Pick<PersistentStoreData, "roster">,
+  identifier: string,
+  password: string,
+):
+  | {
+      success: true;
+      student: RosterStudent;
+      rehashed: boolean;
+    }
+  | {
+      success: false;
+      error: string;
+      needsPasswordSetup?: boolean | undefined;
+    } {
+  const cleanId = (identifier || "").trim();
+  if (!cleanId) {
+    return { success: false, error: "Enter your Roll ID, username, or registered email." };
+  }
+  if (!password) {
+    return { success: false, error: "Enter your portal password." };
+  }
+  const idx = store.roster.findIndex((s) => s === findRosterStudentByIdentifier(store.roster, cleanId));
+  if (idx < 0 || !store.roster[idx]) {
+    return {
+      success: false,
+      error: "Account not found on the course roster. Check your Roll ID, username, or email.",
+    };
+  }
+  const student = store.roster[idx]!;
+  if (!student.passwordHash) {
+    return {
+      success: false,
+      needsPasswordSetup: true,
+      error:
+        "No portal password is set for your account yet. Click 'Forgot / Set password' below to create one with a verification code, or ask your administrator to email your credentials.",
+    };
+  }
+  const check = verifyPasswordScrypt(password, student.passwordHash);
+  if (!check.valid) {
+    return {
+      success: false,
+      error: "Incorrect password. Try again or use 'Forgot password' to reset it.",
+    };
+  }
+  let rehashed = false;
+  if (check.needsRehash) {
+    store.roster[idx] = {
+      ...student,
+      passwordHash: hashPasswordScrypt(password),
+    };
+    rehashed = true;
+  }
+  return {
+    success: true,
+    student: store.roster[idx]!,
+    rehashed,
+  };
+}
+
+function getStudentLoginFailureTracker(): Map<string, { count: number; lockedUntil: number }> {
+  if (!globalStore.__onneshaStudentLoginFailures) {
+    globalStore.__onneshaStudentLoginFailures = new Map();
+  }
+  return globalStore.__onneshaStudentLoginFailures;
+}
+
 async function setStudentPortalCookieForRoster(student: RosterStudent): Promise<void> {
   try {
     const { setCookie } = await getServerHelpers();
@@ -2669,7 +2805,7 @@ async function setStudentPortalCookieForRoster(student: RosterStudent): Promise<
       {
         uid: `student:${student.id}`,
         role: "candidate",
-        exp: Date.now() + 12 * 3600 * 1000,
+        exp: Date.now() + 7 * 24 * 3600 * 1000,
       },
       secret,
     );
@@ -2677,7 +2813,7 @@ async function setStudentPortalCookieForRoster(student: RosterStudent): Promise<
       httpOnly: true,
       sameSite: "lax",
       path: "/",
-      maxAge: 12 * 3600,
+      maxAge: 7 * 24 * 3600,
       secure: typeof process !== "undefined" && process.env?.["NODE_ENV"] === "production",
     });
   } catch {
@@ -2685,14 +2821,17 @@ async function setStudentPortalCookieForRoster(student: RosterStudent): Promise<
   }
 }
 
-/** Public: which OTP channel the Student Portal uses (admin-configurable). */
+/** Public: which sign-in mode & verification channel the Student Portal uses (admin-configurable). */
 export const serverGetPortalAuthConfig = createServerFn({ method: "GET" }).handler(async () => {
   const store = getStore();
   const channel = getPortalAuthChannel(store);
+  const authMode = getPortalAuthMode(store);
   return {
     success: true as const,
+    authMode,
     channel,
     emailConfigured: isPortalEmailConfigured(),
+    fromEmail: resolvePortalOtpFromEmail(),
     emailProviders: {
       resend: !!resolveResendApiKey(),
       brevo: !!resolveBrevoApiKey(),
@@ -2718,6 +2857,772 @@ export const serverSetPortalAuthChannel = createServerFn({ method: "POST" })
     );
     scheduleDiskPersist();
     return { success: true as const, channel };
+  });
+
+export const serverSetPortalAuthConfig = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      authMode?: "password" | "password_or_otp" | "otp_only" | undefined;
+      channel?: "email" | "mobile" | undefined;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || actor.role !== "admin") {
+      return { success: false as const, error: "Super Admin authentication required." };
+    }
+    const store = getStore();
+    const nextAuthMode =
+      data.authMode === "otp_only" ||
+      data.authMode === "password_or_otp" ||
+      data.authMode === "password"
+        ? data.authMode
+        : getPortalAuthMode(store);
+    const nextChannel =
+      data.channel === "mobile" || data.channel === "email"
+        ? data.channel
+        : getPortalAuthChannel(store);
+    store.branding = mergeBrandingSettings(
+      {
+        portalAuthMode: nextAuthMode,
+        portalAuthChannel: nextChannel,
+        updatedAt: Date.now(),
+      },
+      store.branding,
+    );
+    scheduleDiskPersist();
+    return { success: true as const, authMode: nextAuthMode, channel: nextChannel };
+  });
+
+/** Student Portal login with Roll ID / Username / Email + Password (zero email cost per login). */
+export const serverStudentPasswordLogin = createServerFn({ method: "POST" })
+  .validator((data: { identifier: string; password: string }) => data)
+  .handler(async ({ data }) => {
+    const store = getStore();
+    const authMode = getPortalAuthMode(store);
+    if (authMode === "otp_only") {
+      return {
+        success: false as const,
+        error: "Password login is disabled by administrator. Sign in with a one-time code.",
+      };
+    }
+
+    const cleanKey = (data.identifier || "").trim().toLowerCase();
+    const tracker = getStudentLoginFailureTracker();
+    const now = Date.now();
+    const failureEntry = cleanKey ? tracker.get(cleanKey) : undefined;
+    if (failureEntry && failureEntry.lockedUntil > now) {
+      const waitSec = Math.ceil((failureEntry.lockedUntil - now) / 1000);
+      return {
+        success: false as const,
+        error: `Too many failed sign-in attempts. Please wait ${waitSec} seconds and try again.`,
+      };
+    }
+
+    const res = authenticateRosterStudentPasswordInStore(
+      store,
+      data.identifier || "",
+      data.password || "",
+    );
+
+    if (!res.success) {
+      if (cleanKey && !res.needsPasswordSetup) {
+        const prev = tracker.get(cleanKey);
+        const nextCount = (prev?.count || 0) + 1;
+        if (nextCount >= 5) {
+          tracker.set(cleanKey, { count: 0, lockedUntil: now + 60 * 1000 });
+        } else {
+          tracker.set(cleanKey, { count: nextCount, lockedUntil: 0 });
+        }
+      }
+      return {
+        success: false as const,
+        error: res.error,
+        needsPasswordSetup: Boolean(res.needsPasswordSetup),
+      };
+    }
+
+    if (cleanKey) tracker.delete(cleanKey);
+    if (res.rehashed) scheduleDiskPersist();
+
+    await setStudentPortalCookieForRoster(res.student);
+    return {
+      success: true as const,
+      mustChangePassword: Boolean(res.student.mustChangePassword),
+      student: {
+        id: res.student.id,
+        name: res.student.name,
+        rollNumber: res.student.rollNumber,
+        username: res.student.username,
+        phone: res.student.phone,
+        email: res.student.email,
+        regionId: res.student.regionId,
+        regionName: res.student.regionName,
+        hasPassword: true,
+        mustChangePassword: Boolean(res.student.mustChangePassword),
+      },
+    };
+  });
+
+/**
+ * Self-service Student Password Reset (Step 1):
+ * Sends a 6-digit single-use reset code to the student's registered email (or SMS if mobile channel).
+ * Also works for first-time password creation when a student hasn't received an admin email yet.
+ */
+export const serverRequestStudentPasswordReset = createServerFn({ method: "POST" })
+  .validator((data: { identifier: string }) => data)
+  .handler(async ({ data }) => {
+    const store = getStore();
+    const student = findRosterStudentByIdentifier(store.roster, data.identifier || "");
+    if (!student) {
+      return {
+        success: false as const,
+        error:
+          "No trainee found matching that Roll ID, username, or email. Contact your training coordinator.",
+      };
+    }
+
+    const now = Date.now();
+    if (!globalStore.__onneshaStudentResetOtps) globalStore.__onneshaStudentResetOtps = {};
+    for (const [k, v] of Object.entries(globalStore.__onneshaStudentResetOtps)) {
+      if (!v || v.expiresAt <= now) delete globalStore.__onneshaStudentResetOtps[k];
+    }
+
+    const existing = globalStore.__onneshaStudentResetOtps[student.id];
+    if (existing && now - existing.lastSentAt < 30_000) {
+      const waitSec = Math.ceil((30_000 - (now - existing.lastSentAt)) / 1000);
+      return {
+        success: false as const,
+        error: `Please wait ${waitSec}s before requesting another password reset code.`,
+      };
+    }
+
+    const crypto = getNodeCrypto();
+    const otpCode = crypto
+      ? crypto.randomInt(100000, 1000000).toString()
+      : Math.floor(100000 + Math.random() * 900000).toString();
+    const isProd = typeof process !== "undefined" && process.env["NODE_ENV"] === "production";
+    const preferredChannel = getPortalAuthChannel(store);
+    const cleanEmail = normalizePortalEmail(student.email || "");
+    const cleanPhone = normalizeBdPhone(student.phone || student.guardianPhone || "");
+
+    const useMobile =
+      preferredChannel === "mobile" && /^01[3-9]\d{8}$/.test(cleanPhone);
+
+    if (!useMobile) {
+      if (!isValidPortalEmail(cleanEmail)) {
+        return {
+          success: false as const,
+          error:
+            "No valid email address is registered for your roster profile. Ask your administrator to add your email and reset your password.",
+        };
+      }
+      const origin = resolvePublicOrigin();
+      const brand = buildEmailBrandContext(store.branding, origin);
+      const sent = await sendPasswordResetOtpEmail({
+        to: cleanEmail,
+        studentName: student.name,
+        rollNumber: student.rollNumber,
+        code: otpCode,
+        portalUrl: `${origin}/portal`,
+        brand,
+      });
+      if (!sent.ok) {
+        if (!isProd) {
+          globalStore.__onneshaStudentResetOtps[student.id] = {
+            code: otpCode,
+            expiresAt: now + 10 * 60 * 1000,
+            attempts: 0,
+            lastSentAt: now,
+          };
+          return {
+            success: true as const,
+            channel: "email" as const,
+            maskedTarget: maskEmailAddress(cleanEmail),
+            studentName: student.name,
+            rollNumber: student.rollNumber,
+            devOtp: otpCode,
+          };
+        }
+        return { success: false as const, error: sent.error };
+      }
+      globalStore.__onneshaStudentResetOtps[student.id] = {
+        code: otpCode,
+        expiresAt: now + 10 * 60 * 1000,
+        attempts: 0,
+        lastSentAt: now,
+      };
+      return {
+        success: true as const,
+        channel: "email" as const,
+        maskedTarget: maskEmailAddress(cleanEmail),
+        studentName: student.name,
+        rollNumber: student.rollNumber,
+      };
+    }
+
+    // Mobile SMS reset channel
+    const smsToken =
+      typeof process !== "undefined" ? process.env["GREENWEB_SMS_TOKEN"]?.trim() : undefined;
+    if (smsToken && smsToken.length > 5) {
+      try {
+        const message = `[Onnesha Arena] Password reset code for ${student.rollNumber}: ${otpCode}. Valid 10 min.`;
+        const body = new URLSearchParams({ token: smsToken, to: cleanPhone, message });
+        const res = await fetch("https://api.greenweb.com.bd/api.php", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: body.toString(),
+        });
+        const text = await res.text().catch(() => "");
+        if (!res.ok || /^error/i.test(text.trim())) {
+          return { success: false as const, error: "SMS provider error while sending reset code." };
+        }
+        globalStore.__onneshaStudentResetOtps[student.id] = {
+          code: otpCode,
+          expiresAt: now + 10 * 60 * 1000,
+          attempts: 0,
+          lastSentAt: now,
+        };
+        return {
+          success: true as const,
+          channel: "mobile" as const,
+          maskedTarget: maskPhoneNumber(cleanPhone),
+          studentName: student.name,
+          rollNumber: student.rollNumber,
+        };
+      } catch {
+        return { success: false as const, error: "Failed to reach SMS gateway." };
+      }
+    }
+
+    if (isProd) {
+      return {
+        success: false as const,
+        error: "SMS gateway (GREENWEB_SMS_TOKEN) is not configured for mobile password resets.",
+      };
+    }
+    globalStore.__onneshaStudentResetOtps[student.id] = {
+      code: otpCode,
+      expiresAt: now + 10 * 60 * 1000,
+      attempts: 0,
+      lastSentAt: now,
+    };
+    return {
+      success: true as const,
+      channel: "mobile" as const,
+      maskedTarget: maskPhoneNumber(cleanPhone),
+      studentName: student.name,
+      rollNumber: student.rollNumber,
+      devOtp: otpCode,
+    };
+  });
+
+/**
+ * Self-service Student Password Reset (Step 2):
+ * Verifies the 6-digit reset OTP, sets the new salted scrypt password, and signs the student in.
+ */
+export const serverCompleteStudentPasswordReset = createServerFn({ method: "POST" })
+  .validator((data: { identifier: string; otp: string; newPassword: string }) => data)
+  .handler(async ({ data }) => {
+    const store = getStore();
+    const studentIdx = store.roster.findIndex(
+      (s) => s === findRosterStudentByIdentifier(store.roster, data.identifier || ""),
+    );
+    if (studentIdx < 0 || !store.roster[studentIdx]) {
+      return { success: false as const, error: "Student account not found." };
+    }
+    const student = store.roster[studentIdx]!;
+    const otp = (data.otp || "").trim();
+    const newPassword = (data.newPassword || "").trim();
+    if (!/^\d{4,8}$/.test(otp)) {
+      return { success: false as const, error: "Enter the 6-digit verification code." };
+    }
+    if (newPassword.length < 6 || newPassword.length > 128) {
+      return {
+        success: false as const,
+        error: "New password must be between 6 and 128 characters.",
+      };
+    }
+
+    const pending = globalStore.__onneshaStudentResetOtps?.[student.id];
+    if (!pending) {
+      return {
+        success: false as const,
+        error: "Reset code not requested or expired. Please request a new code.",
+      };
+    }
+    if (Date.now() > pending.expiresAt) {
+      delete globalStore.__onneshaStudentResetOtps?.[student.id];
+      return { success: false as const, error: "Reset code expired. Request a new code." };
+    }
+    pending.attempts += 1;
+    if (pending.attempts > 5) {
+      delete globalStore.__onneshaStudentResetOtps?.[student.id];
+      return {
+        success: false as const,
+        error: "Too many invalid attempts. Please request a new reset code.",
+      };
+    }
+    if (pending.code !== otp) {
+      return { success: false as const, error: "Invalid verification code. Please check and retry." };
+    }
+
+    delete globalStore.__onneshaStudentResetOtps?.[student.id];
+    const nowIso = new Date().toISOString();
+    const updated: RosterStudent = {
+      ...student,
+      passwordHash: hashPasswordScrypt(newPassword),
+      mustChangePassword: false,
+      passwordUpdatedAt: nowIso,
+    };
+    store.roster[studentIdx] = updated;
+    scheduleDiskPersist();
+
+    // Clear any prior login cooldown for this student
+    const tracker = getStudentLoginFailureTracker();
+    tracker.delete((data.identifier || "").trim().toLowerCase());
+    if (student.email) tracker.delete(student.email.trim().toLowerCase());
+    tracker.delete(student.rollNumber.trim().toLowerCase());
+
+    await setStudentPortalCookieForRoster(updated);
+    return {
+      success: true as const,
+      student: {
+        id: updated.id,
+        name: updated.name,
+        rollNumber: updated.rollNumber,
+        username: updated.username,
+        phone: updated.phone,
+        email: updated.email,
+        regionId: updated.regionId,
+        regionName: updated.regionName,
+        hasPassword: true,
+        mustChangePassword: false,
+      },
+    };
+  });
+
+/** Authenticated student changes their own portal password inside /portal. */
+export const serverStudentChangePassword = createServerFn({ method: "POST" })
+  .validator(
+    (data: { currentPassword?: string | undefined; newPassword: string }) => data,
+  )
+  .handler(async ({ data }) => {
+    const store = getStore();
+    const activeStudent = await getRosterStudentFromPortalCookie(store);
+    if (!activeStudent) {
+      return { success: false as const, error: "Sign in to your Student Portal first." };
+    }
+    const idx = store.roster.findIndex((s) => s.id === activeStudent.id);
+    if (idx < 0 || !store.roster[idx]) {
+      return { success: false as const, error: "Roster profile not found." };
+    }
+    const student = store.roster[idx]!;
+    const newPassword = (data.newPassword || "").trim();
+    if (newPassword.length < 6 || newPassword.length > 128) {
+      return {
+        success: false as const,
+        error: "New password must be between 6 and 128 characters.",
+      };
+    }
+
+    if (student.passwordHash) {
+      const check = verifyPasswordScrypt(data.currentPassword || "", student.passwordHash);
+      if (!check.valid) {
+        return { success: false as const, error: "Current password is incorrect." };
+      }
+    }
+
+    const nowIso = new Date().toISOString();
+    store.roster[idx] = {
+      ...student,
+      passwordHash: hashPasswordScrypt(newPassword),
+      mustChangePassword: false,
+      passwordUpdatedAt: nowIso,
+    };
+    scheduleDiskPersist();
+    return { success: true as const, passwordUpdatedAt: nowIso };
+  });
+
+/**
+ * Staff (Admin / Instructor) action to update a student's portal identity/password
+ * and optionally email them their branded login credentials card.
+ */
+export const serverAdminSetStudentCredentials = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      studentId: string;
+      name?: string | undefined;
+      rollNumber?: string | undefined;
+      email?: string | undefined;
+      phone?: string | undefined;
+      username?: string | undefined;
+      regionId?: string | undefined;
+      password?: string | undefined;
+      generatePassword?: boolean | undefined;
+      sendEmail?: boolean | undefined;
+      forceChange?: boolean | undefined;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    const idx = store.roster.findIndex((s) => s.id === data.studentId);
+    if (idx < 0 || !store.roster[idx]) {
+      return { success: false as const, error: "Student not found on roster." };
+    }
+    const current = store.roster[idx]!;
+
+    const nextEmail =
+      data.email !== undefined ? normalizePortalEmail(data.email) : current.email;
+    if (nextEmail && !isValidPortalEmail(nextEmail)) {
+      return { success: false as const, error: "Enter a valid email address." };
+    }
+
+    const nextUsername =
+      data.username !== undefined ? data.username.trim() || undefined : current.username;
+    if (nextUsername) {
+      if (!/^[a-zA-Z0-9._-]{3,40}$/.test(nextUsername)) {
+        return {
+          success: false as const,
+          error: "Username must be 3–40 characters (letters, numbers, dots, hyphens, underscores).",
+        };
+      }
+      const clash = store.roster.find(
+        (s) =>
+          s.id !== current.id &&
+          s.username &&
+          s.username.trim().toLowerCase() === nextUsername.toLowerCase(),
+      );
+      if (clash) {
+        return {
+          success: false as const,
+          error: `Username "${nextUsername}" is already used by ${clash.rollNumber}.`,
+        };
+      }
+    }
+
+    const nextRoll =
+      data.rollNumber !== undefined && data.rollNumber.trim()
+        ? data.rollNumber.trim()
+        : current.rollNumber;
+    const nextName =
+      data.name !== undefined && data.name.trim() ? data.name.trim() : current.name;
+    const nextPhone = data.phone !== undefined ? data.phone.trim() : current.phone;
+
+    let nextRegionId = current.regionId;
+    let nextRegionName = current.regionName;
+    if (data.regionId) {
+      const matchedRegion = store.regions.find((r) => r.id === data.regionId);
+      if (matchedRegion) {
+        nextRegionId = matchedRegion.id;
+        nextRegionName = matchedRegion.nameEn;
+      }
+    }
+
+    const explicitPassword = (data.password || "").trim();
+    if (explicitPassword && (explicitPassword.length < 6 || explicitPassword.length > 128)) {
+      return {
+        success: false as const,
+        error: "Password must be between 6 and 128 characters.",
+      };
+    }
+
+    const willEmail = Boolean(data.sendEmail);
+    let plainPasswordToShare: string | undefined;
+    if (explicitPassword) {
+      plainPasswordToShare = explicitPassword;
+    } else if (data.generatePassword || willEmail) {
+      plainPasswordToShare = generateStudentTempPassword();
+    }
+
+    const nowIso = new Date().toISOString();
+    const updatedBase: RosterStudent = {
+      ...current,
+      name: nextName,
+      rollNumber: nextRoll,
+      email: nextEmail || undefined,
+      username: nextUsername,
+      phone: nextPhone || undefined,
+      regionId: nextRegionId,
+      regionName: nextRegionName,
+    };
+
+    if (willEmail) {
+      if (!nextEmail || !isValidPortalEmail(nextEmail)) {
+        return {
+          success: false as const,
+          error: "Add a valid student email before sending portal credentials.",
+        };
+      }
+      const origin = resolvePublicOrigin();
+      const brand = buildEmailBrandContext(store.branding, origin);
+      const primaryCourse =
+        store.courses.find((c) => c.id === SANJIBON_COURSE.id) || store.courses[0];
+      const forceChange = data.forceChange !== false;
+      const sent = await sendStudentCredentialsEmail({
+        to: nextEmail,
+        studentName: nextName,
+        rollNumber: nextRoll,
+        username: nextUsername,
+        temporaryPassword: plainPasswordToShare!,
+        regionName: nextRegionName,
+        batch: current.batch,
+        courseTitle: primaryCourse?.titleEn,
+        portalUrl: `${origin}/portal`,
+        mustChangePassword: forceChange,
+        brand,
+      });
+
+      if (!sent.ok) {
+        // Still save profile updates & explicit password if staff typed one, unless only email failed
+        if (explicitPassword || data.generatePassword) {
+          store.roster[idx] = {
+            ...updatedBase,
+            passwordHash: hashPasswordScrypt(plainPasswordToShare!),
+            mustChangePassword: forceChange,
+            passwordUpdatedAt: nowIso,
+          };
+          scheduleDiskPersist();
+        }
+        return {
+          success: false as const,
+          error: sent.error,
+          student: sanitizeRosterStudentForClient(store.roster[idx]!),
+          ...(explicitPassword || data.generatePassword
+            ? { generatedPassword: plainPasswordToShare }
+            : {}),
+        };
+      }
+
+      store.roster[idx] = {
+        ...updatedBase,
+        passwordHash: hashPasswordScrypt(plainPasswordToShare!),
+        mustChangePassword: forceChange,
+        credentialsEmailedAt: nowIso,
+        passwordUpdatedAt: nowIso,
+      };
+      scheduleDiskPersist();
+
+      return {
+        success: true as const,
+        student: sanitizeRosterStudentForClient(store.roster[idx]!),
+        generatedPassword: plainPasswordToShare,
+        email: {
+          emailed: true as const,
+          to: nextEmail,
+          provider: sent.provider,
+        },
+      };
+    }
+
+    // Save without sending email
+    if (plainPasswordToShare) {
+      store.roster[idx] = {
+        ...updatedBase,
+        passwordHash: hashPasswordScrypt(plainPasswordToShare),
+        mustChangePassword: data.forceChange !== false,
+        passwordUpdatedAt: nowIso,
+      };
+    } else {
+      store.roster[idx] = updatedBase;
+    }
+    scheduleDiskPersist();
+
+    return {
+      success: true as const,
+      student: sanitizeRosterStudentForClient(store.roster[idx]!),
+      ...(plainPasswordToShare ? { generatedPassword: plainPasswordToShare } : {}),
+    };
+  });
+
+/**
+ * Bulk-dispatch portal credentials emails from the Admin Roster tab.
+ * Respects Resend/Brevo rate limits via polite pacing, supports resumable "unsent only"
+ * batch waves, and never clobbers an existing student password if email sending fails.
+ */
+export const serverAdminBulkSendStudentCredentials = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      regionId?: string | undefined;
+      studentIds?: string[] | undefined;
+      onlyUnsent?: boolean | undefined;
+      limit?: number | undefined;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    if (!isPortalEmailConfigured()) {
+      return {
+        success: false as const,
+        error:
+          "Email provider is not configured. Set RESEND_API_KEY and/or BREVO_API_KEY on the server first.",
+      };
+    }
+
+    const store = getStore();
+    const onlyUnsent = data.onlyUnsent !== false;
+    const idSet = data.studentIds?.length ? new Set(data.studentIds) : null;
+    const regionFilter =
+      data.regionId && data.regionId !== "all" ? data.regionId : undefined;
+
+    const matchingIndices: number[] = [];
+    for (let i = 0; i < store.roster.length; i += 1) {
+      const st = store.roster[i]!;
+      if (idSet && !idSet.has(st.id)) continue;
+      if (regionFilter && st.regionId !== regionFilter) continue;
+      if (!isValidPortalEmail(st.email || "")) continue;
+      if (onlyUnsent) {
+        const alreadySent = Boolean(st.credentialsEmailedAt);
+        const selfSetPersonalPassword = Boolean(st.passwordHash && !st.mustChangePassword);
+        if (alreadySent || selfSetPersonalPassword) continue;
+      }
+      matchingIndices.push(i);
+    }
+
+    const rawLimit =
+      typeof data.limit === "number" && Number.isFinite(data.limit) && data.limit > 0
+        ? Math.min(Math.floor(data.limit), 500)
+        : matchingIndices.length;
+    const batchIndices = matchingIndices.slice(0, rawLimit);
+    const remainingEligible = Math.max(0, matchingIndices.length - batchIndices.length);
+
+    const origin = resolvePublicOrigin();
+    const brand = buildEmailBrandContext(store.branding, origin);
+    const primaryCourse =
+      store.courses.find((c) => c.id === SANJIBON_COURSE.id) || store.courses[0];
+
+    const sent: Array<{ rollNumber: string; name: string; email: string; provider: string }> = [];
+    const failed: Array<{ rollNumber: string; name: string; email: string; reason: string }> = [];
+
+    for (let k = 0; k < batchIndices.length; k += 1) {
+      const rosterIdx = batchIndices[k]!;
+      const st = store.roster[rosterIdx]!;
+      const to = normalizePortalEmail(st.email || "");
+      const tempPassword = generateStudentTempPassword();
+
+      const mailRes = await sendStudentCredentialsEmail({
+        to,
+        studentName: st.name,
+        rollNumber: st.rollNumber,
+        username: st.username,
+        temporaryPassword: tempPassword,
+        regionName: st.regionName,
+        batch: st.batch,
+        courseTitle: primaryCourse?.titleEn,
+        portalUrl: `${origin}/portal`,
+        mustChangePassword: true,
+        brand,
+      });
+
+      if (mailRes.ok) {
+        const nowIso = new Date().toISOString();
+        store.roster[rosterIdx] = {
+          ...st,
+          passwordHash: hashPasswordScrypt(tempPassword),
+          mustChangePassword: true,
+          credentialsEmailedAt: nowIso,
+          passwordUpdatedAt: nowIso,
+        };
+        sent.push({
+          rollNumber: st.rollNumber,
+          name: st.name,
+          email: to,
+          provider: mailRes.provider,
+        });
+      } else {
+        failed.push({
+          rollNumber: st.rollNumber,
+          name: st.name,
+          email: to,
+          reason: mailRes.error,
+        });
+      }
+
+      // Polite 150ms pacing keeps burst rate well within Resend's 2 req/sec limit
+      if (k < batchIndices.length - 1) {
+        await new Promise((r) => setTimeout(r, 150));
+      }
+    }
+
+    if (sent.length > 0) {
+      scheduleDiskPersist();
+    }
+
+    return {
+      success: true as const,
+      totalEligible: matchingIndices.length,
+      processedCount: batchIndices.length,
+      sentCount: sent.length,
+      failedCount: failed.length,
+      remainingEligible: remainingEligible + failed.length,
+      sent,
+      failed,
+    };
+  });
+
+/** Staff preview of any transactional HTML email template with current store branding. */
+export const serverGetEmailTemplatePreview = createServerFn({ method: "POST" })
+  .validator((data: { templateId: EmailTemplateId }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const store = getStore();
+    const origin = resolvePublicOrigin();
+    const brand = buildEmailBrandContext(store.branding, origin);
+    const rendered = buildSampleEmailTemplate(data.templateId, brand);
+    return {
+      success: true as const,
+      templateId: data.templateId,
+      subject: rendered.subject,
+      html: rendered.html,
+      text: rendered.text,
+      fromEmail: resolvePortalOtpFromEmail(),
+      emailConfigured: isPortalEmailConfigured(),
+      emailProviders: {
+        resend: !!resolveResendApiKey(),
+        brevo: !!resolveBrevoApiKey(),
+      },
+    };
+  });
+
+/** Staff test-send of any branded email template to verify inbox rendering & provider delivery. */
+export const serverSendTestEmail = createServerFn({ method: "POST" })
+  .validator((data: { to: string; templateId: EmailTemplateId }) => data)
+  .handler(async ({ data }) => {
+    const actor = await getActorFromRequest();
+    if (!actor || (actor.role !== "admin" && actor.role !== "instructor")) {
+      return { success: false as const, error: "Staff authentication required." };
+    }
+    const to = normalizePortalEmail(data.to || "");
+    if (!isValidPortalEmail(to)) {
+      return { success: false as const, error: "Enter a valid destination email address." };
+    }
+    const store = getStore();
+    const origin = resolvePublicOrigin();
+    const brand = buildEmailBrandContext(store.branding, origin);
+    const rendered = buildSampleEmailTemplate(data.templateId, brand);
+    const sent = await sendTransactionalEmail({
+      to,
+      subject: `[Test] ${rendered.subject}`,
+      text: rendered.text,
+      html: rendered.html,
+    });
+    if (!sent.ok) return { success: false as const, error: sent.error };
+    return {
+      success: true as const,
+      to,
+      provider: sent.provider,
+      subject: `[Test] ${rendered.subject}`,
+    };
   });
 
 /** Student Portal OTP — email (default) or mobile when admin enables it. */
@@ -2759,7 +3664,13 @@ export const serverRequestPortalOtp = createServerFn({ method: "POST" })
         };
       }
 
-      const sent = await sendPortalOtpEmail({ to: email, code: otpCode });
+      const brand = buildEmailBrandContext(store.branding, resolvePublicOrigin());
+      const sent = await sendPortalOtpEmail({
+        to: email,
+        code: otpCode,
+        studentName: onRoster.name,
+        brand,
+      });
       if (!sent.ok) {
         if (!isProd) {
           globalStore.__onneshaEmailOtps[email] = {
@@ -2920,10 +3831,14 @@ export const serverVerifyPortalOtp = createServerFn({ method: "POST" })
         id: student.id,
         name: student.name,
         rollNumber: student.rollNumber,
+        username: student.username,
         phone: student.phone,
         email: student.email,
         regionId: student.regionId,
         regionName: student.regionName,
+        hasPassword: Boolean(student.passwordHash),
+        mustChangePassword: Boolean(student.mustChangePassword),
+        passwordUpdatedAt: student.passwordUpdatedAt,
       },
     };
   });
@@ -3830,10 +4745,30 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
               s.id === data.student!.id ||
               normalizeCode(s.rollNumber) === normalizeCode(data.student!.rollNumber),
           );
+          const existing = existingIdx >= 0 ? store.roster[existingIdx] : undefined;
+          const incomingPass = (data.student.passwordHash || "").trim();
+          const nextPasswordHash = incomingPass
+            ? incomingPass.startsWith("scrypt:")
+              ? incomingPass
+              : hashPasswordScrypt(incomingPass)
+            : existing?.passwordHash;
+          const mergedStudent: RosterStudent = {
+            ...(existing || {}),
+            ...data.student,
+            ...(nextPasswordHash ? { passwordHash: nextPasswordHash } : {}),
+            mustChangePassword: incomingPass
+              ? data.student.mustChangePassword ?? true
+              : existing?.mustChangePassword,
+            credentialsEmailedAt:
+              data.student.credentialsEmailedAt || existing?.credentialsEmailedAt,
+            passwordUpdatedAt: incomingPass
+              ? new Date().toISOString()
+              : existing?.passwordUpdatedAt,
+          };
           if (existingIdx >= 0) {
-            store.roster[existingIdx] = data.student;
+            store.roster[existingIdx] = mergedStudent;
           } else {
-            store.roster.push(data.student);
+            store.roster.push(mergedStudent);
           }
           scheduleDiskPersist();
         }
@@ -3845,10 +4780,30 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
             const idx = store.roster.findIndex(
               (s) => s.id === st.id || normalizeCode(s.rollNumber) === normalizeCode(st.rollNumber),
             );
+            const existing = idx >= 0 ? store.roster[idx] : undefined;
+            const incomingPass = (st.passwordHash || "").trim();
+            const nextPasswordHash = incomingPass
+              ? incomingPass.startsWith("scrypt:")
+                ? incomingPass
+                : hashPasswordScrypt(incomingPass)
+              : existing?.passwordHash;
+            const mergedStudent: RosterStudent = {
+              ...(existing || {}),
+              ...st,
+              ...(nextPasswordHash ? { passwordHash: nextPasswordHash } : {}),
+              mustChangePassword: incomingPass
+                ? st.mustChangePassword ?? true
+                : existing?.mustChangePassword,
+              credentialsEmailedAt:
+                st.credentialsEmailedAt || existing?.credentialsEmailedAt,
+              passwordUpdatedAt: incomingPass
+                ? new Date().toISOString()
+                : existing?.passwordUpdatedAt,
+            };
             if (idx >= 0) {
-              store.roster[idx] = st;
+              store.roster[idx] = mergedStudent;
             } else {
-              store.roster.push(st);
+              store.roster.push(mergedStudent);
             }
           }
           scheduleDiskPersist();
@@ -3919,7 +4874,7 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
               success: false,
               error: result.error || "Failed to save user account.",
               regions: store.regions,
-              roster: store.roster,
+              roster: store.roster.map(sanitizeRosterStudentForClient),
               courses: store.courses,
               users: store.users.map(sanitizeUserForClient),
               customQuizzes: [],
@@ -4011,7 +4966,7 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
               error:
                 "Invalid certificate payload: certificate number, student name, and non-negative numeric score are required.",
               regions: store.regions,
-              roster: store.roster,
+              roster: store.roster.map(sanitizeRosterStudentForClient),
               courses: store.courses,
               users: store.users.map(sanitizeUserForClient),
               customQuizzes: store.customQuizzes,
@@ -4240,7 +5195,7 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
     return {
       success: true,
       regions: store.regions,
-      roster: store.roster,
+      roster: store.roster.map(sanitizeRosterStudentForClient),
       courses: store.courses,
       users: store.users.map(sanitizeUserForClient),
       customQuizzes: store.customQuizzes,
@@ -6959,21 +7914,27 @@ async function emailCertificateToStudent(params: {
   const kind =
     params.certificate.kind === "course_completion" ? "course_completion" : "quiz_session";
   const design = getCertificateDesignProfile(params.store.branding, kind);
+  const brand = buildEmailBrandContext(params.store.branding, origin);
   const content =
     kind === "course_completion"
       ? buildCourseCertificateEmail({
           studentName: params.certificate.studentName || "Student",
+          studentRoll: params.certificate.studentRoll,
+          regionName: params.certificate.regionName,
           courseTitle: params.certificate.courseTitle || "Course",
           courseCode: params.certificate.courseCode || "",
           certificateNumber: certNo,
           combinedScorePct:
             params.certificate.combinedScorePct ?? params.certificate.accuracyPercent,
+          issueDate: params.certificate.issueDate,
           verifyUrl: verifyPath,
           portalUrl,
           badgeTitle: design.certBadgeTitle,
+          brand,
         })
       : buildQuizCertificateEmail({
           studentName: params.certificate.studentName || "Student",
+          studentRoll: params.certificate.studentRoll,
           quizTitle: params.certificate.quizTitle || "Quiz Session",
           certificateNumber: certNo,
           scorePct:
@@ -6982,9 +7943,11 @@ async function emailCertificateToStudent(params: {
             undefined,
           rank: params.certificate.rank,
           totalParticipants: params.certificate.totalParticipants,
+          issueDate: params.certificate.issueDate,
           verifyUrl: verifyPath,
           portalUrl,
           badgeTitle: design.certBadgeTitle,
+          brand,
         });
   const sent = await sendTransactionalEmail({
     to,
@@ -7170,12 +8133,12 @@ export const serverGetStudentPortal = createServerFn({ method: "POST" })
     const store = getStore();
     ensureFinalPracticalSeeded(store);
     ensureLmsContentSeeded(store);
-    // Portal requires OTP login cookie — no open phone/roll unlock.
+    // Portal requires signed student session cookie.
     const student = await getRosterStudentFromPortalCookie(store);
     if (!student) {
       return {
         success: false,
-        error: "Sign in with OTP first (email or mobile, per admin settings).",
+        error: "Sign in to the Student Portal first.",
       };
     }
 
@@ -7259,10 +8222,14 @@ export const serverGetStudentPortal = createServerFn({ method: "POST" })
         id: student.id,
         name: student.name,
         rollNumber: student.rollNumber,
+        username: student.username,
         phone: student.phone,
         email: student.email,
         regionId: student.regionId,
         regionName: student.regionName,
+        hasPassword: Boolean(student.passwordHash),
+        mustChangePassword: Boolean(student.mustChangePassword),
+        passwordUpdatedAt: student.passwordUpdatedAt,
       },
       course: {
         id: course.id,
@@ -7508,7 +8475,7 @@ export const serverJoinFinalExam = createServerFn({ method: "POST" })
       (s) =>
         s.practicalExamId === exam.id && normalizeRollToken(s.rollNumber) === rollTok,
     );
-    // Continuous journey: portal session cookie so /portal opens without re-OTP after exam.
+    // Continuous journey: portal session cookie so /portal opens without re-login after exam.
     await setStudentPortalCookieForRoster(student);
 
     return {
