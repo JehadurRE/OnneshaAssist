@@ -761,17 +761,20 @@ describe("certificate designer branding, themes, Bangladesh map & multi-signator
     expect(first?.title).toContain("Managing Director");
     expect(first?.title).toContain("Cloud Connect AI Limited");
     expect(first?.signatureImageUrl).toBe("/assets/sig-tamjidul-haque-chowdhury.png");
+    expect(first?.signatureScale).toBeCloseTo(0.74, 2);
 
     expect(second?.name).toBe("Md Mainul Islam");
     expect(second?.title).toContain("Director (Project-Training)");
     expect(second?.title).toContain("Bangladesh Ansar & VDP Headquarters");
     expect(second?.signatureImageUrl).toBe("/assets/sig-md-mainul-islam.png");
+    expect(second?.signatureScale).toBeCloseTo(1.48, 2);
 
     expect(third?.name).toBe("Md. Jehad");
     expect(third?.title).toContain("Lead Training Instructor");
     expect(third?.title).toContain("Google AI Professional");
     expect(third?.title).toContain("ITEE");
     expect(third?.signatureImageUrl).toBe("/assets/sig-md-jehad.svg");
+    expect(third?.signatureScale).toBeCloseTo(0.88, 2);
 
     expect(
       (courseProfile.certSignatories || []).some((s) =>

@@ -175,13 +175,15 @@ function drawContainedImage(
   boxW: number,
   boxH: number,
   align: "left" | "center" | "right" = "center",
+  valign: "top" | "center" | "bottom" = "center",
 ): { x: number; y: number; w: number; h: number } {
   const iw = Math.max(1, img.naturalWidth || img.width);
   const ih = Math.max(1, img.naturalHeight || img.height);
   const scale = Math.min(boxW / iw, boxH / ih);
   const drawW = iw * scale;
   const drawH = ih * scale;
-  const drawY = boxY + (boxH - drawH) / 2;
+  const drawY =
+    valign === "top" ? boxY : valign === "bottom" ? boxY + boxH - drawH : boxY + (boxH - drawH) / 2;
   const drawX =
     align === "left" ? boxX : align === "right" ? boxX + boxW - drawW : boxX + (boxW - drawW) / 2;
   ctx.drawImage(img, drawX, drawY, drawW, drawH);
@@ -639,7 +641,23 @@ function drawSignatoryColumn(
   const lineHalf = Math.min(220, colW * 0.41);
 
   if (sigImg) {
-    drawContainedImage(ctx, sigImg, centerX - lineHalf, lineY - 108, lineHalf * 2, 98, "center");
+    const scale =
+      typeof sig.signatureScale === "number" && Number.isFinite(sig.signatureScale)
+        ? Math.min(1.8, Math.max(0.5, sig.signatureScale))
+        : 1;
+    const maxSigH = Math.round(92 * scale);
+    const maxSigW = Math.min(colW - 44, Math.round(lineHalf * 1.85 * Math.min(1.25, Math.max(0.7, scale))));
+    const baselineY = lineY - 8;
+    drawContainedImage(
+      ctx,
+      sigImg,
+      centerX - maxSigW / 2,
+      baselineY - maxSigH,
+      maxSigW,
+      maxSigH,
+      "center",
+      "bottom",
+    );
   } else {
     ctx.save();
     ctx.textAlign = "center";

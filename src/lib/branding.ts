@@ -181,6 +181,7 @@ export const DEFAULT_COURSE_CERTIFICATE_SIGNATORIES: CertificateSignatory[] = [
     signatureText: "Tamjidul Haque Chowdhury",
     signatureImageUrl: "/assets/sig-tamjidul-haque-chowdhury.png",
     signatureStyle: "script",
+    signatureScale: 0.74,
   },
   {
     id: "sig-ansar-director",
@@ -189,6 +190,7 @@ export const DEFAULT_COURSE_CERTIFICATE_SIGNATORIES: CertificateSignatory[] = [
     signatureText: "Md Mainul Islam",
     signatureImageUrl: "/assets/sig-md-mainul-islam.png",
     signatureStyle: "script",
+    signatureScale: 1.48,
   },
   {
     id: "sig-lead-instructor",
@@ -198,6 +200,7 @@ export const DEFAULT_COURSE_CERTIFICATE_SIGNATORIES: CertificateSignatory[] = [
     signatureText: "Md. Jehad",
     signatureImageUrl: "/assets/sig-md-jehad.svg",
     signatureStyle: "script",
+    signatureScale: 0.88,
   },
 ];
 
@@ -266,6 +269,7 @@ export const DEFAULT_BRANDING_SETTINGS: BrandingSettings = {
   defaultBlockCopyPaste: true,
   defaultMaxProctorViolations: 3,
   defaultPassThresholdPct: 50,
+  portalAuthMode: "password",
   portalAuthChannel: "email",
 };
 
@@ -298,6 +302,9 @@ function sanitizeSignatories(
       sig?.signatureStyle === "formal" || sig?.signatureStyle === "mono"
         ? sig.signatureStyle
         : ("script" as const),
+    ...(sig?.signatureScale !== undefined
+      ? { signatureScale: clampNumber(sig.signatureScale, 0.5, 1.8, 1) }
+      : {}),
   }));
   return cleaned.length > 0 ? cleaned : fallback.map((s) => ({ ...s }));
 }
@@ -632,6 +639,12 @@ export function mergeBrandingSettings(
       100,
       50,
     ),
+    portalAuthMode:
+      (next.portalAuthMode ?? base.portalAuthMode) === "otp_only"
+        ? "otp_only"
+        : (next.portalAuthMode ?? base.portalAuthMode) === "password_or_otp"
+          ? "password_or_otp"
+          : "password",
     portalAuthChannel:
       (next.portalAuthChannel ?? base.portalAuthChannel) === "mobile" ? "mobile" : "email",
     updatedAt: next.updatedAt ?? base.updatedAt,

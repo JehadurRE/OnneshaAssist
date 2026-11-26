@@ -449,6 +449,7 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
                 defaultEnforceFullscreen: branding.defaultEnforceFullscreen,
                 defaultBlockCopyPaste: branding.defaultBlockCopyPaste,
                 defaultMaxProctorViolations: branding.defaultMaxProctorViolations,
+                portalAuthMode: branding.portalAuthMode,
                 portalAuthChannel: branding.portalAuthChannel,
               })
             }
@@ -1181,6 +1182,27 @@ export const CertificateDesignerStudio: React.FC<CertificateDesignerStudioProps>
                       maxDim={420}
                       onChange={(val) => handleUpdateSignatory(idx, { signatureImageUrl: val })}
                     />
+
+                    {sig.signatureImageUrl && (
+                      <div className="flex items-center gap-3 pt-1">
+                        <span className="text-[10px] font-bold uppercase text-muted-foreground whitespace-nowrap">
+                          Signature Size ({Math.round((sig.signatureScale ?? 1) * 100)}%)
+                        </span>
+                        <input
+                          type="range"
+                          min={0.5}
+                          max={1.8}
+                          step={0.02}
+                          value={sig.signatureScale ?? 1}
+                          onChange={(e) =>
+                            handleUpdateSignatory(idx, {
+                              signatureScale: parseFloat(e.target.value) || 1,
+                            })
+                          }
+                          className="w-full accent-primary"
+                        />
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

@@ -682,6 +682,8 @@ export interface CertificateSignatory {
   signatureText?: string | undefined;
   signatureImageUrl?: string | undefined;
   signatureStyle?: "script" | "formal" | "mono" | undefined;
+  /** Optional optical scale multiplier for custom signature graphic (0.5..1.8, default 1). */
+  signatureScale?: number | undefined;
 }
 
 export type CertificateScoreDisplayMode =

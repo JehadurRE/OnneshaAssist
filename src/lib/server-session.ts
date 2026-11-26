@@ -261,6 +261,7 @@ interface PersistentStoreData {
   migratedCourseCertSignatoriesV1?: boolean | undefined;
   migratedCourseCertSignatoriesV2?: boolean | undefined;
   migratedCourseCertSignatoriesV3?: boolean | undefined;
+  migratedCourseCertSignatoriesV4?: boolean | undefined;
   purgedSampleData?: boolean | undefined;
   purgedUnder50Initial?: boolean | undefined;
   purgedBcsDemoCourse?: boolean | undefined;
@@ -785,6 +786,7 @@ function loadInitialStore(): PersistentStoreData {
             migratedCourseCertSignatoriesV1: !!parsed.migratedCourseCertSignatoriesV1,
             migratedCourseCertSignatoriesV2: !!parsed.migratedCourseCertSignatoriesV2,
             migratedCourseCertSignatoriesV3: !!parsed.migratedCourseCertSignatoriesV3,
+            migratedCourseCertSignatoriesV4: !!parsed.migratedCourseCertSignatoriesV4,
             purgedSampleData: purged,
             purgedUnder50Initial: !!parsed.purgedUnder50Initial,
             purgedBcsDemoCourse: !!parsed.purgedBcsDemoCourse,
@@ -847,6 +849,7 @@ function loadInitialStore(): PersistentStoreData {
     migratedCourseCertSignatoriesV1: true,
     migratedCourseCertSignatoriesV2: true,
     migratedCourseCertSignatoriesV3: true,
+    migratedCourseCertSignatoriesV4: true,
     purgedSampleData: false,
     purgedUnder50Initial: true,
     purgedBcsDemoCourse: true,
@@ -1037,15 +1040,17 @@ function getStore(): PersistentStoreData {
     if (
       !loaded.migratedCourseCertSignatoriesV1 ||
       !loaded.migratedCourseCertSignatoriesV2 ||
-      !loaded.migratedCourseCertSignatoriesV3
+      !loaded.migratedCourseCertSignatoriesV3 ||
+      !loaded.migratedCourseCertSignatoriesV4
     ) {
       const certChanged = ensureCourseCertBrandingMigrated(loaded);
       loaded.migratedCourseCertSignatoriesV1 = true;
       loaded.migratedCourseCertSignatoriesV2 = true;
       loaded.migratedCourseCertSignatoriesV3 = true;
+      loaded.migratedCourseCertSignatoriesV4 = true;
       scheduleDiskPersist();
       console.info(
-        `[OnneshaServerStore] Course completion certificate branding & 3-signatory migration v3 applied: changed=${certChanged}`,
+        `[OnneshaServerStore] Course completion certificate branding & signature scaling migration v4 applied: changed=${certChanged}`,
       );
     }
   }
@@ -1065,7 +1070,7 @@ export function ensureCourseCertBrandingMigrated(store: PersistentStoreData): bo
       rightSecondaryLogoLabel: "Cloud Connect AI Limited",
       courseCertificate: {
         ...existingCourse,
-        certScoreDisplayMode: "merit_only",
+        certScoreDisplayMode: existingCourse.certScoreDisplayMode || "merit_only",
         certSignatories: nextSignatories,
       },
       updatedAt: Date.now(),
