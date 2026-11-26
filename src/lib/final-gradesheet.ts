@@ -1,5 +1,5 @@
 /**
- * Final Exam gradesheet rows — quiz + practical + combined package marks.
+ * Final Exam gradesheet rows — regular quizzes (/10) + final quiz (/30) + practical (/60) = total (/100).
  * Pure helpers for staff desk table / CSV / PDF.
  */
 import type {
@@ -12,8 +12,11 @@ import {
   FINAL_PRACTICAL_MARKS,
   FINAL_QUIZ_MARKS,
   FINAL_TOTAL_MARKS,
+  REGULAR_QUIZ_MARKS,
+  computeCombinedFinalPct,
   formatFinalMarksBreakdown,
   marksFromPct,
+  normalizeExamWeights,
 } from "./practical-exam";
 import { normalizeBdPhone } from "./sanjibon-seed-data";
 
@@ -25,10 +28,17 @@ export interface FinalGradeSheetRow {
   phone?: string | undefined;
   email?: string | undefined;
   participated: boolean;
+  regularQuizAvgPct: number;
+  regularQuizMarks: number;
+  regularQuizMaxMarks: number;
+  regularQuizTaken: number;
+  regularQuizTotal: number;
   quizAccuracyPct: number;
   quizMarks: number;
   quizMaxMarks: number;
   quizFound: boolean;
+  quizzesSubtotalMarks: number;
+  quizzesSubtotalMaxMarks: number;
   practicalScorePct: number;
   practicalMarks: number;
   practicalMaxMarks: number;
@@ -53,7 +63,18 @@ export function buildFinalGradeSheetRows(params: {
   roster?: RosterStudent[] | undefined;
   /** Existing course completion certificates for this course. */
   certificates?: CertificateData[] | undefined;
-  /** Pre-resolved quiz accuracy by normalized roll (caller does linking). */
+  /** Pre-resolved regular (non-final) quiz average by normalized roll. */
+  regularQuizByRoll?:
+    | Map<
+        string,
+        {
+          avgPct: number;
+          takenCount: number;
+          totalQuizzes: number;
+        }
+      >
+    | undefined;
+  /** Pre-resolved final quiz accuracy by normalized roll (caller does linking). */
   quizByRoll: Map<
     string,
     {
@@ -67,11 +88,17 @@ export function buildFinalGradeSheetRows(params: {
     | undefined;
   normalizeRoll: (roll: string) => string;
 }): FinalGradeSheetRow[] {
+  const weights = normalizeExamWeights(params.exam);
+  const regularQuizMax =
+    typeof params.exam.regularQuizMaxMarks === "number"
+      ? Math.max(0, params.exam.regularQuizMaxMarks)
+      : weights.regularQuizWeightPct > 0
+        ? REGULAR_QUIZ_MARKS
+        : 0;
   const quizMax = params.exam.quizMaxMarks || FINAL_QUIZ_MARKS;
   const practicalMax = params.exam.practicalMaxMarks || FINAL_PRACTICAL_MARKS;
-  const maxTotal = quizMax + practicalMax || FINAL_TOTAL_MARKS;
-  const quizWeight = params.exam.quizWeightPct || 43;
-  const practicalWeight = params.exam.practicalWeightPct || 57;
+  const maxTotal = regularQuizMax + quizMax + practicalMax || FINAL_TOTAL_MARKS;
+  const quizzesSubtotalMax = regularQuizMax + quizMax;
 
   const rosterList = params.roster || [];
   const rosterByRoll = new Map<string, RosterStudent>();
@@ -111,6 +138,17 @@ export function buildFinalGradeSheetRows(params: {
     return undefined;
   };
 
+  const findRegularQuiz = (roll: string, rosterRoll?: string) => {
+    if (!params.regularQuizByRoll) return undefined;
+    const t1 = params.normalizeRoll(roll);
+    if (t1 && params.regularQuizByRoll.has(t1)) return params.regularQuizByRoll.get(t1);
+    if (rosterRoll) {
+      const t2 = params.normalizeRoll(rosterRoll);
+      if (t2 && params.regularQuizByRoll.has(t2)) return params.regularQuizByRoll.get(t2);
+    }
+    return undefined;
+  };
+
   const matchedRosterIds = new Set<string>();
   const seenRollToks = new Set<string>();
 
@@ -126,6 +164,16 @@ export function buildFinalGradeSheetRows(params: {
       const rTok = params.normalizeRoll(rosterMatch.rollNumber);
       if (rTok) seenRollToks.add(rTok);
     }
+
+    const regHit = findRegularQuiz(sub.rollNumber, rosterMatch?.rollNumber);
+    const regularQuizAvgPct =
+      typeof regHit?.avgPct === "number"
+        ? regHit.avgPct
+        : typeof sub.regularQuizAvgPct === "number"
+          ? sub.regularQuizAvgPct
+          : 0;
+    const regularQuizTaken = regHit?.takenCount ?? sub.regularQuizTaken ?? 0;
+    const regularQuizTotal = regHit?.totalQuizzes ?? sub.regularQuizTotal ?? 0;
 
     const quizHit =
       params.quizByRoll.get(tok) ||
@@ -143,17 +191,21 @@ export function buildFinalGradeSheetRows(params: {
     const practicalScorePct =
       typeof sub.practicalScorePct === "number" ? sub.practicalScorePct : 0;
     const breakdown = formatFinalMarksBreakdown({
+      regularQuizAvgPct,
       quizAccuracyPct,
       practicalScorePct,
+      regularQuizMaxMarks: regularQuizMax,
       quizMaxMarks: quizMax,
       practicalMaxMarks: practicalMax,
     });
-    const combinedPct =
-      typeof sub.combinedPct === "number" && quizFound
-        ? sub.combinedPct
-        : Math.round(
-            ((quizAccuracyPct * quizWeight + practicalScorePct * practicalWeight) / 100) * 10,
-          ) / 10;
+    const combinedPct = computeCombinedFinalPct({
+      regularQuizAvgPct,
+      quizAccuracyPct,
+      practicalScorePct,
+      regularQuizWeightPct: weights.regularQuizWeightPct,
+      quizWeightPct: weights.quizWeightPct,
+      practicalWeightPct: weights.practicalWeightPct,
+    });
     const cert = findCert(sub.rollNumber, rosterMatch?.rollNumber);
     const elig = findEligibility(sub.rollNumber, rosterMatch?.rollNumber);
 
@@ -165,10 +217,17 @@ export function buildFinalGradeSheetRows(params: {
       phone: sub.phone || rosterMatch?.phone,
       email: rosterMatch?.email?.trim() || undefined,
       participated: true,
+      regularQuizAvgPct,
+      regularQuizMarks: breakdown.regularQuizMarks,
+      regularQuizMaxMarks: regularQuizMax,
+      regularQuizTaken,
+      regularQuizTotal,
       quizAccuracyPct,
       quizMarks: breakdown.quizMarks,
       quizMaxMarks: quizMax,
       quizFound,
+      quizzesSubtotalMarks: breakdown.quizzesSubtotalMarks,
+      quizzesSubtotalMaxMarks: quizzesSubtotalMax,
       practicalScorePct,
       practicalMarks: breakdown.practicalMarks,
       practicalMaxMarks: practicalMax,
@@ -187,26 +246,41 @@ export function buildFinalGradeSheetRows(params: {
     };
   });
 
-  // Add remaining roster students (quiz-only participants and students who did not participate)
+  // Add remaining roster students (quiz-only participants and students who did not participate in Final Exam)
   for (const student of rosterList) {
     if (matchedRosterIds.has(student.id)) continue;
     const tok = params.normalizeRoll(student.rollNumber);
     if (tok && seenRollToks.has(tok)) continue;
     if (tok) seenRollToks.add(tok);
 
+    const regHit = findRegularQuiz(student.rollNumber);
+    const regularQuizAvgPct = regHit?.avgPct ?? 0;
+    const regularQuizTaken = regHit?.takenCount ?? 0;
+    const regularQuizTotal = regHit?.totalQuizzes ?? 0;
+
     const quizHit = tok ? params.quizByRoll.get(tok) : undefined;
     const quizFound = !!quizHit?.found;
     const quizAccuracyPct = quizFound ? quizHit!.accuracyPct : 0;
     const participated = quizFound;
     const breakdown = formatFinalMarksBreakdown({
+      regularQuizAvgPct,
       quizAccuracyPct,
       practicalScorePct: 0,
+      regularQuizMaxMarks: regularQuizMax,
       quizMaxMarks: quizMax,
       practicalMaxMarks: practicalMax,
     });
-    const combinedPct = participated
-      ? Math.round(((quizAccuracyPct * quizWeight) / 100) * 10) / 10
-      : 0;
+    const combinedPct =
+      participated || regularQuizTaken > 0
+        ? computeCombinedFinalPct({
+            regularQuizAvgPct,
+            quizAccuracyPct,
+            practicalScorePct: 0,
+            regularQuizWeightPct: weights.regularQuizWeightPct,
+            quizWeightPct: weights.quizWeightPct,
+            practicalWeightPct: weights.practicalWeightPct,
+          })
+        : 0;
     const cert = findCert(student.rollNumber);
     const elig = findEligibility(student.rollNumber);
 
@@ -218,17 +292,24 @@ export function buildFinalGradeSheetRows(params: {
       phone: student.phone,
       email: student.email?.trim() || undefined,
       participated,
+      regularQuizAvgPct,
+      regularQuizMarks: breakdown.regularQuizMarks,
+      regularQuizMaxMarks: regularQuizMax,
+      regularQuizTaken,
+      regularQuizTotal,
       quizAccuracyPct,
       quizMarks: participated ? breakdown.quizMarks : 0,
       quizMaxMarks: quizMax,
       quizFound,
+      quizzesSubtotalMarks: breakdown.quizzesSubtotalMarks,
+      quizzesSubtotalMaxMarks: quizzesSubtotalMax,
       practicalScorePct: 0,
       practicalMarks: 0,
       practicalMaxMarks: practicalMax,
       practicalStatus: participated ? "quiz_only" : "not_participated",
       practicalGraded: false,
       combinedPct,
-      totalMarks: participated ? breakdown.totalMarks : 0,
+      totalMarks: participated || regularQuizTaken > 0 ? breakdown.totalMarks : 0,
       maxTotal: breakdown.maxTotal || maxTotal,
       certificateNumber: cert?.certificateNumber,
       certificateIssuedAt: cert?.signedAt || cert?.issueDate,
@@ -283,6 +364,11 @@ export function finalGradeSheetCsv(rows: FinalGradeSheetRow[]): string {
     "name",
     "region",
     "phone",
+    "regularQuizMarks",
+    "regularQuizMax",
+    "regularQuizPct",
+    "regularQuizTaken",
+    "regularQuizTotal",
     "quizMarks",
     "quizMax",
     "quizPct",
@@ -305,6 +391,11 @@ export function finalGradeSheetCsv(rows: FinalGradeSheetRow[]): string {
       r.studentName,
       r.regionName,
       r.phone || "",
+      r.regularQuizMarks,
+      r.regularQuizMaxMarks,
+      r.regularQuizAvgPct,
+      r.regularQuizTaken,
+      r.regularQuizTotal,
       r.quizMarks,
       r.quizMaxMarks,
       r.quizAccuracyPct,

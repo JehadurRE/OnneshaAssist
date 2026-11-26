@@ -40,21 +40,44 @@ const course: Course = {
 };
 
 describe("practical exam weights & scoring", () => {
-  it("normalizes weights to sum 100", () => {
+  it("normalizes 2-part and 3-part weights to sum 100", () => {
+    expect(normalizeExamWeights({})).toEqual({
+      regularQuizWeightPct: 10,
+      quizWeightPct: 30,
+      practicalWeightPct: 60,
+    });
     expect(normalizeExamWeights({ quizWeightPct: 40, practicalWeightPct: 60 })).toEqual({
+      regularQuizWeightPct: 0,
       quizWeightPct: 40,
       practicalWeightPct: 60,
     });
     expect(normalizeExamWeights({ quizWeightPct: 70, practicalWeightPct: 70 })).toEqual({
+      regularQuizWeightPct: 0,
       quizWeightPct: 70,
       practicalWeightPct: 30,
     });
+    expect(
+      normalizeExamWeights({ regularQuizWeightPct: 15, quizWeightPct: 25, practicalWeightPct: 60 }),
+    ).toEqual({
+      regularQuizWeightPct: 15,
+      quizWeightPct: 25,
+      practicalWeightPct: 60,
+    });
   });
 
-  it("combines quiz and practical with 30/40-of-70 default weights (~43/57)", () => {
+  it("combines regular quizzes (10%), final quiz (30%), and practical (60%) by default", () => {
+    // 80 * 0.10 + 80 * 0.30 + 90 * 0.60 = 8 + 24 + 54 = 86.0
+    expect(
+      computeCombinedFinalPct({
+        regularQuizAvgPct: 80,
+        quizAccuracyPct: 80,
+        practicalScorePct: 90,
+      }),
+    ).toBe(86);
+    // Without regular quizzes (0 * 0.10 + 80 * 0.30 + 90 * 0.60 = 78.0)
     expect(
       computeCombinedFinalPct({ quizAccuracyPct: 80, practicalScorePct: 90 }),
-    ).toBe(85.7);
+    ).toBe(78);
   });
 
   it("computes practical percent only when all tasks graded", () => {
@@ -141,10 +164,11 @@ describe("course completion eligibility", () => {
       practicalExam: practical,
       submission,
       quizResult,
+      regularQuizAvgPct: 80,
     });
     expect(done.eligibleForCourseCertificate).toBe(true);
-    // 80% quiz @43 + ~90% practical @57
-    expect(done.combinedPct).toBeGreaterThanOrEqual(80);
+    // 80% regular quizzes @10 (=8) + 80% final quiz @30 (=24) + 35/40 (87.5%) practical @60 (=52.5) = 84.5%
+    expect(done.combinedPct).toBe(84.5);
   });
 
   it("builds stable industrial course certificate numbers", () => {

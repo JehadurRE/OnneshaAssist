@@ -45,17 +45,18 @@ export function buildDefaultSanjibonKnowledgeBase(): CourseKnowledgeEntry[] {
     {
       id: "kb-sanjibon-assessment-policy",
       courseId,
-      titleEn: "AI-DM-04 Assessment & Certification Handbook (30 + 40 = 70)",
-      titleBn: "AI-DM-04 মূল্যায়ন ও সার্টিফিকেশন গাইডবুক (৩০ + ৪০ = ৭০)",
+      titleEn: "AI-DM-04 Assessment & Certification Handbook (10 + 30 + 60 = 100)",
+      titleBn: "AI-DM-04 মূল্যায়ন ও সার্টিফিকেশন গাইডবুক (১০ + ৩০ + ৬০ = ১০০)",
       category: "policy",
       pinned: true,
       enabled: true,
       tags: ["final exam", "marks", "certificate", "passing", "grading"],
       content: `Course: ${SANJIBON_COURSE.titleEn} (${SANJIBON_COURSE.code})
-Assessment Structure:
-- Part A (Final Timed MCQ Quiz): 30 Marks. Students join /final-exam with the shared classroom PIN, verify their mobile/roll number, and complete the entire MCQ paper before the overall countdown expires.
-- Part B (Final Practical Capstone Package): 40 Marks. Submitted via the Student Learning Portal (/portal → Practical tab).
-- Total Score: 70 Marks (Quiz /30 + Practical /40).
+Assessment Structure (Total 100 Marks):
+- Regular Session Quizzes (All quizzes except Final Quiz): 10 Marks (10%). All non-final course quizzes are combined equally into 10 marks.
+- Part A (Final Timed MCQ Quiz): 30 Marks (30%). Students join /final-exam with the shared classroom PIN, verify their mobile/roll number, and complete the entire MCQ paper before the overall countdown expires. (Quizzes subtotal = 10 + 30 = 40 Marks / 40%.)
+- Part B (Final Practical Capstone Package): 60 Marks (60%). Submitted via the Student Learning Portal (/portal → Practical tab; 6 rubric tasks scaled to 60%).
+- Total Score: 100 Marks (Regular Quizzes /10 + Final Quiz /30 + Practical /60 = 100).
 - Certification: Official verifiable course completion certificates (with cryptographic QR seal on /verify) are issued once both Part A and Part B are graded and pass threshold is met.`,
       createdBy: "System Seed",
       createdAt: SEED_TS,

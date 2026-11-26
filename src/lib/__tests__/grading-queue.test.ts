@@ -202,4 +202,59 @@ describe("grading queue engine", () => {
     });
     expect(gazipurSearch.map((i) => i.sub.id)).toEqual(["sub-mid"]);
   });
+
+  it("computes 10+30+60=100 total marks and supports regular quiz sorting", () => {
+    const exam100: PracticalExam = {
+      ...exam,
+      regularQuizMaxMarks: 10,
+      quizMaxMarks: 30,
+      practicalMaxMarks: 60,
+      totalMaxMarks: 100,
+      regularQuizWeightPct: 10,
+      quizWeightPct: 30,
+      practicalWeightPct: 60,
+    };
+    const subs100: PracticalSubmission[] = [
+      {
+        ...subs[0]!,
+        id: "s-a",
+        regularQuizAvgPct: 50, // 5/10
+        regularQuizTaken: 2,
+        regularQuizTotal: 4,
+        quizAccuracyPct: 80, // 24/30
+        practicalScorePct: 80, // 48/60 -> total 77/100
+        combinedPct: 77,
+      },
+      {
+        ...subs[1]!,
+        id: "s-b",
+        regularQuizAvgPct: 90, // 9/10
+        regularQuizTaken: 4,
+        regularQuizTotal: 4,
+        quizAccuracyPct: 70, // 21/30
+        practicalScorePct: 85, // 51/60 -> total 81/100
+        combinedPct: 81,
+      },
+    ];
+    const { items } = enrichGradingQueue(subs100, exam100);
+    const byId = new Map(items.map((it) => [it.sub.id, it]));
+    expect(byId.get("s-a")?.regularQuizMarks).toBe(5);
+    expect(byId.get("s-a")?.quizMarks).toBe(24);
+    expect(byId.get("s-a")?.practicalMarks).toBe(48);
+    expect(byId.get("s-a")?.totalMarks).toBe(77);
+    expect(byId.get("s-a")?.maxTotal).toBe(100);
+
+    expect(byId.get("s-b")?.totalMarks).toBe(81);
+    expect(byId.get("s-b")?.meritRank).toBe(1);
+
+    const byRegularDesc = filterAndSortGradingQueue(items, {
+      statusFilter: "all",
+      scoreFilter: "all",
+      region: "all",
+      search: "",
+      sortBy: "regular_desc",
+    });
+    expect(byRegularDesc.map((i) => i.sub.id)).toEqual(["s-b", "s-a"]);
+    expect(getFlipSortTarget("regular_desc")).toBe("regular_asc");
+  });
 });

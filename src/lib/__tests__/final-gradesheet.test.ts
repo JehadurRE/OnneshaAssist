@@ -208,9 +208,10 @@ describe("final gradesheet", () => {
 
     // CSV includes empty rank for absent student + participated flag + certificate info
     const csv = finalGradeSheetCsv(rows);
+    expect(csv).toContain("regularQuizMarks,regularQuizMax");
     expect(csv).toContain("participated,email,certificateNumber,certificateEmailedAt");
     expect(csv).toContain("ONN-CRS-AIDM04-GZP01");
-    expect(csv).toContain(",GZP-03,Absent Student,Dhaka,01733333333,0,30,0,0,40,0,0,70,0,not_participated,no,gzp03@example.com,,");
+    expect(csv).toContain(",GZP-03,Absent Student,Dhaka,01733333333,0,0,0,0,0,0,30,0,0,40,0,0,70,0,not_participated,no,gzp03@example.com,,");
 
     expect(formatPracticalStatusLabel("not_participated")).toBe("Not participated");
     expect(formatPracticalStatusLabel("quiz_only")).toBe("Quiz only");
@@ -258,5 +259,59 @@ describe("final gradesheet", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.email).toBe("noa08@example.com");
     expect(rows[0]?.participated).toBe(true);
+  });
+
+  it("computes 10 regular quizzes + 30 final quiz + 60 practical = 100 total marks", () => {
+    const exam100: PracticalExam = {
+      ...exam,
+      regularQuizMaxMarks: 10,
+      quizMaxMarks: 30,
+      practicalMaxMarks: 60,
+      totalMaxMarks: 100,
+      regularQuizWeightPct: 10,
+      quizWeightPct: 30,
+      practicalWeightPct: 60,
+    };
+    const submissions = [
+      {
+        id: "s-100",
+        practicalExamId: "exam-1",
+        courseId: "course-1",
+        rollNumber: "SYL-01",
+        studentName: "Top Learner",
+        regionName: "Sylhet",
+        status: "graded",
+        practicalScorePct: 75,
+        quizAccuracyPct: 90,
+        answers: [],
+        createdAt: "",
+        updatedAt: "",
+      },
+    ] as PracticalSubmission[];
+
+    const regularQuizByRoll = new Map([
+      [normalizeRollToken("SYL-01"), { avgPct: 80, takenCount: 8, totalQuizzes: 10 }],
+    ]);
+    const quizByRoll = new Map([
+      [normalizeRollToken("SYL-01"), { accuracyPct: 90, found: true }],
+    ]);
+
+    const rows = buildFinalGradeSheetRows({
+      exam: exam100,
+      submissions,
+      regularQuizByRoll,
+      quizByRoll,
+      normalizeRoll: normalizeRollToken,
+    });
+
+    // 8/10 + 27/30 + 45/60 = 80/100 (80%)
+    expect(rows[0]?.regularQuizMarks).toBe(8);
+    expect(rows[0]?.quizMarks).toBe(27);
+    expect(rows[0]?.quizzesSubtotalMarks).toBe(35);
+    expect(rows[0]?.quizzesSubtotalMaxMarks).toBe(40);
+    expect(rows[0]?.practicalMarks).toBe(45);
+    expect(rows[0]?.totalMarks).toBe(80);
+    expect(rows[0]?.maxTotal).toBe(100);
+    expect(rows[0]?.combinedPct).toBe(80);
   });
 });

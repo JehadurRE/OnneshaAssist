@@ -7,9 +7,11 @@ import {
   FINAL_PRACTICAL_MARKS,
   FINAL_QUIZ_MARKS,
   FINAL_TOTAL_MARKS,
+  REGULAR_QUIZ_MARKS,
   computeCombinedFinalPct,
   computePracticalScorePct,
   marksFromPct,
+  normalizeExamWeights,
 } from "./practical-exam";
 
 export type GradeQueueStatusFilter =
@@ -37,6 +39,8 @@ export type GradeQueueSortBy =
   | "practical_asc"
   | "quiz_desc"
   | "quiz_asc"
+  | "regular_desc"
+  | "regular_asc"
   | "roll_asc"
   | "roll_desc"
   | "name_asc"
@@ -97,9 +101,21 @@ export const GRADE_QUEUE_SORT_OPTIONS: readonly GradeQueueSortOption[] = [
   },
   {
     id: "quiz_asc",
-    label: "Quiz marks: Low → High",
-    shortLabel: "Quiz ↑",
+    label: "Final quiz marks: Low → High",
+    shortLabel: "Final Quiz ↑",
     flipTo: "quiz_desc",
+  },
+  {
+    id: "regular_desc",
+    label: "Session quizzes (/10): High → Low",
+    shortLabel: "All Quizzes ↓",
+    flipTo: "regular_asc",
+  },
+  {
+    id: "regular_asc",
+    label: "Session quizzes (/10): Low → High",
+    shortLabel: "All Quizzes ↑",
+    flipTo: "regular_desc",
   },
   {
     id: "roll_asc",
@@ -149,6 +165,12 @@ export interface EnrichedGradeQueueItem {
   sub: PracticalSubmission;
   /** Merit rank across all course submissions (1 = highest total marks), null if no marks yet. */
   meritRank: number | null;
+  regularQuizPct: number | null;
+  regularQuizMarks: number;
+  regularQuizMaxMarks: number;
+  regularQuizTaken: number;
+  regularQuizTotal: number;
+  hasRegularQuiz: boolean;
   quizPct: number | null;
   quizMarks: number;
   quizMaxMarks: number;
@@ -207,13 +229,32 @@ export function enrichGradingQueue(
   submissions: PracticalSubmission[],
   exam: PracticalExam | undefined,
 ): { items: EnrichedGradeQueueItem[]; stats: GradeQueueStats } {
+  const weights = normalizeExamWeights(exam || {});
+  const regularQuizMax =
+    typeof exam?.regularQuizMaxMarks === "number"
+      ? Math.max(0, exam.regularQuizMaxMarks)
+      : weights.regularQuizWeightPct > 0
+        ? REGULAR_QUIZ_MARKS
+        : 0;
   const quizMax = exam?.quizMaxMarks || FINAL_QUIZ_MARKS;
   const practicalMax = exam?.practicalMaxMarks || FINAL_PRACTICAL_MARKS;
-  const maxTotal = quizMax + practicalMax || FINAL_TOTAL_MARKS;
+  const maxTotal = regularQuizMax + quizMax + practicalMax || FINAL_TOTAL_MARKS;
   const passThresholdPct = exam?.passThresholdPct ?? 50;
   const totalTaskCount = exam?.tasks.length || 0;
 
   const items: EnrichedGradeQueueItem[] = submissions.map((sub) => {
+    const hasRegularQuiz =
+      typeof sub.regularQuizAvgPct === "number" &&
+      (sub.regularQuizAvgPct > 0 || (sub.regularQuizTaken ?? 0) > 0);
+    const regularQuizPct =
+      typeof sub.regularQuizAvgPct === "number" ? sub.regularQuizAvgPct : null;
+    const regularQuizMarks =
+      regularQuizMax > 0 && regularQuizPct !== null
+        ? marksFromPct(regularQuizPct, regularQuizMax)
+        : 0;
+    const regularQuizTaken = sub.regularQuizTaken ?? 0;
+    const regularQuizTotal = sub.regularQuizTotal ?? 0;
+
     const hasQuiz = typeof sub.quizAccuracyPct === "number" && sub.quizAccuracyPct > 0;
     const quizPct = hasQuiz ? sub.quizAccuracyPct! : null;
     const quizMarks = quizPct !== null ? marksFromPct(quizPct, quizMax) : 0;
@@ -230,17 +271,17 @@ export function enrichGradingQueue(
     const practicalMarks =
       practicalPct !== null ? marksFromPct(practicalPct, practicalMax) : 0;
 
-    const totalMarks = Math.round((quizMarks + practicalMarks) * 10) / 10;
+    const totalMarks = Math.round((regularQuizMarks + quizMarks + practicalMarks) * 10) / 10;
 
     let combinedPct: number | null = null;
-    if (typeof sub.combinedPct === "number" && (hasQuiz || hasPracticalScore)) {
-      combinedPct = sub.combinedPct;
-    } else if (hasQuiz || hasPracticalScore) {
+    if (hasRegularQuiz || hasQuiz || hasPracticalScore) {
       combinedPct = computeCombinedFinalPct({
+        regularQuizAvgPct: regularQuizPct ?? 0,
         quizAccuracyPct: quizPct ?? 0,
         practicalScorePct: practicalPct ?? 0,
-        quizWeightPct: exam?.quizWeightPct,
-        practicalWeightPct: exam?.practicalWeightPct,
+        regularQuizWeightPct: weights.regularQuizWeightPct,
+        quizWeightPct: weights.quizWeightPct,
+        practicalWeightPct: weights.practicalWeightPct,
       });
     }
 
@@ -262,6 +303,12 @@ export function enrichGradingQueue(
     return {
       sub,
       meritRank: null,
+      regularQuizPct,
+      regularQuizMarks,
+      regularQuizMaxMarks: regularQuizMax,
+      regularQuizTaken,
+      regularQuizTotal,
+      hasRegularQuiz,
       quizPct,
       quizMarks,
       quizMaxMarks: quizMax,
@@ -432,6 +479,20 @@ export function filterAndSortGradingQueue(
         const aq = a.hasQuiz ? a.quizMarks : Number.POSITIVE_INFINITY;
         const bq = b.hasQuiz ? b.quizMarks : Number.POSITIVE_INFINITY;
         if (aq !== bq) return aq - bq;
+        if (a.totalMarks !== b.totalMarks) return a.totalMarks - b.totalMarks;
+        return rollCmp(a, b);
+      }
+      case "regular_desc": {
+        const br = b.hasRegularQuiz ? b.regularQuizMarks : -1;
+        const ar = a.hasRegularQuiz ? a.regularQuizMarks : -1;
+        if (br !== ar) return br - ar;
+        if (b.totalMarks !== a.totalMarks) return b.totalMarks - a.totalMarks;
+        return rollCmp(a, b);
+      }
+      case "regular_asc": {
+        const ar = a.hasRegularQuiz ? a.regularQuizMarks : Number.POSITIVE_INFINITY;
+        const br = b.hasRegularQuiz ? b.regularQuizMarks : Number.POSITIVE_INFINITY;
+        if (ar !== br) return ar - br;
         if (a.totalMarks !== b.totalMarks) return a.totalMarks - b.totalMarks;
         return rollCmp(a, b);
       }

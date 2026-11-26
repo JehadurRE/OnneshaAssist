@@ -119,10 +119,12 @@ import {
   buildDefaultCourseRequirement,
   buildDefaultFinalPracticalExam,
   buildFinalQuizRecordSnapshot,
+  computeRegularQuizSummaryForStudent,
   expandFinalQuizIds,
   FINAL_PRACTICAL_MARKS,
   FINAL_QUIZ_MARKS,
   FINAL_TOTAL_MARKS,
+  REGULAR_QUIZ_MARKS,
   generateFinalExamJoinPin,
   marksFromPct,
   mergeMakeupQuizIntoFinalExam,
@@ -952,11 +954,22 @@ export function ensureFinalPracticalSeeded(store: PersistentStoreData): boolean 
     store.courseRequirements.push(buildDefaultCourseRequirement(mainCourse.id));
     changed = true;
   }
-  // Upgrade legacy single-task finals to timed PIN package (70 marks).
+  // Upgrade legacy single-task or 70-mark finals to configurable 10+30+60=100 model once.
   for (let i = 0; i < store.practicalExams.length; i++) {
     const exam = store.practicalExams[i]!;
     if (shouldUpgradeFinalExamPackage(exam)) {
-      store.practicalExams[i] = upgradeFinalExamPackage(exam);
+      const upgraded = upgradeFinalExamPackage(exam);
+      store.practicalExams[i] = upgraded;
+      const reqIdx = store.courseRequirements.findIndex((r) => r.courseId === upgraded.courseId);
+      if (reqIdx >= 0) {
+        store.courseRequirements[reqIdx] = {
+          ...store.courseRequirements[reqIdx]!,
+          regularQuizWeightPct: upgraded.regularQuizWeightPct,
+          quizWeightPct: upgraded.quizWeightPct,
+          practicalWeightPct: upgraded.practicalWeightPct,
+        };
+      }
+      recomputePracticalSubmissionsForExam(store, upgraded);
       changed = true;
     }
   }
@@ -6800,6 +6813,154 @@ function buildStudentQuizSnapshot(
   });
 }
 
+function resolveCourseRegularQuizGroups(
+  store: PersistentStoreData,
+  courseId: string,
+  exam?: PracticalExam | undefined,
+  requirement?: CourseCompletionRequirement | undefined,
+): Array<{ canonicalId: string; aliases: string[] }> {
+  const excludedFinalIds = new Set(
+    expandFinalQuizIds([exam?.linkedQuizId, ...(requirement?.requiredQuizIds || [])]),
+  );
+  // Build map of sessions that actually have recorded exam results
+  const resultSessionIds = new Set<string>();
+  const resultPins = new Set<string>();
+  for (const r of store.examResults || []) {
+    if (r.sessionId) resultSessionIds.add(r.sessionId);
+    if (r.pin) resultPins.add(r.pin);
+  }
+  const hostedQuizIdSet = new Set<string>();
+  for (const s of store.examSessions || []) {
+    if (resultSessionIds.has(s.id) || resultPins.has(s.pin)) {
+      if (s.quizId) hostedQuizIdSet.add(s.quizId);
+    }
+  }
+
+  const deletedIds = new Set(store.deletedQuizIds || []);
+  const allCourseQuizzes = [
+    ...READY_MADE_PACKS.filter((q) => q.courseId === courseId),
+    ...SANJIBON_QUIZZES.filter((q) => q.courseId === courseId),
+    ...(store.customQuizzes || []).filter((q) => q.courseId === courseId),
+  ];
+
+  const groupsByCanonical = new Map<string, { canonicalId: string; aliases: string[] }>();
+  for (const q of allCourseQuizzes) {
+    if (deletedIds.has(q.id) || (q.slug && deletedIds.has(q.slug))) continue;
+    if (excludedFinalIds.has(q.id) || (q.slug && excludedFinalIds.has(q.slug))) continue;
+    const hosted = hostedQuizIdSet.has(q.id) || (!!q.slug && hostedQuizIdSet.has(q.slug));
+    if (!hosted) continue;
+    const existing = groupsByCanonical.get(q.id);
+    if (existing) {
+      if (q.slug && !existing.aliases.includes(q.slug)) existing.aliases.push(q.slug);
+    } else {
+      groupsByCanonical.set(q.id, {
+        canonicalId: q.id,
+        aliases: q.slug && q.slug !== q.id ? [q.slug] : [],
+      });
+    }
+  }
+  return Array.from(groupsByCanonical.values());
+}
+
+function resolveRegularQuizSummaryForStudent(
+  store: PersistentStoreData,
+  courseId: string,
+  rollNumber: string,
+  exam?: PracticalExam | undefined,
+  requirement?: CourseCompletionRequirement | undefined,
+  identity?: {
+    phone?: string | undefined;
+    studentName?: string | undefined;
+    regionId?: string | undefined;
+  },
+  precomputedGroups?: Array<{ canonicalId: string; aliases: string[] }> | undefined,
+) {
+  const regularQuizGroups =
+    precomputedGroups ?? resolveCourseRegularQuizGroups(store, courseId, exam, requirement);
+  const weights = normalizeExamWeights(exam || {});
+  const maxMarks =
+    typeof exam?.regularQuizMaxMarks === "number"
+      ? Math.max(0, exam.regularQuizMaxMarks)
+      : weights.regularQuizWeightPct > 0
+        ? REGULAR_QUIZ_MARKS
+        : 0;
+  const sessions = (store.examSessions || []).map((s) => ({
+    id: s.id,
+    pin: s.pin,
+    quizId: s.quizId,
+  }));
+  return computeRegularQuizSummaryForStudent({
+    results: store.examResults || [],
+    sessions,
+    regularQuizGroups,
+    rollNumber,
+    phone: identity?.phone,
+    studentName: identity?.studentName,
+    regionId: identity?.regionId,
+    maxMarks,
+  });
+}
+
+function recomputePracticalSubmissionsForExam(
+  store: PersistentStoreData,
+  exam: PracticalExam,
+): number {
+  const requirement = (store.courseRequirements || []).find((r) => r.courseId === exam.courseId);
+  const regularGroups = resolveCourseRegularQuizGroups(store, exam.courseId, exam, requirement);
+  const weights = normalizeExamWeights(exam);
+  let count = 0;
+  for (let i = 0; i < (store.practicalSubmissions || []).length; i++) {
+    const sub = store.practicalSubmissions![i]!;
+    if (sub.practicalExamId !== exam.id && sub.courseId !== exam.courseId) continue;
+    const reg = resolveRegularQuizSummaryForStudent(
+      store,
+      exam.courseId,
+      sub.rollNumber,
+      exam,
+      requirement,
+      {
+        phone: sub.phone,
+        studentName: sub.studentName,
+        regionId: sub.regionId,
+      },
+      regularGroups,
+    );
+    const quizMatch = resolveQuizResultMatchForStudent(
+      store,
+      sub.rollNumber,
+      exam.linkedQuizId,
+      requirement?.requiredQuizIds,
+      {
+        phone: sub.phone,
+        studentName: sub.studentName,
+        regionId: sub.regionId,
+      },
+    );
+    const quizPct = quizMatch?.result.accuracyPct ?? sub.quizAccuracyPct ?? 0;
+    const combinedPct =
+      typeof sub.practicalScorePct === "number"
+        ? computeCombinedFinalPct({
+            regularQuizAvgPct: reg.avgPct,
+            quizAccuracyPct: quizPct,
+            practicalScorePct: sub.practicalScorePct,
+            regularQuizWeightPct: weights.regularQuizWeightPct,
+            quizWeightPct: weights.quizWeightPct,
+            practicalWeightPct: weights.practicalWeightPct,
+          })
+        : sub.combinedPct;
+    store.practicalSubmissions![i] = {
+      ...sub,
+      regularQuizAvgPct: reg.avgPct,
+      regularQuizTaken: reg.takenCount,
+      regularQuizTotal: reg.totalQuizzes,
+      quizAccuracyPct: quizPct,
+      combinedPct,
+    };
+    count += 1;
+  }
+  return count;
+}
+
 export const serverSavePracticalExam = createServerFn({ method: "POST" })
   .validator((data: { exam: PracticalExam }) => data)
   .handler(async ({ data }) => {
@@ -6810,10 +6971,36 @@ export const serverSavePracticalExam = createServerFn({ method: "POST" })
     const store = getStore();
     if (!store.practicalExams) store.practicalExams = [];
     const weights = normalizeExamWeights(data.exam);
+    const regularQuizMaxMarks =
+      typeof data.exam.regularQuizMaxMarks === "number" &&
+      Number.isFinite(data.exam.regularQuizMaxMarks) &&
+      data.exam.regularQuizMaxMarks >= 0
+        ? Math.round(data.exam.regularQuizMaxMarks * 10) / 10
+        : weights.regularQuizWeightPct;
+    const quizMaxMarks =
+      typeof data.exam.quizMaxMarks === "number" &&
+      Number.isFinite(data.exam.quizMaxMarks) &&
+      data.exam.quizMaxMarks >= 0
+        ? Math.round(data.exam.quizMaxMarks * 10) / 10
+        : weights.quizWeightPct;
+    const practicalMaxMarks =
+      typeof data.exam.practicalMaxMarks === "number" &&
+      Number.isFinite(data.exam.practicalMaxMarks) &&
+      data.exam.practicalMaxMarks > 0
+        ? Math.round(data.exam.practicalMaxMarks * 10) / 10
+        : weights.practicalWeightPct;
+    const totalMaxMarks =
+      Math.round((regularQuizMaxMarks + quizMaxMarks + practicalMaxMarks) * 10) / 10;
+
     const exam: PracticalExam = {
       ...data.exam,
+      regularQuizWeightPct: weights.regularQuizWeightPct,
       quizWeightPct: weights.quizWeightPct,
       practicalWeightPct: weights.practicalWeightPct,
+      regularQuizMaxMarks,
+      quizMaxMarks,
+      practicalMaxMarks,
+      totalMaxMarks,
       tasks: (data.exam.tasks || []).map((t, i) => ({
         ...t,
         id: t.id || `task-${i + 1}-${Date.now()}`,
@@ -6834,10 +7021,12 @@ export const serverSavePracticalExam = createServerFn({ method: "POST" })
     if (reqIdx >= 0) {
       store.courseRequirements[reqIdx] = {
         ...store.courseRequirements[reqIdx]!,
+        regularQuizWeightPct: weights.regularQuizWeightPct,
         quizWeightPct: weights.quizWeightPct,
         practicalWeightPct: weights.practicalWeightPct,
       };
     }
+    recomputePracticalSubmissionsForExam(store, exam);
     scheduleDiskPersist();
     return { success: true, exam };
   });
@@ -6852,11 +7041,13 @@ export const serverSaveCourseRequirement = createServerFn({ method: "POST" })
     const store = getStore();
     if (!store.courseRequirements) store.courseRequirements = [];
     const weights = normalizeExamWeights({
+      regularQuizWeightPct: data.requirement.regularQuizWeightPct,
       quizWeightPct: data.requirement.quizWeightPct,
       practicalWeightPct: data.requirement.practicalWeightPct,
     });
     const requirement: CourseCompletionRequirement = {
       ...data.requirement,
+      regularQuizWeightPct: weights.regularQuizWeightPct,
       quizWeightPct: weights.quizWeightPct,
       practicalWeightPct: weights.practicalWeightPct,
       requiredQuizIds: (data.requirement.requiredQuizIds || []).filter(Boolean),
@@ -6867,12 +7058,15 @@ export const serverSaveCourseRequirement = createServerFn({ method: "POST" })
     // Mirror weights onto the practical exam for this course when present.
     const examIdx = (store.practicalExams || []).findIndex((p) => p.courseId === requirement.courseId);
     if (examIdx >= 0 && store.practicalExams) {
-      store.practicalExams[examIdx] = {
+      const updatedExam: PracticalExam = {
         ...store.practicalExams[examIdx]!,
+        regularQuizWeightPct: weights.regularQuizWeightPct,
         quizWeightPct: weights.quizWeightPct,
         practicalWeightPct: weights.practicalWeightPct,
         updatedAt: new Date().toISOString(),
       };
+      store.practicalExams[examIdx] = updatedExam;
+      recomputePracticalSubmissionsForExam(store, updatedExam);
     }
     scheduleDiskPersist();
     return { success: true, requirement };
@@ -7140,6 +7334,18 @@ export const serverGradePracticalSubmission = createServerFn({ method: "POST" })
     }));
     const stats = computePracticalScorePct(exam.tasks, grades);
     const requirement = (store.courseRequirements || []).find((r) => r.courseId === exam.courseId);
+    const regSummary = resolveRegularQuizSummaryForStudent(
+      store,
+      exam.courseId,
+      submission.rollNumber,
+      exam,
+      requirement,
+      {
+        phone: submission.phone,
+        studentName: submission.studentName,
+        regionId: submission.regionId,
+      },
+    );
     const quizResult = resolveQuizResultForStudent(
       store,
       submission.rollNumber,
@@ -7153,8 +7359,10 @@ export const serverGradePracticalSubmission = createServerFn({ method: "POST" })
     );
     const quizPct = quizResult?.accuracyPct ?? submission.quizAccuracyPct ?? 0;
     const combinedPct = computeCombinedFinalPct({
+      regularQuizAvgPct: regSummary.avgPct,
       quizAccuracyPct: quizPct,
       practicalScorePct: stats.pct,
+      regularQuizWeightPct: exam.regularQuizWeightPct,
       quizWeightPct: exam.quizWeightPct,
       practicalWeightPct: exam.practicalWeightPct,
     });
@@ -7164,6 +7372,9 @@ export const serverGradePracticalSubmission = createServerFn({ method: "POST" })
       grades,
       status: "graded",
       practicalScorePct: stats.pct,
+      regularQuizAvgPct: regSummary.avgPct,
+      regularQuizTaken: regSummary.takenCount,
+      regularQuizTotal: regSummary.totalQuizzes,
       quizAccuracyPct: quizPct,
       combinedPct,
       // Preserve prior overall feedback when caller omits / sends blank unintentionally.
@@ -7209,9 +7420,23 @@ export const serverRefreshPracticalQuizScores = createServerFn({ method: "POST" 
       matchedRoll?: string;
     }> = [];
 
+    const regularGroups = resolveCourseRegularQuizGroups(store, courseId, exam, requirement);
     for (let i = 0; i < (store.practicalSubmissions || []).length; i++) {
       const sub = store.practicalSubmissions![i]!;
       if (sub.practicalExamId !== exam.id && sub.courseId !== courseId) continue;
+      const reg = resolveRegularQuizSummaryForStudent(
+        store,
+        courseId,
+        sub.rollNumber,
+        exam,
+        requirement,
+        {
+          phone: sub.phone,
+          studentName: sub.studentName,
+          regionId: sub.regionId,
+        },
+        regularGroups,
+      );
       const match = resolveQuizResultMatchForStudent(
         store,
         sub.rollNumber,
@@ -7225,22 +7450,35 @@ export const serverRefreshPracticalQuizScores = createServerFn({ method: "POST" 
       );
       const quizPct = match?.result.accuracyPct ?? 0;
       const prev = typeof sub.quizAccuracyPct === "number" ? sub.quizAccuracyPct : null;
-      if (prev != null && Math.abs(prev - quizPct) < 0.05) {
-        unchanged += 1;
-        continue;
-      }
+      const prevReg = typeof sub.regularQuizAvgPct === "number" ? sub.regularQuizAvgPct : null;
       const combinedPct =
         typeof sub.practicalScorePct === "number"
           ? computeCombinedFinalPct({
+              regularQuizAvgPct: reg.avgPct,
               quizAccuracyPct: quizPct,
               practicalScorePct: sub.practicalScorePct,
+              regularQuizWeightPct: exam.regularQuizWeightPct,
               quizWeightPct: exam.quizWeightPct,
               practicalWeightPct: exam.practicalWeightPct,
             })
           : sub.combinedPct;
+      const prevCombined = typeof sub.combinedPct === "number" ? sub.combinedPct : null;
+      if (
+        prev != null &&
+        Math.abs(prev - quizPct) < 0.05 &&
+        prevReg != null &&
+        Math.abs(prevReg - reg.avgPct) < 0.05 &&
+        (combinedPct == null || (prevCombined != null && Math.abs(prevCombined - combinedPct) < 0.05))
+      ) {
+        unchanged += 1;
+        continue;
+      }
       if (!data.dryRun) {
         store.practicalSubmissions![i] = {
           ...sub,
+          regularQuizAvgPct: reg.avgPct,
+          regularQuizTaken: reg.takenCount,
+          regularQuizTotal: reg.totalQuizzes,
           quizAccuracyPct: quizPct,
           combinedPct,
           updatedAt: now,
@@ -7297,6 +7535,18 @@ export const serverGetStudentFinalQuizRecord = createServerFn({ method: "POST" }
           : false,
     );
     if (!sub) return { success: false as const, error: "Submission not found." };
+    const regSummary = resolveRegularQuizSummaryForStudent(
+      store,
+      courseId,
+      sub.rollNumber,
+      exam,
+      requirement,
+      {
+        phone: sub.phone,
+        studentName: sub.studentName,
+        regionId: sub.regionId,
+      },
+    );
     const snapshot = buildStudentQuizSnapshot(store, {
       rollNumber: sub.rollNumber,
       phone: sub.phone,
@@ -7306,28 +7556,42 @@ export const serverGetStudentFinalQuizRecord = createServerFn({ method: "POST" }
       requiredQuizIds: requirement?.requiredQuizIds,
       quizMaxMarks: exam.quizMaxMarks || FINAL_QUIZ_MARKS,
     });
+    const weights = normalizeExamWeights(exam);
+    const regularQuizMax =
+      typeof exam.regularQuizMaxMarks === "number"
+        ? Math.max(0, exam.regularQuizMaxMarks)
+        : weights.regularQuizWeightPct > 0
+          ? REGULAR_QUIZ_MARKS
+          : 0;
+    const quizMax = exam.quizMaxMarks || FINAL_QUIZ_MARKS;
+    const practicalMax = exam.practicalMaxMarks || FINAL_PRACTICAL_MARKS;
     return {
       success: true as const,
       submissionId: sub.id,
       rollNumber: sub.rollNumber,
       studentName: sub.studentName,
       quiz: snapshot,
+      regularQuiz: regSummary,
       practicalScorePct: sub.practicalScorePct,
       combinedPct:
         typeof sub.practicalScorePct === "number"
           ? computeCombinedFinalPct({
+              regularQuizAvgPct: regSummary.avgPct,
               quizAccuracyPct: snapshot.accuracyPct,
               practicalScorePct: sub.practicalScorePct,
-              quizWeightPct: exam.quizWeightPct,
-              practicalWeightPct: exam.practicalWeightPct,
+              regularQuizWeightPct: weights.regularQuizWeightPct,
+              quizWeightPct: weights.quizWeightPct,
+              practicalWeightPct: weights.practicalWeightPct,
             })
           : sub.combinedPct,
       weights: {
-        ...(typeof exam.quizWeightPct === "number" ? { quizWeightPct: exam.quizWeightPct } : {}),
-        ...(typeof exam.practicalWeightPct === "number" ? { practicalWeightPct: exam.practicalWeightPct } : {}),
-        quizMaxMarks: exam.quizMaxMarks || FINAL_QUIZ_MARKS,
-        practicalMaxMarks: exam.practicalMaxMarks || FINAL_PRACTICAL_MARKS,
-        totalMaxMarks: exam.totalMaxMarks || FINAL_TOTAL_MARKS,
+        regularQuizWeightPct: weights.regularQuizWeightPct,
+        quizWeightPct: weights.quizWeightPct,
+        practicalWeightPct: weights.practicalWeightPct,
+        regularQuizMaxMarks: regularQuizMax,
+        quizMaxMarks: quizMax,
+        practicalMaxMarks: practicalMax,
+        totalMaxMarks: regularQuizMax + quizMax + practicalMax || FINAL_TOTAL_MARKS,
       },
     };
   });
@@ -7364,6 +7628,11 @@ export const serverGetFinalGradeSheet = createServerFn({ method: "POST" })
       if (pTok.length >= 10 && !rosterByPhone.has(pTok)) rosterByPhone.set(pTok, st);
     }
 
+    const regularGroups = resolveCourseRegularQuizGroups(store, courseId, exam, requirement);
+    const regularQuizByRoll = new Map<
+      string,
+      { avgPct: number; takenCount: number; totalQuizzes: number }
+    >();
     const quizByRoll = new Map<string, { accuracyPct: number; found: boolean }>();
     const eligibilityByRoll = new Map<string, { eligible: boolean; missing: string[] }>();
 
@@ -7373,16 +7642,33 @@ export const serverGetFinalGradeSheet = createServerFn({ method: "POST" })
       const rosterMatch =
         (tok ? rosterByRoll.get(tok) : undefined) ||
         (subPhone.length >= 10 ? rosterByPhone.get(subPhone) : undefined);
+      const identity = {
+        phone: sub.phone || rosterMatch?.phone,
+        studentName: sub.studentName || rosterMatch?.name,
+        regionId: sub.regionId || rosterMatch?.regionId,
+      };
+      const reg = resolveRegularQuizSummaryForStudent(
+        store,
+        courseId,
+        sub.rollNumber,
+        exam,
+        requirement,
+        identity,
+        regularGroups,
+      );
+      if (tok && !regularQuizByRoll.has(tok)) {
+        regularQuizByRoll.set(tok, {
+          avgPct: reg.avgPct,
+          takenCount: reg.takenCount,
+          totalQuizzes: reg.totalQuizzes,
+        });
+      }
       const match = resolveQuizResultMatchForStudent(
         store,
         sub.rollNumber,
         exam.linkedQuizId,
         requirement.requiredQuizIds,
-        {
-          phone: sub.phone || rosterMatch?.phone,
-          studentName: sub.studentName || rosterMatch?.name,
-          regionId: sub.regionId || rosterMatch?.regionId,
-        },
+        identity,
       );
       if (tok && !quizByRoll.has(tok)) {
         quizByRoll.set(tok, {
@@ -7396,6 +7682,7 @@ export const serverGetFinalGradeSheet = createServerFn({ method: "POST" })
         practicalExam: exam,
         submission: sub,
         quizResult: match?.result,
+        regularQuizAvgPct: reg.avgPct,
       });
       if (tok) {
         eligibilityByRoll.set(tok, {
@@ -7405,6 +7692,13 @@ export const serverGetFinalGradeSheet = createServerFn({ method: "POST" })
       }
       if (rosterMatch) {
         const rTok = normalizeRollToken(rosterMatch.rollNumber);
+        if (rTok && !regularQuizByRoll.has(rTok)) {
+          regularQuizByRoll.set(rTok, {
+            avgPct: reg.avgPct,
+            takenCount: reg.takenCount,
+            totalQuizzes: reg.totalQuizzes,
+          });
+        }
         if (rTok && !quizByRoll.has(rTok)) {
           quizByRoll.set(rTok, {
             accuracyPct: match?.result.accuracyPct ?? 0,
@@ -7423,16 +7717,31 @@ export const serverGetFinalGradeSheet = createServerFn({ method: "POST" })
     for (const st of roster) {
       const tok = normalizeRollToken(st.rollNumber);
       if (!tok || quizByRoll.has(tok)) continue;
+      const identity = {
+        phone: st.phone,
+        studentName: st.name,
+        regionId: st.regionId,
+      };
+      const reg = resolveRegularQuizSummaryForStudent(
+        store,
+        courseId,
+        st.rollNumber,
+        exam,
+        requirement,
+        identity,
+        regularGroups,
+      );
+      regularQuizByRoll.set(tok, {
+        avgPct: reg.avgPct,
+        takenCount: reg.takenCount,
+        totalQuizzes: reg.totalQuizzes,
+      });
       const match = resolveQuizResultMatchForStudent(
         store,
         st.rollNumber,
         exam.linkedQuizId,
         requirement.requiredQuizIds,
-        {
-          phone: st.phone,
-          studentName: st.name,
-          regionId: st.regionId,
-        },
+        identity,
       );
       quizByRoll.set(tok, {
         accuracyPct: match?.result.accuracyPct ?? 0,
@@ -7444,6 +7753,7 @@ export const serverGetFinalGradeSheet = createServerFn({ method: "POST" })
         practicalExam: exam,
         submission: undefined,
         quizResult: match?.result,
+        regularQuizAvgPct: reg.avgPct,
       });
       eligibilityByRoll.set(tok, {
         eligible: snap.eligibleForCourseCertificate,
@@ -7460,10 +7770,20 @@ export const serverGetFinalGradeSheet = createServerFn({ method: "POST" })
       submissions,
       roster,
       certificates: courseCertificates,
+      regularQuizByRoll,
       quizByRoll,
       eligibilityByRoll,
       normalizeRoll: normalizeRollToken,
     });
+    const weights = normalizeExamWeights(exam);
+    const regularQuizMax =
+      typeof exam.regularQuizMaxMarks === "number"
+        ? Math.max(0, exam.regularQuizMaxMarks)
+        : weights.regularQuizWeightPct > 0
+          ? REGULAR_QUIZ_MARKS
+          : 0;
+    const quizMax = exam.quizMaxMarks || FINAL_QUIZ_MARKS;
+    const practicalMax = exam.practicalMaxMarks || FINAL_PRACTICAL_MARKS;
     const participated = rows.filter((r) => r.participated).length;
     const notParticipated = rows.length - participated;
     const graded = rows.filter((r) => r.practicalGraded).length;
@@ -7476,9 +7796,14 @@ export const serverGetFinalGradeSheet = createServerFn({ method: "POST" })
       courseCode: course.code || "",
       courseTitle: course.titleEn || exam.titleEn,
       examTitle: exam.titleEn,
-      quizMaxMarks: exam.quizMaxMarks || FINAL_QUIZ_MARKS,
-      practicalMaxMarks: exam.practicalMaxMarks || FINAL_PRACTICAL_MARKS,
-      totalMaxMarks: exam.totalMaxMarks || FINAL_TOTAL_MARKS,
+      regularQuizMaxMarks: regularQuizMax,
+      regularQuizWeightPct: weights.regularQuizWeightPct,
+      hostedRegularQuizCount: regularGroups.length,
+      quizMaxMarks: quizMax,
+      quizWeightPct: weights.quizWeightPct,
+      practicalMaxMarks: practicalMax,
+      practicalWeightPct: weights.practicalWeightPct,
+      totalMaxMarks: regularQuizMax + quizMax + practicalMax || FINAL_TOTAL_MARKS,
       generatedAt: new Date().toISOString(),
       emailStatus: {
         configured: isPortalEmailConfigured(),
@@ -7582,22 +7907,39 @@ function buildPracticalSubmissionsExportPayload(
   const submissions = (store.practicalSubmissions || []).filter(
     (s) => s.practicalExamId === exam.id || s.courseId === courseId,
   );
+  const weights = normalizeExamWeights(exam);
+  const regularQuizMax =
+    typeof exam.regularQuizMaxMarks === "number"
+      ? Math.max(0, exam.regularQuizMaxMarks)
+      : weights.regularQuizWeightPct > 0
+        ? REGULAR_QUIZ_MARKS
+        : 0;
   const quizMax = exam.quizMaxMarks || FINAL_QUIZ_MARKS;
   const practicalMax = exam.practicalMaxMarks || FINAL_PRACTICAL_MARKS;
-  const totalMax = exam.totalMaxMarks || quizMax + practicalMax || FINAL_TOTAL_MARKS;
-  const weights = normalizeExamWeights(exam);
+  const totalMax = regularQuizMax + quizMax + practicalMax || FINAL_TOTAL_MARKS;
+  const regularGroups = resolveCourseRegularQuizGroups(store, courseId, exam, requirement);
 
   const rows = submissions.map((sub) => {
+    const identity = {
+      phone: sub.phone,
+      studentName: sub.studentName,
+      regionId: sub.regionId,
+    };
+    const reg = resolveRegularQuizSummaryForStudent(
+      store,
+      courseId,
+      sub.rollNumber,
+      exam,
+      requirement,
+      identity,
+      regularGroups,
+    );
     const match = resolveQuizResultMatchForStudent(
       store,
       sub.rollNumber,
       exam.linkedQuizId,
       requirement?.requiredQuizIds,
-      {
-        phone: sub.phone,
-        studentName: sub.studentName,
-        regionId: sub.regionId,
-      },
+      identity,
     );
     const quizAccuracyPct = match?.result.accuracyPct ?? sub.quizAccuracyPct ?? 0;
     const quizFound = !!(
@@ -7613,6 +7955,10 @@ function buildPracticalSubmissionsExportPayload(
       status: sub.status,
       submittedAt: sub.submittedAt || sub.createdAt,
       updatedAt: sub.updatedAt,
+      regularQuizAvgPct: reg.avgPct,
+      regularQuizMarks: reg.marks,
+      regularQuizTaken: reg.takenCount,
+      regularQuizTotal: reg.totalQuizzes,
       quizFound,
       quizAccuracyPct,
       quizMarks,
@@ -7640,6 +7986,9 @@ function buildPracticalSubmissionsExportPayload(
     courseTitle: course?.titleEn || exam.titleEn,
     examId: exam.id,
     examTitle: exam.titleEn,
+    regularQuizMaxMarks: regularQuizMax,
+    regularQuizWeightPct: weights.regularQuizWeightPct,
+    hostedRegularQuizCount: regularGroups.length,
     quizMaxMarks: quizMax,
     practicalMaxMarks: practicalMax,
     totalMaxMarks: totalMax,
@@ -7807,6 +8156,18 @@ export const serverApplyReviewedPracticalGrades = createServerFn({ method: "POST
         gradedAt: now,
       }));
       const stats = computePracticalScorePct(exam.tasks, grades);
+      const reg = resolveRegularQuizSummaryForStudent(
+        store,
+        courseId,
+        sub.rollNumber,
+        exam,
+        requirement,
+        {
+          phone: sub.phone,
+          studentName: sub.studentName,
+          regionId: sub.regionId,
+        },
+      );
       const quizResult = resolveQuizResultForStudent(
         store,
         sub.rollNumber,
@@ -7820,8 +8181,10 @@ export const serverApplyReviewedPracticalGrades = createServerFn({ method: "POST
       );
       const quizPct = quizResult?.accuracyPct ?? sub.quizAccuracyPct ?? 0;
       const combinedPct = computeCombinedFinalPct({
+        regularQuizAvgPct: reg.avgPct,
         quizAccuracyPct: quizPct,
         practicalScorePct: stats.pct,
+        regularQuizWeightPct: exam.regularQuizWeightPct,
         quizWeightPct: exam.quizWeightPct,
         practicalWeightPct: exam.practicalWeightPct,
       });
@@ -7832,6 +8195,9 @@ export const serverApplyReviewedPracticalGrades = createServerFn({ method: "POST
           grades,
           status: "graded",
           practicalScorePct: stats.pct,
+          regularQuizAvgPct: reg.avgPct,
+          regularQuizTaken: reg.takenCount,
+          regularQuizTotal: reg.totalQuizzes,
           quizAccuracyPct: quizPct,
           combinedPct,
           instructorFeedback: row.instructorFeedback || sub.instructorFeedback,
@@ -8173,16 +8539,25 @@ function issueCourseCertificateInStore(params: {
     (subPhone.length >= 10
       ? store.roster.find((s) => normalizeBdPhone(s.phone || "") === subPhone)
       : undefined);
+  const identity = {
+    phone: submission?.phone || rosterStudent?.phone,
+    studentName: submission?.studentName || rosterStudent?.name,
+    regionId: submission?.regionId || rosterStudent?.regionId,
+  };
+  const regSummary = resolveRegularQuizSummaryForStudent(
+    store,
+    course.id,
+    params.rollNumber,
+    practicalExam,
+    requirement,
+    identity,
+  );
   const quizResult = resolveQuizResultForStudent(
     store,
     params.rollNumber,
     practicalExam?.linkedQuizId || requirement.requiredQuizIds?.[0],
     requirement.requiredQuizIds,
-    {
-      phone: submission?.phone || rosterStudent?.phone,
-      studentName: submission?.studentName || rosterStudent?.name,
-      regionId: submission?.regionId || rosterStudent?.regionId,
-    },
+    identity,
   );
   const snap = evaluateCourseCompletion({
     course,
@@ -8190,6 +8565,7 @@ function issueCourseCertificateInStore(params: {
     practicalExam,
     submission,
     quizResult,
+    regularQuizAvgPct: regSummary.avgPct,
   });
   if (!snap.eligibleForCourseCertificate && !params.force) {
     return {
@@ -8230,6 +8606,7 @@ function issueCourseCertificateInStore(params: {
     studentRoll: resolvedRoll,
     regionName: resolvedRegion,
     quizTitle: course.titleEn || `${course.code} — ${titleEn}`,
+    regularQuizAvgPct: snap.regularQuizAvgPct,
     quizAccuracyPct: snap.quizAccuracyPct,
     practicalScorePct: snap.practicalScorePct,
     combinedScorePct: snap.combinedPct,
@@ -8601,11 +8978,25 @@ export const serverGetStudentPortal = createServerFn({ method: "POST" })
     const requirement =
       (store.courseRequirements || []).find((r) => r.courseId === course.id) ||
       buildDefaultCourseRequirement(course.id);
+    const portalIdentity = {
+      phone: student.phone,
+      studentName: student.name,
+      regionId: student.regionId,
+    };
+    const regSummary = resolveRegularQuizSummaryForStudent(
+      store,
+      course.id,
+      student.rollNumber,
+      practicalExam,
+      requirement,
+      portalIdentity,
+    );
     const quizResult = resolveQuizResultForStudent(
       store,
       student.rollNumber,
       practicalExam?.linkedQuizId || requirement.requiredQuizIds?.[0],
       requirement.requiredQuizIds,
+      portalIdentity,
     );
     const snap = evaluateCourseCompletion({
       course,
@@ -8613,6 +9004,7 @@ export const serverGetStudentPortal = createServerFn({ method: "POST" })
       practicalExam,
       submission,
       quizResult,
+      regularQuizAvgPct: regSummary.avgPct,
     });
     const courseCert = store.certificates.find(
       (c) =>

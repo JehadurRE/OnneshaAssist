@@ -16,6 +16,7 @@ import {
   FINAL_PRACTICAL_MARKS,
   FINAL_QUIZ_MARKS,
   FINAL_TOTAL_MARKS,
+  REGULAR_QUIZ_MARKS,
 } from "@/lib/practical-exam";
 import {
   CheckCircle2,
@@ -343,9 +344,11 @@ function FinalExamPage() {
   };
 
   const tasks = (exam?.tasks || []) as PracticalTask[];
+  const regularQuizMax =
+    typeof exam?.regularQuizMaxMarks === "number" ? exam.regularQuizMaxMarks : REGULAR_QUIZ_MARKS;
   const quizMax = exam?.quizMaxMarks || FINAL_QUIZ_MARKS;
   const practicalMax = exam?.practicalMaxMarks || FINAL_PRACTICAL_MARKS;
-  const totalMax = exam?.totalMaxMarks || FINAL_TOTAL_MARKS;
+  const totalMax = exam?.totalMaxMarks || regularQuizMax + quizMax + practicalMax || FINAL_TOTAL_MARKS;
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
@@ -366,8 +369,8 @@ function FinalExamPage() {
             </h1>
             <p className="max-w-2xl text-sm text-muted-foreground">
               {lang === "bn"
-                ? `PIN যাচাই করুন, নিবন্ধিত মোবাইল দিয়ে নাম অটো-ফিল হবে (রোল জানা লাগবে না)। তারপর ${quizMax} নম্বরের MCQ (একটি মোট টাইমার) + ${practicalMax} নম্বরের ক্যাপস্টোন। মোট ${totalMax}।`
-                : `Verify PIN, search your registered mobile (name auto-fills — no roll needed), then ${quizMax}-mark MCQ (one overall timer) + ${practicalMax}-mark capstone. Total ${totalMax}.`}
+                ? `PIN যাচাই করুন, নিবন্ধিত মোবাইল দিয়ে নাম অটো-ফিল হবে (রোল জানা লাগবে না)। নিয়মিত কুইজ ${regularQuizMax} + চূড়ান্ত MCQ ${quizMax} + ক্যাপস্টোন ${practicalMax} = মোট ${totalMax} নম্বর।`
+                : `Verify PIN, search your registered mobile (name auto-fills — no roll needed). Regular quizzes ${regularQuizMax} + Final MCQ ${quizMax} + Practical ${practicalMax} = Total ${totalMax}.`}
             </p>
           </div>
 

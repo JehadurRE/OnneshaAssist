@@ -17,10 +17,12 @@ import type {
 import { clampPassThresholdPct, isPassingScore } from "./scoring";
 import { normalizeBdPhone, normalizeRollToken } from "./sanjibon-seed-data";
 
-/** Final Exam absolute marks (AI-DM-04 / Sanjibon package). */
+/** Course Final Assessment absolute marks (AI-DM-04 / Sanjibon: 10 regular quizzes + 30 final quiz + 60 practical = 100). */
+export const REGULAR_QUIZ_MARKS = 10;
 export const FINAL_QUIZ_MARKS = 30;
-export const FINAL_PRACTICAL_MARKS = 40;
-export const FINAL_TOTAL_MARKS = FINAL_QUIZ_MARKS + FINAL_PRACTICAL_MARKS; // 70
+export const FINAL_PRACTICAL_MARKS = 60;
+export const FINAL_TOTAL_MARKS =
+  REGULAR_QUIZ_MARKS + FINAL_QUIZ_MARKS + FINAL_PRACTICAL_MARKS; // 100
 
 /**
  * Sanjibon final quiz id aliases.
@@ -44,9 +46,10 @@ export function expandFinalQuizIds(ids: Array<string | undefined | null>): strin
   return Array.from(new Set([...base, ...SANJIBON_FINAL_QUIZ_ALIASES]));
 }
 
-/** Weights mirror 30/40 of 70 so combined % maps cleanly to /70. */
-export const DEFAULT_QUIZ_WEIGHT = Math.round((FINAL_QUIZ_MARKS / FINAL_TOTAL_MARKS) * 100); // 43
-export const DEFAULT_PRACTICAL_WEIGHT = 100 - DEFAULT_QUIZ_WEIGHT; // 57
+/** Weights mirror 10 + 30 + 60 = 100 (10% all non-final quizzes + 30% final quiz + 60% practical). */
+export const DEFAULT_REGULAR_QUIZ_WEIGHT = REGULAR_QUIZ_MARKS; // 10
+export const DEFAULT_QUIZ_WEIGHT = FINAL_QUIZ_MARKS; // 30
+export const DEFAULT_PRACTICAL_WEIGHT = FINAL_PRACTICAL_MARKS; // 60
 
 export const DEFAULT_PRACTICAL_MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB (video-friendly)
 export const DEFAULT_FINAL_DURATION_HOURS = 3;
@@ -75,25 +78,38 @@ export function marksFromPct(pct: number, maxMarks: number): number {
 }
 
 export function formatFinalMarksBreakdown(params: {
+  regularQuizAvgPct?: number | undefined;
   quizAccuracyPct: number;
   practicalScorePct: number;
+  regularQuizMaxMarks?: number | undefined;
   quizMaxMarks?: number | undefined;
   practicalMaxMarks?: number | undefined;
 }): {
+  regularQuizMarks: number;
   quizMarks: number;
+  quizzesSubtotalMarks: number;
   practicalMarks: number;
   totalMarks: number;
   maxTotal: number;
 } {
+  const regularMax =
+    typeof params.regularQuizMaxMarks === "number"
+      ? Math.max(0, params.regularQuizMaxMarks)
+      : REGULAR_QUIZ_MARKS;
   const quizMax = params.quizMaxMarks ?? FINAL_QUIZ_MARKS;
   const practicalMax = params.practicalMaxMarks ?? FINAL_PRACTICAL_MARKS;
+  const regularQuizMarks =
+    regularMax > 0 ? marksFromPct(params.regularQuizAvgPct ?? 0, regularMax) : 0;
   const quizMarks = marksFromPct(params.quizAccuracyPct, quizMax);
+  const quizzesSubtotalMarks = Math.round((regularQuizMarks + quizMarks) * 10) / 10;
   const practicalMarks = marksFromPct(params.practicalScorePct, practicalMax);
   return {
+    regularQuizMarks,
     quizMarks,
+    quizzesSubtotalMarks,
     practicalMarks,
-    totalMarks: Math.round((quizMarks + practicalMarks) * 10) / 10,
-    maxTotal: quizMax + practicalMax,
+    totalMarks: Math.round((regularQuizMarks + quizMarks + practicalMarks) * 10) / 10,
+    maxTotal: regularMax + quizMax + practicalMax,
   };
 }
 
@@ -102,21 +118,55 @@ export function clampWeightPct(value: number | undefined, fallback: number): num
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-export function normalizeExamWeights(exam: Pick<PracticalExam, "quizWeightPct" | "practicalWeightPct">): {
+export function normalizeExamWeights(
+  exam: Pick<PracticalExam, "regularQuizWeightPct" | "quizWeightPct" | "practicalWeightPct">,
+): {
+  regularQuizWeightPct: number;
   quizWeightPct: number;
   practicalWeightPct: number;
 } {
-  const quizWeightPct = clampWeightPct(exam.quizWeightPct, DEFAULT_QUIZ_WEIGHT);
+  const hasExplicitReg =
+    typeof exam.regularQuizWeightPct === "number" &&
+    Number.isFinite(exam.regularQuizWeightPct);
+  const hasExplicitQuiz =
+    typeof exam.quizWeightPct === "number" && Number.isFinite(exam.quizWeightPct);
+  const hasExplicitPrac =
+    typeof exam.practicalWeightPct === "number" && Number.isFinite(exam.practicalWeightPct);
+
+  if (!hasExplicitReg && !hasExplicitQuiz && !hasExplicitPrac) {
+    return {
+      regularQuizWeightPct: DEFAULT_REGULAR_QUIZ_WEIGHT,
+      quizWeightPct: DEFAULT_QUIZ_WEIGHT,
+      practicalWeightPct: DEFAULT_PRACTICAL_WEIGHT,
+    };
+  }
+
+  // If caller explicitly supplied only 2-part weights (quiz + practical) without regularQuizWeightPct,
+  // respect a 2-part weighting (regular = 0) so custom exams & legacy callers behave predictably.
+  const regularQuizWeightPct = hasExplicitReg
+    ? clampWeightPct(exam.regularQuizWeightPct, DEFAULT_REGULAR_QUIZ_WEIGHT)
+    : hasExplicitQuiz && hasExplicitPrac
+      ? 0
+      : DEFAULT_REGULAR_QUIZ_WEIGHT;
+
+  let quizWeightPct = clampWeightPct(exam.quizWeightPct, DEFAULT_QUIZ_WEIGHT);
   let practicalWeightPct = clampWeightPct(exam.practicalWeightPct, DEFAULT_PRACTICAL_WEIGHT);
-  const sum = quizWeightPct + practicalWeightPct;
+
+  if (regularQuizWeightPct + quizWeightPct > 100) {
+    quizWeightPct = Math.max(0, 100 - regularQuizWeightPct);
+  }
+  const sum = regularQuizWeightPct + quizWeightPct + practicalWeightPct;
   if (sum <= 0) {
-    return { quizWeightPct: DEFAULT_QUIZ_WEIGHT, practicalWeightPct: DEFAULT_PRACTICAL_WEIGHT };
+    return {
+      regularQuizWeightPct: DEFAULT_REGULAR_QUIZ_WEIGHT,
+      quizWeightPct: DEFAULT_QUIZ_WEIGHT,
+      practicalWeightPct: DEFAULT_PRACTICAL_WEIGHT,
+    };
   }
   if (sum !== 100) {
-    // Keep quiz weight, assign remainder to practical so weights always sum to 100.
-    practicalWeightPct = 100 - quizWeightPct;
+    practicalWeightPct = Math.max(0, 100 - regularQuizWeightPct - quizWeightPct);
   }
-  return { quizWeightPct, practicalWeightPct };
+  return { regularQuizWeightPct, quizWeightPct, practicalWeightPct };
 }
 
 export function computeTaskMaxMarks(tasks: PracticalTask[]): number {
@@ -143,19 +193,25 @@ export function computePracticalScorePct(
 }
 
 export function computeCombinedFinalPct(params: {
+  regularQuizAvgPct?: number | undefined;
   quizAccuracyPct: number;
   practicalScorePct: number;
+  regularQuizWeightPct?: number | undefined;
   quizWeightPct?: number | undefined;
   practicalWeightPct?: number | undefined;
 }): number {
   const weights = normalizeExamWeights({
+    regularQuizWeightPct: params.regularQuizWeightPct,
     quizWeightPct: params.quizWeightPct,
     practicalWeightPct: params.practicalWeightPct,
   });
+  const regular = Math.max(0, Math.min(100, params.regularQuizAvgPct ?? 0));
   const quiz = Math.max(0, Math.min(100, params.quizAccuracyPct));
   const practical = Math.max(0, Math.min(100, params.practicalScorePct));
   const combined =
-    (quiz * weights.quizWeightPct) / 100 + (practical * weights.practicalWeightPct) / 100;
+    (regular * weights.regularQuizWeightPct) / 100 +
+    (quiz * weights.quizWeightPct) / 100 +
+    (practical * weights.practicalWeightPct) / 100;
   return Math.round(combined * 10) / 10;
 }
 
@@ -360,10 +416,83 @@ export function buildFinalQuizRecordSnapshot(params: {
   };
 }
 
+export interface RegularQuizSummary {
+  avgPct: number;
+  marks: number;
+  maxMarks: number;
+  takenCount: number;
+  totalQuizzes: number;
+  quizBreakdown: Array<{ quizId: string; accuracyPct: number; found: boolean }>;
+}
+
+/**
+ * Combine all non-final course quizzes into a single 10-mark (10%) regular quiz score.
+ * Each distinct hosted non-final quiz contributes equally; missing a quiz counts as 0%.
+ * Each quiz group may include alias IDs (e.g. quiz id + slug) so sessions using either match cleanly.
+ */
+export function computeRegularQuizSummaryForStudent(params: {
+  results: ExamResultRecord[];
+  sessions: Array<{ id: string; pin: string; quizId: string }>;
+  /** Each entry is one regular quiz (its canonical id and optional aliases such as slug). */
+  regularQuizGroups: Array<{ canonicalId: string; aliases: string[] }>;
+  rollNumber: string;
+  phone?: string | undefined;
+  studentName?: string | undefined;
+  regionId?: string | undefined;
+  maxMarks?: number | undefined;
+}): RegularQuizSummary {
+  const maxMarks =
+    typeof params.maxMarks === "number" ? Math.max(0, params.maxMarks) : REGULAR_QUIZ_MARKS;
+  const totalQuizzes = params.regularQuizGroups.length;
+  if (totalQuizzes === 0) {
+    return {
+      avgPct: 0,
+      marks: 0,
+      maxMarks,
+      takenCount: 0,
+      totalQuizzes: 0,
+      quizBreakdown: [],
+    };
+  }
+  let sumPct = 0;
+  let takenCount = 0;
+  const quizBreakdown: Array<{ quizId: string; accuracyPct: number; found: boolean }> = [];
+  for (const group of params.regularQuizGroups) {
+    const allowed = Array.from(new Set([group.canonicalId, ...group.aliases].filter(Boolean)));
+    const hit = findBestQuizResultForCourse({
+      results: params.results,
+      sessions: params.sessions,
+      allowedQuizIds: allowed,
+      rollNumber: params.rollNumber,
+      phone: params.phone,
+      studentName: params.studentName,
+      regionId: params.regionId,
+    });
+    if (hit) {
+      const pct = Math.max(0, Math.min(100, Number(hit.accuracyPct) || 0));
+      sumPct += pct;
+      takenCount += 1;
+      quizBreakdown.push({ quizId: group.canonicalId, accuracyPct: pct, found: true });
+    } else {
+      quizBreakdown.push({ quizId: group.canonicalId, accuracyPct: 0, found: false });
+    }
+  }
+  const avgPct = Math.round((sumPct / totalQuizzes) * 10) / 10;
+  return {
+    avgPct,
+    marks: maxMarks > 0 ? marksFromPct(avgPct, maxMarks) : 0,
+    maxMarks,
+    takenCount,
+    totalQuizzes,
+    quizBreakdown,
+  };
+}
+
 export interface CourseCompletionSnapshot {
   rollNumber: string;
   studentName: string;
   courseId: string;
+  regularQuizAvgPct: number;
   quizAccuracyPct: number;
   practicalScorePct: number;
   combinedPct: number;
@@ -382,6 +511,7 @@ export function evaluateCourseCompletion(params: {
   practicalExam: PracticalExam | undefined;
   submission: PracticalSubmission | undefined;
   quizResult: ExamResultRecord | undefined;
+  regularQuizAvgPct?: number | undefined;
   passThresholdPct?: number | undefined;
 }): CourseCompletionSnapshot {
   const threshold = clampPassThresholdPct(
@@ -391,11 +521,19 @@ export function evaluateCourseCompletion(params: {
     50,
   );
   const weights = normalizeExamWeights({
+    regularQuizWeightPct:
+      params.practicalExam?.regularQuizWeightPct ?? params.requirement.regularQuizWeightPct,
     quizWeightPct: params.practicalExam?.quizWeightPct ?? params.requirement.quizWeightPct,
     practicalWeightPct:
       params.practicalExam?.practicalWeightPct ?? params.requirement.practicalWeightPct,
   });
 
+  const regularQuizAvgPct =
+    typeof params.regularQuizAvgPct === "number"
+      ? params.regularQuizAvgPct
+      : typeof params.submission?.regularQuizAvgPct === "number"
+        ? params.submission.regularQuizAvgPct
+        : 0;
   const quizAccuracyPct = params.quizResult?.accuracyPct ?? 0;
   const quizPassed = params.requirement.requireQuiz
     ? !!params.quizResult && isPassingScore(quizAccuracyPct, threshold)
@@ -412,8 +550,10 @@ export function evaluateCourseCompletion(params: {
     : practicalGraded && isPassingScore(practicalStats.pct, threshold);
 
   const combinedPct = computeCombinedFinalPct({
+    regularQuizAvgPct,
     quizAccuracyPct,
     practicalScorePct: practicalStats.pct,
+    regularQuizWeightPct: weights.regularQuizWeightPct,
     quizWeightPct: weights.quizWeightPct,
     practicalWeightPct: weights.practicalWeightPct,
   });
@@ -439,6 +579,7 @@ export function evaluateCourseCompletion(params: {
     rollNumber: params.submission?.rollNumber || params.quizResult?.rollNumber || "",
     studentName: params.submission?.studentName || params.quizResult?.name || "",
     courseId: params.course.id,
+    regularQuizAvgPct,
     quizAccuracyPct,
     practicalScorePct: practicalStats.pct,
     combinedPct,
@@ -566,15 +707,17 @@ export function buildDefaultFinalPracticalExam(course: Course): PracticalExam {
     titleEn: "Final Examination — Timed Quiz + Capstone Package",
     titleBn: "চূড়ান্ত পরীক্ষা — টাইমড কুইজ + ক্যাপস্টোন প্যাকেজ",
     descriptionEn:
-      `Join with the shared PIN on /final-exam. Part A: ${FINAL_QUIZ_MARKS}-mark MCQ (single overall timer, not per-question). Part B: ${FINAL_PRACTICAL_MARKS}-mark applied package. Total ${FINAL_TOTAL_MARKS} marks.`,
+      `Join with the shared PIN on /final-exam. Regular Quizzes: ${REGULAR_QUIZ_MARKS} marks (10%). Part A Final Quiz: ${FINAL_QUIZ_MARKS} marks (30%, single overall timer). Part B Practical: ${FINAL_PRACTICAL_MARKS} marks (60%). Total ${FINAL_TOTAL_MARKS} marks.`,
     descriptionBn:
-      `/final-exam এ শেয়ার করা PIN দিয়ে যোগ দিন। অংশ ক: ${FINAL_QUIZ_MARKS} নম্বরের MCQ (একটি মোট টাইমার — প্রশ্নপ্রতি নয়)। অংশ খ: ${FINAL_PRACTICAL_MARKS} নম্বরের প্রায়োগিক প্যাকেজ। মোট ${FINAL_TOTAL_MARKS} নম্বর।`,
+      `/final-exam এ শেয়ার করা PIN দিয়ে যোগ দিন। নিয়মিত কুইজ: ${REGULAR_QUIZ_MARKS} নম্বর (১০%)। অংশ ক চূড়ান্ত কুইজ: ${FINAL_QUIZ_MARKS} নম্বর (৩০%)। অংশ খ প্রায়োগিক প্যাকেজ: ${FINAL_PRACTICAL_MARKS} নম্বর (৬০%)। মোট ${FINAL_TOTAL_MARKS} নম্বর।`,
     linkedQuizId: SANJIBON_FINAL_QUIZ_ID,
     joinPin: generateFinalExamJoinPin(),
     quizDurationMinutes: 10,
+    regularQuizMaxMarks: REGULAR_QUIZ_MARKS,
     quizMaxMarks: FINAL_QUIZ_MARKS,
     practicalMaxMarks: FINAL_PRACTICAL_MARKS,
     totalMaxMarks: FINAL_TOTAL_MARKS,
+    regularQuizWeightPct: DEFAULT_REGULAR_QUIZ_WEIGHT,
     quizWeightPct: DEFAULT_QUIZ_WEIGHT,
     practicalWeightPct: DEFAULT_PRACTICAL_WEIGHT,
     passThresholdPct: course.passThresholdPct ?? 50,
@@ -589,12 +732,18 @@ export function buildDefaultFinalPracticalExam(course: Course): PracticalExam {
   };
 }
 
-/** Upgrade legacy single-portfolio finals to the 70-mark timed package when safe. */
+/** Upgrade legacy portfolio-only or 70-mark finals (missing regularQuizWeightPct) to 10+30+60=100.
+ * Never overwrites an exam once admin-configurable 3-part weights are present. */
 export function shouldUpgradeFinalExamPackage(exam: PracticalExam): boolean {
   if (exam.courseId !== "course-sanjibon-ai-dm") return false;
-  if ((exam.tasks || []).some((t) => t.id === "task-brand-name")) return false;
   if ((exam.tasks || []).length === 1 && exam.tasks[0]?.id === "task-portfolio") return true;
   if (!exam.joinPin || !exam.quizDurationMinutes) return true;
+  if (
+    typeof exam.regularQuizWeightPct !== "number" &&
+    typeof exam.regularQuizMaxMarks !== "number"
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -612,12 +761,18 @@ export function upgradeFinalExamPackage(exam: PracticalExam): PracticalExam {
     titleBn: exam.titleBn?.includes("টাইমড")
       ? exam.titleBn
       : "চূড়ান্ত পরীক্ষা — টাইমড কুইজ + ক্যাপস্টোন প্যাকেজ",
+    descriptionEn:
+      `Join with the shared PIN on /final-exam. Regular Quizzes: ${REGULAR_QUIZ_MARKS} marks (10%). Part A Final Quiz: ${FINAL_QUIZ_MARKS} marks (30%, single overall timer). Part B Practical: ${FINAL_PRACTICAL_MARKS} marks (60%). Total ${FINAL_TOTAL_MARKS} marks.`,
+    descriptionBn:
+      `/final-exam এ শেয়ার করা PIN দিয়ে যোগ দিন। নিয়মিত কুইজ: ${REGULAR_QUIZ_MARKS} নম্বর (১০%)। অংশ ক চূড়ান্ত কুইজ: ${FINAL_QUIZ_MARKS} নম্বর (৩০%)। অংশ খ প্রায়োগিক প্যাকেজ: ${FINAL_PRACTICAL_MARKS} নম্বর (৬০%)। মোট ${FINAL_TOTAL_MARKS} নম্বর।`,
     linkedQuizId: exam.linkedQuizId || SANJIBON_FINAL_QUIZ_ID,
     joinPin: exam.joinPin || generateFinalExamJoinPin(),
     quizDurationMinutes: exam.quizDurationMinutes || 10,
+    regularQuizMaxMarks: REGULAR_QUIZ_MARKS,
     quizMaxMarks: FINAL_QUIZ_MARKS,
     practicalMaxMarks: FINAL_PRACTICAL_MARKS,
     totalMaxMarks: FINAL_TOTAL_MARKS,
+    regularQuizWeightPct: DEFAULT_REGULAR_QUIZ_WEIGHT,
     quizWeightPct: DEFAULT_QUIZ_WEIGHT,
     practicalWeightPct: DEFAULT_PRACTICAL_WEIGHT,
     maxFileBytes: Math.max(exam.maxFileBytes || 0, DEFAULT_PRACTICAL_MAX_FILE_BYTES),
@@ -633,6 +788,7 @@ export function buildDefaultCourseRequirement(courseId: string): CourseCompletio
     requireQuiz: true,
     requirePractical: true,
     requiredQuizIds: [...SANJIBON_FINAL_QUIZ_ALIASES],
+    regularQuizWeightPct: DEFAULT_REGULAR_QUIZ_WEIGHT,
     quizWeightPct: DEFAULT_QUIZ_WEIGHT,
     practicalWeightPct: DEFAULT_PRACTICAL_WEIGHT,
     certificateTitleEn: "Certificate of Course Completion",
@@ -897,8 +1053,10 @@ export function mergeMakeupQuizIntoFinalExam(
         const combined =
           typeof sub.practicalScorePct === "number"
             ? computeCombinedFinalPct({
+                regularQuizAvgPct: sub.regularQuizAvgPct ?? 0,
                 quizAccuracyPct: nextQuiz,
                 practicalScorePct: sub.practicalScorePct,
+                regularQuizWeightPct: params.exam.regularQuizWeightPct,
                 quizWeightPct: params.exam.quizWeightPct,
                 practicalWeightPct: params.exam.practicalWeightPct,
               })

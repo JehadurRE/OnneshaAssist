@@ -2610,7 +2610,7 @@ export async function downloadMeritGazettePdf(params: {
   );
 }
 
-/** Final Exam package gradesheet PDF — quiz/30 + practical/40 + total/70 for all students. */
+/** Final Exam package gradesheet PDF — regular quizzes /10 + final quiz /30 + practical /60 = total /100. */
 export async function downloadFinalGradeSheetPdf(params: {
   courseTitle: string;
   examTitle: string;
@@ -2620,6 +2620,9 @@ export async function downloadFinalGradeSheetPdf(params: {
     rollNumber: string;
     studentName: string;
     regionName: string;
+    regularQuizMarks?: number | undefined;
+    regularQuizMaxMarks?: number | undefined;
+    regularQuizTaken?: number | undefined;
     quizMarks: number;
     quizMaxMarks: number;
     quizAccuracyPct: number;
@@ -2654,17 +2657,32 @@ export async function downloadFinalGradeSheetPdf(params: {
   const headerH = 118;
   const footerH = 56;
   const rowH = 28;
-  const colX = {
-    rank: M,
-    roll: M + 48,
-    name: M + 148,
-    region: M + 430,
-    quiz: M + 620,
-    prac: M + 760,
-    total: M + 920,
-    pct: M + 1060,
-    status: M + 1160,
-  };
+  const hasRegular = rows.some((r) => (r.regularQuizMaxMarks ?? 0) > 0);
+  const colX = hasRegular
+    ? {
+        rank: M,
+        roll: M + 44,
+        name: M + 140,
+        region: M + 400,
+        regQuiz: M + 575,
+        quiz: M + 700,
+        prac: M + 835,
+        total: M + 985,
+        pct: M + 1110,
+        status: M + 1225,
+      }
+    : {
+        rank: M,
+        roll: M + 48,
+        name: M + 148,
+        region: M + 430,
+        regQuiz: M + 575,
+        quiz: M + 620,
+        prac: M + 760,
+        total: M + 920,
+        pct: M + 1060,
+        status: M + 1160,
+      };
   const usableH = H - headerH - footerH - M;
   const rowsPerPage = Math.max(1, Math.floor(usableH / rowH));
   const totalPages = Math.max(1, Math.ceil(rows.length / rowsPerPage));
@@ -2695,8 +2713,11 @@ export async function downloadFinalGradeSheetPdf(params: {
     );
     ctx.font = "14px system-ui, sans-serif";
     ctx.fillStyle = "#64748b";
+    const breakdownLine = hasRegular
+      ? `All Quizzes /${rows[0]?.regularQuizMaxMarks ?? 10} + Final Quiz /${rows[0]?.quizMaxMarks ?? 30} + Practical /${rows[0]?.practicalMaxMarks ?? 60} = /${rows[0]?.maxTotal ?? 100}`
+      : `Quiz /${rows[0]?.quizMaxMarks ?? 30} + Practical /${rows[0]?.practicalMaxMarks ?? 60} = /${rows[0]?.maxTotal ?? 100}`;
     ctx.fillText(
-      `${examTitle}  ·  Quiz /${rows[0]?.quizMaxMarks ?? 30} + Practical /${rows[0]?.practicalMaxMarks ?? 40} = /${rows[0]?.maxTotal ?? 70}  ·  ${dateLabel}`,
+      `${examTitle}  ·  ${breakdownLine}  ·  ${dateLabel}`,
       M + (onneshaLogo ? 72 : 0),
       98,
     );
@@ -2717,7 +2738,12 @@ export async function downloadFinalGradeSheetPdf(params: {
     ctx.fillText("Name", colX.name, hy);
     ctx.fillText("Region", colX.region, hy);
     ctx.textAlign = "right";
-    ctx.fillText("Quiz", colX.quiz + 100, hy);
+    if (hasRegular) {
+      ctx.fillText("Quizzes", colX.regQuiz + 90, hy);
+      ctx.fillText("Final Quiz", colX.quiz + 100, hy);
+    } else {
+      ctx.fillText("Quiz", colX.quiz + 100, hy);
+    }
     ctx.fillText("Practical", colX.prac + 120, hy);
     ctx.fillText("Total", colX.total + 100, hy);
     ctx.fillText("Combined %", colX.pct + 90, hy);
@@ -2739,12 +2765,20 @@ export async function downloadFinalGradeSheetPdf(params: {
       ctx.font = "600 13px ui-monospace, monospace";
       ctx.fillText(r.rollNumber.slice(0, 14), colX.roll, cy);
       ctx.font = "13px system-ui, sans-serif";
-      const name = r.studentName.length > 28 ? `${r.studentName.slice(0, 26)}…` : r.studentName;
+      const name = r.studentName.length > 26 ? `${r.studentName.slice(0, 24)}…` : r.studentName;
       ctx.fillText(name, colX.name, cy);
       const region =
-        r.regionName.length > 16 ? `${r.regionName.slice(0, 14)}…` : r.regionName || "—";
+        r.regionName.length > 15 ? `${r.regionName.slice(0, 13)}…` : r.regionName || "—";
       ctx.fillText(region, colX.region, cy);
       ctx.textAlign = "right";
+      if (hasRegular) {
+        const hasRegMarks = (r.regularQuizTaken ?? 0) > 0 || (r.regularQuizMarks ?? 0) > 0;
+        ctx.fillText(
+          hasRegMarks ? `${r.regularQuizMarks ?? 0}/${r.regularQuizMaxMarks ?? 10}` : "—",
+          colX.regQuiz + 90,
+          cy,
+        );
+      }
       ctx.fillText(
         r.quizFound || r.quizAccuracyPct > 0
           ? `${r.quizMarks}/${r.quizMaxMarks}`

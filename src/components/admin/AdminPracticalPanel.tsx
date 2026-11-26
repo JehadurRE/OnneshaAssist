@@ -200,9 +200,18 @@ export function AdminPracticalPanel(props: {
   const [quizRecordMeta, setQuizRecordMeta] = useState<{
     combinedPct?: number;
     practicalScorePct?: number;
+    regularQuiz?: {
+      avgPct: number;
+      marks: number;
+      maxMarks: number;
+      takenCount: number;
+      totalQuizzes: number;
+    };
     weights?: {
+      regularQuizWeightPct?: number;
       quizWeightPct?: number;
       practicalWeightPct?: number;
+      regularQuizMaxMarks?: number;
       quizMaxMarks?: number;
       practicalMaxMarks?: number;
       totalMaxMarks?: number;
@@ -231,8 +240,13 @@ export function AdminPracticalPanel(props: {
           fromEmail: string;
         }
       | undefined;
+    regularQuizMaxMarks: number;
+    regularQuizWeightPct: number;
+    hostedRegularQuizCount: number;
     quizMaxMarks: number;
+    quizWeightPct: number;
     practicalMaxMarks: number;
+    practicalWeightPct: number;
     totalMaxMarks: number;
   } | null>(null);
   const [sheetLoading, setSheetLoading] = useState(false);
@@ -378,6 +392,7 @@ export function AdminPracticalPanel(props: {
         setQuizRecordMeta({
           ...(typeof res.combinedPct === "number" ? { combinedPct: res.combinedPct } : {}),
           ...(typeof res.practicalScorePct === "number" ? { practicalScorePct: res.practicalScorePct } : {}),
+          ...(res.regularQuiz ? { regularQuiz: res.regularQuiz } : {}),
           weights: res.weights,
         });
       } else {
@@ -940,15 +955,22 @@ export function AdminPracticalPanel(props: {
     if (!course) return;
     const toSave = override || exam || ensureExamLocal();
     if (!toSave) return;
-    const q = Number(toSave.quizWeightPct ?? 40);
+    const r = Number(toSave.regularQuizWeightPct ?? 10);
+    const q = Number(toSave.quizWeightPct ?? 30);
     const p = Number(toSave.practicalWeightPct ?? 60);
-    if (q + p !== 100) {
-      setNotice(`Weights must sum to 100 (currently ${q}+${p}=${q + p}). Server will normalize on save.`);
+    if (r + q + p !== 100) {
+      setNotice(
+        `Weights must sum to 100 (currently ${r}+${q}+${p}=${r + q + p}). Server will normalize on save.`,
+      );
     }
     setBusyId("exam");
     try {
       const res = await serverSavePracticalExam({ data: { exam: toSave } });
-      setNotice(res.success ? "Practical exam saved." : res.error || "Save failed.");
+      setNotice(
+        res.success
+          ? `Exam settings saved (${res.exam?.regularQuizWeightPct ?? 10}% quizzes + ${res.exam?.quizWeightPct ?? 30}% final quiz + ${res.exam?.practicalWeightPct ?? 60}% practical = ${res.exam?.totalMaxMarks ?? 100}). All scores recalculated.`
+          : res.error || "Save failed.",
+      );
       if (res.success && res.exam) {
         setExams((prev) => {
           const others = prev.filter((e) => e.id !== res.exam!.id);
@@ -1060,8 +1082,13 @@ export function AdminPracticalPanel(props: {
         generatedAt: res.generatedAt,
         counts: res.counts,
         emailStatus: res.emailStatus,
+        regularQuizMaxMarks: res.regularQuizMaxMarks,
+        regularQuizWeightPct: res.regularQuizWeightPct,
+        hostedRegularQuizCount: res.hostedRegularQuizCount,
         quizMaxMarks: res.quizMaxMarks,
+        quizWeightPct: res.quizWeightPct,
         practicalMaxMarks: res.practicalMaxMarks,
+        practicalWeightPct: res.practicalWeightPct,
         totalMaxMarks: res.totalMaxMarks,
       });
     } finally {
@@ -1131,7 +1158,10 @@ export function AdminPracticalPanel(props: {
     );
   }
 
-  const weightSum = (exam?.quizWeightPct ?? 40) + (exam?.practicalWeightPct ?? 60);
+  const weightSum =
+    (exam?.regularQuizWeightPct ?? 10) +
+    (exam?.quizWeightPct ?? 30) +
+    (exam?.practicalWeightPct ?? 60);
 
   const openFinalExam = async () => {
     if (!exam) return;
@@ -1983,29 +2013,129 @@ export function AdminPracticalPanel(props: {
                   After close, late submissions stay allowed while status is open/scheduled.
                 </span>
               </label>
-              <label className="font-semibold">
-                Quiz weight %
-                <input
-                  type="number"
-                  className="mt-1 staff-input"
-                  value={exam.quizWeightPct ?? 40}
-                  onChange={(e) => patchExam({ quizWeightPct: Number(e.target.value) })}
-                />
-              </label>
-              <label className="font-semibold">
-                Practical weight %
-                <input
-                  type="number"
-                  className="mt-1 staff-input"
-                  value={exam.practicalWeightPct ?? 60}
-                  onChange={(e) => patchExam({ practicalWeightPct: Number(e.target.value) })}
-                />
-                {weightSum !== 100 && (
-                  <span className="mt-1 block font-normal text-[10px] text-amber-700 dark:text-amber-300">
-                    Sum is {weightSum} — will normalize to 100 on save.
+              <div className="sm:col-span-2 rounded-xl border border-border/80 bg-muted/25 p-3 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-extrabold text-foreground">
+                      Course Score Weighting (Configurable · Default 10 + 30 + 60 = 100)
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      All non-final session quizzes combine into Regular Quizzes; Final Quiz (Part A)
+                      + Regular Quizzes form the Quiz subtotal; Practical (Part B) forms the rest.
+                      Saving recalculates every student immediately.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      patchExam({
+                        regularQuizWeightPct: 10,
+                        quizWeightPct: 30,
+                        practicalWeightPct: 60,
+                        regularQuizMaxMarks: 10,
+                        quizMaxMarks: 30,
+                        practicalMaxMarks: 60,
+                        totalMaxMarks: 100,
+                      })
+                    }
+                    className="staff-btn-ghost !py-1 !px-2.5 text-[11px]"
+                  >
+                    <RotateCcw className="h-3 w-3" /> Default (10 / 30 / 60)
+                  </button>
+                </div>
+
+                <div className="grid sm:grid-cols-3 gap-3">
+                  <label className="font-semibold">
+                    All Quizzes (except Final) % / Marks
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      className="mt-1 staff-input font-mono"
+                      value={exam.regularQuizWeightPct ?? 10}
+                      onChange={(e) => {
+                        const v = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                        patchExam({
+                          regularQuizWeightPct: v,
+                          regularQuizMaxMarks: v,
+                          totalMaxMarks:
+                            v +
+                            (exam.quizMaxMarks ?? exam.quizWeightPct ?? 30) +
+                            (exam.practicalMaxMarks ?? exam.practicalWeightPct ?? 60),
+                        });
+                      }}
+                    />
+                    <span className="mt-1 block font-normal text-[10px] text-muted-foreground">
+                      Combined equally across all hosted non-final quizzes (default 10).
+                    </span>
+                  </label>
+                  <label className="font-semibold">
+                    Final Quiz (Part A) % / Marks
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      className="mt-1 staff-input font-mono"
+                      value={exam.quizWeightPct ?? 30}
+                      onChange={(e) => {
+                        const v = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                        patchExam({
+                          quizWeightPct: v,
+                          quizMaxMarks: v,
+                          totalMaxMarks:
+                            (exam.regularQuizMaxMarks ?? exam.regularQuizWeightPct ?? 10) +
+                            v +
+                            (exam.practicalMaxMarks ?? exam.practicalWeightPct ?? 60),
+                        });
+                      }}
+                    />
+                    <span className="mt-1 block font-normal text-[10px] text-muted-foreground">
+                      Final MCQ paper weight (default 30 · Quizzes subtotal ={" "}
+                      {(exam.regularQuizWeightPct ?? 10) + (exam.quizWeightPct ?? 30)}%).
+                    </span>
+                  </label>
+                  <label className="font-semibold">
+                    Practical (Part B) % / Marks
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      className="mt-1 staff-input font-mono"
+                      value={exam.practicalWeightPct ?? 60}
+                      onChange={(e) => {
+                        const v = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                        patchExam({
+                          practicalWeightPct: v,
+                          practicalMaxMarks: v,
+                          totalMaxMarks:
+                            (exam.regularQuizMaxMarks ?? exam.regularQuizWeightPct ?? 10) +
+                            (exam.quizMaxMarks ?? exam.quizWeightPct ?? 30) +
+                            v,
+                        });
+                      }}
+                    />
+                    <span className="mt-1 block font-normal text-[10px] text-muted-foreground">
+                      Practical tasks scale to this share (default 60).
+                    </span>
+                  </label>
+                </div>
+
+                <div
+                  className={`flex flex-wrap items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 font-mono text-[11px] font-bold ${
+                    weightSum === 100
+                      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                      : "bg-amber-500/15 text-amber-800 dark:text-amber-200"
+                  }`}
+                >
+                  <span>
+                    All Quizzes {exam.regularQuizWeightPct ?? 10}% + Final Quiz{" "}
+                    {exam.quizWeightPct ?? 30}% ={" "}
+                    {(exam.regularQuizWeightPct ?? 10) + (exam.quizWeightPct ?? 30)}% · Practical{" "}
+                    {exam.practicalWeightPct ?? 60}% → Total {weightSum}%
                   </span>
-                )}
-              </label>
+                  {weightSum !== 100 && <span>Must sum to 100% (will normalize on save)</span>}
+                </div>
+              </div>
               <label className="font-semibold">
                 Pass threshold %
                 <input
@@ -2149,9 +2279,14 @@ export function AdminPracticalPanel(props: {
             <div className="min-w-0 space-y-1">
               <h3 className="text-base font-black tracking-tight">Final Exam gradesheet</h3>
               <p className="text-xs text-muted-foreground">
-                Full roster &amp; exam results — quiz /{sheetMeta?.quizMaxMarks ?? 30}, practical /
-                {sheetMeta?.practicalMaxMarks ?? 40}, total /{sheetMeta?.totalMaxMarks ?? 70}.
-                Issue or resend certificates per student, or run a test mail check.
+                Full roster &amp; exam results —{" "}
+                {(sheetMeta?.regularQuizMaxMarks ?? 10) > 0
+                  ? `all quizzes /${sheetMeta?.regularQuizMaxMarks ?? 10} (${sheetMeta?.regularQuizWeightPct ?? 10}%${sheetMeta?.hostedRegularQuizCount ? ` · ${sheetMeta.hostedRegularQuizCount} hosted` : ""}) + `
+                  : ""}
+                final quiz /{sheetMeta?.quizMaxMarks ?? 30} ({sheetMeta?.quizWeightPct ?? 30}%) +
+                practical /{sheetMeta?.practicalMaxMarks ?? 60} (
+                {sheetMeta?.practicalWeightPct ?? 60}%) = total /{sheetMeta?.totalMaxMarks ?? 100}.
+                Weights are configurable under Exam setup.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -2472,16 +2607,27 @@ export function AdminPracticalPanel(props: {
             </div>
           ) : (
             <div className="overflow-x-auto rounded-2xl border border-border/80 bg-card">
-              <table className="w-full min-w-[920px] text-left text-xs">
+              <table className="w-full min-w-[980px] text-left text-xs">
                 <thead className="border-b border-border bg-muted/40 text-[10px] font-black uppercase tracking-wide text-muted-foreground">
                   <tr>
                     <th className="px-3 py-2.5">#</th>
                     <th className="px-3 py-2.5">Roll</th>
                     <th className="px-3 py-2.5">Student</th>
                     <th className="px-3 py-2.5">Region</th>
-                    <th className="px-3 py-2.5 text-right">Quiz</th>
-                    <th className="px-3 py-2.5 text-right">Practical</th>
-                    <th className="px-3 py-2.5 text-right">Total</th>
+                    {(sheetMeta?.regularQuizMaxMarks ?? 10) > 0 && (
+                      <th className="px-3 py-2.5 text-right">
+                        Quizzes (/{sheetMeta?.regularQuizMaxMarks ?? 10})
+                      </th>
+                    )}
+                    <th className="px-3 py-2.5 text-right">
+                      Final Quiz (/{sheetMeta?.quizMaxMarks ?? 30})
+                    </th>
+                    <th className="px-3 py-2.5 text-right">
+                      Practical (/{sheetMeta?.practicalMaxMarks ?? 60})
+                    </th>
+                    <th className="px-3 py-2.5 text-right">
+                      Total (/{sheetMeta?.totalMaxMarks ?? 100})
+                    </th>
                     <th className="px-3 py-2.5 text-right">Combined %</th>
                     <th className="px-3 py-2.5">Status</th>
                     <th className="px-3 py-2.5 text-right">Certificate</th>
@@ -2520,6 +2666,20 @@ export function AdminPracticalPanel(props: {
                           )}
                         </td>
                         <td className="px-3 py-2 text-muted-foreground">{r.regionName || "—"}</td>
+                        {(sheetMeta?.regularQuizMaxMarks ?? 10) > 0 && (
+                          <td
+                            className="px-3 py-2 text-right font-mono"
+                            title={
+                              r.regularQuizTotal > 0
+                                ? `${r.regularQuizTaken}/${r.regularQuizTotal} regular quizzes taken · avg ${r.regularQuizAvgPct}%`
+                                : "No hosted regular quizzes yet"
+                            }
+                          >
+                            {r.regularQuizTaken > 0 || r.regularQuizMarks > 0
+                              ? `${r.regularQuizMarks}/${r.regularQuizMaxMarks}`
+                              : "—"}
+                          </td>
+                        )}
                         <td className="px-3 py-2 text-right font-mono">
                           {r.quizFound || r.quizAccuracyPct > 0
                             ? `${r.quizMarks}/${r.quizMaxMarks}`
@@ -2531,10 +2691,12 @@ export function AdminPracticalPanel(props: {
                             : "—"}
                         </td>
                         <td className="px-3 py-2 text-right font-mono font-bold">
-                          {r.participated ? `${r.totalMarks}/${r.maxTotal}` : "—"}
+                          {r.participated || r.regularQuizTaken > 0
+                            ? `${r.totalMarks}/${r.maxTotal}`
+                            : "—"}
                         </td>
                         <td className="px-3 py-2 text-right font-mono">
-                          {r.participated ? `${r.combinedPct}%` : "—"}
+                          {r.participated || r.regularQuizTaken > 0 ? `${r.combinedPct}%` : "—"}
                         </td>
                         <td className="px-3 py-2">
                           <StatusPill status={r.practicalStatus} />
@@ -2884,7 +3046,7 @@ export function AdminPracticalPanel(props: {
                 <div className="staff-metric-value">{queueStats.total}</div>
                 <div className="staff-metric-hint">
                   {queueStats.avgTotalMarks !== null
-                    ? `Avg ${queueStats.avgTotalMarks}/${exam?.totalMaxMarks ?? 70} (${queueStats.avgCombinedPct}%)`
+                    ? `Avg ${queueStats.avgTotalMarks}/${exam?.totalMaxMarks ?? 100} (${queueStats.avgCombinedPct}%)`
                     : `${queueStats.withQuiz} with quiz linked`}
                 </div>
               </button>
@@ -3285,6 +3447,27 @@ export function AdminPracticalPanel(props: {
                       {/* Score Breakdown Pills */}
                       <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
                         <div className="hidden md:flex items-center gap-1.5 font-mono text-[11px]">
+                          {item.regularQuizMaxMarks > 0 && (
+                            <span
+                              className={`rounded-lg border px-2 py-1 ${
+                                item.hasRegularQuiz
+                                  ? "border-border/80 bg-muted/35 text-foreground"
+                                  : "border-border/60 bg-muted/20 text-muted-foreground"
+                              }`}
+                              title={
+                                item.regularQuizTotal > 0
+                                  ? `All Session Quizzes: ${item.regularQuizMarks}/${item.regularQuizMaxMarks} (${item.regularQuizPct ?? 0}% · ${item.regularQuizTaken}/${item.regularQuizTotal} quizzes)`
+                                  : "All non-final session quizzes"
+                              }
+                            >
+                              <span className="text-[9px] font-sans font-bold uppercase text-muted-foreground mr-1">
+                                AQ
+                              </span>
+                              {item.hasRegularQuiz
+                                ? `${item.regularQuizMarks}/${item.regularQuizMaxMarks}`
+                                : "—"}
+                            </span>
+                          )}
                           <span
                             className={`rounded-lg border px-2 py-1 ${
                               item.hasQuiz
@@ -3298,7 +3481,7 @@ export function AdminPracticalPanel(props: {
                             }
                           >
                             <span className="text-[9px] font-sans font-bold uppercase text-muted-foreground mr-1">
-                              Q
+                              FQ
                             </span>
                             {item.hasQuiz ? `${item.quizMarks}/${item.quizMaxMarks}` : "—"}
                           </span>
@@ -3521,16 +3704,28 @@ export function AdminPracticalPanel(props: {
                           {typeof quizRecordMeta?.weights?.quizWeightPct === "number" &&
                             typeof quizRecordMeta.practicalScorePct === "number" && (
                               <div className="sm:col-span-2 lg:col-span-3 rounded-xl border border-dashed border-border/80 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-                                Combined = quiz {quizRecord.accuracyPct}% ×{" "}
+                                Combined ={" "}
+                                {(quizRecordMeta.weights.regularQuizWeightPct ?? 0) > 0 && (
+                                  <>
+                                    all quizzes {quizRecordMeta.regularQuiz?.avgPct ?? 0}% ×{" "}
+                                    {quizRecordMeta.weights.regularQuizWeightPct}% (
+                                    {quizRecordMeta.regularQuiz?.marks ?? 0}/
+                                    {quizRecordMeta.weights.regularQuizMaxMarks ?? 10}
+                                    {quizRecordMeta.regularQuiz?.totalQuizzes
+                                      ? ` · ${quizRecordMeta.regularQuiz.takenCount}/${quizRecordMeta.regularQuiz.totalQuizzes}`
+                                      : ""}
+                                    ) +{" "}
+                                  </>
+                                )}
+                                final quiz {quizRecord.accuracyPct}% ×{" "}
                                 {quizRecordMeta.weights.quizWeightPct}% + practical{" "}
                                 {quizRecordMeta.practicalScorePct}% ×{" "}
                                 {quizRecordMeta.weights.practicalWeightPct}%
                                 {typeof quizRecordMeta.combinedPct === "number"
                                   ? ` → ${quizRecordMeta.combinedPct}%`
                                   : ""}
-                                {typeof quizRecordMeta.weights.quizMaxMarks === "number" &&
-                                typeof quizRecordMeta.weights.practicalMaxMarks === "number"
-                                  ? ` · package ${quizRecord.quizMarks}/${quizRecordMeta.weights.quizMaxMarks} quiz + practical /${quizRecordMeta.weights.practicalMaxMarks}`
+                                {typeof quizRecordMeta.weights.totalMaxMarks === "number"
+                                  ? ` (total /${quizRecordMeta.weights.totalMaxMarks})`
                                   : ""}
                               </div>
                             )}

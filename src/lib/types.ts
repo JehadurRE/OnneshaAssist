@@ -302,6 +302,7 @@ export interface CertificateData {
   courseId?: string | undefined;
   courseCode?: string | undefined;
   courseTitle?: string | undefined;
+  regularQuizAvgPct?: number | undefined;
   quizAccuracyPct?: number | undefined;
   practicalScorePct?: number | undefined;
   combinedScorePct?: number | undefined;
@@ -458,10 +459,12 @@ export interface PracticalExam {
    * Candidate must submit the full MCQ paper before this countdown ends.
    */
   quizDurationMinutes?: number | undefined;
-  /** Absolute mark model (default Final = 30 quiz + 40 practical = 70). */
+  /** Absolute mark model (default Course Total = 10 regular quizzes + 30 final quiz + 60 practical = 100). */
+  regularQuizMaxMarks?: number | undefined;
   quizMaxMarks?: number | undefined;
   practicalMaxMarks?: number | undefined;
   totalMaxMarks?: number | undefined;
+  regularQuizWeightPct?: number | undefined;
   quizWeightPct?: number | undefined;
   practicalWeightPct?: number | undefined;
   passThresholdPct?: number | undefined;
@@ -554,6 +557,9 @@ export interface PracticalSubmission {
   grades?: PracticalGrade[] | undefined;
   status: PracticalSubmissionStatus;
   practicalScorePct?: number | undefined;
+  regularQuizAvgPct?: number | undefined;
+  regularQuizTaken?: number | undefined;
+  regularQuizTotal?: number | undefined;
   quizAccuracyPct?: number | undefined;
   combinedPct?: number | undefined;
   instructorFeedback?: string | undefined;
@@ -676,6 +682,7 @@ export interface CourseCompletionRequirement {
   requireQuiz: boolean;
   requirePractical: boolean;
   requiredQuizIds?: string[] | undefined;
+  regularQuizWeightPct?: number | undefined;
   quizWeightPct?: number | undefined;
   practicalWeightPct?: number | undefined;
   certificateTitleEn?: string | undefined;
