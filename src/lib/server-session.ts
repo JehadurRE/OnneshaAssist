@@ -804,10 +804,11 @@ function loadInitialStore(): PersistentStoreData {
             purgedSampleData: purged,
             purgedUnder50Initial: !!parsed.purgedUnder50Initial,
             purgedBcsDemoCourse: !!parsed.purgedBcsDemoCourse,
+            purgedBcsDemoCourseV2: !!parsed.purgedBcsDemoCourseV2,
             seededFinalPractical: !!parsed.seededFinalPractical,
             migratedSanjibonS03V2: !!parsed.migratedSanjibonS03V2,
             migratedSanjibonS05V4: !!parsed.migratedSanjibonS05V4,
-            staffPasswordsResetV1: !!parsed.staffPasswordsResetV1,
+            staffPasswordsResetV1: true,
             autoIssueQuizCertificates: false,
             serverGeminiApiKey: parsed.serverGeminiApiKey,
             aiPool: normalizeAiPoolConfig(parsed.aiPool),
@@ -870,7 +871,7 @@ function loadInitialStore(): PersistentStoreData {
     seededFinalPractical: false,
     migratedSanjibonS03V2: true,
     migratedSanjibonS05V4: true,
-    staffPasswordsResetV1: false,
+    staffPasswordsResetV1: true,
     autoIssueQuizCertificates: false,
     aiPool: createDefaultAiPoolConfig(),
     ledgerCheckpoints: [],
@@ -1028,14 +1029,8 @@ function getStore(): PersistentStoreData {
     } else {
       ensureFinalPracticalSeeded(loaded);
     }
-    if (!loaded.staffPasswordsResetV1) {
-      const reset = resetAllStaffPasswordsInStore(loaded);
-      loaded.staffPasswordsResetV1 = true;
-      scheduleDiskPersist();
-      console.info(
-        `[OnneshaServerStore] Staff password reset v1: admins=${reset.adminCount}, instructors=${reset.instructorCount}`,
-      );
-    }
+    // Never auto-reset staff passwords on server boot/deploy — only allow explicit admin action.
+    loaded.staffPasswordsResetV1 = true;
     if (!loaded.seededLmsContentV1) {
       ensureLmsContentSeeded(loaded);
       loaded.seededLmsContentV1 = true;
@@ -1284,16 +1279,33 @@ function flushAllPendingDiskSync() {
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
-    if (globalStore.__onneshaSaveTimer && globalStore.__onneshaStore) {
-      clearTimeout(globalStore.__onneshaSaveTimer);
-      globalStore.__onneshaSaveTimer = null;
+    if (
+      (globalStore.__onneshaSaveTimer ||
+        globalStore.__onneshaSaveDirty ||
+        globalStore.__onneshaSaveBusy) &&
+      globalStore.__onneshaStore
+    ) {
+      if (globalStore.__onneshaSaveTimer) {
+        clearTimeout(globalStore.__onneshaSaveTimer);
+        globalStore.__onneshaSaveTimer = null;
+      }
+      globalStore.__onneshaSaveDelayMs = undefined;
+      globalStore.__onneshaSaveDirty = false;
       const tmp = `${storeFile}.${nextTmpSuffix()}`;
       fs.writeFileSync(tmp, JSON.stringify(globalStore.__onneshaStore), "utf-8");
       fs.renameSync(tmp, storeFile);
     }
-    if (globalStore.__onneshaLiveSaveTimer && globalStore.__onneshaLiveSessions) {
-      clearTimeout(globalStore.__onneshaLiveSaveTimer);
-      globalStore.__onneshaLiveSaveTimer = null;
+    if (
+      (globalStore.__onneshaLiveSaveTimer ||
+        globalStore.__onneshaLiveSaveDirty ||
+        globalStore.__onneshaLiveSaveBusy) &&
+      globalStore.__onneshaLiveSessions
+    ) {
+      if (globalStore.__onneshaLiveSaveTimer) {
+        clearTimeout(globalStore.__onneshaLiveSaveTimer);
+        globalStore.__onneshaLiveSaveTimer = null;
+      }
+      globalStore.__onneshaLiveSaveDirty = false;
       const tmpLive = `${liveFile}.${nextTmpSuffix()}`;
       fs.writeFileSync(tmpLive, JSON.stringify(globalStore.__onneshaLiveSessions), "utf-8");
       fs.renameSync(tmpLive, liveFile);
@@ -1376,6 +1388,30 @@ async function flushStoreToDisk() {
   } finally {
     globalStore.__onneshaSaveBusy = false;
   }
+}
+
+/** Immediate durable atomic flush for security-critical mutations (passwords, accounts). */
+async function flushStoreToDiskNow(): Promise<void> {
+  ensureShutdownHooks();
+  const store = getStore();
+  store.updatedAt = Date.now();
+  if (globalStore.__onneshaSaveTimer) {
+    clearTimeout(globalStore.__onneshaSaveTimer);
+    globalStore.__onneshaSaveTimer = null;
+    globalStore.__onneshaSaveDelayMs = undefined;
+  }
+  if (globalStore.__onneshaSaveBusy) {
+    globalStore.__onneshaSaveDirty = true;
+    // Wait briefly for in-flight write to pick up dirty flag, then ensure flushed.
+    for (let i = 0; i < 40 && globalStore.__onneshaSaveBusy; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    if (!globalStore.__onneshaSaveBusy && globalStore.__onneshaSaveDirty) {
+      await flushStoreToDisk();
+    }
+    return;
+  }
+  await flushStoreToDisk();
 }
 
 // Debounced non-blocking atomic disk write (handles 500+ req/sec without I/O contention).
@@ -2534,7 +2570,7 @@ export const serverSignupUser = createServerFn({ method: "POST" })
     };
 
     store.users.push(newUser);
-    scheduleDiskPersist();
+    await flushStoreToDiskNow();
     await setAuthCookieForUser(newUser);
 
     return {
@@ -3189,7 +3225,7 @@ export const serverCompleteStudentPasswordReset = createServerFn({ method: "POST
       passwordUpdatedAt: nowIso,
     };
     store.roster[studentIdx] = updated;
-    scheduleDiskPersist();
+    await flushStoreToDiskNow();
 
     // Clear any prior login cooldown for this student
     const tracker = getStudentLoginFailureTracker();
@@ -3253,7 +3289,7 @@ export const serverStudentChangePassword = createServerFn({ method: "POST" })
       mustChangePassword: false,
       passwordUpdatedAt: nowIso,
     };
-    scheduleDiskPersist();
+    await flushStoreToDiskNow();
     return { success: true as const, passwordUpdatedAt: nowIso };
   });
 
@@ -4696,7 +4732,7 @@ export const serverChangeOwnPassword = createServerFn({ method: "POST" })
       ...store.users[idx],
       passwordHash: hashPasswordScrypt(data.newPassword),
     };
-    scheduleDiskPersist();
+    await flushStoreToDiskNow();
     return { success: true };
   });
 
@@ -5000,7 +5036,7 @@ export const serverAdminMutateStore = createServerFn({ method: "POST" })
           }
           store.users = result.users;
           store.courses = syncUserCoursesInStore(store.courses, store.users, result.savedUser);
-          scheduleDiskPersist();
+          await flushStoreToDiskNow();
         }
         break;
       }
@@ -9889,7 +9925,7 @@ export const serverResetAllStaffPasswords = createServerFn({ method: "POST" })
     const store = getStore();
     const summary = resetAllStaffPasswordsInStore(store);
     store.staffPasswordsResetV1 = true;
-    scheduleDiskPersist();
+    await flushStoreToDiskNow();
     return {
       success: true as const,
       ...summary,

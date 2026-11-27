@@ -1007,10 +1007,9 @@ class OnneshaDatabase {
     }));
   }
 
-  saveUser(user: ManagedUser): ManagedUser {
-    const cleanPass =
-      user.passwordHash && user.passwordHash !== "instructor123" ? user.passwordHash : "";
+  private persistUserLocally(user: ManagedUser): ManagedUser {
     const resolvedCredits = typeof user.aiCredits === "number" ? user.aiCredits : 50;
+    // Never cache plaintext passwords in browser SQLite or localStorage.
     sqliteEngine.run(
       "INSERT OR REPLACE INTO users (id, email, name, role, institution, designation, phone, passwordHash, plan, assignedCourseIdsJson, status, aiCredits, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
@@ -1021,7 +1020,7 @@ class OnneshaDatabase {
         user.institution || "",
         user.designation || "",
         user.phone || "",
-        cleanPass,
+        "",
         user.plan || "institution_max",
         JSON.stringify(user.assignedCourseIds || []),
         user.status || "active",
@@ -1030,7 +1029,7 @@ class OnneshaDatabase {
       ],
     );
 
-    const safeLocalUser: ManagedUser = { ...user, passwordHash: cleanPass };
+    const safeLocalUser: ManagedUser = { ...user, passwordHash: "" };
     const users = this.getStorage<ManagedUser[]>("users", [...DEFAULT_USERS]);
     const idx = users.findIndex(
       (u) => u.id === user.id || u.email.toLowerCase() === user.email.toLowerCase(),
@@ -1038,6 +1037,14 @@ class OnneshaDatabase {
     if (idx >= 0) users[idx] = safeLocalUser;
     else users.push(safeLocalUser);
     this.setStorage("users", users);
+    this.notifyListeners();
+    return safeLocalUser;
+  }
+
+  saveUser(user: ManagedUser): ManagedUser {
+    const cleanPass =
+      user.passwordHash && user.passwordHash !== "instructor123" ? user.passwordHash : "";
+    const safeLocalUser = this.persistUserLocally(user);
 
     const { passwordHash: _ph, ...userWithoutPass } = user;
     const serverPayload: ManagedUser = cleanPass
@@ -1046,8 +1053,41 @@ class OnneshaDatabase {
     serverAdminMutateStore({ data: { action: "save_user", user: serverPayload } }).catch((err) =>
       console.warn("User server sync notice:", err),
     );
-    this.notifyListeners();
     return safeLocalUser;
+  }
+
+  async saveUserAsync(
+    user: ManagedUser,
+  ): Promise<{ success: boolean; user?: ManagedUser; error?: string }> {
+    const cleanPass =
+      user.passwordHash && user.passwordHash !== "instructor123" ? user.passwordHash : "";
+    const { passwordHash: _ph, ...userWithoutPass } = user;
+    const serverPayload: ManagedUser = cleanPass
+      ? { ...userWithoutPass, passwordHash: cleanPass }
+      : { ...userWithoutPass, passwordHash: "" };
+    try {
+      const res = await serverAdminMutateStore({
+        data: { action: "save_user", user: serverPayload },
+      });
+      if (!res?.success) {
+        return {
+          success: false,
+          error:
+            (res as { error?: string } | undefined)?.error ||
+            "Server rejected user update. Please sign in again and retry.",
+        };
+      }
+      const saved = this.persistUserLocally(user);
+      return { success: true, user: saved };
+    } catch (err) {
+      return {
+        success: false,
+        error:
+          err instanceof Error
+            ? `Failed to save user to server: ${err.message}`
+            : "Failed to save user to server. Please retry.",
+      };
+    }
   }
 
   deleteUser(id: string): void {

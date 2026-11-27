@@ -660,7 +660,7 @@ function SuperAdminPage() {
   };
 
   // Add New Instructor / Admin Account
-  const handleCreateUser = (e: React.FormEvent) => {
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUserName.trim() || !newUserEmail.trim() || !newUserPassword.trim()) return;
 
@@ -681,7 +681,11 @@ function SuperAdminPage() {
       createdAt: new Date().toISOString(),
     };
 
-    db.saveUser(newUser);
+    const res = await db.saveUserAsync(newUser);
+    if (!res.success) {
+      showNotice(res.error || "Failed to save new account on server.");
+      return;
+    }
 
     // Also add this instructor to their assigned courses
     courses.forEach((c) => {
@@ -700,7 +704,7 @@ function SuperAdminPage() {
     setNewUserPhone("");
     refreshAll();
     showNotice(
-      `Added ${newUser.role.toUpperCase()} account: ${newUser.email} (Password set cleanly with salted scrypt)`,
+      `Added ${newUser.role.toUpperCase()} account: ${newUser.email} (Password saved & flushed to server)`,
     );
   };
 
@@ -727,14 +731,15 @@ function SuperAdminPage() {
     setEditUserCourses(Array.from(currentCourseIds));
   };
 
-  const handleSaveEditedUser = (e: React.FormEvent) => {
+  const handleSaveEditedUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser || !editUserName.trim()) return;
 
     const { passwordHash: _oldPass, ...baseUser } = editingUser;
+    const newPasswordText = editUserPassword.trim();
     const updatedUser: ManagedUser = {
       ...baseUser,
-      passwordHash: editUserPassword.trim() ? editUserPassword.trim() : "",
+      passwordHash: newPasswordText ? newPasswordText : "",
       name: editUserName.trim(),
       designation: editUserDesignation.trim() || "Course Instructor",
       institution: editUserInstitution.trim() || "Onnesha Academic Wing",
@@ -744,7 +749,11 @@ function SuperAdminPage() {
       assignedCourseIds: editUserCourses,
     };
 
-    db.saveUser(updatedUser);
+    const res = await db.saveUserAsync(updatedUser);
+    if (!res.success) {
+      showNotice(res.error || "Failed to persist user changes to server.");
+      return;
+    }
 
     courses.forEach((c) => {
       const shouldHave = editUserCourses.includes(c.id);
@@ -782,7 +791,7 @@ function SuperAdminPage() {
     refreshAll();
     showNotice(
       `Updated "${updatedUser.name}" (${editUserCourses.length} course(s)${
-        editUserPassword.trim() ? ", password reset" : ""
+        newPasswordText ? ", password saved & persisted to server" : ""
       }).`,
     );
   };
