@@ -82,6 +82,7 @@ import {
   FileText,
   Filter,
   KeyRound,
+  Link2,
   Loader2,
   Mail,
   MapPin,
@@ -259,6 +260,7 @@ export function AdminPracticalPanel(props: {
     practicalMaxMarks: number;
     practicalWeightPct: number;
     totalMaxMarks: number;
+    officialRegions?: string[] | undefined;
   } | null>(null);
   const [sheetLoading, setSheetLoading] = useState(false);
   const [sheetTab, setSheetTab] = useState<
@@ -1112,6 +1114,7 @@ export function AdminPracticalPanel(props: {
         practicalMaxMarks: res.practicalMaxMarks,
         practicalWeightPct: res.practicalWeightPct,
         totalMaxMarks: res.totalMaxMarks,
+        officialRegions: res.officialRegions,
       });
     } finally {
       setSheetLoading(false);
@@ -1154,7 +1157,12 @@ export function AdminPracticalPanel(props: {
     };
   }, [sheetRows]);
 
-  const districtSummary = useMemo(() => buildDistrictPassSummary(sheetRows), [sheetRows]);
+  const officialRegions = sheetMeta?.officialRegions;
+
+  const districtSummary = useMemo(
+    () => buildDistrictPassSummary(sheetRows, officialRegions),
+    [sheetRows, officialRegions],
+  );
 
   const sheetRegions = useMemo(
     () =>
@@ -1186,16 +1194,21 @@ export function AdminPracticalPanel(props: {
   }, [sheetRows, sheetTab, sheetRegion, sheetSearch]);
 
   const filteredEmailedRows = useMemo(() => {
-    const base = buildPassedOrEmailedRows(sheetRows, "emailed");
+    const base = buildPassedOrEmailedRows(sheetRows, "emailed", officialRegions);
     if (sheetRegion === "all") return base;
     return base.filter((r) => normalizeDistrictKey(r.regionName) === sheetRegion);
-  }, [sheetRows, sheetRegion]);
+  }, [sheetRows, sheetRegion, officialRegions]);
 
   const filteredPassedRows = useMemo(() => {
-    const base = buildPassedOrEmailedRows(sheetRows, "passed");
+    const base = buildPassedOrEmailedRows(sheetRows, "passed", officialRegions);
     if (sheetRegion === "all") return base;
     return base.filter((r) => normalizeDistrictKey(r.regionName) === sheetRegion);
-  }, [sheetRows, sheetRegion]);
+  }, [sheetRows, sheetRegion, officialRegions]);
+
+  const missingRealEmailPassedCount = useMemo(
+    () => filteredPassedRows.filter((r) => !r.email).length,
+    [filteredPassedRows],
+  );
 
   if (loading) {
     return (
@@ -1565,6 +1578,26 @@ export function AdminPracticalPanel(props: {
       setNotice(err instanceof Error ? err.message : "PDF export failed.");
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const copyEmailClaimFormLink = async () => {
+    const origin =
+      typeof window !== "undefined" && window.location?.origin
+        ? window.location.origin
+        : "https://arena.onnesha.courses";
+    const url = `${origin}/claim-certificate`;
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        setNotice(
+          `Copied student Gmail collection form link: ${url} — share with students missing email so their Gmail updates & eligible certificates send automatically.`,
+        );
+      } else {
+        window.prompt("Copy this student Gmail & Certificate form link:", url);
+      }
+    } catch {
+      window.prompt("Copy this student Gmail & Certificate form link:", url);
     }
   };
 
@@ -2629,10 +2662,57 @@ export function AdminPracticalPanel(props: {
                 <span>· {sheetCounts.withQuiz} with quiz</span>
                 <span>· {sheetCounts.certified} certs issued</span>
                 <span>· {sheetCounts.emailed} emailed</span>
+                {missingRealEmailPassedCount > 0 && (
+                  <span className="text-amber-700 dark:text-amber-300">
+                    · {missingRealEmailPassedCount} passed missing Gmail
+                  </span>
+                )}
               </div>
               <span className="font-mono text-[10px]">
                 Generated {new Date(sheetMeta.generatedAt).toLocaleString()}
               </span>
+            </div>
+          )}
+
+          {/* Shareable Student Gmail Collection & Auto-Certificate Form Banner */}
+          {sheetRows.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-amber-500/30 bg-amber-500/[0.05] px-3.5 py-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <Link2 className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300" />
+                <div className="min-w-0">
+                  <div className="text-xs font-extrabold text-foreground">
+                    Student Gmail Collection &amp; Auto-Certificate Link
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Share{" "}
+                    <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-foreground">
+                      /claim-certificate
+                    </code>{" "}
+                    with trainees missing Gmail (e.g. Cumilla, Jhalokathi, Sylhet). When they verify
+                    Roll + Mobile &amp; submit their Gmail, their roster updates and eligible
+                    certificates send automatically.
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void copyEmailClaimFormLink()}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-amber-500/15 px-3 py-1.5 text-xs font-bold text-amber-900 transition-colors hover:bg-amber-500/25 dark:text-amber-200"
+                >
+                  <Link2 className="h-3.5 w-3.5" />
+                  <span>Copy Form Link</span>
+                </button>
+                <a
+                  href="/claim-certificate"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="staff-btn-ghost !py-1.5 text-xs"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span>Open Form</span>
+                </a>
+              </div>
             </div>
           )}
 

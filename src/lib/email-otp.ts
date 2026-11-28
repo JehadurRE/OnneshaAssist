@@ -336,3 +336,63 @@ export function isValidPortalEmail(raw: string): boolean {
   const e = normalizePortalEmail(raw);
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 }
+
+const PLACEHOLDER_EMAIL_DOMAINS = new Set([
+  "sanjibon.onnesha.courses",
+  "sanjibon.onnesha.app",
+  "onnesha.courses",
+  "onnesha.app",
+  "academy.edu.bd",
+  "example.com",
+  "example.org",
+  "test.com",
+  "invalid",
+]);
+
+const GMAIL_DOMAIN_TYPOS = new Set([
+  "gamail.com",
+  "gmal.com",
+  "gmial.com",
+  "gamil.com",
+  "gnail.com",
+  "gmaill.com",
+  "gmai.com",
+  "gmail.con",
+  "gmail.co",
+  "gmail.cm",
+  "gmail.om",
+  "gmail.comm",
+  "gmail",
+]);
+
+/** Returns true if an email is a synthetic/placeholder address (e.g. @sanjibon.onnesha.courses) that cannot receive real mail. */
+export function isPlaceholderStudentEmail(raw?: string | null): boolean {
+  const e = normalizePortalEmail(raw || "");
+  if (!e || !e.includes("@")) return false;
+  const domain = e.slice(e.lastIndexOf("@") + 1);
+  if (PLACEHOLDER_EMAIL_DOMAINS.has(domain)) return true;
+  if (domain.endsWith(".onnesha.courses") || domain.endsWith(".onnesha.app")) return true;
+  return false;
+}
+
+/** Detects common Gmail domain typos (e.g. @gamail.com, @gmal.com, @gmail) and returns a suggested fix. */
+export function detectCommonEmailTypo(raw?: string | null): string | null {
+  const e = normalizePortalEmail(raw || "");
+  const at = e.lastIndexOf("@");
+  if (at <= 0) return null;
+  const local = e.slice(0, at);
+  const domain = e.slice(at + 1);
+  if (GMAIL_DOMAIN_TYPOS.has(domain)) {
+    return `${local}@gmail.com`;
+  }
+  return null;
+}
+
+/** True only when the address is syntactically valid, not a synthetic placeholder, and not a known bounced typo. */
+export function isDeliverableStudentEmail(raw?: string | null): boolean {
+  const e = normalizePortalEmail(raw || "");
+  if (!isValidPortalEmail(e)) return false;
+  if (isPlaceholderStudentEmail(e)) return false;
+  if (detectCommonEmailTypo(e)) return false;
+  return true;
+}

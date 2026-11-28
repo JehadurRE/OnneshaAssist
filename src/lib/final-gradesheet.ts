@@ -19,6 +19,7 @@ import {
   normalizeExamWeights,
 } from "./practical-exam";
 import { normalizeBdPhone } from "./sanjibon-seed-data";
+import { isDeliverableStudentEmail } from "./email-otp";
 
 export interface FinalGradeSheetRow {
   rank: number;
@@ -208,6 +209,13 @@ export function buildFinalGradeSheetRows(params: {
     });
     const cert = findCert(sub.rollNumber, rosterMatch?.rollNumber);
     const elig = findEligibility(sub.rollNumber, rosterMatch?.rollNumber);
+    const cleanRosterEmail = isDeliverableStudentEmail(rosterMatch?.email)
+      ? rosterMatch!.email!.trim().toLowerCase()
+      : undefined;
+    const validEmailedTo = isDeliverableStudentEmail(cert?.emailedTo)
+      ? cert!.emailedTo!.trim().toLowerCase()
+      : undefined;
+    const validEmailedAt = validEmailedTo ? cert?.emailedAt : undefined;
 
     return {
       rank: 0,
@@ -215,7 +223,7 @@ export function buildFinalGradeSheetRows(params: {
       studentName: sub.studentName || rosterMatch?.name || "",
       regionName: sub.regionName || rosterMatch?.regionName || "",
       phone: sub.phone || rosterMatch?.phone,
-      email: rosterMatch?.email?.trim() || undefined,
+      email: cleanRosterEmail,
       participated: true,
       regularQuizAvgPct,
       regularQuizMarks: breakdown.regularQuizMarks,
@@ -239,8 +247,8 @@ export function buildFinalGradeSheetRows(params: {
       submissionId: sub.id,
       certificateNumber: cert?.certificateNumber,
       certificateIssuedAt: cert?.signedAt || cert?.issueDate,
-      certificateEmailedAt: cert?.emailedAt,
-      certificateEmailedTo: cert?.emailedTo,
+      certificateEmailedAt: validEmailedAt,
+      certificateEmailedTo: validEmailedTo,
       eligibleForCertificate: elig?.eligible,
       missingRequirements: elig?.missing,
     };
@@ -283,6 +291,13 @@ export function buildFinalGradeSheetRows(params: {
         : 0;
     const cert = findCert(student.rollNumber);
     const elig = findEligibility(student.rollNumber);
+    const cleanStudentEmail = isDeliverableStudentEmail(student.email)
+      ? student.email!.trim().toLowerCase()
+      : undefined;
+    const validEmailedTo = isDeliverableStudentEmail(cert?.emailedTo)
+      ? cert!.emailedTo!.trim().toLowerCase()
+      : undefined;
+    const validEmailedAt = validEmailedTo ? cert?.emailedAt : undefined;
 
     rows.push({
       rank: 0,
@@ -290,7 +305,7 @@ export function buildFinalGradeSheetRows(params: {
       studentName: student.name,
       regionName: student.regionName || "",
       phone: student.phone,
-      email: student.email?.trim() || undefined,
+      email: cleanStudentEmail,
       participated,
       regularQuizAvgPct,
       regularQuizMarks: breakdown.regularQuizMarks,
@@ -313,8 +328,8 @@ export function buildFinalGradeSheetRows(params: {
       maxTotal: breakdown.maxTotal || maxTotal,
       certificateNumber: cert?.certificateNumber,
       certificateIssuedAt: cert?.signedAt || cert?.issueDate,
-      certificateEmailedAt: cert?.emailedAt,
-      certificateEmailedTo: cert?.emailedTo,
+      certificateEmailedAt: validEmailedAt,
+      certificateEmailedTo: validEmailedTo,
       eligibleForCertificate: elig?.eligible,
       missingRequirements: elig?.missing,
     });
@@ -469,18 +484,30 @@ export function isRowPassedForReport(row: FinalGradeSheetRow): boolean {
   return row.eligibleForCertificate === true || !!row.certificateNumber;
 }
 
-/** Whether a gradesheet row has had its completion certificate emailed. */
+/** Whether a gradesheet row has had its completion certificate emailed to a real deliverable address. */
 export function isRowEmailedForReport(row: FinalGradeSheetRow): boolean {
-  return !!row.certificateEmailedAt;
+  if (!row.certificateEmailedAt) return false;
+  if (row.certificateEmailedTo && !isDeliverableStudentEmail(row.certificateEmailedTo)) return false;
+  return true;
 }
 
 /**
  * District / Range-wise pass and certificate email counts (no percentages or individual marks).
+ * When `officialRegionNames` is supplied, restricts the summary strictly to those official centres
+ * (so non-official/test centres like Dhaka Range are excluded).
  */
-export function buildDistrictPassSummary(rows: FinalGradeSheetRow[]): {
+export function buildDistrictPassSummary(
+  rows: FinalGradeSheetRow[],
+  officialRegionNames?: string[] | undefined,
+): {
   districts: DistrictPassSummaryRow[];
   totals: DistrictPassSummaryRow;
 } {
+  const allowedKeys =
+    officialRegionNames && officialRegionNames.length > 0
+      ? new Map(officialRegionNames.map((n) => [normalizeDistrictKey(n), n]))
+      : null;
+
   const byKey = new Map<
     string,
     {
@@ -493,9 +520,24 @@ export function buildDistrictPassSummary(rows: FinalGradeSheetRow[]): {
     }
   >();
 
+  // Pre-seed all official centres so even a centre with 0 passed students still appears accurately.
+  if (allowedKeys) {
+    for (const [key, officialLabel] of allowedKeys.entries()) {
+      byKey.set(key, {
+        regionKey: key,
+        labels: new Map([[officialLabel, 1000]]),
+        totalStudents: 0,
+        passedCount: 0,
+        certifiedCount: 0,
+        emailedCount: 0,
+      });
+    }
+  }
+
   for (const r of rows) {
     const rawLabel = (r.regionName || "").trim();
     const key = normalizeDistrictKey(rawLabel);
+    if (allowedKeys && !allowedKeys.has(key)) continue;
     let bucket = byKey.get(key);
     if (!bucket) {
       bucket = {
@@ -569,14 +611,21 @@ export function buildDistrictPassSummary(rows: FinalGradeSheetRow[]): {
 /**
  * Filter & sort official passed or emailed student register cleanly by District/Range then Roll
  * (intentionally omits ranking by score/marks).
+ * When `officialRegionNames` is supplied, restricts rows strictly to those official centres.
  */
 export function buildPassedOrEmailedRows(
   rows: FinalGradeSheetRow[],
   mode: "emailed" | "passed",
+  officialRegionNames?: string[] | undefined,
 ): FinalGradeSheetRow[] {
-  const filtered = rows.filter((r) =>
-    mode === "emailed" ? isRowEmailedForReport(r) : isRowPassedForReport(r),
-  );
+  const allowedKeys =
+    officialRegionNames && officialRegionNames.length > 0
+      ? new Set(officialRegionNames.map((n) => normalizeDistrictKey(n)))
+      : null;
+  const filtered = rows.filter((r) => {
+    if (allowedKeys && !allowedKeys.has(normalizeDistrictKey(r.regionName))) return false;
+    return mode === "emailed" ? isRowEmailedForReport(r) : isRowPassedForReport(r);
+  });
   return [...filtered].sort((a, b) => {
     const ka = normalizeDistrictKey(a.regionName);
     const kb = normalizeDistrictKey(b.regionName);

@@ -86,6 +86,9 @@ import {
   buildEmailBrandContext,
   buildQuizCertificateEmail,
   buildSampleEmailTemplate,
+  detectCommonEmailTypo,
+  isDeliverableStudentEmail,
+  isPlaceholderStudentEmail,
   isPortalEmailConfigured,
   isValidPortalEmail,
   normalizePortalEmail,
@@ -112,6 +115,7 @@ import {
   DEFAULT_USERS,
   LEGACY_BCS_COURSE_ID,
   LEGACY_BCS_QUIZ_ID,
+  LEGACY_NON_OFFICIAL_REGION_IDS,
   READY_MADE_PACKS,
   SAMPLE_ROSTER,
 } from "./mock-data";
@@ -154,6 +158,7 @@ import {
   normalizeRollToken,
   SANJIBON_COURSE,
   SANJIBON_QUIZZES,
+  SANJIBON_REGIONS,
 } from "./sanjibon-seed-data";
 import {
   canActorMutateStoreAction,
@@ -274,6 +279,8 @@ interface PersistentStoreData {
   migratedCourseCertSignatoriesV2?: boolean | undefined;
   migratedCourseCertSignatoriesV3?: boolean | undefined;
   migratedCourseCertSignatoriesV4?: boolean | undefined;
+  /** One-shot: remove non-11 legacy centres, strip @sanjibon.onnesha.* placeholders, fix known Gmail typos & clear bounced emailedAt. */
+  migratedOfficialCentresAndEmailsV1?: boolean | undefined;
   purgedSampleData?: boolean | undefined;
   purgedUnder50Initial?: boolean | undefined;
   purgedBcsDemoCourse?: boolean | undefined;
@@ -527,10 +534,12 @@ export function mergeSeededStoreData<
   const seenRolls = new Set(roster.map((s) => normalizeRollToken(s.rollNumber)));
   for (const defStudent of SAMPLE_ROSTER) {
     const rollTok = normalizeRollToken(defStudent.rollNumber);
-    // Backfill missing portal email onto existing roster rows matched by roll.
-    if (rollTok && defStudent.email) {
+    // Backfill missing portal email onto existing roster rows matched by roll (real deliverable emails only).
+    if (rollTok && defStudent.email && isDeliverableStudentEmail(defStudent.email)) {
       const existingIdx = roster.findIndex(
-        (s) => normalizeRollToken(s.rollNumber) === rollTok && !(s.email || "").trim(),
+        (s) =>
+          normalizeRollToken(s.rollNumber) === rollTok &&
+          (!s.email || !s.email.trim() || isPlaceholderStudentEmail(s.email)),
       );
       if (existingIdx >= 0) {
         roster[existingIdx] = { ...roster[existingIdx]!, email: defStudent.email };
@@ -801,6 +810,7 @@ function loadInitialStore(): PersistentStoreData {
             migratedCourseCertSignatoriesV2: !!parsed.migratedCourseCertSignatoriesV2,
             migratedCourseCertSignatoriesV3: !!parsed.migratedCourseCertSignatoriesV3,
             migratedCourseCertSignatoriesV4: !!parsed.migratedCourseCertSignatoriesV4,
+            migratedOfficialCentresAndEmailsV1: !!parsed.migratedOfficialCentresAndEmailsV1,
             purgedSampleData: purged,
             purgedUnder50Initial: !!parsed.purgedUnder50Initial,
             purgedBcsDemoCourse: !!parsed.purgedBcsDemoCourse,
@@ -865,6 +875,7 @@ function loadInitialStore(): PersistentStoreData {
     migratedCourseCertSignatoriesV2: true,
     migratedCourseCertSignatoriesV3: true,
     migratedCourseCertSignatoriesV4: true,
+    migratedOfficialCentresAndEmailsV1: true,
     purgedSampleData: false,
     purgedUnder50Initial: true,
     purgedBcsDemoCourse: true,
@@ -1073,8 +1084,90 @@ function getStore(): PersistentStoreData {
         `[OnneshaServerStore] Course completion certificate branding & signature scaling migration v4 applied: changed=${certChanged}`,
       );
     }
+    if (!loaded.migratedOfficialCentresAndEmailsV1) {
+      const summary = migrateOfficialCentresAndRealEmailsInStore(loaded);
+      loaded.migratedOfficialCentresAndEmailsV1 = true;
+      scheduleDiskPersist();
+      console.info(
+        `[OnneshaServerStore] Official 11 centres & real student emails migration v1: removedRegions=${summary.removedRegions}, strippedPlaceholders=${summary.strippedPlaceholders}, fixedTypos=${summary.fixedTypos}, clearedBouncedCerts=${summary.clearedBouncedCerts}`,
+      );
+    }
   }
   return globalStore.__onneshaStore;
+}
+
+/**
+ * Source-of-truth cleanup:
+ * 1. Keep ONLY the 11 official training centres in `store.regions` (remove legacy Dhaka/Chattogram/Rajshahi/Khulna/Rangpur/Mymensingh Range).
+ * 2. Strip synthetic `@sanjibon.onnesha.*` placeholder emails from roster rows so missing emails can be collected cleanly.
+ * 3. Fix known Gmail domain typos (e.g. `@gamail.com`, `@gmail` without `.com`) on roster rows.
+ * 4. Clear false `emailedAt` flags on certificates previously "emailed" to placeholder or bounced typo domains.
+ */
+export function migrateOfficialCentresAndRealEmailsInStore(store: PersistentStoreData): {
+  removedRegions: number;
+  strippedPlaceholders: number;
+  fixedTypos: number;
+  clearedBouncedCerts: number;
+} {
+  const officialIds = new Set(SANJIBON_REGIONS.map((r) => r.id));
+  const delRegionSet = new Set(store.deletedRegionIds || []);
+  for (const legId of LEGACY_NON_OFFICIAL_REGION_IDS) {
+    delRegionSet.add(legId);
+  }
+  let removedRegions = 0;
+  const keptRegions: Region[] = [];
+  for (const r of store.regions || []) {
+    if (officialIds.has(r.id)) {
+      keptRegions.push(r);
+    } else {
+      removedRegions += 1;
+      delRegionSet.add(r.id);
+    }
+  }
+  for (const official of SANJIBON_REGIONS) {
+    if (!keptRegions.some((r) => r.id === official.id)) {
+      keptRegions.push({ ...official });
+    }
+  }
+  store.regions = keptRegions;
+  store.deletedRegionIds = Array.from(delRegionSet);
+
+  let strippedPlaceholders = 0;
+  let fixedTypos = 0;
+  store.roster = (store.roster || []).map((st) => {
+    const raw = (st.email || "").trim();
+    if (!raw) return st;
+    if (isPlaceholderStudentEmail(raw)) {
+      strippedPlaceholders += 1;
+      const { email: _drop, ...rest } = st;
+      return rest;
+    }
+    const suggested = detectCommonEmailTypo(raw);
+    if (suggested) {
+      fixedTypos += 1;
+      return { ...st, email: suggested };
+    }
+    return st;
+  });
+
+  let clearedBouncedCerts = 0;
+  store.certificates = (store.certificates || []).map((cert) => {
+    if (!cert.emailedAt) return cert;
+    const to = (cert.emailedTo || "").trim();
+    if (!to || !isDeliverableStudentEmail(to)) {
+      clearedBouncedCerts += 1;
+      const {
+        emailedAt: _ea,
+        emailedTo: _et,
+        emailedProvider: _ep,
+        ...rest
+      } = cert;
+      return rest;
+    }
+    return cert;
+  });
+
+  return { removedRegions, strippedPlaceholders, fixedTypos, clearedBouncedCerts };
 }
 
 export function ensureCourseCertBrandingMigrated(store: PersistentStoreData): boolean {
@@ -3526,7 +3619,7 @@ export const serverAdminBulkSendStudentCredentials = createServerFn({ method: "P
       const st = store.roster[i]!;
       if (idSet && !idSet.has(st.id)) continue;
       if (regionFilter && st.regionId !== regionFilter) continue;
-      if (!isValidPortalEmail(st.email || "")) continue;
+      if (!isDeliverableStudentEmail(st.email || "")) continue;
       if (onlyUnsent) {
         const alreadySent = Boolean(st.credentialsEmailedAt);
         const selfSetPersonalPassword = Boolean(st.passwordHash && !st.mustChangePassword);
@@ -7826,13 +7919,17 @@ export const serverGetFinalGradeSheet = createServerFn({ method: "POST" })
     const graded = rows.filter((r) => r.practicalGraded).length;
     const withQuiz = rows.filter((r) => r.quizFound).length;
     const certified = rows.filter((r) => !!r.certificateNumber).length;
-    const emailed = rows.filter((r) => !!r.certificateEmailedAt).length;
+    const emailed = rows.filter(
+      (r) => !!r.certificateEmailedAt && isDeliverableStudentEmail(r.certificateEmailedTo),
+    ).length;
+    const officialRegions = (store.regions || []).map((r) => r.nameEn).filter(Boolean);
     return {
       success: true as const,
       courseId,
       courseCode: course.code || "",
       courseTitle: course.titleEn || exam.titleEn,
       examTitle: exam.titleEn,
+      officialRegions,
       regularQuizMaxMarks: regularQuizMax,
       regularQuizWeightPct: weights.regularQuizWeightPct,
       hostedRegularQuizCount: regularGroups.length,
@@ -8698,7 +8795,7 @@ function findRosterEmailForRoll(
   const rollTok = normalizeRollToken(rollNumber);
   const student = store.roster.find((s) => normalizeRollToken(s.rollNumber) === rollTok);
   const email = (student?.email || "").trim().toLowerCase();
-  return isValidPortalEmail(email) ? email : undefined;
+  return isDeliverableStudentEmail(email) ? email : undefined;
 }
 
 async function emailCertificateToStudent(params: {
@@ -8710,8 +8807,23 @@ async function emailCertificateToStudent(params: {
   | { emailed: false; reason: string }
 > {
   const overrideClean = params.overrideTo ? normalizePortalEmail(params.overrideTo) : "";
-  if (overrideClean && !isValidPortalEmail(overrideClean)) {
-    return { emailed: false, reason: "Invalid destination email address." };
+  if (overrideClean) {
+    if (isPlaceholderStudentEmail(overrideClean)) {
+      return {
+        emailed: false,
+        reason: "Cannot send to an internal placeholder address. Enter the student's real email (e.g. Gmail).",
+      };
+    }
+    const typoFix = detectCommonEmailTypo(overrideClean);
+    if (typoFix) {
+      return {
+        emailed: false,
+        reason: `Email domain looks like a typo (${overrideClean}). Did you mean ${typoFix}?`,
+      };
+    }
+    if (!isValidPortalEmail(overrideClean)) {
+      return { emailed: false, reason: "Invalid destination email address." };
+    }
   }
   const to =
     overrideClean ||
@@ -8719,7 +8831,8 @@ async function emailCertificateToStudent(params: {
   if (!to) {
     return {
       emailed: false,
-      reason: "No roster email for this roll — add email on roster to send certificate mail.",
+      reason:
+        "No real email on roster for this student — collect their Gmail via the email form or update Roster.",
     };
   }
   const origin = resolvePublicOrigin();
@@ -8899,7 +9012,10 @@ export const serverBulkIssueCourseCertificates = createServerFn({ method: "POST"
         if (res.alreadyIssued) alreadyIssuedCount += 1;
         else newlyIssuedCount += 1;
         if (wantEmail) {
-          if (res.certificate.emailedAt) {
+          const alreadySentRealEmail = Boolean(
+            res.certificate.emailedAt && isDeliverableStudentEmail(res.certificate.emailedTo),
+          );
+          if (alreadySentRealEmail) {
             alreadyEmailedCount += 1;
           } else {
             const mail = await emailCourseCertificateToStudent({
@@ -10949,4 +11065,336 @@ export const serverAskFloatingAiAssistant = createServerFn({ method: "POST" })
         error: err instanceof Error ? err.message : "AI Assistant failed to respond.",
       };
     }
+  });
+
+// ============================================================================
+// PUBLIC STUDENT EMAIL COLLECTION & AUTO-CERTIFICATE DELIVERY (/claim-certificate)
+// ============================================================================
+
+function phonesMatchForStudentClaim(inputRaw: string, storedRaw?: string): boolean {
+  const a = normalizeBdPhone(inputRaw);
+  const b = normalizeBdPhone(storedRaw || "");
+  if (!a || !b || a.length < 8 || b.length < 8) return false;
+  if (a === b) return true;
+  const tailLen = Math.min(9, a.length, b.length);
+  return a.slice(-tailLen) === b.slice(-tailLen);
+}
+
+function findRosterStudentForEmailClaim(
+  store: PersistentStoreData,
+  rollNumber: string,
+  phone: string,
+  courseId: string,
+): { student: RosterStudent; index: number } | null {
+  const rollTok = normalizeRollToken(rollNumber);
+  if (!rollTok) return null;
+  const cleanPhone = normalizeBdPhone(phone);
+  if (cleanPhone.length < 8) return null;
+
+  const idx = store.roster.findIndex((s) => normalizeRollToken(s.rollNumber) === rollTok);
+  if (idx < 0 || !store.roster[idx]) return null;
+  const student = store.roster[idx]!;
+
+  if (
+    phonesMatchForStudentClaim(cleanPhone, student.phone) ||
+    phonesMatchForStudentClaim(cleanPhone, student.guardianPhone)
+  ) {
+    return { student, index: idx };
+  }
+
+  // Fallback: check phone recorded on the student's practical submission for this course
+  const sub = (store.practicalSubmissions || []).find(
+    (p) => p.courseId === courseId && normalizeRollToken(p.rollNumber) === rollTok,
+  );
+  if (sub?.phone && phonesMatchForStudentClaim(cleanPhone, sub.phone)) {
+    return { student, index: idx };
+  }
+  return null;
+}
+
+/** Public metadata for /claim-certificate: official 11 training centres + course info + co-branding. */
+export const serverGetOfficialCentresForClaim = createServerFn({ method: "GET" }).handler(
+  async () => {
+    const store = getStore();
+    ensureFinalPracticalSeeded(store);
+    const course =
+      store.courses.find((c) => c.id === SANJIBON_COURSE.id) || store.courses[0] || SANJIBON_COURSE;
+    return {
+      success: true as const,
+      course: {
+        id: course.id,
+        code: course.code,
+        titleEn: course.titleEn,
+        titleBn: course.titleBn,
+      },
+      centres: (store.regions || []).map((r) => ({
+        id: r.id,
+        code: r.code,
+        nameEn: r.nameEn,
+        nameBn: r.nameBn,
+      })),
+      branding: {
+        leftLogoUrl: store.branding?.leftLogoUrl,
+        rightLogoUrl: store.branding?.rightLogoUrl,
+        rightLogoLabel: store.branding?.rightLogoLabel,
+        rightSecondaryLogoUrl: store.branding?.rightSecondaryLogoUrl,
+        rightSecondaryLogoLabel: store.branding?.rightSecondaryLogoLabel,
+        institutionTitle: store.branding?.institutionTitle,
+      },
+    };
+  },
+);
+
+/** Step 1 of /claim-certificate: verify Roll + Registered Mobile Number and preview status. */
+export const serverLookupStudentForEmailClaim = createServerFn({ method: "POST" })
+  .validator(
+    (data: { rollNumber: string; phone: string; courseId?: string | undefined }) => data,
+  )
+  .handler(async ({ data }) => {
+    const store = getStore();
+    ensureFinalPracticalSeeded(store);
+    const courseId = data.courseId || SANJIBON_COURSE.id;
+    const course =
+      store.courses.find((c) => c.id === courseId) || store.courses[0] || SANJIBON_COURSE;
+
+    const rollClean = (data.rollNumber || "").trim();
+    const phoneClean = (data.phone || "").trim();
+    if (!rollClean || normalizeBdPhone(phoneClean).length < 8) {
+      return {
+        success: false as const,
+        error: "Please enter both your Roll Number (e.g. CUM-01) and registered Mobile Number.",
+      };
+    }
+
+    const hit = findRosterStudentForEmailClaim(store, rollClean, phoneClean, course.id);
+    if (!hit) {
+      return {
+        success: false as const,
+        error:
+          "Roll Number and Mobile Number did not match our official training roster. Please double-check your Roll (e.g. CUM-01, JHL-03, SYL-01) and registered mobile number.",
+      };
+    }
+
+    const { student } = hit;
+    const requirement =
+      (store.courseRequirements || []).find((r) => r.courseId === course.id) ||
+      buildDefaultCourseRequirement(course.id);
+    const practicalExam = (store.practicalExams || []).find((p) => p.courseId === course.id);
+    const rollTok = normalizeRollToken(student.rollNumber);
+    const submission = (store.practicalSubmissions || []).find(
+      (s) => s.courseId === course.id && normalizeRollToken(s.rollNumber) === rollTok,
+    );
+    const identity = {
+      phone: student.phone || submission?.phone,
+      studentName: student.name || submission?.studentName,
+      regionId: student.regionId || submission?.regionId,
+    };
+    const regSummary = resolveRegularQuizSummaryForStudent(
+      store,
+      course.id,
+      student.rollNumber,
+      practicalExam,
+      requirement,
+      identity,
+    );
+    const quizResult = resolveQuizResultForStudent(
+      store,
+      student.rollNumber,
+      practicalExam?.linkedQuizId || requirement.requiredQuizIds?.[0],
+      requirement.requiredQuizIds,
+      identity,
+    );
+    const snap = evaluateCourseCompletion({
+      course,
+      requirement,
+      practicalExam,
+      submission,
+      quizResult,
+      regularQuizAvgPct: regSummary.avgPct,
+    });
+
+    const certNo = makeCourseCertificateNumber(course.code, student.rollNumber);
+    const existingCert = (store.certificates || []).find(
+      (c) =>
+        c.kind === "course_completion" &&
+        c.courseId === course.id &&
+        (c.certificateNumber.toLowerCase() === certNo.toLowerCase() ||
+          normalizeRollToken(c.studentRoll || "") === rollTok),
+    );
+    const currentEmail = isDeliverableStudentEmail(student.email)
+      ? student.email!.trim().toLowerCase()
+      : undefined;
+    const emailedToReal =
+      existingCert?.emailedAt && isDeliverableStudentEmail(existingCert.emailedTo)
+        ? existingCert.emailedTo!.trim().toLowerCase()
+        : undefined;
+
+    return {
+      success: true as const,
+      student: {
+        rollNumber: student.rollNumber,
+        name: student.name,
+        regionName: student.regionName || "",
+        hasRealEmail: !!currentEmail,
+        maskedEmail: currentEmail ? maskEmailAddress(currentEmail) : undefined,
+        eligibleForCertificate: snap.eligibleForCourseCertificate || !!existingCert,
+        certificateIssued: !!existingCert,
+        certificateNumber: existingCert?.certificateNumber,
+        certificateEmailed: !!emailedToReal,
+        maskedEmailedTo: emailedToReal ? maskEmailAddress(emailedToReal) : undefined,
+        missingRequirements: existingCert ? [] : snap.missing,
+      },
+    };
+  });
+
+/**
+ * Step 2 of /claim-certificate: save student's real Gmail onto roster (flushed durably)
+ * and immediately issue + email their Course Completion Certificate if eligible.
+ */
+export const serverSubmitStudentEmailAndClaimCertificate = createServerFn({ method: "POST" })
+  .validator(
+    (data: {
+      rollNumber: string;
+      phone: string;
+      email: string;
+      courseId?: string | undefined;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const store = getStore();
+    ensureFinalPracticalSeeded(store);
+    const courseId = data.courseId || SANJIBON_COURSE.id;
+    const course =
+      store.courses.find((c) => c.id === courseId) || store.courses[0] || SANJIBON_COURSE;
+
+    const hit = findRosterStudentForEmailClaim(
+      store,
+      data.rollNumber || "",
+      data.phone || "",
+      course.id,
+    );
+    if (!hit) {
+      return {
+        success: false as const,
+        error: "Identity verification failed. Please verify your Roll Number and Mobile Number again.",
+      };
+    }
+
+    const cleanEmail = normalizePortalEmail(data.email || "");
+    if (!cleanEmail) {
+      return { success: false as const, error: "Please enter your email address." };
+    }
+    if (isPlaceholderStudentEmail(cleanEmail)) {
+      return {
+        success: false as const,
+        error:
+          "Please enter your real personal email (e.g. Gmail) — internal Onnesha placeholder emails are not allowed.",
+      };
+    }
+    const typoFix = detectCommonEmailTypo(cleanEmail);
+    if (typoFix) {
+      return {
+        success: false as const,
+        suggestedEmail: typoFix,
+        error: `It looks like there is a spelling mistake in "${cleanEmail}". Did you mean "${typoFix}"?`,
+      };
+    }
+    if (!isValidPortalEmail(cleanEmail)) {
+      return {
+        success: false as const,
+        error: "Please enter a valid email address (for example: yourname@gmail.com).",
+      };
+    }
+
+    const { student, index } = hit;
+    // Prevent hijacking another student's already-registered real email
+    const conflict = store.roster.find(
+      (s, i) => i !== index && (s.email || "").trim().toLowerCase() === cleanEmail,
+    );
+    if (conflict) {
+      return {
+        success: false as const,
+        error:
+          "This email address is already registered to another student roll. Please use your own personal email.",
+      };
+    }
+
+    store.roster[index] = {
+      ...student,
+      email: cleanEmail,
+    };
+    await flushStoreToDiskNow();
+
+    // Check existing certificate or automatic eligibility & immediately deliver certificate email
+    const rollTok = normalizeRollToken(student.rollNumber);
+    const certNo = makeCourseCertificateNumber(course.code, student.rollNumber);
+    let cert = (store.certificates || []).find(
+      (c) =>
+        c.kind === "course_completion" &&
+        c.courseId === course.id &&
+        (c.certificateNumber.toLowerCase() === certNo.toLowerCase() ||
+          normalizeRollToken(c.studentRoll || "") === rollTok),
+    );
+
+    if (!cert) {
+      const issued = issueCourseCertificateInStore({
+        store,
+        courseId: course.id,
+        rollNumber: student.rollNumber,
+        instructorName: "Chief Assessment Officer",
+        force: false,
+      });
+      if (issued.success && issued.certificate) {
+        cert = issued.certificate;
+      }
+    }
+
+    if (!cert) {
+      return {
+        success: true as const,
+        emailSaved: cleanEmail,
+        eligible: false,
+        emailed: false,
+        message:
+          "Your email has been updated on the official roster. Once your course completion requirements are met, your certificate will be sent to this address.",
+      };
+    }
+
+    const alreadySentSameEmail = Boolean(
+      cert.emailedAt && (cert.emailedTo || "").trim().toLowerCase() === cleanEmail,
+    );
+    if (alreadySentSameEmail) {
+      return {
+        success: true as const,
+        emailSaved: cleanEmail,
+        eligible: true,
+        certificateNumber: cert.certificateNumber,
+        verifyUrl: `/verify/${cert.certificateNumber}`,
+        emailed: true,
+        alreadyEmailed: true,
+        message: `Your certificate (${cert.certificateNumber}) was already sent to ${cleanEmail}. You can also view or download it directly below.`,
+      };
+    }
+
+    const mail = await emailCourseCertificateToStudent({
+      store,
+      certificate: cert,
+      overrideTo: cleanEmail,
+    });
+    await flushStoreToDiskNow();
+
+    return {
+      success: true as const,
+      emailSaved: cleanEmail,
+      eligible: true,
+      certificateNumber: cert.certificateNumber,
+      verifyUrl: `/verify/${cert.certificateNumber}`,
+      emailed: mail.emailed,
+      ...(mail.emailed
+        ? { emailProvider: mail.provider }
+        : { emailError: mail.reason }),
+      message: mail.emailed
+        ? `Your email has been saved and your official Course Completion Certificate (${cert.certificateNumber}) has been sent to ${cleanEmail}!`
+        : `Your email (${cleanEmail}) has been saved and your certificate (${cert.certificateNumber}) is ready below (email notice: ${mail.reason}).`,
+    };
   });

@@ -52,63 +52,18 @@ export const DEFAULT_COURSES: Course[] = [SANJIBON_COURSE];
 export const LEGACY_BCS_COURSE_ID = "course-bcs-foundation";
 export const LEGACY_BCS_QUIZ_ID = "pack-bcs-gk";
 
-const GENERAL_REGIONS: Region[] = [
-  {
-    id: "reg-dhaka",
-    code: "DHK",
-    nameEn: "Dhaka Range",
-    nameBn: "ঢাকা রেঞ্জ",
-    centerName: "Dhaka Divisional Center",
-    createdAt: "2026-01-01T00:00:00Z",
-  },
-  {
-    id: "reg-chattogram",
-    code: "CTG",
-    nameEn: "Chattogram Range",
-    nameBn: "চট্টগ্রাম রেঞ্জ",
-    centerName: "Chattogram Divisional Center",
-    createdAt: "2026-01-01T00:00:00Z",
-  },
-  {
-    id: "reg-rajshahi",
-    code: "RAJ",
-    nameEn: "Rajshahi Range",
-    nameBn: "রাজশাহী রেঞ্জ",
-    centerName: "Rajshahi Divisional Center",
-    createdAt: "2026-01-01T00:00:00Z",
-  },
-  {
-    id: "reg-khulna",
-    code: "KHL",
-    nameEn: "Khulna Range",
-    nameBn: "খুলনা রেঞ্জ",
-    centerName: "Khulna Divisional Center",
-    createdAt: "2026-01-01T00:00:00Z",
-  },
-  {
-    id: "reg-rangpur",
-    code: "RNG",
-    nameEn: "Rangpur Range",
-    nameBn: "রংপুর রেঞ্জ",
-    centerName: "Rangpur Divisional Center",
-    createdAt: "2026-01-01T00:00:00Z",
-  },
-  {
-    id: "reg-mymensingh",
-    code: "MYM",
-    nameEn: "Mymensingh Range",
-    nameBn: "ময়মনসিংহ রেঞ্জ",
-    centerName: "Mymensingh Divisional Center",
-    createdAt: "2026-01-01T00:00:00Z",
-  },
-];
+/** Legacy generic range IDs removed in favor of the 11 official training centres. */
+export const LEGACY_NON_OFFICIAL_REGION_IDS = [
+  "reg-dhaka",
+  "reg-chattogram",
+  "reg-rajshahi",
+  "reg-khulna",
+  "reg-rangpur",
+  "reg-mymensingh",
+] as const;
 
-const sanjibonRegionIds = new Set(SANJIBON_REGIONS.map((r) => r.id));
-
-export const DEFAULT_REGIONS: Region[] = [
-  ...SANJIBON_REGIONS,
-  ...GENERAL_REGIONS.filter((r) => !sanjibonRegionIds.has(r.id)),
-];
+/** Only the 11 official Bangladesh Ansar & VDP training centres from the source-of-truth sheet. */
+export const DEFAULT_REGIONS: Region[] = [...SANJIBON_REGIONS];
 
 export const READY_MADE_PACKS: Quiz[] = [...SANJIBON_QUIZZES];
 

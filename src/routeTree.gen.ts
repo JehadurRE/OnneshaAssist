@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as ClaimCertificateRouteImport } from './routes/claim-certificate'
 import { Route as ContactSalesRouteImport } from './routes/contact-sales'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as DevelopersRouteImport } from './routes/developers'
@@ -40,6 +41,11 @@ const IndexRoute = IndexRouteImport.update({
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClaimCertificateRoute = ClaimCertificateRouteImport.update({
+  id: '/claim-certificate',
+  path: '/claim-certificate',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ContactSalesRoute = ContactSalesRouteImport.update({
@@ -146,6 +152,7 @@ const VerifyCertIdRoute = VerifyCertIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/claim-certificate': typeof ClaimCertificateRoute
   '/contact-sales': typeof ContactSalesRoute
   '/dashboard': typeof DashboardRoute
   '/developers': typeof DevelopersRoute
@@ -170,6 +177,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/claim-certificate': typeof ClaimCertificateRoute
   '/contact-sales': typeof ContactSalesRoute
   '/dashboard': typeof DashboardRoute
   '/developers': typeof DevelopersRoute
@@ -195,6 +203,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/claim-certificate': typeof ClaimCertificateRoute
   '/contact-sales': typeof ContactSalesRoute
   '/dashboard': typeof DashboardRoute
   '/developers': typeof DevelopersRoute
@@ -221,6 +230,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/claim-certificate'
     | '/contact-sales'
     | '/dashboard'
     | '/developers'
@@ -245,6 +255,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/admin'
+    | '/claim-certificate'
     | '/contact-sales'
     | '/dashboard'
     | '/developers'
@@ -269,6 +280,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
+    | '/claim-certificate'
     | '/contact-sales'
     | '/dashboard'
     | '/developers'
@@ -294,6 +306,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
+  ClaimCertificateRoute: typeof ClaimCertificateRoute
   ContactSalesRoute: typeof ContactSalesRoute
   DashboardRoute: typeof DashboardRoute
   DevelopersRoute: typeof DevelopersRoute
@@ -330,6 +343,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/claim-certificate': {
+      id: '/claim-certificate'
+      path: '/claim-certificate'
+      fullPath: '/claim-certificate'
+      preLoaderRoute: typeof ClaimCertificateRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/contact-sales': {
@@ -478,6 +498,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
+  ClaimCertificateRoute: ClaimCertificateRoute,
   ContactSalesRoute: ContactSalesRoute,
   DashboardRoute: DashboardRoute,
   DevelopersRoute: DevelopersRoute,

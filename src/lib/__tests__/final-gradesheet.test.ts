@@ -7,6 +7,12 @@ import {
   formatPracticalStatusLabel,
   normalizeDistrictKey,
 } from "../final-gradesheet";
+import {
+  detectCommonEmailTypo,
+  isDeliverableStudentEmail,
+  isPlaceholderStudentEmail,
+} from "../email-otp";
+import { migrateOfficialCentresAndRealEmailsInStore } from "../server-session";
 import type {
   CertificateData,
   PracticalExam,
@@ -117,7 +123,7 @@ describe("final gradesheet", () => {
         name: "Submitted Student",
         phone: "01711111111",
         regionName: "Gazipur",
-        email: "gzp01@example.com",
+        email: "gzp01@gmail.com",
       },
       {
         id: "r2",
@@ -125,7 +131,7 @@ describe("final gradesheet", () => {
         name: "Quiz Only Student",
         phone: "01722222222",
         regionName: "Gazipur",
-        email: "gzp02@example.com",
+        email: "gzp02@gmail.com",
       },
       {
         id: "r3",
@@ -133,7 +139,7 @@ describe("final gradesheet", () => {
         name: "Absent Student",
         phone: "01733333333",
         regionName: "Dhaka",
-        email: "gzp03@example.com",
+        email: "gzp03@gmail.com",
       },
     ];
 
@@ -151,7 +157,7 @@ describe("final gradesheet", () => {
         issueDate: "2026-11-26",
         verified: true,
         emailedAt: "2026-11-26T12:00:00Z",
-        emailedTo: "gzp01@example.com",
+        emailedTo: "gzp01@gmail.com",
       },
     ];
 
@@ -186,7 +192,7 @@ describe("final gradesheet", () => {
     expect(rows[0]?.rollNumber).toBe("GZP-01");
     expect(rows[0]?.rank).toBe(1);
     expect(rows[0]?.participated).toBe(true);
-    expect(rows[0]?.email).toBe("gzp01@example.com");
+    expect(rows[0]?.email).toBe("gzp01@gmail.com");
     expect(rows[0]?.certificateNumber).toBe("ONN-CRS-AIDM04-GZP01");
     expect(rows[0]?.certificateEmailedAt).toBe("2026-11-26T12:00:00Z");
     expect(rows[0]?.eligibleForCertificate).toBe(true);
@@ -206,7 +212,7 @@ describe("final gradesheet", () => {
     expect(rows[2]?.rank).toBe(0);
     expect(rows[2]?.participated).toBe(false);
     expect(rows[2]?.practicalStatus).toBe("not_participated");
-    expect(rows[2]?.email).toBe("gzp03@example.com");
+    expect(rows[2]?.email).toBe("gzp03@gmail.com");
     expect(rows[2]?.totalMarks).toBe(0);
 
     // CSV includes empty rank for absent student + participated flag + certificate info
@@ -214,7 +220,7 @@ describe("final gradesheet", () => {
     expect(csv).toContain("regularQuizMarks,regularQuizMax");
     expect(csv).toContain("participated,email,certificateNumber,certificateEmailedAt");
     expect(csv).toContain("ONN-CRS-AIDM04-GZP01");
-    expect(csv).toContain(",GZP-03,Absent Student,Dhaka,01733333333,0,0,0,0,0,0,30,0,0,40,0,0,70,0,not_participated,no,gzp03@example.com,,");
+    expect(csv).toContain(",GZP-03,Absent Student,Dhaka,01733333333,0,0,0,0,0,0,30,0,0,40,0,0,70,0,not_participated,no,gzp03@gmail.com,,");
 
     expect(formatPracticalStatusLabel("not_participated")).toBe("Not participated");
     expect(formatPracticalStatusLabel("quiz_only")).toBe("Quiz only");
@@ -247,7 +253,7 @@ describe("final gradesheet", () => {
         name: "Alt Roll Student",
         phone: "01744444444",
         regionName: "Noakhali",
-        email: "noa08@example.com",
+        email: "noa08@gmail.com",
       },
     ];
 
@@ -260,7 +266,7 @@ describe("final gradesheet", () => {
     });
 
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.email).toBe("noa08@example.com");
+    expect(rows[0]?.email).toBe("noa08@gmail.com");
     expect(rows[0]?.participated).toBe(true);
   });
 
@@ -382,7 +388,7 @@ describe("final gradesheet", () => {
           issueDate: "2026-11-28",
           verified: true,
           emailedAt: "2026-11-28T10:00:00Z",
-          emailedTo: "a@example.com",
+          emailedTo: "cum01@gmail.com",
         },
       ],
       quizByRoll: new Map([
@@ -423,5 +429,87 @@ describe("final gradesheet", () => {
 
     const passedRows = buildPassedOrEmailedRows(sampleRows, "passed");
     expect(passedRows.map((r) => r.rollNumber)).toEqual(["CUM-01", "CUM-02"]);
+  });
+
+  it("blocks @sanjibon.onnesha.* placeholders & Gmail typos, cleans store to 11 centres, and excludes non-official centres", () => {
+    expect(isPlaceholderStudentEmail("cum-01@sanjibon.onnesha.courses")).toBe(true);
+    expect(isPlaceholderStudentEmail("syl-02@sanjibon.onnesha.app")).toBe(true);
+    expect(isPlaceholderStudentEmail("student@gmail.com")).toBe(false);
+    expect(detectCommonEmailTypo("mohaiminul788@gamail.com")).toBe("mohaiminul788@gmail.com");
+    expect(detectCommonEmailTypo("mdjobairahamed67@gmail")).toBe("mdjobairahamed67@gmail.com");
+    expect(isDeliverableStudentEmail("cum-01@sanjibon.onnesha.courses")).toBe(false);
+    expect(isDeliverableStudentEmail("mohaiminul788@gamail.com")).toBe(false);
+    expect(isDeliverableStudentEmail("student@gmail.com")).toBe(true);
+
+    const mockStore = {
+      regions: [
+        { id: "reg-dhaka", code: "DHK", nameEn: "Dhaka Range", nameBn: "ঢাকা", createdAt: "" },
+        { id: "reg-sylhet", code: "SYL", nameEn: "Sylhet Training Centre", nameBn: "সিলেট", createdAt: "" },
+      ],
+      deletedRegionIds: [],
+      roster: [
+        { id: "s1", rollNumber: "CUM-01", name: "Cumilla Student", email: "cum-01@sanjibon.onnesha.courses" },
+        { id: "s2", rollNumber: "NOA-12", name: "Noakhali Student", email: "mohaiminul788@gamail.com" },
+        { id: "s3", rollNumber: "KIS-17", name: "Kishoreganj Student", email: "mdjobairahamed67@gmail" },
+        { id: "s4", rollNumber: "BAR-01", name: "Barishal Student", email: "bar01@gmail.com" },
+      ],
+      certificates: [
+        {
+          id: "c1",
+          certificateNumber: "ONN-CRS-AIDM04-CUM01",
+          studentRoll: "CUM-01",
+          emailedAt: "2026-11-28T10:00:00Z",
+          emailedTo: "cum-01@sanjibon.onnesha.courses",
+        },
+        {
+          id: "c2",
+          certificateNumber: "ONN-CRS-AIDM04-BAR01",
+          studentRoll: "BAR-01",
+          emailedAt: "2026-11-28T10:00:00Z",
+          emailedTo: "bar01@gmail.com",
+        },
+      ],
+    };
+
+    const mig = migrateOfficialCentresAndRealEmailsInStore(mockStore as never);
+    expect(mig.removedRegions).toBe(1);
+    expect(mockStore.regions).toHaveLength(11);
+    expect(mockStore.regions.some((r) => r.id === "reg-dhaka")).toBe(false);
+    expect(mig.strippedPlaceholders).toBe(1);
+    expect(mig.fixedTypos).toBe(2);
+    expect(mig.clearedBouncedCerts).toBe(1);
+    expect(mockStore.roster[0]?.email).toBeUndefined();
+    expect(mockStore.roster[1]?.email).toBe("mohaiminul788@gmail.com");
+    expect(mockStore.roster[2]?.email).toBe("mdjobairahamed67@gmail.com");
+    expect(mockStore.roster[3]?.email).toBe("bar01@gmail.com");
+    expect(mockStore.certificates[0]?.emailedAt).toBeUndefined();
+    expect(mockStore.certificates[1]?.emailedAt).toBe("2026-11-28T10:00:00Z");
+
+    // Official region filter excludes Dhaka Range cleanly from District summary
+    const sampleRows = buildFinalGradeSheetRows({
+      exam,
+      submissions: [
+        {
+          id: "sub-dhk",
+          practicalExamId: "exam-1",
+          courseId: "course-1",
+          rollNumber: "82",
+          studentName: "Admin Test",
+          regionName: "Dhaka Range",
+          status: "graded",
+          practicalScorePct: 90,
+          quizAccuracyPct: 90,
+          answers: [],
+          createdAt: "",
+          updatedAt: "",
+        },
+      ] as PracticalSubmission[],
+      quizByRoll: new Map(),
+      normalizeRoll: normalizeRollToken,
+    });
+    const officialNames = mockStore.regions.map((r) => r.nameEn);
+    const summary = buildDistrictPassSummary(sampleRows, officialNames);
+    expect(summary.districts).toHaveLength(11);
+    expect(summary.districts.some((d) => d.regionName.includes("Dhaka"))).toBe(false);
   });
 });
