@@ -44,8 +44,13 @@ import {
   type FinalQuizRecordSnapshot,
 } from "@/lib/practical-exam";
 import {
+  buildDistrictPassSummary,
+  buildPassedOrEmailedRows,
   finalGradeSheetCsv,
   formatPracticalStatusLabel,
+  isRowEmailedForReport,
+  isRowPassedForReport,
+  normalizeDistrictKey,
   type FinalGradeSheetRow,
 } from "@/lib/final-gradesheet";
 import {
@@ -57,7 +62,11 @@ import {
   type GradeQueueSortBy,
   type GradeQueueStatusFilter,
 } from "@/lib/grading-queue";
-import { downloadFinalGradeSheetPdf } from "@/lib/pdf-generator";
+import {
+  downloadCertificateEmailedListPdf,
+  downloadDistrictPassSummaryPdf,
+  downloadFinalGradeSheetPdf,
+} from "@/lib/pdf-generator";
 import {
   ArrowDownWideNarrow,
   ArrowUpDown,
@@ -75,7 +84,9 @@ import {
   KeyRound,
   Loader2,
   Mail,
+  MapPin,
   Plus,
+  Printer,
   Radio,
   RefreshCw,
   RotateCcw,
@@ -250,7 +261,9 @@ export function AdminPracticalPanel(props: {
     totalMaxMarks: number;
   } | null>(null);
   const [sheetLoading, setSheetLoading] = useState(false);
-  const [sheetTab, setSheetTab] = useState<"all" | "participated" | "not_participated">("all");
+  const [sheetTab, setSheetTab] = useState<
+    "all" | "participated" | "emailed" | "not_participated" | "by_district"
+  >("all");
   const [sheetSearch, setSheetSearch] = useState("");
   const [sheetRegion, setSheetRegion] = useState("all");
   const [rowSendResult, setRowSendResult] = useState<
@@ -1124,35 +1137,46 @@ export function AdminPracticalPanel(props: {
     const notParticipated = total - participated;
     const graded = sheetRows.filter((r) => r.practicalGraded).length;
     const eligible = sheetRows.filter((r) => r.eligibleForCertificate === true).length;
+    const passed = sheetRows.filter(isRowPassedForReport).length;
     const withQuiz = sheetRows.filter((r) => r.quizFound).length;
     const certified = sheetRows.filter((r) => !!r.certificateNumber).length;
-    const emailed = sheetRows.filter((r) => !!r.certificateEmailedAt).length;
+    const emailed = sheetRows.filter(isRowEmailedForReport).length;
     return {
       total,
       participated,
       notParticipated,
       graded,
       eligible,
+      passed,
       withQuiz,
       certified,
       emailed,
     };
   }, [sheetRows]);
 
-  const sheetRegions = useMemo(() => {
-    const set = new Set<string>();
-    for (const r of sheetRows) {
-      if (r.regionName?.trim()) set.add(r.regionName.trim());
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [sheetRows]);
+  const districtSummary = useMemo(() => buildDistrictPassSummary(sheetRows), [sheetRows]);
+
+  const sheetRegions = useMemo(
+    () =>
+      districtSummary.districts.map((d) => ({
+        key: d.regionKey,
+        label: d.regionName,
+      })),
+    [districtSummary.districts],
+  );
+
+  const selectedRegionLabel = useMemo(() => {
+    if (sheetRegion === "all") return "all";
+    return sheetRegions.find((r) => r.key === sheetRegion)?.label || sheetRegion;
+  }, [sheetRegion, sheetRegions]);
 
   const filteredSheetRows = useMemo(() => {
     const q = sheetSearch.trim().toLowerCase();
     return sheetRows.filter((r) => {
       if (sheetTab === "participated" && !r.participated) return false;
+      if (sheetTab === "emailed" && !isRowEmailedForReport(r)) return false;
       if (sheetTab === "not_participated" && r.participated) return false;
-      if (sheetRegion !== "all" && (r.regionName || "").trim() !== sheetRegion) return false;
+      if (sheetRegion !== "all" && normalizeDistrictKey(r.regionName) !== sheetRegion) return false;
       if (q) {
         const hay = `${r.rollNumber} ${r.studentName} ${r.regionName} ${r.email || ""} ${r.phone || ""} ${r.certificateNumber || ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
@@ -1160,6 +1184,18 @@ export function AdminPracticalPanel(props: {
       return true;
     });
   }, [sheetRows, sheetTab, sheetRegion, sheetSearch]);
+
+  const filteredEmailedRows = useMemo(() => {
+    const base = buildPassedOrEmailedRows(sheetRows, "emailed");
+    if (sheetRegion === "all") return base;
+    return base.filter((r) => normalizeDistrictKey(r.regionName) === sheetRegion);
+  }, [sheetRows, sheetRegion]);
+
+  const filteredPassedRows = useMemo(() => {
+    const base = buildPassedOrEmailedRows(sheetRows, "passed");
+    if (sheetRegion === "all") return base;
+    return base.filter((r) => normalizeDistrictKey(r.regionName) === sheetRegion);
+  }, [sheetRows, sheetRegion]);
 
   if (loading) {
     return (
@@ -1492,6 +1528,67 @@ export function AdminPracticalPanel(props: {
       setNotice(`Downloaded PDF gradesheet (${filteredSheetRows.length} students).`);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "PDF export failed.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const exportOfficialListPdf = async (mode: "emailed" | "passed") => {
+    if (!sheetMeta) return;
+    const targetRows = mode === "emailed" ? filteredEmailedRows : filteredPassedRows;
+    if (!targetRows.length) {
+      setNotice(
+        mode === "emailed"
+          ? "No students have been emailed a certificate in the current selection yet."
+          : "No passed students found in the current selection.",
+      );
+      return;
+    }
+    setBusyId(`sheet-pdf-${mode}`);
+    setNotice(null);
+    try {
+      await downloadCertificateEmailedListPdf({
+        mode,
+        courseTitle: sheetMeta.courseTitle,
+        courseCode: sheetMeta.courseCode,
+        districtFilterLabel: selectedRegionLabel,
+        rows: targetRows,
+        branding: db.getBranding(),
+        generatedAt: sheetMeta.generatedAt,
+      });
+      setNotice(
+        mode === "emailed"
+          ? `Downloaded Certificate Emailed List PDF (${targetRows.length} students — no marks/%).`
+          : `Downloaded Passed Students List PDF (${targetRows.length} students — no marks/%).`,
+      );
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "PDF export failed.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const exportDistrictSummaryPdf = async () => {
+    if (!sheetMeta || !districtSummary.districts.length) {
+      setNotice("No district / range data available to export.");
+      return;
+    }
+    setBusyId("sheet-pdf-district");
+    setNotice(null);
+    try {
+      await downloadDistrictPassSummaryPdf({
+        courseTitle: sheetMeta.courseTitle,
+        courseCode: sheetMeta.courseCode,
+        districts: districtSummary.districts,
+        totals: districtSummary.totals,
+        branding: db.getBranding(),
+        generatedAt: sheetMeta.generatedAt,
+      });
+      setNotice(
+        `Downloaded District / Range Pass Summary PDF (${districtSummary.districts.length} districts · ${districtSummary.totals.passedCount} passed · ${districtSummary.totals.emailedCount} emailed).`,
+      );
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "District PDF export failed.");
     } finally {
       setBusyId(null);
     }
@@ -2539,6 +2636,73 @@ export function AdminPracticalPanel(props: {
             </div>
           )}
 
+          {/* Official Clean PDF Print Lists (No Marks / No Percentages) */}
+          {sheetRows.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.04] px-3.5 py-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <Printer className="h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-300" />
+                <div className="min-w-0">
+                  <div className="text-xs font-extrabold text-foreground">
+                    Official PDF Lists (No Marks / No %)
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Print-ready lists of certificate-emailed / passed students and district-wise
+                    pass counts.
+                    {sheetRegion !== "all" ? ` Filtered to: ${selectedRegionLabel}.` : ""}
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void exportOfficialListPdf("emailed")}
+                  disabled={filteredEmailedRows.length === 0 || busyId === "sheet-pdf-emailed"}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-800 transition-colors hover:bg-emerald-500/20 disabled:opacity-50 dark:text-emerald-200"
+                  title="Download PDF list of students who received certificate email (no marks or percentages)"
+                >
+                  {busyId === "sheet-pdf-emailed" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Mail className="h-3.5 w-3.5" />
+                  )}
+                  <span>Emailed List PDF ({filteredEmailedRows.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void exportOfficialListPdf("passed")}
+                  disabled={filteredPassedRows.length === 0 || busyId === "sheet-pdf-passed"}
+                  className="staff-btn-ghost !py-1.5 text-xs disabled:opacity-50"
+                  title="Download PDF list of all passed students with email status (no marks or percentages)"
+                >
+                  {busyId === "sheet-pdf-passed" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Award className="h-3.5 w-3.5" />
+                  )}
+                  <span>Passed List PDF ({filteredPassedRows.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void exportDistrictSummaryPdf()}
+                  disabled={
+                    districtSummary.districts.length === 0 || busyId === "sheet-pdf-district"
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-bold text-sky-800 transition-colors hover:bg-sky-500/20 disabled:opacity-50 dark:text-sky-200"
+                  title="Download District / Range-wise pass & certificate email headcount PDF (no percentages)"
+                >
+                  {busyId === "sheet-pdf-district" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <MapPin className="h-3.5 w-3.5" />
+                  )}
+                  <span>
+                    District / Range PDF ({districtSummary.districts.length})
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Participation Tabs + Search/Region Filter */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div
@@ -2555,9 +2719,19 @@ export function AdminPracticalPanel(props: {
                     count: sheetCounts.participated,
                   },
                   {
+                    id: "emailed" as const,
+                    label: "Emailed",
+                    count: sheetCounts.emailed,
+                  },
+                  {
                     id: "not_participated" as const,
                     label: "Did Not Participate",
                     count: sheetCounts.notParticipated,
+                  },
+                  {
+                    id: "by_district" as const,
+                    label: "By District / Range",
+                    count: districtSummary.districts.length,
                   },
                 ] as const
               ).map((t) => {
@@ -2580,9 +2754,11 @@ export function AdminPracticalPanel(props: {
                       className={`inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black ${
                         t.id === "not_participated"
                           ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
-                          : t.id === "participated"
+                          : t.id === "participated" || t.id === "emailed"
                             ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                            : "bg-muted text-muted-foreground"
+                            : t.id === "by_district"
+                              ? "bg-sky-500/15 text-sky-700 dark:text-sky-300"
+                              : "bg-muted text-muted-foreground"
                       }`}
                     >
                       {t.count}
@@ -2592,33 +2768,35 @@ export function AdminPracticalPanel(props: {
               })}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="text"
-                  value={sheetSearch}
-                  onChange={(e) => setSheetSearch(e.target.value)}
-                  placeholder="Search roll, name, email…"
-                  className="staff-input !py-1.5 !pl-8 !pr-3 text-xs w-52"
-                />
+            {sheetTab !== "by_district" && (
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={sheetSearch}
+                    onChange={(e) => setSheetSearch(e.target.value)}
+                    placeholder="Search roll, name, email…"
+                    className="staff-input !py-1.5 !pl-8 !pr-3 text-xs w-52"
+                  />
+                </div>
+                {sheetRegions.length > 0 && (
+                  <select
+                    value={sheetRegion}
+                    onChange={(e) => setSheetRegion(e.target.value)}
+                    className="staff-input !py-1.5 text-xs w-auto max-w-[220px]"
+                    aria-label="Filter by region"
+                  >
+                    <option value="all">All districts / ranges</option>
+                    {sheetRegions.map((reg) => (
+                      <option key={reg.key} value={reg.key}>
+                        {reg.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
-              {sheetRegions.length > 0 && (
-                <select
-                  value={sheetRegion}
-                  onChange={(e) => setSheetRegion(e.target.value)}
-                  className="staff-input !py-1.5 text-xs w-auto max-w-[200px]"
-                  aria-label="Filter by region"
-                >
-                  <option value="all">All regions</option>
-                  {sheetRegions.map((reg) => (
-                    <option key={reg} value={reg}>
-                      {reg}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
+            )}
           </div>
 
           {sheetLoading && !sheetRows.length ? (
@@ -2628,6 +2806,97 @@ export function AdminPracticalPanel(props: {
           ) : sheetRows.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-8 text-center text-sm text-muted-foreground">
               No students or practical submissions found for this course yet.
+            </div>
+          ) : sheetTab === "by_district" ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border/80 bg-muted/20 px-4 py-3">
+                <div>
+                  <div className="text-xs font-black text-foreground">
+                    District / Range-Wise Pass &amp; Email Count
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Headcounts only (no marks or percentages). Click any district to inspect its
+                    students.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void exportDistrictSummaryPdf()}
+                  disabled={busyId === "sheet-pdf-district"}
+                  className="staff-btn-primary !py-1.5 text-xs disabled:opacity-50"
+                >
+                  {busyId === "sheet-pdf-district" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Printer className="h-3.5 w-3.5" />
+                  )}
+                  Print / Download District PDF
+                </button>
+              </div>
+              <div className="overflow-x-auto rounded-2xl border border-border/80 bg-card">
+                <table className="w-full min-w-[600px] text-left text-xs">
+                  <thead className="border-b border-border bg-muted/40 text-[10px] font-black uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="px-4 py-2.5 w-12">#</th>
+                      <th className="px-4 py-2.5">District / Range (Training Centre)</th>
+                      <th className="px-4 py-2.5 text-right">Total Students</th>
+                      <th className="px-4 py-2.5 text-right">Passed</th>
+                      <th className="px-4 py-2.5 text-right">Cert Emailed</th>
+                      <th className="px-4 py-2.5 text-right">Students</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {districtSummary.districts.map((d, idx) => (
+                      <tr
+                        key={d.regionKey}
+                        className="border-b border-border/60 last:border-0 hover:bg-muted/30"
+                      >
+                        <td className="px-4 py-2.5 font-mono text-muted-foreground">{idx + 1}</td>
+                        <td className="px-4 py-2.5 font-bold text-foreground">{d.regionName}</td>
+                        <td className="px-4 py-2.5 text-right font-mono text-muted-foreground">
+                          {d.totalStudents}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono font-black text-emerald-700 dark:text-emerald-300">
+                          {d.passedCount}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-sky-700 dark:text-sky-300">
+                          {d.emailedCount}
+                        </td>
+                        <td className="px-4 py-2.5 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSheetRegion(d.regionKey);
+                              setSheetTab("all");
+                            }}
+                            className="rounded-lg border border-border bg-background px-2.5 py-1 text-[11px] font-bold hover:bg-accent"
+                          >
+                            View list →
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-border bg-emerald-500/[0.06] font-bold">
+                      <td className="px-4 py-3" />
+                      <td className="px-4 py-3 text-foreground">
+                        {districtSummary.totals.regionName}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-foreground">
+                        {districtSummary.totals.totalStudents}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-emerald-700 dark:text-emerald-300">
+                        {districtSummary.totals.passedCount}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-sky-700 dark:text-sky-300">
+                        {districtSummary.totals.emailedCount}
+                      </td>
+                      <td className="px-4 py-3" />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </div>
           ) : filteredSheetRows.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-8 text-center text-sm text-muted-foreground">

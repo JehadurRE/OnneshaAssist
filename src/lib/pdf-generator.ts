@@ -2839,3 +2839,528 @@ export async function downloadFinalGradeSheetPdf(params: {
     `Onnesha-Final-Gradesheet-${slug}-${new Date().toISOString().slice(0, 10)}.pdf`,
   );
 }
+
+/**
+ * Official Passed or Certificate-Emailed Student List PDF — NO marks, NO percentages.
+ * Sorted cleanly by District / Range then Roll Number.
+ */
+export async function downloadCertificateEmailedListPdf(params: {
+  mode: "emailed" | "passed";
+  courseTitle: string;
+  courseCode?: string | undefined;
+  districtFilterLabel?: string | undefined;
+  rows: Array<{
+    rollNumber: string;
+    studentName: string;
+    regionName: string;
+    email?: string | undefined;
+    certificateNumber?: string | undefined;
+    certificateEmailedAt?: string | undefined;
+    certificateEmailedTo?: string | undefined;
+  }>;
+  branding?: BrandingSettings | undefined;
+  generatedAt?: string | undefined;
+}): Promise<void> {
+  const { mode, courseTitle, courseCode, districtFilterLabel, rows, branding } = params;
+  const generatedAt = params.generatedAt || new Date().toISOString();
+  const dateLabel = new Date(generatedAt).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+
+  const [leftLogo, rightLogo, rightSecondaryLogo] = await Promise.all([
+    loadImageSafe(branding?.leftLogoUrl || onnesha.url),
+    branding?.rightLogoUrl ? loadImageSafe(branding.rightLogoUrl) : Promise.resolve(null),
+    branding?.rightSecondaryLogoUrl
+      ? loadImageSafe(branding.rightSecondaryLogoUrl)
+      : Promise.resolve(null),
+  ]);
+
+  const W = 1684; // A4 landscape @ ~144dpi
+  const H = 1190;
+  const M = 48;
+  const headerH = 128;
+  const footerH = 54;
+  const rowH = 30;
+
+  const colX = {
+    sl: M,
+    roll: M + 48,
+    name: M + 165,
+    region: M + 465,
+    cert: M + 715,
+    email: M + 995,
+    status: M + 1375,
+  };
+
+  const usableH = H - headerH - footerH - M;
+  const rowsPerPage = Math.max(1, Math.floor((usableH - rowH) / rowH));
+  const totalPages = Math.max(1, Math.ceil(rows.length / rowsPerPage));
+  const emailedCount = rows.filter((r) => !!r.certificateEmailedAt).length;
+  const titleText =
+    mode === "emailed"
+      ? "Certificate Emailed Student List"
+      : "Passed & Certified Student List";
+  const countSummary =
+    mode === "emailed"
+      ? `Total Emailed: ${rows.length}`
+      : `Total Passed: ${rows.length}  ·  Certificates Emailed: ${emailedCount}`;
+
+  const canvases: HTMLCanvasElement[] = [];
+
+  for (let pageIdx = 0; pageIdx < totalPages; pageIdx++) {
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, W, H);
+
+    // Top accent bar
+    ctx.fillStyle = "#065f46";
+    ctx.fillRect(0, 0, W, 8);
+
+    // Left logo
+    if (leftLogo) {
+      ctx.drawImage(leftLogo, M, 26, 62, 62);
+    }
+
+    // Optional right co-branding logos
+    let rightEdge = W - M;
+    if (rightSecondaryLogo) {
+      const h = 48;
+      const w = Math.min(110, (rightSecondaryLogo.width / (rightSecondaryLogo.height || 1)) * h);
+      ctx.drawImage(rightSecondaryLogo, rightEdge - w, 32, w, h);
+      rightEdge -= w + 16;
+    }
+    if (rightLogo) {
+      const h = 52;
+      const w = Math.min(110, (rightLogo.width / (rightLogo.height || 1)) * h);
+      ctx.drawImage(rightLogo, rightEdge - w, 30, w, h);
+    }
+
+    const titleX = M + (leftLogo ? 78 : 0);
+    ctx.fillStyle = "#0f172a";
+    ctx.font = "bold 28px Georgia, 'Times New Roman', serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(titleText, titleX, 52);
+
+    ctx.font = "600 16px system-ui, sans-serif";
+    ctx.fillStyle = "#334155";
+    ctx.fillText(`${courseCode ? `${courseCode} · ` : ""}${courseTitle}`, titleX, 78);
+
+    ctx.font = "14px system-ui, sans-serif";
+    ctx.fillStyle = "#475569";
+    const filterNote =
+      districtFilterLabel && districtFilterLabel !== "all"
+        ? `District / Range: ${districtFilterLabel}  ·  `
+        : "";
+    ctx.fillText(`${filterNote}${countSummary}  ·  Generated ${dateLabel}`, titleX, 102);
+
+    const tableTop = headerH;
+    const pageRows = rows.slice(pageIdx * rowsPerPage, (pageIdx + 1) * rowsPerPage);
+
+    // Header row
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(M, tableTop, W - 2 * M, rowH);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 12px system-ui, sans-serif";
+    ctx.textBaseline = "middle";
+    const hy = tableTop + rowH / 2;
+    ctx.textAlign = "left";
+    ctx.fillText("#", colX.sl + 8, hy);
+    ctx.fillText("Roll", colX.roll, hy);
+    ctx.fillText("Student Name", colX.name, hy);
+    ctx.fillText("District / Range", colX.region, hy);
+    ctx.fillText("Certificate No.", colX.cert, hy);
+    ctx.fillText("Email", colX.email, hy);
+    ctx.fillText("Status", colX.status, hy);
+
+    let y = tableTop + rowH;
+    pageRows.forEach((r, i) => {
+      const globalIdx = pageIdx * rowsPerPage + i + 1;
+      if (i % 2 === 0) {
+        ctx.fillStyle = "#f8fafc";
+        ctx.fillRect(M, y, W - 2 * M, rowH);
+      }
+      ctx.textBaseline = "middle";
+      const cy = y + rowH / 2;
+      ctx.textAlign = "left";
+
+      ctx.fillStyle = "#64748b";
+      ctx.font = "13px ui-monospace, monospace";
+      ctx.fillText(String(globalIdx), colX.sl + 8, cy);
+
+      ctx.fillStyle = "#0f172a";
+      ctx.font = "bold 13px ui-monospace, monospace";
+      ctx.fillText((r.rollNumber || "—").slice(0, 14), colX.roll, cy);
+
+      ctx.font = "600 13px system-ui, sans-serif";
+      const cleanName = r.studentName || "—";
+      ctx.fillText(
+        cleanName.length > 32 ? `${cleanName.slice(0, 30)}…` : cleanName,
+        colX.name,
+        cy,
+      );
+
+      ctx.fillStyle = "#334155";
+      ctx.font = "13px system-ui, sans-serif";
+      const cleanReg = r.regionName || "—";
+      ctx.fillText(
+        cleanReg.length > 26 ? `${cleanReg.slice(0, 24)}…` : cleanReg,
+        colX.region,
+        cy,
+      );
+
+      ctx.fillStyle = "#0f172a";
+      ctx.font = "12px ui-monospace, monospace";
+      ctx.fillText((r.certificateNumber || "—").slice(0, 28), colX.cert, cy);
+
+      ctx.fillStyle = "#334155";
+      ctx.font = "12px ui-monospace, monospace";
+      const emailText = (r.certificateEmailedTo || r.email || "—").trim();
+      ctx.fillText(
+        emailText.length > 40 ? `${emailText.slice(0, 38)}…` : emailText,
+        colX.email,
+        cy,
+      );
+
+      const emailedDate = r.certificateEmailedAt
+        ? new Date(r.certificateEmailedAt).toLocaleDateString("en-GB", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+          })
+        : "";
+      ctx.font = "bold 12px system-ui, sans-serif";
+      if (r.certificateEmailedAt) {
+        ctx.fillStyle = "#065f46";
+        ctx.fillText(`Emailed · ${emailedDate}`, colX.status, cy);
+      } else if (r.certificateNumber) {
+        ctx.fillStyle = "#1d4ed8";
+        ctx.fillText("Passed · Issued", colX.status, cy);
+      } else {
+        ctx.fillStyle = "#475569";
+        ctx.fillText("Passed", colX.status, cy);
+      }
+
+      y += rowH;
+    });
+
+    ctx.strokeStyle = "#cbd5e1";
+    ctx.lineWidth = 1.25;
+    ctx.strokeRect(M, tableTop, W - 2 * M, y - tableTop);
+
+    ctx.fillStyle = "#64748b";
+    ctx.font = "12px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(
+      `Page ${pageIdx + 1} of ${totalPages}  ·  ${rows.length} students  ·  Official Course Record · Onnesha`,
+      W / 2,
+      H - 24,
+    );
+
+    canvases.push(canvas);
+  }
+
+  const pdfBytes = buildPdfFromCanvases(canvases, "landscape");
+  const slug = (courseCode || "course").replace(/[^a-zA-Z0-9-_]/g, "-");
+  const kindSlug = mode === "emailed" ? "Certificate-Emailed-List" : "Passed-Students-List";
+  triggerBlobDownload(
+    pdfBytes,
+    `Onnesha-${kindSlug}-${slug}-${new Date().toISOString().slice(0, 10)}.pdf`,
+  );
+}
+
+/**
+ * Official District / Range-Wise Pass & Certificate Email Summary PDF — headcounts ONLY (NO percentages, NO marks).
+ */
+export async function downloadDistrictPassSummaryPdf(params: {
+  courseTitle: string;
+  courseCode?: string | undefined;
+  districts: Array<{
+    regionName: string;
+    totalStudents: number;
+    passedCount: number;
+    certifiedCount: number;
+    emailedCount: number;
+  }>;
+  totals: {
+    regionName: string;
+    totalStudents: number;
+    passedCount: number;
+    certifiedCount: number;
+    emailedCount: number;
+  };
+  branding?: BrandingSettings | undefined;
+  generatedAt?: string | undefined;
+}): Promise<void> {
+  const { courseTitle, courseCode, districts, totals, branding } = params;
+  const generatedAt = params.generatedAt || new Date().toISOString();
+  const dateLabel = new Date(generatedAt).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+
+  const [leftLogo, rightLogo, rightSecondaryLogo] = await Promise.all([
+    loadImageSafe(branding?.leftLogoUrl || onnesha.url),
+    branding?.rightLogoUrl ? loadImageSafe(branding.rightLogoUrl) : Promise.resolve(null),
+    branding?.rightSecondaryLogoUrl
+      ? loadImageSafe(branding.rightSecondaryLogoUrl)
+      : Promise.resolve(null),
+  ]);
+
+  const W = 1190; // A4 portrait @ ~144dpi
+  const H = 1684;
+  const M = 54;
+  const tableWidth = W - 2 * M;
+  const footerH = 60;
+  const rowH = 42;
+
+  const colX = {
+    sl: M,
+    region: M + 58,
+    total: M + 660,
+    passed: M + 870,
+    emailed: M + tableWidth - 20,
+  };
+
+  const firstPageTableTop = 264;
+  const nextPageTableTop = 148;
+  const rowsFirstPage = Math.max(1, Math.floor((H - firstPageTableTop - footerH - rowH * 2) / rowH));
+  const rowsOtherPage = Math.max(1, Math.floor((H - nextPageTableTop - footerH - rowH * 2) / rowH));
+
+  const chunks: Array<typeof districts> = [];
+  if (districts.length <= rowsFirstPage) {
+    chunks.push(districts);
+  } else {
+    chunks.push(districts.slice(0, rowsFirstPage));
+    for (let i = rowsFirstPage; i < districts.length; i += rowsOtherPage) {
+      chunks.push(districts.slice(i, i + rowsOtherPage));
+    }
+  }
+
+  const totalPages = Math.max(1, chunks.length);
+  const canvases: HTMLCanvasElement[] = [];
+
+  for (let pageIdx = 0; pageIdx < totalPages; pageIdx++) {
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, W, H);
+
+    // Top accent bar
+    ctx.fillStyle = "#065f46";
+    ctx.fillRect(0, 0, W, 10);
+
+    // Header logos
+    if (leftLogo) {
+      ctx.drawImage(leftLogo, M, 32, 64, 64);
+    }
+    let rightEdge = W - M;
+    if (rightSecondaryLogo) {
+      const h = 48;
+      const w = Math.min(104, (rightSecondaryLogo.width / (rightSecondaryLogo.height || 1)) * h);
+      ctx.drawImage(rightSecondaryLogo, rightEdge - w, 38, w, h);
+      rightEdge -= w + 14;
+    }
+    if (rightLogo) {
+      const h = 54;
+      const w = Math.min(104, (rightLogo.width / (rightLogo.height || 1)) * h);
+      ctx.drawImage(rightLogo, rightEdge - w, 35, w, h);
+    }
+
+    const titleX = M + (leftLogo ? 80 : 0);
+    ctx.fillStyle = "#0f172a";
+    ctx.font = "bold 28px Georgia, 'Times New Roman', serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText("District / Range-Wise Pass Summary", titleX, 58);
+
+    ctx.font = "600 15px system-ui, sans-serif";
+    ctx.fillStyle = "#334155";
+    const fullCourseLine = `${courseCode ? `${courseCode} · ` : ""}${courseTitle}`;
+    ctx.fillText(
+      fullCourseLine.length > 74 ? `${fullCourseLine.slice(0, 72)}…` : fullCourseLine,
+      titleX,
+      82,
+    );
+
+    ctx.font = "13px system-ui, sans-serif";
+    ctx.fillStyle = "#64748b";
+    ctx.fillText(`Official District / Range Headcount Report  ·  Generated ${dateLabel}`, titleX, 104);
+
+    // First-page KPI summary cards (headcounts only — no percentages)
+    if (pageIdx === 0) {
+      const cardTop = 132;
+      const cardH = 98;
+      const gap = 16;
+      const cardW = (tableWidth - gap * 3) / 4;
+      const cards = [
+        {
+          label: "DISTRICTS / RANGES",
+          value: String(districts.length),
+          bg: "#f8fafc",
+          border: "#cbd5e1",
+          color: "#0f172a",
+        },
+        {
+          label: "TOTAL STUDENTS",
+          value: String(totals.totalStudents),
+          bg: "#f8fafc",
+          border: "#cbd5e1",
+          color: "#0f172a",
+        },
+        {
+          label: "TOTAL PASSED",
+          value: String(totals.passedCount),
+          bg: "#ecfdf5",
+          border: "#6ee7b7",
+          color: "#065f46",
+        },
+        {
+          label: "CERTIFICATES EMAILED",
+          value: String(totals.emailedCount),
+          bg: "#eff6ff",
+          border: "#93c5fd",
+          color: "#1e40af",
+        },
+      ];
+      cards.forEach((c, idx) => {
+        const cx = M + idx * (cardW + gap);
+        ctx.fillStyle = c.bg;
+        ctx.fillRect(cx, cardTop, cardW, cardH);
+        ctx.strokeStyle = c.border;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(cx, cardTop, cardW, cardH);
+
+        ctx.fillStyle = "#64748b";
+        ctx.font = "bold 11px system-ui, sans-serif";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "alphabetic";
+        ctx.fillText(c.label, cx + 18, cardTop + 30);
+
+        ctx.fillStyle = c.color;
+        ctx.font = "bold 36px system-ui, sans-serif";
+        ctx.fillText(c.value, cx + 18, cardTop + 78);
+      });
+    }
+
+    const tableTop = pageIdx === 0 ? firstPageTableTop : nextPageTableTop;
+    const pageRows = chunks[pageIdx] || [];
+    const startIdx = pageIdx === 0 ? 0 : rowsFirstPage + (pageIdx - 1) * rowsOtherPage;
+
+    // Table header
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(M, tableTop, tableWidth, rowH);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 13px system-ui, sans-serif";
+    ctx.textBaseline = "middle";
+    const hy = tableTop + rowH / 2;
+    ctx.textAlign = "left";
+    ctx.fillText("#", colX.sl + 14, hy);
+    ctx.fillText("District / Range (Training Centre)", colX.region, hy);
+    ctx.textAlign = "right";
+    ctx.fillText("Total Students", colX.total, hy);
+    ctx.fillText("Passed", colX.passed, hy);
+    ctx.fillText("Cert Emailed", colX.emailed, hy);
+
+    let y = tableTop + rowH;
+    pageRows.forEach((d, i) => {
+      if (i % 2 === 0) {
+        ctx.fillStyle = "#f8fafc";
+        ctx.fillRect(M, y, tableWidth, rowH);
+      }
+      ctx.textBaseline = "middle";
+      const cy = y + rowH / 2;
+
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#64748b";
+      ctx.font = "14px ui-monospace, monospace";
+      ctx.fillText(String(startIdx + i + 1), colX.sl + 14, cy);
+
+      ctx.fillStyle = "#0f172a";
+      ctx.font = "600 15px system-ui, sans-serif";
+      const regText =
+        d.regionName.length > 44 ? `${d.regionName.slice(0, 42)}…` : d.regionName;
+      ctx.fillText(regText, colX.region, cy);
+
+      ctx.textAlign = "right";
+      ctx.fillStyle = "#334155";
+      ctx.font = "15px ui-monospace, monospace";
+      ctx.fillText(String(d.totalStudents), colX.total, cy);
+
+      ctx.fillStyle = "#065f46";
+      ctx.font = "bold 16px ui-monospace, monospace";
+      ctx.fillText(String(d.passedCount), colX.passed, cy);
+
+      ctx.fillStyle = "#1e40af";
+      ctx.font = "bold 16px ui-monospace, monospace";
+      ctx.fillText(String(d.emailedCount), colX.emailed, cy);
+
+      ctx.strokeStyle = "#e2e8f0";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(M, y + rowH);
+      ctx.lineTo(M + tableWidth, y + rowH);
+      ctx.stroke();
+
+      y += rowH;
+    });
+
+    // Grand Total row on the final page
+    if (pageIdx === totalPages - 1) {
+      ctx.fillStyle = "#ecfdf5";
+      ctx.fillRect(M, y, tableWidth, rowH + 6);
+      const ty = y + (rowH + 6) / 2;
+      ctx.textBaseline = "middle";
+
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#0f172a";
+      ctx.font = "bold 15px system-ui, sans-serif";
+      ctx.fillText("Grand Total (All Districts / Ranges)", colX.region, ty);
+
+      ctx.textAlign = "right";
+      ctx.font = "bold 16px ui-monospace, monospace";
+      ctx.fillStyle = "#0f172a";
+      ctx.fillText(String(totals.totalStudents), colX.total, ty);
+
+      ctx.fillStyle = "#065f46";
+      ctx.fillText(String(totals.passedCount), colX.passed, ty);
+
+      ctx.fillStyle = "#1e40af";
+      ctx.fillText(String(totals.emailedCount), colX.emailed, ty);
+
+      y += rowH + 6;
+    }
+
+    ctx.strokeStyle = "#0f172a";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(M, tableTop, tableWidth, y - tableTop);
+
+    ctx.fillStyle = "#64748b";
+    ctx.font = "12px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(
+      `Page ${pageIdx + 1} of ${totalPages}  ·  ${districts.length} Districts / Ranges  ·  Onnesha Assessment Arena`,
+      W / 2,
+      H - 26,
+    );
+
+    canvases.push(canvas);
+  }
+
+  const pdfBytes = buildPdfFromCanvases(canvases, "portrait");
+  const slug = (courseCode || "course").replace(/[^a-zA-Z0-9-_]/g, "-");
+  triggerBlobDownload(
+    pdfBytes,
+    `Onnesha-District-Pass-Summary-${slug}-${new Date().toISOString().slice(0, 10)}.pdf`,
+  );
+}

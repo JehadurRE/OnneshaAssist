@@ -428,4 +428,165 @@ export function formatPracticalCell(row: FinalGradeSheetRow): string {
   return `${row.practicalMarks}/${row.practicalMaxMarks}`;
 }
 
+export interface DistrictPassSummaryRow {
+  regionKey: string;
+  regionName: string;
+  totalStudents: number;
+  passedCount: number;
+  certifiedCount: number;
+  emailedCount: number;
+}
+
+const DISTRICT_SPELLING_ALIASES: Record<string, string> = {
+  comilla: "cumilla",
+  barisal: "barishal",
+  bogra: "bogura",
+  jessore: "jashore",
+  chittagong: "chattogram",
+  jhalakathi: "jhalokathi",
+  jhalokati: "jhalokathi",
+  jhenidah: "jhenaidah",
+  "coxs bazar": "coxs bazar",
+  "cox's bazar": "coxs bazar",
+};
+
+/** Normalize training centre / range / district names so variants like "Cumilla" & "Cumilla Training Centre" merge cleanly. */
+export function normalizeDistrictKey(regionName?: string | null): string {
+  const cleaned = (regionName || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\b(training\s*cent(?:re|er)|divisional\s*cent(?:re|er)|cent(?:re|er)|range|district|zilla)\b/g, " ")
+    .replace(/['’`]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return "__unassigned__";
+  return DISTRICT_SPELLING_ALIASES[cleaned] || cleaned;
+}
+
+/** Whether a gradesheet row counts as Passed / Eligible for official pass lists. */
+export function isRowPassedForReport(row: FinalGradeSheetRow): boolean {
+  return row.eligibleForCertificate === true || !!row.certificateNumber;
+}
+
+/** Whether a gradesheet row has had its completion certificate emailed. */
+export function isRowEmailedForReport(row: FinalGradeSheetRow): boolean {
+  return !!row.certificateEmailedAt;
+}
+
+/**
+ * District / Range-wise pass and certificate email counts (no percentages or individual marks).
+ */
+export function buildDistrictPassSummary(rows: FinalGradeSheetRow[]): {
+  districts: DistrictPassSummaryRow[];
+  totals: DistrictPassSummaryRow;
+} {
+  const byKey = new Map<
+    string,
+    {
+      regionKey: string;
+      labels: Map<string, number>;
+      totalStudents: number;
+      passedCount: number;
+      certifiedCount: number;
+      emailedCount: number;
+    }
+  >();
+
+  for (const r of rows) {
+    const rawLabel = (r.regionName || "").trim();
+    const key = normalizeDistrictKey(rawLabel);
+    let bucket = byKey.get(key);
+    if (!bucket) {
+      bucket = {
+        regionKey: key,
+        labels: new Map(),
+        totalStudents: 0,
+        passedCount: 0,
+        certifiedCount: 0,
+        emailedCount: 0,
+      };
+      byKey.set(key, bucket);
+    }
+    const label = rawLabel || "Unassigned / Other";
+    bucket.labels.set(label, (bucket.labels.get(label) || 0) + 1);
+    bucket.totalStudents += 1;
+    if (isRowPassedForReport(r)) bucket.passedCount += 1;
+    if (r.certificateNumber) bucket.certifiedCount += 1;
+    if (isRowEmailedForReport(r)) bucket.emailedCount += 1;
+  }
+
+  const pickDisplayLabel = (key: string, labels: Map<string, number>): string => {
+    if (key === "__unassigned__") return "Unassigned / Other";
+    const entries = Array.from(labels.entries());
+    // Prefer official "Training Centre" / "Range" label if present, otherwise most frequent / longest
+    entries.sort((a, b) => {
+      const aOfficial = /training\s*cent|range/i.test(a[0]) ? 1 : 0;
+      const bOfficial = /training\s*cent|range/i.test(b[0]) ? 1 : 0;
+      if (aOfficial !== bOfficial) return bOfficial - aOfficial;
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return b[0].length - a[0].length;
+    });
+    return entries[0]?.[0] || "Unassigned / Other";
+  };
+
+  const districts: DistrictPassSummaryRow[] = Array.from(byKey.values()).map((b) => ({
+    regionKey: b.regionKey,
+    regionName: pickDisplayLabel(b.regionKey, b.labels),
+    totalStudents: b.totalStudents,
+    passedCount: b.passedCount,
+    certifiedCount: b.certifiedCount,
+    emailedCount: b.emailedCount,
+  }));
+
+  districts.sort((a, b) => {
+    if (a.regionKey === "__unassigned__") return 1;
+    if (b.regionKey === "__unassigned__") return -1;
+    return a.regionName.localeCompare(b.regionName);
+  });
+
+  const totals: DistrictPassSummaryRow = districts.reduce(
+    (acc, d) => ({
+      ...acc,
+      totalStudents: acc.totalStudents + d.totalStudents,
+      passedCount: acc.passedCount + d.passedCount,
+      certifiedCount: acc.certifiedCount + d.certifiedCount,
+      emailedCount: acc.emailedCount + d.emailedCount,
+    }),
+    {
+      regionKey: "__total__",
+      regionName: "Total (All Districts / Ranges)",
+      totalStudents: 0,
+      passedCount: 0,
+      certifiedCount: 0,
+      emailedCount: 0,
+    },
+  );
+
+  return { districts, totals };
+}
+
+/**
+ * Filter & sort official passed or emailed student register cleanly by District/Range then Roll
+ * (intentionally omits ranking by score/marks).
+ */
+export function buildPassedOrEmailedRows(
+  rows: FinalGradeSheetRow[],
+  mode: "emailed" | "passed",
+): FinalGradeSheetRow[] {
+  const filtered = rows.filter((r) =>
+    mode === "emailed" ? isRowEmailedForReport(r) : isRowPassedForReport(r),
+  );
+  return [...filtered].sort((a, b) => {
+    const ka = normalizeDistrictKey(a.regionName);
+    const kb = normalizeDistrictKey(b.regionName);
+    if (ka !== kb) {
+      if (ka === "__unassigned__") return 1;
+      if (kb === "__unassigned__") return -1;
+      return ka.localeCompare(kb);
+    }
+    return a.rollNumber.localeCompare(b.rollNumber, undefined, { numeric: true });
+  });
+}
+
 export { marksFromPct };

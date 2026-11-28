@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildDistrictPassSummary,
   buildFinalGradeSheetRows,
+  buildPassedOrEmailedRows,
   finalGradeSheetCsv,
   formatPracticalStatusLabel,
+  normalizeDistrictKey,
 } from "../final-gradesheet";
 import type {
   CertificateData,
@@ -313,5 +316,112 @@ describe("final gradesheet", () => {
     expect(rows[0]?.totalMarks).toBe(80);
     expect(rows[0]?.maxTotal).toBe(100);
     expect(rows[0]?.combinedPct).toBe(80);
+  });
+
+  it("builds district/range-wise pass & emailed counts and merges spelling/centre variants", () => {
+    const sampleRows = buildFinalGradeSheetRows({
+      exam,
+      submissions: [
+        {
+          id: "s-c1",
+          practicalExamId: "exam-1",
+          courseId: "course-1",
+          rollNumber: "CUM-01",
+          studentName: "A",
+          regionName: "Cumilla Training Centre",
+          status: "graded",
+          practicalScorePct: 80,
+          quizAccuracyPct: 80,
+          answers: [],
+          createdAt: "",
+          updatedAt: "",
+        },
+        {
+          id: "s-c2",
+          practicalExamId: "exam-1",
+          courseId: "course-1",
+          rollNumber: "CUM-02",
+          studentName: "B",
+          regionName: "Cumilla",
+          status: "graded",
+          practicalScorePct: 70,
+          quizAccuracyPct: 70,
+          answers: [],
+          createdAt: "",
+          updatedAt: "",
+        },
+        {
+          id: "s-b1",
+          practicalExamId: "exam-1",
+          courseId: "course-1",
+          rollNumber: "BOG-01",
+          studentName: "C",
+          regionName: "Bogura Training Centre",
+          status: "graded",
+          practicalScorePct: 30,
+          quizAccuracyPct: 20,
+          answers: [],
+          createdAt: "",
+          updatedAt: "",
+        },
+      ] as PracticalSubmission[],
+      roster: [
+        { id: "r-c3", rollNumber: "CUM-03", name: "Absent Cumilla", regionName: "Comilla" },
+      ],
+      certificates: [
+        {
+          id: "c-1",
+          certificateNumber: "ONN-CRS-AIDM04-CUM01",
+          kind: "course_completion",
+          courseId: "course-1",
+          studentName: "A",
+          studentRoll: "CUM-01",
+          quizTitle: "Final",
+          rank: 1,
+          totalParticipants: 1,
+          issueDate: "2026-11-28",
+          verified: true,
+          emailedAt: "2026-11-28T10:00:00Z",
+          emailedTo: "a@example.com",
+        },
+      ],
+      quizByRoll: new Map([
+        [normalizeRollToken("CUM-01"), { accuracyPct: 80, found: true }],
+        [normalizeRollToken("CUM-02"), { accuracyPct: 70, found: true }],
+        [normalizeRollToken("BOG-01"), { accuracyPct: 20, found: true }],
+      ]),
+      eligibilityByRoll: new Map([
+        [normalizeRollToken("CUM-01"), { eligible: true, missing: [] }],
+        [normalizeRollToken("CUM-02"), { eligible: true, missing: [] }],
+        [normalizeRollToken("BOG-01"), { eligible: false, missing: ["combined_pass"] }],
+        [normalizeRollToken("CUM-03"), { eligible: false, missing: ["practical_submission"] }],
+      ]),
+      normalizeRoll: normalizeRollToken,
+    });
+
+    expect(normalizeDistrictKey("Cumilla Training Centre")).toBe("cumilla");
+    expect(normalizeDistrictKey("Comilla")).toBe("cumilla");
+
+    const { districts, totals } = buildDistrictPassSummary(sampleRows);
+    expect(districts).toHaveLength(2);
+    expect(districts[0]?.regionName).toBe("Bogura Training Centre");
+    expect(districts[0]?.totalStudents).toBe(1);
+    expect(districts[0]?.passedCount).toBe(0);
+    expect(districts[0]?.emailedCount).toBe(0);
+
+    expect(districts[1]?.regionName).toBe("Cumilla Training Centre");
+    expect(districts[1]?.totalStudents).toBe(3);
+    expect(districts[1]?.passedCount).toBe(2);
+    expect(districts[1]?.emailedCount).toBe(1);
+
+    expect(totals.totalStudents).toBe(4);
+    expect(totals.passedCount).toBe(2);
+    expect(totals.emailedCount).toBe(1);
+
+    const emailedRows = buildPassedOrEmailedRows(sampleRows, "emailed");
+    expect(emailedRows.map((r) => r.rollNumber)).toEqual(["CUM-01"]);
+
+    const passedRows = buildPassedOrEmailedRows(sampleRows, "passed");
+    expect(passedRows.map((r) => r.rollNumber)).toEqual(["CUM-01", "CUM-02"]);
   });
 });
