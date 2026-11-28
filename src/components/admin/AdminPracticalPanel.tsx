@@ -728,7 +728,7 @@ export function AdminPracticalPanel(props: {
     if (!course) return;
     if (
       !window.confirm(
-        `Issue course certificates for all eligible graded candidates in ${course.code}?\n\nRoster emails will receive completion certificate mail automatically.`,
+        `Issue & email course certificates for all eligible graded candidates in ${course.code}?\n\nStudents who were already emailed will NOT be emailed again.`,
       )
     ) {
       return;
@@ -738,13 +738,22 @@ export function AdminPracticalPanel(props: {
       const res = await serverBulkIssueCourseCertificates({
         data: { courseId: course.id, sendEmail: true },
       });
-      setNotice(
-        res.success
-          ? `Bulk issued ${res.issuedCount}; emailed ${res.emailedCount ?? 0}. Skipped ${res.skipped?.length || 0}.`
-          : res.error || "Bulk issue failed.",
-      );
+      if (res.success) {
+        const newIssued = res.newlyIssuedCount ?? 0;
+        const alreadySent = res.alreadyEmailedCount ?? 0;
+        setNotice(
+          `Issued ${newIssued} new (${res.issuedCount ?? 0} total eligible); emailed ${res.emailedCount ?? 0} new${
+            alreadySent > 0 ? ` (${alreadySent} already emailed)` : ""
+          }. Skipped ${res.skipped?.length || 0}.`,
+        );
+      } else {
+        setNotice(res.error || "Bulk issue failed.");
+      }
       await syncCertsIntoAdmin();
       await refresh();
+      if (deskView === "sheet") {
+        await loadGradeSheet();
+      }
     } finally {
       setBusyId(null);
     }
@@ -1114,6 +1123,7 @@ export function AdminPracticalPanel(props: {
     const participated = sheetRows.filter((r) => r.participated).length;
     const notParticipated = total - participated;
     const graded = sheetRows.filter((r) => r.practicalGraded).length;
+    const eligible = sheetRows.filter((r) => r.eligibleForCertificate === true).length;
     const withQuiz = sheetRows.filter((r) => r.quizFound).length;
     const certified = sheetRows.filter((r) => !!r.certificateNumber).length;
     const emailed = sheetRows.filter((r) => !!r.certificateEmailedAt).length;
@@ -1122,6 +1132,7 @@ export function AdminPracticalPanel(props: {
       participated,
       notParticipated,
       graded,
+      eligible,
       withQuiz,
       certified,
       emailed,
@@ -2292,6 +2303,20 @@ export function AdminPracticalPanel(props: {
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
+                onClick={() => void bulkIssue()}
+                disabled={busyId === "bulk" || !course || sheetCounts.eligible === 0}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-800 transition-colors hover:bg-emerald-500/20 disabled:opacity-50 dark:text-emerald-200"
+                title="Issue & email course certificates for all eligible students (already-emailed students are skipped automatically)"
+              >
+                <Award className="h-3.5 w-3.5" />
+                <span>
+                  {busyId === "bulk"
+                    ? "Issuing…"
+                    : `Issue all eligible (${sheetCounts.eligible})`}
+                </span>
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   setShowTestMailPanel((prev) => !prev);
                   setTestMailFeedback(null);
@@ -2501,6 +2526,9 @@ export function AdminPracticalPanel(props: {
                 <span>· {sheetCounts.participated} participated</span>
                 <span>· {sheetCounts.notParticipated} did not participate</span>
                 <span>· {sheetCounts.graded} graded</span>
+                <span className="text-emerald-700 dark:text-emerald-300">
+                  · {sheetCounts.eligible} eligible
+                </span>
                 <span>· {sheetCounts.withQuiz} with quiz</span>
                 <span>· {sheetCounts.certified} certs issued</span>
                 <span>· {sheetCounts.emailed} emailed</span>
@@ -2749,6 +2777,17 @@ export function AdminPracticalPanel(props: {
                                 </span>
                               </button>
                             </div>
+                            {!hasCert &&
+                              r.participated &&
+                              r.eligibleForCertificate === false &&
+                              missingHint && (
+                                <span
+                                  className="max-w-[200px] truncate text-[10px] font-medium text-amber-700 dark:text-amber-300"
+                                  title={`Not automatically eligible: ${missingHint}`}
+                                >
+                                  Needs: {missingHint}
+                                </span>
+                              )}
                             {rowFeedback && (
                               <span
                                 className={`max-w-[200px] truncate text-[10px] font-semibold ${
@@ -2802,7 +2841,7 @@ export function AdminPracticalPanel(props: {
                 checked={requirement.requireQuiz}
                 onChange={(e) => patchRequirement({ requireQuiz: e.target.checked })}
               />
-              Require final quiz pass
+              Require Final Quiz attempt
             </label>
             <label className="inline-flex items-center gap-1.5">
               <input
@@ -2810,9 +2849,27 @@ export function AdminPracticalPanel(props: {
                 checked={requirement.requirePractical}
                 onChange={(e) => patchRequirement({ requirePractical: e.target.checked })}
               />
-              Require graded practical
+              Require graded Practical
+            </label>
+            <label
+              className="inline-flex items-center gap-1.5"
+              title="Off (default): student passes if Combined Total meets the pass threshold (e.g. >=50%) once required parts are completed. On: student must also pass Final Quiz and Practical separately."
+            >
+              <input
+                type="checkbox"
+                checked={requirement.requireSeparatePartPass === true}
+                onChange={(e) =>
+                  patchRequirement({ requireSeparatePartPass: e.target.checked })
+                }
+              />
+              Require separate ≥{exam?.passThresholdPct ?? 50}% pass mark on Final Quiz &amp; Practical individually
             </label>
           </div>
+          <p className="text-[11px] text-muted-foreground">
+            {requirement.requireSeparatePartPass === true
+              ? `Strict mode: candidates must score ≥${exam?.passThresholdPct ?? 50}% on Final Quiz, ≥${exam?.passThresholdPct ?? 50}% on Practical, AND ≥${exam?.passThresholdPct ?? 50}% Combined.`
+              : `Default mode: candidates are automatically eligible once required parts are completed and Combined Total is ≥${exam?.passThresholdPct ?? 50}%.`}
+          </p>
           <div className="space-y-2">
             <div className="text-xs font-semibold">Required quizzes</div>
             {courseQuizzes.length === 0 ? (

@@ -7083,6 +7083,7 @@ export const serverSaveCourseRequirement = createServerFn({ method: "POST" })
     });
     const requirement: CourseCompletionRequirement = {
       ...data.requirement,
+      requireSeparatePartPass: data.requirement.requireSeparatePartPass === true,
       regularQuizWeightPct: weights.regularQuizWeightPct,
       quizWeightPct: weights.quizWeightPct,
       practicalWeightPct: weights.practicalWeightPct,
@@ -7104,7 +7105,7 @@ export const serverSaveCourseRequirement = createServerFn({ method: "POST" })
       store.practicalExams[examIdx] = updatedExam;
       recomputePracticalSubmissionsForExam(store, updatedExam);
     }
-    scheduleDiskPersist();
+    await flushStoreToDiskNow();
     return { success: true, requirement };
   });
 
@@ -8881,6 +8882,9 @@ export const serverBulkIssueCourseCertificates = createServerFn({ method: "POST"
 
     const wantEmail = data.sendEmail !== false;
     const issued: string[] = [];
+    let newlyIssuedCount = 0;
+    let alreadyIssuedCount = 0;
+    let alreadyEmailedCount = 0;
     const emailed: string[] = [];
     const skipped: Array<{ roll: string; reason: string }> = [];
     for (const roll of candidateRolls) {
@@ -8892,14 +8896,20 @@ export const serverBulkIssueCourseCertificates = createServerFn({ method: "POST"
       });
       if (res.success && res.certificate) {
         issued.push(res.certificate.certificateNumber);
+        if (res.alreadyIssued) alreadyIssuedCount += 1;
+        else newlyIssuedCount += 1;
         if (wantEmail) {
-          const mail = await emailCourseCertificateToStudent({
-            store,
-            certificate: res.certificate,
-          });
-          if (mail.emailed) emailed.push(mail.to);
-          else if (!res.alreadyIssued) {
-            skipped.push({ roll, reason: `issued but email failed: ${mail.reason}` });
+          if (res.certificate.emailedAt) {
+            alreadyEmailedCount += 1;
+          } else {
+            const mail = await emailCourseCertificateToStudent({
+              store,
+              certificate: res.certificate,
+            });
+            if (mail.emailed) emailed.push(mail.to);
+            else if (!res.alreadyIssued) {
+              skipped.push({ roll, reason: `issued but email failed: ${mail.reason}` });
+            }
           }
         }
       } else skipped.push({ roll, reason: res.error || "skipped" });
@@ -8907,7 +8917,10 @@ export const serverBulkIssueCourseCertificates = createServerFn({ method: "POST"
     return {
       success: true,
       issuedCount: issued.length,
+      newlyIssuedCount,
+      alreadyIssuedCount,
       emailedCount: emailed.length,
+      alreadyEmailedCount,
       issued,
       emailed,
       skipped,

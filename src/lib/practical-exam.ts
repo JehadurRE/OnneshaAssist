@@ -558,17 +558,19 @@ export function evaluateCourseCompletion(params: {
     practicalWeightPct: weights.practicalWeightPct,
   });
 
+  const requireSeparatePartPass = params.requirement.requireSeparatePartPass === true;
+
   const missing: string[] = [];
   if (params.requirement.requireQuiz && !params.quizResult) {
     missing.push("final_quiz_result");
-  } else if (params.requirement.requireQuiz && !quizPassed) {
+  } else if (params.requirement.requireQuiz && requireSeparatePartPass && !quizPassed) {
     missing.push("final_quiz_pass");
   }
   if (practicalRequired && !params.submission) {
     missing.push("practical_submission");
   } else if (practicalRequired && params.submission?.status !== "graded" && !practicalGraded) {
     missing.push("practical_grading");
-  } else if (practicalRequired && !practicalPassed) {
+  } else if (practicalRequired && requireSeparatePartPass && !practicalPassed) {
     missing.push("practical_pass");
   }
   if (!isPassingScore(combinedPct, threshold)) {
@@ -787,6 +789,7 @@ export function buildDefaultCourseRequirement(courseId: string): CourseCompletio
     courseId,
     requireQuiz: true,
     requirePractical: true,
+    requireSeparatePartPass: false,
     requiredQuizIds: [...SANJIBON_FINAL_QUIZ_ALIASES],
     regularQuizWeightPct: DEFAULT_REGULAR_QUIZ_WEIGHT,
     quizWeightPct: DEFAULT_QUIZ_WEIGHT,

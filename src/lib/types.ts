@@ -681,6 +681,12 @@ export interface CourseCompletionRequirement {
   courseId: string;
   requireQuiz: boolean;
   requirePractical: boolean;
+  /**
+   * When true, students must pass Final Quiz and Practical individually (>= passThresholdPct)
+   * in addition to Combined >= passThresholdPct. Default false (pass by Combined total once
+   * required components are submitted & graded).
+   */
+  requireSeparatePartPass?: boolean | undefined;
   requiredQuizIds?: string[] | undefined;
   regularQuizWeightPct?: number | undefined;
   quizWeightPct?: number | undefined;

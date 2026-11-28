@@ -174,6 +174,79 @@ describe("course completion eligibility", () => {
   it("builds stable industrial course certificate numbers", () => {
     expect(makeCourseCertificateNumber("AI-DM-04", "BAR-01")).toBe("ONN-CRS-AIDM04-BAR01");
   });
+
+  it("grants eligibility by Combined >= 50% by default, and enforces per-part pass only when requireSeparatePartPass is true", () => {
+    const practical = buildDefaultFinalPracticalExam(course);
+    const quiz100: ExamResultRecord = {
+      id: "res-bog02",
+      sessionId: "exam-1",
+      pin: "123456",
+      participantId: "p-bog02",
+      rollNumber: "BOG-02",
+      name: "Md Alamin",
+      score: 30,
+      rank: 1,
+      correctCount: 30,
+      incorrectCount: 0,
+      unattemptedCount: 0,
+      accuracyPct: 100,
+      passed: true,
+      createdAt: "2026-11-19T00:00:00Z",
+    };
+    // 18/40 raw practical = 45% (27/60), + 30/30 Final Quiz + 8.4/10 Regular Quizzes = 65.4% combined
+    const lowPracticalSub: PracticalSubmission = {
+      id: "sub-bog02",
+      practicalExamId: practical.id,
+      courseId: course.id,
+      rollNumber: "BOG-02",
+      studentName: "Md Alamin",
+      answers: fullPackageAnswers(practical),
+      grades: [
+        { taskId: practical.tasks[0]!.id, marks: 2, maxMarks: 3 },
+        { taskId: practical.tasks[1]!.id, marks: 4, maxMarks: 8 },
+        { taskId: practical.tasks[2]!.id, marks: 3, maxMarks: 8 },
+        { taskId: practical.tasks[3]!.id, marks: 3, maxMarks: 6 },
+        { taskId: practical.tasks[4]!.id, marks: 3, maxMarks: 8 },
+        { taskId: practical.tasks[5]!.id, marks: 3, maxMarks: 7 },
+      ],
+      status: "graded",
+      createdAt: "2026-11-19T00:00:00Z",
+      updatedAt: "2026-11-19T00:00:00Z",
+    };
+
+    const defaultMode = evaluateCourseCompletion({
+      course,
+      requirement: {
+        courseId: course.id,
+        requireQuiz: true,
+        requirePractical: true,
+      },
+      practicalExam: practical,
+      submission: lowPracticalSub,
+      quizResult: quiz100,
+      regularQuizAvgPct: 84,
+    });
+    expect(defaultMode.practicalScorePct).toBe(45);
+    expect(defaultMode.combinedPct).toBe(65.4);
+    expect(defaultMode.eligibleForCourseCertificate).toBe(true);
+    expect(defaultMode.missing).toEqual([]);
+
+    const strictMode = evaluateCourseCompletion({
+      course,
+      requirement: {
+        courseId: course.id,
+        requireQuiz: true,
+        requirePractical: true,
+        requireSeparatePartPass: true,
+      },
+      practicalExam: practical,
+      submission: lowPracticalSub,
+      quizResult: quiz100,
+      regularQuizAvgPct: 84,
+    });
+    expect(strictMode.eligibleForCourseCertificate).toBe(false);
+    expect(strictMode.missing).toContain("practical_pass");
+  });
 });
 
 describe("practical window & submission validation", () => {
